@@ -214,10 +214,12 @@ sudo docker run -d \
 3. 打开群晖 **Container Manager** ➡️ 左侧 **「映像」** ➡️ 点击顶部 **「操作」** ➡️ **「导入」** ➡️ 选择「从文件添加」并选中上传的 `taskie.tar.gz`；
 4. 导入完成后选中该映像点击「运行」，设置端口映射 `3000:3000` 与文件夹挂载 `/docker/taskie/data -> /app/data` 即可立即启动。
 
-> 📌 **群晖部署小贴士**：
-> 1. **权限设置**：若启动后提示数据库无法写入，请在 File Station 中右键 `/docker/taskie` 文件夹 ➡️「属性」➡️「权限」➡️ 为 `Everyone` 或内部用户勾选读取/写入权限，并勾选“应用到这个文件夹、子文件夹及文件”。
-> 2. **iPad 桌面独立 App**：在 iPad Safari 中打开 `http://<群晖IP>:3000` ➡️ 点击分享按钮 ➡️ 选择「添加到主屏幕」，即可体验如同原生 App 的沉浸式无边框全屏打卡！
-> 3. **外网与 HTTPS 访问（可选）**：如需在外网打卡，可在群晖「控制面板」➡️「登录门户」➡️「高级」➡️「反向代理服务器」中配置一条反向代理规则，将域名与 SSL 证书映射至 `localhost:3000`。
+> 📌 **群晖部署小贴士与常见问题**：
+> 1. **提示 unauthorized 报错解决**：
+>    GitHub Packages 镜像仓库默认将新建镜像设为私有 (Private)。请在 GitHub 仓库主页右侧点击 **Packages** ➡️ 点击 `taskie` ➡️ **Package settings** ➡️ 滚动到底部 **Danger Zone** ➡️ 点击 **Change visibility** 改为 **Public** 即可公开免密拉取；或者在群晖执行 `docker login ghcr.io` 登录具备 `read:packages` 权限的 GitHub Token。
+> 2. **权限设置**：若启动后提示数据库无法写入，请在 File Station 中右键 `/docker/taskie` 文件夹 ➡️「属性」➡️「权限」➡️ 为 `Everyone` 或内部用户勾选读取/写入权限，并勾选“应用到这个文件夹、子文件夹及文件”。
+> 3. **iPad 桌面独立 App**：在 iPad Safari 中打开 `http://<群晖IP>:3000` ➡️ 点击分享按钮 ➡️ 选择「添加到主屏幕」，即可体验如同原生 App 的沉浸式无边框全屏打卡！
+> 4. **外网与 HTTPS 访问（可选）**：如需在外网打卡，可在群晖「控制面板」➡️「登录门户」➡️「高级」➡️「反向代理服务器」中配置一条反向代理规则，将域名与 SSL 证书映射至 `localhost:3000`。
 
 ---
 
