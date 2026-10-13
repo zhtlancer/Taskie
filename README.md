@@ -154,7 +154,52 @@ docker compose down
 
 ---
 
-### 方式二：Node.js 本地开发与脚本启动
+### 方式二：群晖 NAS (Synology) 部署指南（家庭服务器首选）
+
+针对家庭群晖 NAS 环境，推荐以下两种方式部署：
+
+#### 方案 A：SSH 命令行部署（最快、最省心，全自动）
+
+1. **开启 SSH**：在群晖 DSM 中打开「控制面板」➡️「终端机和 SNMP」➡️ 勾选「启动 SSH 功能」（端口默认 22）；
+2. **终端登录群晖**：在电脑终端（Mac Terminal / Windows PowerShell）执行：
+   ```bash
+   ssh <群晖管理员用户名>@<群晖局域网IP>
+   ```
+3. **克隆与一键启动**：
+   ```bash
+   # 进入群晖 Docker 共享文件夹
+   cd /volume1/docker
+
+   # 拉取项目代码
+   git clone https://github.com/zhtlancer/Taskie.git taskie
+   cd taskie
+
+   # 后台构建并启动容器
+   sudo docker compose up -d
+   ```
+4. 部署完成后，在家庭 iPad 或电脑上访问 `http://<群晖局域网IP>:3000` 即可开始使用。
+
+#### 方案 B：Container Manager 图形界面部署 (DSM 7.2+)
+
+1. **准备代码目录**：
+   - 打开 DSM「File Station」，进入 `docker` 共享文件夹，新建 `taskie` 文件夹；
+   - 将 GitHub 仓库代码下载并上传解压到 `/docker/taskie`（确保包含 `Dockerfile`、`docker-compose.yml` 等文件）；
+2. **创建项目**：
+   - 打开群晖套件 **Container Manager** ➡️ 点击左侧 **「项目」** ➡️ 点击 **「新增」**；
+   - **项目名称**：填写 `taskie`；
+   - **路径**：选择刚才的 `/docker/taskie`；
+   - **来源**：选择「使用现有的 docker-compose.yaml」；
+   - 勾选「向导完成后立即启动项目」，点击「下一步」并完成；
+3. Container Manager 将自动拉取基础镜像、构建项目并启动，状态显示为绿色健康运行中。
+
+> 📌 **群晖部署小贴士**：
+> 1. **权限设置**：若启动后提示数据库无法写入，请在 File Station 中右键 `/docker/taskie` 文件夹 ➡️「属性」➡️「权限」➡️ 为 `Everyone` 或内部用户勾选读取/写入权限，并勾选“应用到这个文件夹、子文件夹及文件”。
+> 2. **iPad 桌面独立 App**：在 iPad Safari 中打开 `http://<群晖IP>:3000` ➡️ 点击分享按钮 ➡️ 选择「添加到主屏幕」，即可体验如同原生 App 的沉浸式无边框全屏打卡！
+> 3. **外网与 HTTPS 访问（可选）**：如需在外网打卡，可在群晖「控制面板」➡️「登录门户」➡️「高级」➡️「反向代理服务器」中配置一条反向代理规则，将域名与 SSL 证书映射至 `localhost:3000`。
+
+---
+
+### 方式三：Node.js 本地开发与脚本启动
 
 #### 1. 环境准备
 - Node.js 18.0 或更高版本（推荐 Node.js 20 LTS）
