@@ -27,17 +27,20 @@ ENV NODE_ENV=production \
 COPY backend/package*.json ./backend/
 WORKDIR /app/backend
 
-# Install production dependencies (with build tools for native addons like better-sqlite3 and sharp)
+# Install production dependencies (preserve required shared runtime libraries)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
+    libstdc++6 \
     && npm install --omit=dev \
-    && apt-get purge -y --auto-remove python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend application source code
 COPY backend/src ./src
+
+# Create alias link so node src/server.js works from /app or /app/backend
+RUN ln -s /app/backend/src /app/src 2>/dev/null || true
 
 # Copy built frontend assets from stage 1
 COPY --from=frontend-builder /app/frontend/dist /app/public
@@ -50,4 +53,5 @@ EXPOSE 3000
 # Volume mount point for SQLite database and uploaded photos
 VOLUME ["/app/data"]
 
+WORKDIR /app/backend
 CMD ["node", "src/server.js"]
