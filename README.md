@@ -1,4 +1,4 @@
-# 🌱 星芽学伴 (StarSprout)
+# 🎒 Taskie (嗒嗒日常)
 ### 专为小学生量身定制的日常作业打卡与学习成长空间
 
 <p align="center">
@@ -18,7 +18,7 @@
 
 ## 📖 项目简介
 
-**星芽学伴 (StarSprout)** 是一款专为家庭场景设计的小学生日常作业与学习任务管理系统。
+**Taskie (嗒嗒日常)** 是一款专为家庭场景设计的小学生日常作业与学习任务管理系统。
 
 摒弃了传统家校软件臃肿的社交与营销功能，以**孩子自主打卡**为核心，深度针对 **iPad Air 5 横屏视口 (1180 × 820 px)** 进行触控与视觉定制。集**日常作业打卡**、**趣味激励成长**、**拍照错题本**、**生字本与查笔画**于一体，让孩子在正向激励中养成专注自律的好习惯。
 
@@ -84,7 +84,7 @@
 ## 🏗️ 技术架构
 
 ```
-star-sprout/
+Taskie/
 ├── backend/                   # 后端 API 服务 (Node.js + Fastify)
 │   ├── data.sqlite            # SQLite 数据库单文件 (零运维)
 │   ├── uploads/               # 错题 WebP 图片存储目录
@@ -181,7 +181,7 @@ npm --prefix frontend test
 - **图片**：所有错题照片均保存在 `backend/uploads/` 目录中；
 - **一键全量备份**：
   ```bash
-  tar -czvf star_sprout_backup_$(date +%Y%m%d).tar.gz backend/data.sqlite backend/uploads/
+  tar -czvf taskie_backup_$(date +%Y%m%d).tar.gz backend/data.sqlite backend/uploads/
   ```
 
 ---
