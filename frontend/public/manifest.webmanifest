@@ -1,0 +1,17 @@
+{
+  "name": "小学生日常作业任务管理系统",
+  "short_name": "作业任务",
+  "description": "小学生日常作业与打卡激励管理平台 (针对 iPad Air 5 优化)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F6FB",
+  "theme_color": "#6C63FF",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

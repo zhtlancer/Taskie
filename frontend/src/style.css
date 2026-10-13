@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: 'Nunito', 'LXGW WenKai Screen', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    touch-action: manipulation;
+  }
+
+  #app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Custom scrollbars for tablet */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Coin float animation keyframes */
+@keyframes floatCoinEffect {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-30px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-60px) scale(0.9);
+  }
+}
+
+.animate-coin {
+  animation: floatCoinEffect 0.85s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Interactive touch press scale */
+.touch-press {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.touch-press:active {
+  transform: scale(0.96);
+}
+
+/* iPad Air 5 viewport container helper */
+.ipad-container {
+  width: 100%;
+  max-width: 1180px;
+  min-height: 820px;
+  margin: 0 auto;
+}
+
+/* Special elegant reading typography for Chinese homework and literacy */
+.font-reading {
+  font-family: 'LXGW WenKai Screen', 'Noto Sans SC', 'PingFang SC', serif;
+}
+
+.font-kai {
+  font-family: 'LXGW WenKai Screen', 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', serif;
+}
+

@@ -1,0 +1,79 @@
+const { verifyPin, hashPin } = require('../utils/crypto');
+
+class AuthService {
+  constructor(db) {
+    this.db = db;
+  }
+
+  loginChild(childId, pin) {
+    if (!childId) {
+      return { success: false, status: 400, error: 'child_id is required' };
+    }
+
+    const child = this.db.prepare('SELECT id, name, avatar_emoji, pin_hash FROM children WHERE id = ?').get(childId);
+    if (!child) {
+      return { success: false, status: 404, error: 'Child not found' };
+    }
+
+    if (child.pin_hash) {
+      if (!pin) {
+        return { success: false, status: 401, error: 'PIN is required for this child' };
+      }
+      if (!verifyPin(pin, child.pin_hash)) {
+        return { success: false, status: 401, error: 'Invalid PIN' };
+      }
+    }
+
+    return {
+      success: true,
+      child: {
+        id: child.id,
+        name: child.name,
+        avatar_emoji: child.avatar_emoji
+      }
+    };
+  }
+
+  loginParent(pin) {
+    if (!pin) {
+      return { success: false, status: 400, error: 'PIN is required' };
+    }
+
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('parent_pin_hash');
+    if (!row || !row.value) {
+      return { success: false, status: 500, error: 'Parent PIN is not configured' };
+    }
+
+    if (!verifyPin(pin, row.value)) {
+      return { success: false, status: 401, error: 'Invalid parent PIN' };
+    }
+
+    return {
+      success: true,
+      role: 'parent'
+    };
+  }
+
+  updateParentPin(oldPin, newPin) {
+    if (!newPin) {
+      return { success: false, status: 400, error: 'New PIN is required' };
+    }
+
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('parent_pin_hash');
+    if (row && row.value) {
+      if (!oldPin || !verifyPin(oldPin, row.value)) {
+        return { success: false, status: 401, error: 'Current parent PIN is incorrect' };
+      }
+    }
+
+    const newHash = hashPin(newPin);
+    this.db.prepare(`
+      INSERT INTO settings (key, value) VALUES ('parent_pin_hash', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(newHash);
+
+    return { success: true, message: 'Parent PIN updated successfully' };
+  }
+}
+
+module.exports = AuthService;

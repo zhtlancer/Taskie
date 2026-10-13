@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Production build
+frontend/dist/
+dist/
+
+# Runtime logs & PIDs
+*.log
+logs/
+*.pid
+
+# Local SQLite databases (data should not be committed to Git)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+backend/data.sqlite*
+
+# Uploaded mistake photos
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Multica agent runtime metadata
+.agents/
+.multica/
+
+# OS files
+.DS_Store
+Thumbs.db

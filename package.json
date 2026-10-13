@@ -1,0 +1,17 @@
+{
+  "name": "homework-management-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "小学生日常作业任务管理系统 (Vue 3 + Fastify + SQLite，针对 iPad Air 5 横屏深度优化)",
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev": "npm run dev:frontend",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "test": "npm run test:backend && npm run test:frontend",
+    "seed:backend": "npm --prefix backend run seed"
+  }
+}
