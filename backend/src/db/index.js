@@ -111,6 +111,12 @@ function initDb(db) {
 
 function getDb(customPath) {
   if (customPath) {
+    if (customPath !== ':memory:') {
+      const dbDir = path.dirname(customPath);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+    }
     const db = new Database(customPath);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');

@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
 const multipart = require('@fastify/multipart');
@@ -81,6 +82,30 @@ function buildApp(opts = {}) {
     root: uploadDirectory,
     prefix: '/uploads/'
   });
+
+  // Static file serving for frontend production build (if dist directory exists)
+  const clientDistDir = opts.clientDistDir || config.clientDistDir;
+  if (clientDistDir && fs.existsSync(clientDistDir)) {
+    fastify.register(fastifyStatic, {
+      root: clientDistDir,
+      prefix: '/',
+      decorateReply: false
+    });
+
+    fastify.setNotFoundHandler((request, reply) => {
+      const url = request.raw.url || '';
+      if (url.startsWith('/api') || url.startsWith('/uploads')) {
+        reply.status(404).send({ statusCode: 404, error: 'Not Found', message: 'Route not found' });
+        return;
+      }
+      const indexPath = path.join(clientDistDir, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        reply.type('text/html').send(fs.createReadStream(indexPath));
+      } else {
+        reply.status(404).send({ statusCode: 404, error: 'Not Found', message: 'Not found' });
+      }
+    });
+  }
 
   // JWT
   fastify.register(fastifyJwt, {

@@ -78,16 +78,32 @@ class RewardsService {
       throw { status: 404, message: 'Child not found' };
     }
 
-    const today = referenceDate || getTodayDate();
-    const totalPoints = this.getTotalPoints(childId);
-    const currentStreak = this.getCurrentStreak(childId, today);
-
-    // Today's task counts
-    const todayTasksRow = this.db.prepare(`
+    let today = referenceDate || getTodayDate();
+    let todayTasksRow = this.db.prepare(`
       SELECT COUNT(*) AS total, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) AS completed
       FROM daily_tasks
       WHERE child_id = ? AND date = ?
     `).get(childId, today);
+
+    if ((!todayTasksRow || todayTasksRow.total === 0) && !referenceDate) {
+      const latestTask = this.db.prepare(`
+        SELECT date FROM daily_tasks WHERE child_id = ? ORDER BY date DESC LIMIT 1
+      `).get(childId);
+      if (latestTask && latestTask.date) {
+        const fallbackRow = this.db.prepare(`
+          SELECT COUNT(*) AS total, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) AS completed
+          FROM daily_tasks
+          WHERE child_id = ? AND date = ?
+        `).get(childId, latestTask.date);
+        if (fallbackRow && fallbackRow.total > 0) {
+          today = latestTask.date;
+          todayTasksRow = fallbackRow;
+        }
+      }
+    }
+
+    const totalPoints = this.getTotalPoints(childId);
+    const currentStreak = this.getCurrentStreak(childId, today);
 
     const todayTotal = todayTasksRow ? todayTasksRow.total : 0;
     const todayCompleted = todayTasksRow ? (todayTasksRow.completed || 0) : 0;

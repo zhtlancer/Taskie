@@ -10,6 +10,7 @@
   <img src="https://img.shields.io/badge/Image-Sharp%20Pipeline-99cc00?style=flat-square" alt="Sharp" />
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
+  <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
   <img src="https://img.shields.io/badge/Tests-56%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
@@ -109,6 +110,8 @@ Taskie/
 │   │   └── views/             # 页面视图 (看板、生字本、错题本、激励墙、家长端)
 │   └── test/                  # 前端工具与状态测试套件 (27 项测试)
 │
+├── Dockerfile                 # 多阶段容器构建定义 (前端编译 + 后端运行时)
+├── docker-compose.yml         # Docker Compose 一键启动与持久化挂载配置
 ├── start.sh                   # 一键启动持久化后台服务脚本
 ├── stop.sh                    # 一键停止服务脚本
 └── package.json               # 根项目整合脚本
@@ -118,11 +121,46 @@ Taskie/
 
 ## 🚀 快速开始
 
-### 1. 环境准备
+### 方式一：Docker / Docker Compose 部署（强烈推荐，一键运行、零配置）
+
+项目已完整内置多阶段 `Dockerfile` 与 `docker-compose.yml`，支持零环境依赖一键容器化启动。
+前端静态资源自动构建并由后端统一托管，数据持久化保存在宿主机 `./data` 目录。
+
+```bash
+# 1. 启动容器（后台常驻运行，自动构建前端与后端环境）
+docker compose up -d
+
+# 2. 查看运行日志
+docker compose logs -f
+
+# 3. 停止容器
+docker compose down
+```
+
+启动完成后，直接在 iPad 或电脑浏览器中访问：
+- **Web 应用与打卡入口**：`http://<服务器局域网IP>:3000`（本机：`http://localhost:3000`）
+- **持久化数据存储**：
+  - 数据库文件：宿主机 `./data/data.sqlite`
+  - 错题照片目录：宿主机 `./data/uploads/`
+  容器更新、销毁与重建过程中，所有作业记录与错题照片均持久保存在宿主机，永不丢失。
+
+> 💡 **已有本地数据迁移至 Docker（可选）**：
+> 若此前在本地裸机运行过已有数据，执行以下命令即可平滑迁移进 Docker 挂载卷：
+> ```bash
+> mkdir -p data
+> cp backend/data.sqlite data/data.sqlite 2>/dev/null || true
+> cp -r backend/uploads data/ 2>/dev/null || true
+> ```
+
+---
+
+### 方式二：Node.js 本地开发与脚本启动
+
+#### 1. 环境准备
 - Node.js 18.0 或更高版本（推荐 Node.js 20 LTS）
 - npm 9.0 或更高版本
 
-### 2. 克隆与安装依赖
+#### 2. 安装依赖
 
 ```bash
 # 进入项目目录安装前后端依赖
@@ -130,7 +168,7 @@ cd backend && npm install && cd ..
 cd frontend && npm install && cd ..
 ```
 
-### 3. 初始化演示数据库（可选）
+#### 3. 初始化演示数据库（可选）
 
 ```bash
 npm run seed:backend
@@ -141,7 +179,7 @@ npm run seed:backend
 > - 孩子 2：**小红**（头像 🐰，免 PIN 直接进入）
 > - 家长管理初始 PIN：`1234`
 
-### 4. 启动服务
+#### 4. 启动服务
 
 推荐使用根目录提供的一键管理脚本（自动绑定到 `0.0.0.0`，iPad 局域网可访问）：
 

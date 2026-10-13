@@ -8,7 +8,7 @@ async function rewardsRoutes(fastify, options) {
 
   fastify.get('/children/:id/stats', async (request, reply) => {
     try {
-      const stats = rewardsService.getChildStats(request.params.id);
+      const stats = rewardsService.getChildStats(request.params.id, request.query.date);
       return reply.send(stats);
     } catch (err) {
       return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });

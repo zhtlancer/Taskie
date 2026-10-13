@@ -1,0 +1,20 @@
+services:
+  taskie:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: taskie:latest
+    container_name: taskie-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DATABASE_PATH=/app/data/data.sqlite
+      - UPLOAD_DIR=/app/data/uploads
+      - DEFAULT_PARENT_PIN=1234
+      - JWT_SECRET=homework-task-secret-key-2026
+    volumes:
+      - ./data:/app/data

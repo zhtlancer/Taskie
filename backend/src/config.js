@@ -5,6 +5,7 @@ module.exports = {
   host: process.env.HOST || '0.0.0.0',
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite'),
   uploadDir: process.env.UPLOAD_DIR || path.resolve(__dirname, '../uploads'),
+  clientDistDir: process.env.CLIENT_DIST_DIR || path.resolve(__dirname, '../../frontend/dist'),
   jwtSecret: process.env.JWT_SECRET || 'homework-task-secret-key-2026',
   defaultParentPin: process.env.DEFAULT_PARENT_PIN || '1234',
   imageProcessing: {
