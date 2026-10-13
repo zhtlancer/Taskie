@@ -1,9 +1,18 @@
 const buildApp = require('./app');
 const config = require('./config');
+const { seedDemoData } = require('./db/seed');
 
 const app = buildApp({
   logger: true
 });
+
+if (process.env.SEED_DEMO_DATA === 'true') {
+  try {
+    seedDemoData(app.db);
+  } catch (err) {
+    console.warn('Auto-seed demo data warning:', err.message);
+  }
+}
 
 async function start() {
   try {
