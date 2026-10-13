@@ -118,7 +118,12 @@ function getDb(customPath) {
       }
     }
     const db = new Database(customPath);
-    db.pragma('journal_mode = WAL');
+    try {
+      db.pragma('journal_mode = WAL');
+    } catch (walErr) {
+      console.warn('⚠️ SQLite WAL 模式不受支持，降级为 DELETE 模式:', walErr.message);
+      try { db.pragma('journal_mode = DELETE'); } catch (_) {}
+    }
     db.pragma('foreign_keys = ON');
     initDb(db);
     return db;
@@ -131,7 +136,12 @@ function getDb(customPath) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
     globalDb = new Database(config.dbPath);
-    globalDb.pragma('journal_mode = WAL');
+    try {
+      globalDb.pragma('journal_mode = WAL');
+    } catch (walErr) {
+      console.warn('⚠️ SQLite WAL 模式不受支持，降级为 DELETE 模式:', walErr.message);
+      try { globalDb.pragma('journal_mode = DELETE'); } catch (_) {}
+    }
     globalDb.pragma('foreign_keys = ON');
     initDb(globalDb);
   }

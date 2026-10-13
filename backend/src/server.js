@@ -41,31 +41,37 @@ try {
   console.error('👉 解决办法：请在群晖 File Station 中右键 docker/taskie 文件夹 -> 属性 -> 权限 -> 赋予读写权限！\n');
 }
 
+console.log('📦 正在加载应用核心模块与路由...');
 const buildApp = require('./app');
 const { seedDemoData } = require('./db/seed');
+console.log('✅ 核心模块加载就绪');
 
 let app;
 
 async function start() {
   try {
+    console.log('🔧 正在初始化 Fastify 服务与 SQLite 数据库连接...');
     app = buildApp({
       logger: true
     });
+    console.log('✅ Fastify 应用实例与数据库建立完成');
 
     if (process.env.SEED_DEMO_DATA === 'true') {
       try {
+        console.log('🌱 检测到 SEED_DEMO_DATA=true，正在检查并导入演示数据...');
         seedDemoData(app.db);
       } catch (err) {
         console.warn('⚠️ 自动导入演示数据警告:', err.message);
       }
     }
 
+    console.log(`🌐 正在绑定网络端口: ${config.host}:${config.port} ...`);
     const address = await app.listen({
       port: config.port,
       host: config.host
     });
-    console.log(`🎉 Taskie 服务成功启动并监听: ${address}`);
-    console.log(`📁 错题上传服务目录: ${config.uploadDir}`);
+    console.log(`🎉 Taskie 服务成功启动并就绪: ${address}`);
+    console.log(`📁 静态资源与上传服务已挂载完成`);
   } catch (err) {
     console.error('❌ [服务启动致命异常]:', err.stack || err.message || err);
     process.exit(1);

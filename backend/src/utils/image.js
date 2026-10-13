@@ -1,4 +1,24 @@
-const sharp = require('sharp');
+let cachedSharp = null;
+let isSharpChecked = false;
+
+/**
+ * Safely loads sharp by first verifying compatibility in an isolated child process
+ * to prevent native SIGILL (Illegal Instruction) crashes on older NAS CPUs (e.g. Celeron).
+ */
+function getSharp() {
+  if (isSharpChecked) return cachedSharp;
+  isSharpChecked = true;
+  try {
+    const { execSync } = require('child_process');
+    execSync('node -e "require(\'sharp\')"', { stdio: 'ignore', timeout: 3000 });
+    cachedSharp = require('sharp');
+    console.log('✅ Sharp 图像优化引擎已成功就绪');
+  } catch (err) {
+    console.warn('⚠️ 当前 CPU 指令集不兼容 Sharp 原生加速库，自动启用零依赖图片保真存储模式。');
+    cachedSharp = null;
+  }
+  return cachedSharp;
+}
 
 /**
  * Default configuration for mistake photo pipeline
@@ -39,12 +59,17 @@ function isImageExtensionSupported(ext) {
  * @returns {Promise<{buffer: Buffer, format: string, ext: string, width: number, height: number, size: number}>}
  */
 async function processMistakePhoto(inputBuffer, options = {}) {
+  const sharpEngine = getSharp();
+  if (!sharpEngine) {
+    throw new Error('Sharp engine is not supported on this CPU architecture');
+  }
+
   const maxDimension = options.maxDimension || DEFAULT_OPTIONS.maxDimension;
   const sharpenOpts = options.sharpen || DEFAULT_OPTIONS.sharpen;
   const targetFormat = (options.format || DEFAULT_OPTIONS.format).toLowerCase();
   const quality = options.quality !== undefined ? options.quality : DEFAULT_OPTIONS.quality;
 
-  let pipeline = sharp(inputBuffer, { failOnError: false })
+  let pipeline = sharpEngine(inputBuffer, { failOnError: false })
     .rotate()
     .normalize()
     .sharpen(sharpenOpts)
@@ -78,7 +103,7 @@ async function processMistakePhoto(inputBuffer, options = {}) {
 
 /**
  * Gracefully processes an image buffer with Sharp.
- * If Sharp fails (e.g. invalid bytes, test fixtures, unsupported payload),
+ * If Sharp fails (e.g. invalid bytes, test fixtures, unsupported payload or incompatible CPU),
  * falls back to preserving the original buffer and extension.
  *
  * @param {Buffer} inputBuffer
@@ -116,5 +141,6 @@ module.exports = {
   SUPPORTED_EXTENSIONS,
   isImageExtensionSupported,
   processMistakePhoto,
-  processOrFallbackPhoto
+  processOrFallbackPhoto,
+  getSharp
 };
