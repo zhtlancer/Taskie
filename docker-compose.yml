@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: taskie:latest
+    image: ghcr.io/zhtlancer/taskie:latest
     container_name: taskie-app
     restart: unless-stopped
     ports:

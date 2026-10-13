@@ -154,43 +154,65 @@ docker compose down
 
 ---
 
-### 方式二：群晖 NAS (Synology) 部署指南（家庭服务器首选）
+### 方式二：群晖 NAS (Synology) 预构建镜像部署指南（免编译、首选推荐）
 
-针对家庭群晖 NAS 环境，推荐以下两种方式部署：
+群晖 NAS 硬件配置（如赛扬 J4125、Realtek ARM）性能有限，**强烈建议直接使用云端自动预构建好的轻量多架构镜像**，避免在群晖本地进行耗时的 npm 依赖下载与前端编译。
 
-#### 方案 A：SSH 命令行部署（最快、最省心，全自动）
+项目已配置 GitHub Actions 自动流水线，每次提交均自动构建多架构镜像并发布到 GitHub Container Registry：
+`ghcr.io/zhtlancer/taskie:latest`（同时原生支持 `linux/amd64` 与 `linux/arm64`）。
 
-1. **开启 SSH**：在群晖 DSM 中打开「控制面板」➡️「终端机和 SNMP」➡️ 勾选「启动 SSH 功能」（端口默认 22）；
-2. **终端登录群晖**：在电脑终端（Mac Terminal / Windows PowerShell）执行：
-   ```bash
-   ssh <群晖管理员用户名>@<群晖局域网IP>
-   ```
-3. **克隆与一键启动**：
-   ```bash
-   # 进入群晖 Docker 共享文件夹
-   cd /volume1/docker
+#### 方案 A：群晖 Container Manager 图形界面直接运行（无需下载源码，仅需 1 个文件）
 
-   # 拉取项目代码
-   git clone https://github.com/zhtlancer/Taskie.git taskie
-   cd taskie
-
-   # 后台构建并启动容器
-   sudo docker compose up -d
-   ```
-4. 部署完成后，在家庭 iPad 或电脑上访问 `http://<群晖局域网IP>:3000` 即可开始使用。
-
-#### 方案 B：Container Manager 图形界面部署 (DSM 7.2+)
-
-1. **准备代码目录**：
-   - 打开 DSM「File Station」，进入 `docker` 共享文件夹，新建 `taskie` 文件夹；
-   - 将 GitHub 仓库代码下载并上传解压到 `/docker/taskie`（确保包含 `Dockerfile`、`docker-compose.yml` 等文件）；
+1. **新建配置目录**：打开 DSM「File Station」，进入 `docker` 共享文件夹，新建 `taskie` 文件夹；
 2. **创建项目**：
-   - 打开群晖套件 **Container Manager** ➡️ 点击左侧 **「项目」** ➡️ 点击 **「新增」**；
-   - **项目名称**：填写 `taskie`；
-   - **路径**：选择刚才的 `/docker/taskie`；
-   - **来源**：选择「使用现有的 docker-compose.yaml」；
-   - 勾选「向导完成后立即启动项目」，点击「下一步」并完成；
-3. Container Manager 将自动拉取基础镜像、构建项目并启动，状态显示为绿色健康运行中。
+   - 打开群晖 **Container Manager** ➡️ 点击左侧 **「项目」** ➡️ 点击 **「新增」**；
+   - **项目名称**：输入 `taskie`；
+   - **路径**：选择刚才创建的 `/docker/taskie` 目录；
+   - **来源**：选择「创建 docker-compose.yaml」，并将下方内容粘贴进去：
+     ```yaml
+     services:
+       taskie:
+         image: ghcr.io/zhtlancer/taskie:latest
+         container_name: taskie-app
+         restart: unless-stopped
+         ports:
+           - "3000:3000"
+         volumes:
+           - ./data:/app/data
+     ```
+   - 点击下一步，勾选「向导完成后立即启动项目」并完成。
+3. 群晖将直接从云端高速拉取预构建镜像，秒级完成启动！
+
+#### 方案 B：群晖 SSH 命令行一键运行（直接拉取预构建镜像）
+
+```bash
+# 1. 登录群晖 SSH
+ssh <群晖管理员用户名>@<群晖局域网IP>
+
+# 2. 创建目录并启动
+mkdir -p /volume1/docker/taskie/data
+cd /volume1/docker/taskie
+
+# 3. 直接以后台方式运行预构建镜像
+sudo docker run -d \
+  --name taskie-app \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v /volume1/docker/taskie/data:/app/data \
+  ghcr.io/zhtlancer/taskie:latest
+```
+
+#### 方案 C：离线导入预构建镜像（适用于 NAS 无法直接联网拉取的情况）
+
+若群晖所在局域网无法直接拉取 GitHub 容器镜像：
+1. 在个人电脑（Mac/Windows/Linux）上构建并导出压缩包：
+   ```bash
+   docker build -t taskie:latest .
+   docker save taskie:latest | gzip > taskie.tar.gz
+   ```
+2. 将 `taskie.tar.gz` 上传至群晖 File Station 的任意目录；
+3. 打开群晖 **Container Manager** ➡️ 左侧 **「映像」** ➡️ 点击顶部 **「操作」** ➡️ **「导入」** ➡️ 选择「从文件添加」并选中上传的 `taskie.tar.gz`；
+4. 导入完成后选中该映像点击「运行」，设置端口映射 `3000:3000` 与文件夹挂载 `/docker/taskie/data -> /app/data` 即可立即启动。
 
 > 📌 **群晖部署小贴士**：
 > 1. **权限设置**：若启动后提示数据库无法写入，请在 File Station 中右键 `/docker/taskie` 文件夹 ➡️「属性」➡️「权限」➡️ 为 `Everyone` 或内部用户勾选读取/写入权限，并勾选“应用到这个文件夹、子文件夹及文件”。
