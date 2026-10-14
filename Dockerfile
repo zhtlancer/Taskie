@@ -27,20 +27,13 @@ ENV NODE_ENV=production \
 COPY backend/package*.json ./backend/
 WORKDIR /app/backend
 
-# Install production dependencies and recompile better-sqlite3 from source
-# Use a locally compiled addon and verify it before publishing the image.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    make \
-    g++ \
-    libstdc++6 \
-    && npm install -g node-gyp \
-    && npm ci --omit=dev --engine-strict \
-    && rm -rf node_modules/better-sqlite3/prebuilds \
-    && (cd node_modules/better-sqlite3 && node-gyp rebuild --release --force_build=1) \
+# Use official native prebuilds without installing a compiler toolchain.
+# npm can implicitly run node-gyp for binding.gyp; skip install scripts and
+# verify both native dependencies on each target architecture before publishing.
+RUN npm ci --omit=dev --engine-strict --ignore-scripts \
+    && npm cache clean --force \
     && node -e "const assert = require('node:assert/strict'); const Database = require('better-sqlite3'); const db = new Database(':memory:'); assert.equal(db.prepare('SELECT 1 AS ok').get().ok, 1); db.close();" \
-    && npm uninstall -g node-gyp \
-    && rm -rf /var/lib/apt/lists/*
+    && node -e "const assert = require('node:assert/strict'); const sharp = require('sharp'); sharp({ create: { width: 16, height: 16, channels: 3, background: '#fff' } }).resize(8, 8).webp().toBuffer({ resolveWithObject: true }).then(({ data, info }) => { assert.ok(data.length > 0); assert.equal(info.format, 'webp'); assert.equal(info.width, 8); assert.equal(info.height, 8); }).catch(err => { console.error(err); process.exit(1); });"
 
 # Copy backend application source code
 COPY backend/src ./src
