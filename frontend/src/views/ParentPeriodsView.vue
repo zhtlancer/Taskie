@@ -2,9 +2,9 @@
   <div class="min-h-screen bg-[#F4F6FB] flex flex-col select-none">
     <ParentNavBar />
 
-    <main class="max-w-6xl w-full mx-auto p-6 flex-1">
+    <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
       <!-- Title & Actions Bar -->
-      <div class="flex items-center justify-between mb-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4 [&>*:last-child]:whitespace-nowrap">
         <div>
           <h2 class="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
             <span>🏖️</span>
@@ -14,7 +14,7 @@
             为每个孩子添加需要多天完成的长期任务（如读完一本书），设置节假日和寒暑假及假期中继续的日常任务
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <router-link to="/parent/tasks" class="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50">
             📝 日常任务模板
           </router-link>
@@ -90,7 +90,7 @@
           class="bg-white rounded-3xl p-5 border shadow-card"
           :class="period.status === 'ended' ? 'border-slate-200 opacity-75' : 'border-slate-200/80'"
         >
-          <div class="flex items-start justify-between gap-3 mb-3">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-3">
             <div>
               <h3 class="text-lg font-black text-slate-800 flex items-center gap-2 font-chinese">
                 {{ period.name }}

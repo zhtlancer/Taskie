@@ -169,6 +169,30 @@ async function main() {
   assert.equal(errors.length, 0, JSON.stringify(errors));
   pass('browser network recovery and zero JavaScript errors');
   await context.close();
+
+  // --- Phones: every page fits the screen width, and the child tab bar navigates.
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, timezoneId: 'Asia/Shanghai' });
+  const mobile = await phone.newPage();
+  await mobile.route(/fonts\.(?:googleapis|gstatic)\.com/, route => route.abort());
+  mobile.on('pageerror', error => errors.push(error.message));
+  const fitsWidth = async path => {
+    await mobile.goto(`${base}${path}`, { waitUntil: 'networkidle' });
+    const width = await mobile.evaluate(() => document.documentElement.scrollWidth);
+    assert.ok(width <= 390, `${path} is ${width}px wide on a 390px phone`);
+  };
+  await mobile.goto(base, { waitUntil: 'domcontentloaded' });
+  await mobile.getByRole('button', { name: /浏览器测试孩子/ }).click();
+  await mobile.waitForURL(`**/child/${child.id}/today`);
+  for (const tab of ['rewards', 'mistakes', 'characters', 'history', 'today']) await fitsWidth(`/child/${child.id}/${tab}`);
+  await mobile.getByRole('link', { name: /积分/ }).last().click();
+  await mobile.waitForURL(`**/child/${child.id}/rewards`);
+  await mobile.goto(`${base}/parent/login`, { waitUntil: 'domcontentloaded' });
+  for (const digit of NEW_PIN) await mobile.getByRole('button', { name: digit, exact: true }).click();
+  await mobile.waitForURL('**/parent/dashboard');
+  for (const path of ['/parent/dashboard', '/parent/children', '/parent/tasks', '/parent/periods', '/parent/rewards', '/parent/settings']) await fitsWidth(path);
+  assert.equal(errors.length, 0, JSON.stringify(errors));
+  pass('phone layout: every child and parent page fits 390px and the child tab bar navigates');
+  await phone.close();
 }
 
 main().catch(error => { console.error(error); if (started) console.error(docker(['logs', '--tail', '30', name])); process.exitCode = 1; }).finally(async () => {

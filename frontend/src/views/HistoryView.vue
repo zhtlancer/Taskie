@@ -1,18 +1,18 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-6 select-none">
+  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none">
     <div class="max-w-5xl w-full mx-auto">
       <!-- Header -->
-      <header class="flex items-center justify-between mb-6">
+      <header class="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
         <div class="flex items-center gap-3">
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
+            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-slate-200 items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
           >
             ←
           </router-link>
           <div>
-            <h1 class="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
               <span>📊</span>
               <span>学习历史统计</span>
             </h1>
@@ -27,7 +27,7 @@
           <router-link
             :to="`/child/${childId}/characters`"
             @click="playClick"
-            class="px-3.5 py-2 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all flex items-center gap-1.5"
+            class="hidden lg:flex px-3.5 py-2 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all items-center gap-1.5"
           >
             <span>📖</span>
             <span>生字本</span>
@@ -35,7 +35,7 @@
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="px-4 py-2 rounded-xl bg-brand-500 text-white font-bold text-xs shadow-button hover:bg-brand-600 active:scale-95 transition-all"
+            class="hidden lg:inline-flex px-4 py-2 rounded-xl bg-brand-500 text-white font-bold text-xs shadow-button hover:bg-brand-600 active:scale-95 transition-all"
           >
             返回今日看板
           </router-link>
@@ -43,7 +43,7 @@
       </header>
 
       <!-- Weekly Stats Cards -->
-      <div class="grid grid-cols-3 gap-4 mb-6">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
         <div class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-card flex items-center justify-between">
           <div>
             <span class="text-xs font-bold text-slate-400">近 7 天累计完成任务</span>
@@ -92,7 +92,7 @@
             截至今天应完成 {{ thisWeek.total_units }} 次，已完成 {{ thisWeek.completed_units }} 次 · 没打开的日子也算在内哦
           </span>
         </div>
-        <div class="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
           <div v-for="item in thisWeek.items" :key="item.key">
             <div class="flex items-center justify-between text-sm mb-1">
               <span class="font-bold text-slate-700 font-chinese truncate">
@@ -210,10 +210,12 @@
         </div>
       </div>
     </div>
+    <ChildTabBar :child-id="childId" />
   </div>
 </template>
 
 <script setup>
+import ChildTabBar from '../components/ChildTabBar.vue';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';

@@ -8,18 +8,18 @@
       class="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-5xl h-[760px] max-h-[94vh] flex flex-col overflow-hidden animate-pop-in"
     >
       <!-- Modal Header -->
-      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+      <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0 bg-white">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-2xl bg-brand-50 flex items-center justify-center text-xl text-brand-500 font-black">
             {{ step === 'select' ? '📸' : step === 'crop' ? '✂️' : '✨' }}
           </div>
           <div>
-            <h2 class="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h2 class="text-base sm:text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
               <span v-if="step === 'select'">拍照或选择错题图片</span>
               <span v-else-if="step === 'crop'">交互式区域裁剪 & 旋转</span>
               <span v-else>清晰锐化增强 & 完善错题</span>
             </h2>
-            <p class="text-xs text-slate-400 font-medium">
+            <p class="hidden sm:block text-xs text-slate-400 font-medium">
               <span v-if="step === 'select'">支持 iPad 相机拍照、相册选图或拖拽文件</span>
               <span v-else-if="step === 'crop'">拖动手势缩放裁剪框，四角自由拉伸，支持 90° 旋转校正</span>
               <span v-else>应用拉普拉斯 3×3 锐化及白纸去灰底滤镜，高质量压缩保存</span>
@@ -29,7 +29,7 @@
 
         <!-- Step Indicator & Close Button -->
         <div class="flex items-center gap-4">
-          <div v-if="step !== 'select'" class="flex items-center gap-2 text-xs font-bold">
+          <div v-if="step !== 'select'" class="hidden md:flex items-center gap-2 text-xs font-bold whitespace-nowrap">
             <span
               class="px-3 py-1 rounded-full transition-all"
               :class="step === 'crop' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500'"
@@ -268,36 +268,36 @@
         </div>
 
         <!-- Crop Controls Bottom Bar (Touch-friendly buttons ≥ 48px height) -->
-        <div class="h-20 bg-slate-900 border-t border-slate-800 px-6 flex items-center justify-between shrink-0">
-          <div class="flex items-center gap-3">
+        <div class="sm:h-20 py-3 sm:py-0 bg-slate-900 border-t border-slate-800 px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0 whitespace-nowrap">
+          <div class="flex items-center gap-2 sm:gap-3">
             <!-- Rotate 90° Button -->
             <button
               type="button"
               @click="rotateClockwise"
-              class="h-12 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
+              class="h-12 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
             >
               <span class="text-base">↻</span>
-              <span>顺时针旋转 90°</span>
+              <span class="hidden sm:inline">顺时针旋转 90°</span>
             </button>
 
             <!-- Reset Crop -->
             <button
               type="button"
               @click="resetCropRect"
-              class="h-12 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
+              class="h-12 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
             >
               <span>⟲</span>
-              <span>重置选区</span>
+              <span class="hidden sm:inline">重置选区</span>
             </button>
 
             <!-- Switch Photo -->
             <button
               type="button"
               @click="step = 'select'"
-              class="h-12 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
+              class="h-12 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
             >
               <span>🖼️</span>
-              <span>换一张</span>
+              <span class="hidden sm:inline">换一张</span>
             </button>
           </div>
 
@@ -305,18 +305,19 @@
           <button
             type="button"
             @click="proceedToFilter"
-            class="h-12 px-6 rounded-xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white font-bold text-sm shadow-button flex items-center gap-2 active:scale-95 transition-all"
+            class="h-12 px-4 sm:px-6 rounded-xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white font-bold text-sm shadow-button flex items-center gap-2 active:scale-95 transition-all"
           >
-            <span>✨ 完成裁剪，下一步 (滤镜增强)</span>
+            <span class="sm:hidden">下一步</span>
+            <span class="hidden sm:inline">✨ 完成裁剪，下一步 (滤镜增强)</span>
             <span>→</span>
           </button>
         </div>
       </div>
 
       <!-- ================= STEP 2: Filter Preview & Metadata Form ================= -->
-      <div v-else-if="step === 'filter'" class="flex-1 flex overflow-hidden bg-slate-50">
-        <!-- Left: Image Preview & Filter Mode Switcher (55% width) -->
-        <div class="w-7/12 p-6 flex flex-col border-r border-slate-200/80 bg-white">
+      <div v-else-if="step === 'filter'" class="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-slate-50">
+        <!-- Left: Image Preview & Filter Mode Switcher (55% width; stacked on phones) -->
+        <div class="w-full lg:w-7/12 p-4 lg:p-6 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200/80 bg-white">
           <!-- Filter Mode Buttons (≥ 48px height) -->
           <div class="mb-4">
             <label class="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
@@ -380,7 +381,7 @@
           </div>
 
           <!-- Canvas Preview Window -->
-          <div class="flex-1 bg-slate-900 rounded-2xl p-3 flex items-center justify-center relative overflow-hidden shadow-inner">
+          <div class="flex-1 min-h-[240px] lg:min-h-0 bg-slate-900 rounded-2xl p-3 flex items-center justify-center relative overflow-hidden shadow-inner">
             <div v-if="filterProcessing" class="absolute inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-10 text-white font-bold text-sm">
               <span class="animate-spin mr-2">⚙️</span> 滤镜渲染中...
             </div>
@@ -393,7 +394,7 @@
           </div>
 
           <!-- Compression info badge -->
-          <div class="mt-3 px-3 py-2 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs text-slate-500">
+          <div class="mt-3 px-3 py-2 bg-slate-50 border border-slate-200/80 rounded-xl flex flex-wrap items-center justify-between gap-1 text-xs text-slate-500">
             <div class="flex items-center gap-2">
               <span class="font-bold text-emerald-600">✓ 压缩就绪</span>
               <span>·</span>
@@ -406,7 +407,7 @@
         </div>
 
         <!-- Right: Form Fields (Subject, Description & Save) (45% width) -->
-        <div class="w-5/12 p-6 flex flex-col justify-between">
+        <div class="w-full lg:w-5/12 p-4 lg:p-6 flex flex-col justify-between gap-4">
           <div class="space-y-5">
             <!-- Subject Selection (≥ 48px touch buttons) -->
             <div>

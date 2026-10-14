@@ -25,7 +25,7 @@
 
       <!-- Task Details -->
       <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-1">
           <!-- Subject Pill -->
           <span
             class="px-2 py-0.5 rounded-lg text-xs font-bold shrink-0 font-chinese"
@@ -39,7 +39,7 @@
 
           <!-- Task Title with child-friendly Chinese typography -->
           <h4
-            class="text-lg font-bold text-slate-800 truncate transition-colors font-chinese"
+            class="text-lg font-bold text-slate-800 truncate max-w-full transition-colors font-chinese"
             :class="{ 'line-through text-slate-400': task.is_completed }"
           >
             {{ task.title }}

@@ -2,9 +2,9 @@
   <div class="min-h-screen bg-[#F4F6FB] flex flex-col select-none">
     <ParentNavBar />
 
-    <main class="max-w-6xl w-full mx-auto p-6 flex-1">
+    <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
       <!-- Title & Actions Bar -->
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-6 [&>*:last-child]:whitespace-nowrap">
         <div>
           <h2 class="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
             <span>📝</span>

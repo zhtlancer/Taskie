@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#F4F6FB]">
     <ParentNavBar />
-    <main class="max-w-4xl mx-auto p-6 space-y-6">
+    <main class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
       <h2 class="text-2xl font-bold">数据备份与账号设置</h2>
       <p v-if="message" role="status" class="p-4 rounded-xl bg-emerald-50 text-emerald-800">{{ message }}</p>
       <section class="bg-white rounded-2xl p-6 space-y-4">

@@ -1,23 +1,23 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-6 select-none relative">
+  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none relative">
     <div class="max-w-6xl w-full mx-auto">
       <!-- Top Header Bar -->
-      <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <header class="flex flex-wrap items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
         <!-- Left: Back button & Title -->
         <div class="flex items-center gap-3">
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
+            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-slate-200 items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
             title="返回今日看板"
           >
             ←
           </router-link>
           <div>
-            <h1 class="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
               <span>📖</span>
               <span>生字智能本</span>
-              <span class="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200">
+              <span class="hidden sm:inline text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200">
                 笔顺动画 · 描红临摹
               </span>
             </h1>
@@ -28,7 +28,7 @@
         </div>
 
         <!-- Center: Stats Pills -->
-        <div class="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+        <div class="order-last w-full lg:order-none lg:w-auto flex flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
           <div class="flex items-center gap-2">
             <span class="text-xs font-bold text-slate-400">总收录:</span>
             <span class="text-sm font-black text-slate-800">{{ characterStore.totalCount }} 字</span>
@@ -179,10 +179,12 @@
       initial-char="学"
       @added="onCharacterAddedFromLookup"
     />
+    <ChildTabBar :child-id="childId" />
   </div>
 </template>
 
 <script setup>
+import ChildTabBar from '../components/ChildTabBar.vue';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useCharacterStore } from '../stores/character';

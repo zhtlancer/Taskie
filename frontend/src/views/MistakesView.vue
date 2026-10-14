@@ -1,6 +1,6 @@
 <template>
   <div
-    class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-6 select-none relative"
+    class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none relative"
     @dragover.prevent="isPageDragOver = true"
     @dragleave.prevent="isPageDragOver = false"
     @drop.prevent="onPageDrop"
@@ -34,17 +34,17 @@
 
     <div class="max-w-5xl w-full mx-auto">
       <!-- Header -->
-      <header class="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <header class="flex flex-wrap items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
         <div class="flex items-center gap-3">
           <router-link
             :to="`/child/${childId}/today`"
-            class="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
+            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-slate-200 items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
             title="返回今日看板"
           >
             ←
           </router-link>
           <div>
-            <h1 class="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
               <span>📖</span>
               <span>错题智能本</span>
             </h1>
@@ -55,7 +55,7 @@
         </div>
 
         <!-- Action Buttons (iPad Air 5 touch friendly) -->
-        <div class="flex items-center gap-2.5">
+        <div class="flex flex-wrap items-center gap-2.5 whitespace-nowrap">
           <!-- Primary: Camera Button -->
           <button
             type="button"
@@ -92,7 +92,7 @@
           <router-link
             :to="`/child/${childId}/characters`"
             @click="playClick"
-            class="h-11 px-3.5 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all flex items-center gap-1.5"
+            class="hidden lg:flex h-11 px-3.5 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all items-center gap-1.5"
             title="生字本"
           >
             <span>📖</span>
@@ -102,7 +102,7 @@
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="h-11 px-3.5 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs shadow-sm hover:bg-slate-50 active:scale-95 transition-all flex items-center"
+            class="hidden lg:flex h-11 px-3.5 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs shadow-sm hover:bg-slate-50 active:scale-95 transition-all items-center"
           >
             返回今日看板
           </router-link>
@@ -112,7 +112,7 @@
       <!-- Filter Controls -->
       <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
         <!-- Subject Filter Tabs -->
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
           <span class="text-xs font-bold text-slate-400 mr-1">学科：</span>
           <button
             v-for="sub in ['全部', '语文', '数学', '英语', '其他']"
@@ -131,7 +131,7 @@
         </div>
 
         <!-- Mastered Status Tabs -->
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
           <span class="text-xs font-bold text-slate-400 mr-1">状态：</span>
           <button
             v-for="status in ['全部', '待复习', '已攻克']"
@@ -303,10 +303,12 @@
         />
       </div>
     </div>
+    <ChildTabBar :child-id="childId" />
   </div>
 </template>
 
 <script setup>
+import ChildTabBar from '../components/ChildTabBar.vue';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';

@@ -68,7 +68,7 @@
 
     <!-- Footer -->
     <footer class="text-center text-xs text-slate-400 py-3">
-      iPad 专属横屏设计 (1180 × 820) · 陪伴孩子快乐自律成长
+      iPad 与手机都能用 · 陪伴孩子快乐自律成长
     </footer>
 
     <!-- PIN Verification Modal -->

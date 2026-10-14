@@ -1,7 +1,7 @@
 <template>
-  <div class="h-screen max-h-[820px] w-full max-w-[1180px] mx-auto flex flex-col justify-between p-4 select-none overflow-hidden">
-    <!-- Top Header Bar -->
-    <header class="h-16 shrink-0 bg-white rounded-2xl px-5 border border-slate-200 shadow-sm flex items-center justify-between">
+  <div class="min-h-screen lg:h-screen lg:max-h-[820px] w-full max-w-[1180px] mx-auto flex flex-col lg:justify-between p-3 pb-24 lg:p-4 select-none lg:overflow-hidden">
+    <!-- Top Header Bar (wraps into two rows on phones) -->
+    <header class="lg:h-16 shrink-0 bg-white rounded-2xl px-4 py-3 lg:px-5 lg:py-0 border border-slate-200 shadow-sm flex flex-wrap lg:flex-nowrap items-center justify-between gap-y-3">
       <!-- Left: Child Info & Date -->
       <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-2xl bg-brand-50 flex items-center justify-center text-2xl shadow-inner">
@@ -16,16 +16,16 @@
         </div>
       </div>
 
-      <!-- Center: Today Progress -->
-      <div class="flex items-center gap-4 bg-slate-50 px-4 py-1.5 rounded-2xl border border-slate-100">
-        <div class="flex flex-col text-right">
+      <!-- Center: Today Progress (its own full-width row on phones) -->
+      <div class="order-last w-full lg:order-none lg:w-auto flex items-center gap-4 bg-slate-50 px-4 py-1.5 rounded-2xl border border-slate-100">
+        <div class="flex flex-col lg:text-right shrink-0">
           <span class="text-xs font-bold text-slate-500">今日完成进度</span>
           <span class="text-sm font-black text-slate-800">
             完成 {{ completedCount }} / {{ totalCount }}
           </span>
         </div>
 
-        <div class="w-28 bg-slate-200 h-3 rounded-full overflow-hidden p-0.5">
+        <div class="flex-1 lg:flex-none lg:w-28 bg-slate-200 h-3 rounded-full overflow-hidden p-0.5">
           <div
             class="h-full rounded-full transition-all duration-500"
             :class="completionRate >= 100 ? 'bg-emerald-500' : 'bg-brand-500'"
@@ -49,7 +49,7 @@
           title="实时查笔画"
         >
           <span>🔍</span>
-          <span>查笔画</span>
+          <span class="hidden sm:inline">查笔画</span>
         </button>
         <SoundToggle />
         <router-link
@@ -58,15 +58,38 @@
           class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all active:scale-95"
         >
           <span>⚙️</span>
-          <span>家长</span>
+          <span class="hidden sm:inline">家长</span>
         </router-link>
       </div>
     </header>
 
-    <!-- Main Layout (Two Columns) -->
-    <div class="flex-1 flex gap-4 my-3 min-h-0 overflow-hidden">
+    <!-- Phones: streak, points and subject chips (the iPad layout shows these in the sidebar) -->
+    <div class="lg:hidden mt-3 space-y-2.5">
+      <div class="flex items-center gap-2 text-xs font-black">
+        <span class="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-700">🔥 连续 {{ streakDays }} 天</span>
+        <span class="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-700">💰 今日已得 {{ todayPoints }} 分</span>
+        <router-link to="/" class="ml-auto px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-500 whitespace-nowrap" @click="playClick">🔄 切换</router-link>
+      </div>
+      <div class="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
+        <button
+          v-for="sub in subjects"
+          :key="sub.name"
+          type="button"
+          @click="selectSubject(sub.name)"
+          class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all"
+          :class="selectedSubject === sub.name ? 'bg-brand-500 text-white shadow-button' : 'bg-white text-slate-600 border border-slate-200'"
+        >
+          <span>{{ sub.icon }}</span>
+          <span>{{ sub.name }}</span>
+          <span class="text-xs opacity-70">{{ getSubjectTaskCount(sub.name) }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Layout (Two Columns on iPad landscape) -->
+    <div class="flex-1 flex gap-4 my-3 lg:min-h-0 lg:overflow-hidden">
       <!-- Left Sidebar: Subject filter nav + Streak + Points + Quick links -->
-      <aside class="w-60 shrink-0 bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between">
+      <aside class="hidden lg:flex w-60 shrink-0 bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex-col justify-between">
         <!-- Subjects Filter Navigation -->
         <div>
           <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider mb-2 px-1">
@@ -170,9 +193,9 @@
       </aside>
 
       <!-- Right Area: 2-Column Task Grid & Bottom Motivation Banner -->
-      <main class="flex-1 bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col justify-between overflow-hidden">
+      <main class="flex-1 min-w-0 bg-white rounded-2xl p-3 lg:p-4 border border-slate-200 shadow-sm flex flex-col justify-between lg:overflow-hidden">
         <!-- Task Cards Grid (2 Columns, optimized for up to 8 tasks without scrolling on 1180x820) -->
-        <div class="flex-1 overflow-y-auto pr-1">
+        <div class="flex-1 lg:overflow-y-auto lg:pr-1">
           <!-- Loading state -->
           <div v-if="loading" class="flex justify-center items-center h-48 text-brand-500 font-bold">
             <span class="animate-spin mr-2">⏳</span> 正在加载今日任务...
@@ -205,7 +228,7 @@
           </div>
 
           <!-- 2 Columns Grid -->
-          <div v-if="!loading && filteredTasks.length > 0" class="grid grid-cols-2 gap-3.5">
+          <div v-if="!loading && filteredTasks.length > 0" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <TaskCard
               v-for="task in filteredTasks"
               :key="task.id"
@@ -220,7 +243,7 @@
           <!-- When all completed -->
           <div
             v-if="allDone"
-            class="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white flex items-center justify-between shadow-lg shadow-emerald-200 animate-pop-in"
+            class="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white flex flex-wrap items-center justify-between gap-3 shadow-lg shadow-emerald-200 animate-pop-in"
           >
             <div class="flex items-center gap-3">
               <span class="text-2xl animate-bounce">🎉</span>
@@ -236,7 +259,7 @@
             <button
               type="button"
               @click="handleRecelebrate"
-              class="px-3.5 py-1.5 rounded-xl bg-white text-emerald-700 font-black text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-sm"
+              class="px-3.5 py-1.5 rounded-xl bg-white text-emerald-700 font-black text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-sm whitespace-nowrap"
             >
               再撒一次花 🎉
             </button>
@@ -245,7 +268,7 @@
           <!-- When in progress -->
           <div
             v-else
-            class="p-3.5 rounded-2xl bg-gradient-to-r from-brand-50 via-indigo-50 to-amber-50 border border-brand-100 flex items-center justify-between"
+            class="p-3.5 rounded-2xl bg-gradient-to-r from-brand-50 via-indigo-50 to-amber-50 border border-brand-100 flex flex-wrap items-center justify-between gap-2"
           >
             <div class="flex items-center gap-2.5">
               <span class="text-xl">✨</span>
@@ -253,13 +276,15 @@
                 全部完成今天任务，即可冲击更高连胜纪录与荣耀徽章！
               </span>
             </div>
-            <span class="text-xs font-black text-brand-600 bg-white px-3 py-1 rounded-xl shadow-xs">
+            <span class="text-xs font-black text-brand-600 bg-white px-3 py-1 rounded-xl shadow-xs whitespace-nowrap">
               加油！还剩 {{ totalCount - completedCount }} 项
             </span>
           </div>
         </div>
       </main>
     </div>
+
+    <ChildTabBar :child-id="childId" />
 
     <!-- Stroke Lookup Modal -->
     <StrokeLookupModal
@@ -282,6 +307,7 @@ import StreakBadge from '../components/StreakBadge.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
 import GoalTasksPanel from '../components/GoalTasksPanel.vue';
+import ChildTabBar from '../components/ChildTabBar.vue';
 import { playAllDone, playBadgeUnlocked, playClick } from '../utils/sound';
 
 const route = useRoute();

@@ -1,7 +1,7 @@
 <template>
   <section class="mb-4 rounded-2xl border p-4" :class="period ? 'border-sky-200 bg-gradient-to-br from-sky-50 to-amber-50/60' : 'border-indigo-100 bg-indigo-50/40'">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-base font-black text-slate-800 flex items-center gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <h3 class="text-base font-black text-slate-800 flex flex-wrap items-center gap-x-2">
         <template v-if="period">
           <span>🏖️</span>
           <span>{{ period.name }}中</span>
@@ -18,7 +18,7 @@
     <p v-if="error" class="mb-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ error }}</p>
 
     <div v-if="!goals.length" class="text-xs font-bold text-slate-400">假期愉快！现在没有需要完成的长期任务。</div>
-    <div v-else class="grid grid-cols-2 gap-3">
+    <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div
         v-for="goal in goals"
         :key="goal.id"
@@ -38,7 +38,7 @@
         </div>
 
         <template v-if="goal.mode === 'progress'">
-          <div class="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1">
+          <div class="flex flex-wrap items-center justify-between gap-x-2 text-[11px] font-bold text-slate-500 mb-1">
             <span>{{ goal.input_mode === 'position' ? `读到第 ${goal.done_amount} / ${goal.total_amount} ${goal.unit}` : `已完成 ${goal.done_amount} / ${goal.total_amount} ${goal.unit}` }}</span>
             <span class="text-right" :class="paceClass(goal)">{{ paceText(goal) }}</span>
           </div>
