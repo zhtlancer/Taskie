@@ -55,8 +55,8 @@ class AuthService {
   }
 
   updateParentPin(oldPin, newPin) {
-    if (!newPin) {
-      return { success: false, status: 400, error: 'New PIN is required' };
+    if (typeof newPin !== 'string' || !/^\d{4}$/.test(newPin)) {
+      return { success: false, status: 400, error: 'PIN 必须为 4 位数字' };
     }
 
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('parent_pin_hash');

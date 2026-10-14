@@ -296,7 +296,7 @@
         >
           ✕
         </button>
-        <img
+        <PrivatePhoto
           :src="enlargedPhotoUrl"
           alt="查看错题高清大图"
           class="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-white/20"
@@ -312,6 +312,7 @@ import { useRoute } from 'vue-router';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import MistakeCard from '../components/MistakeCard.vue';
+import PrivatePhoto from '../components/PrivatePhoto.vue';
 import PhotoCropModal from '../components/PhotoCropModal.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick, playTaskComplete, playTaskUncomplete } from '../utils/sound';

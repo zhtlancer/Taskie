@@ -1,5 +1,10 @@
 async function rewardsRoutes(fastify, options) {
   const { rewardsService } = options;
+  fastify.get('/children/:id/point-logs', async request => fastify.db.prepare(`
+    SELECT pl.id, pl.points, pl.earned_at, dt.title FROM point_logs pl
+    LEFT JOIN daily_tasks dt ON dt.id = pl.daily_task_id
+    WHERE pl.child_id = ? ORDER BY pl.earned_at DESC LIMIT 200
+  `).all(request.params.id));
 
   fastify.get('/badge-definitions', async (request, reply) => {
     const definitions = rewardsService.listBadgeDefinitions();

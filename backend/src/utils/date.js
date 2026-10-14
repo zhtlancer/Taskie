@@ -2,10 +2,8 @@
  * Formats a Date object to YYYY-MM-DD string using local calendar.
  */
 function formatDate(d = new Date()) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: require('../config').timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 
 /**
@@ -19,15 +17,14 @@ function getTodayDate() {
  * Parses YYYY-MM-DD string to local Date at midnight.
  */
 function parseDate(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') {
-    return new Date();
+  if (typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    throw Object.assign(new Error('日期必须为 YYYY-MM-DD'), { status: 400 });
   }
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return new Date();
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const day = parseInt(parts[2], 10);
-  return new Date(year, month, day, 0, 0, 0, 0);
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (!Number.isFinite(d.getTime()) || d.toISOString().slice(0, 10) !== dateStr) {
+    throw Object.assign(new Error('日期无效'), { status: 400 });
+  }
+  return d;
 }
 
 /**
@@ -35,7 +32,7 @@ function parseDate(dateStr) {
  */
 function getDayOfWeek(dateStr) {
   const d = parseDate(dateStr);
-  return d.getDay();
+  return d.getUTCDay();
 }
 
 /**
@@ -43,8 +40,8 @@ function getDayOfWeek(dateStr) {
  */
 function shiftDate(dateStr, days) {
   const d = parseDate(dateStr);
-  d.setDate(d.getDate() + days);
-  return formatDate(d);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -76,6 +73,11 @@ function getLastWeekRange(dateStr) {
  * Returns an array of date strings between startDate and endDate inclusive.
  */
 function getDateRangeList(startDateStr, endDateStr) {
+  const start = parseDate(startDateStr);
+  const end = parseDate(endDateStr);
+  if (end < start || end - start > 366 * 86400000) {
+    throw Object.assign(new Error('日期范围必须在一年以内且开始日期不晚于结束日期'), { status: 400 });
+  }
   const list = [];
   let curr = startDateStr;
   while (curr <= endDateStr) {

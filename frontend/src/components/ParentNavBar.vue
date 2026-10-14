@@ -41,10 +41,12 @@
 
       <!-- Right: Sound Toggle & Return to Child Side button -->
       <div class="flex items-center gap-3">
+        <router-link to="/parent/settings" class="text-sm font-bold text-brand-600">备份与设置</router-link>
+        <button @click="exitParent" class="text-sm font-bold text-slate-600">退出家长</button>
         <SoundToggle />
         <router-link
           to="/"
-          @click="playClick"
+          @click="exitParent"
           class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold transition-all flex items-center gap-1.5 active:scale-95"
         >
           <span>🏠</span>
@@ -58,4 +60,8 @@
 <script setup>
 import SoundToggle from './SoundToggle.vue';
 import { playClick } from '../utils/sound';
+import { useParentStore } from '../stores/parent';
+import { useRouter } from 'vue-router';
+const parent = useParentStore(), router = useRouter();
+function exitParent() { parent.logout(); router.push('/'); }
 </script>

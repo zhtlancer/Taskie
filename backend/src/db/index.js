@@ -86,6 +86,22 @@ function initDb(db) {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
   db.exec(schemaSql);
+  // Versioned, idempotent upgrades preserve existing NAS data.
+  if (db.pragma('user_version', { simple: true }) < 1) {
+    db.transaction(() => {
+      const addColumns = (table, columns) => {
+        const existing = new Set(db.pragma(`table_info(${table})`).map(c => c.name));
+        for (const [name, definition] of Object.entries(columns)) {
+          if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+        }
+      };
+      addColumns('task_templates', { schedule_type: "TEXT NOT NULL DEFAULT 'fixed_days'", weekly_target_times: 'INTEGER' });
+      addColumns('daily_tasks', { schedule_type: "TEXT NOT NULL DEFAULT 'fixed_days'", weekly_target_times: 'INTEGER' });
+      // Historical duplicate instances must remain intact; service insertion is transactional.
+      db.exec('CREATE INDEX IF NOT EXISTS idx_daily_tasks_template_date ON daily_tasks(child_id, template_id, date)');
+      db.pragma('user_version = 1');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
@@ -108,7 +124,7 @@ function initDb(db) {
   if (!existingParentPin) {
     const defaultPinHash = hashPin(config.defaultParentPin);
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('parent_pin_hash', defaultPinHash);
-    console.log('    [SQLite] 已初始化默认家长 PIN 码 (1234)');
+    console.log('    [SQLite] 已初始化家长 PIN 码');
   }
   console.log('    [SQLite] 数据库基础数据初始化完毕');
 }

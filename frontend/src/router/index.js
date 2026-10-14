@@ -9,6 +9,8 @@ import ParentLoginView from '../views/ParentLoginView.vue';
 import ParentDashboardView from '../views/ParentDashboardView.vue';
 import ParentChildrenView from '../views/ParentChildrenView.vue';
 import ParentTasksView from '../views/ParentTasksView.vue';
+import ParentSettingsView from '../views/ParentSettingsView.vue';
+import { hasSession } from '../utils/session.js';
 
 const routes = [
   // Child Routes
@@ -66,6 +68,7 @@ const routes = [
   },
 
   // Catch-all redirect
+  { path: '/parent/settings', component: ParentSettingsView },
   {
     path: '/:pathMatch(.*)*',
     redirect: '/'
@@ -75,6 +78,10 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+});
+router.beforeEach(to => {
+  if (to.path.startsWith('/parent/') && to.path !== '/parent/login' && !hasSession('parent')) return '/parent/login';
+  if (to.path.startsWith('/child/') && !hasSession('parent') && !hasSession('child', to.params.id)) return '/';
 });
 
 export default router;

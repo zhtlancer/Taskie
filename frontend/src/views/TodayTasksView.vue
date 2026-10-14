@@ -283,7 +283,7 @@ const loading = ref(true);
 const selectedSubject = ref('全部');
 const streakRef = ref(null);
 
-const streakDays = computed(() => childStore.stats.current_streak || 5);
+const streakDays = computed(() => childStore.stats.current_streak ?? 0);
 const todayPoints = computed(() => childStore.stats.today_points || 0);
 
 const subjects = [
@@ -331,14 +331,14 @@ onMounted(async () => {
 async function loadTasks() {
   loading.value = true;
   try {
-    if (!childStore.isLoggedIn && childId.value) {
+    if (childStore.childId !== childId.value && childId.value) {
       // Restore child info
       const children = await api.getChildren();
       const match = children.find(c => c.id === childId.value);
       if (match) childStore.setChild(match);
     }
-    await childStore.fetchStats();
     tasks.value = await api.getDailyTasks(childId.value);
+    await childStore.fetchStats();
   } catch (err) {
     console.error('Failed to load daily tasks:', err);
   } finally {
@@ -371,6 +371,7 @@ async function handleTaskToggle(task) {
       }
 
       // Refresh child stats & trigger streak shake
+      tasks.value = await api.getDailyTasks(childId.value);
       await childStore.fetchStats();
       if (streakRef.value) {
         streakRef.value.wiggle();
@@ -386,6 +387,7 @@ async function handleTaskToggle(task) {
         task.weekly_completed_times = Math.max(0, (task.weekly_completed_times || 0) - 1);
       }
 
+      tasks.value = await api.getDailyTasks(childId.value);
       await childStore.fetchStats();
     }
   } catch (err) {

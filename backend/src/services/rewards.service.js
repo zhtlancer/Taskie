@@ -61,6 +61,16 @@ class RewardsService {
   }
 
   getAllDoneDaysCount(childId) {
+    if (this.tasksService) {
+      const days = new Map();
+      for (const row of this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ?').all(childId)) {
+        const task = this.tasksService.describeTask(row);
+        if (task.schedule_type === 'weekly_times' && !task.is_completed && task.weekly_completed_times >= task.weekly_target_times) continue;
+        if (!days.has(task.date)) days.set(task.date, []);
+        days.get(task.date).push(task);
+      }
+      return [...days.values()].filter(tasks => tasks.length && tasks.every(task => task.is_completed)).length;
+    }
     const rows = this.db.prepare(`
       SELECT date, COUNT(*) AS total, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) AS completed
       FROM daily_tasks
@@ -85,21 +95,9 @@ class RewardsService {
       WHERE child_id = ? AND date = ?
     `).get(childId, today);
 
-    if ((!todayTasksRow || todayTasksRow.total === 0) && !referenceDate) {
-      const latestTask = this.db.prepare(`
-        SELECT date FROM daily_tasks WHERE child_id = ? ORDER BY date DESC LIMIT 1
-      `).get(childId);
-      if (latestTask && latestTask.date) {
-        const fallbackRow = this.db.prepare(`
-          SELECT COUNT(*) AS total, SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) AS completed
-          FROM daily_tasks
-          WHERE child_id = ? AND date = ?
-        `).get(childId, latestTask.date);
-        if (fallbackRow && fallbackRow.total > 0) {
-          today = latestTask.date;
-          todayTasksRow = fallbackRow;
-        }
-      }
+    if (this.tasksService && today === getTodayDate()) {
+      const active = this.tasksService.getDailyTasks(childId, today);
+      todayTasksRow = { total: active.length, completed: active.filter(t => t.is_completed).length };
     }
 
     const totalPoints = this.getTotalPoints(childId);

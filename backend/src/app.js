@@ -16,6 +16,9 @@ const RewardsService = require('./services/rewards.service');
 const MistakesService = require('./services/mistakes.service');
 const StatsService = require('./services/stats.service');
 const CharactersService = require('./services/characters.service');
+const { installAuthorization, getSetting } = require('./auth');
+const BackupService = require('./services/backup.service');
+const backupRoutes = require('./routes/backups.routes');
 
 const authRoutes = require('./routes/auth.routes');
 const childrenRoutes = require('./routes/children.routes');
@@ -46,11 +49,12 @@ function buildApp(opts = {}) {
   // Services
   console.log('  3/4 正在实例化业务服务层 (Auth, Tasks, Rewards, Mistakes, Characters)...');
   const authService = new AuthService(db);
-  const childrenService = new ChildrenService(db);
+  const childrenService = new ChildrenService(db, uploadDirectory);
   const rewardsService = new RewardsService(db);
   const tasksService = new TasksService(db, rewardsService);
+  rewardsService.tasksService = tasksService;
   const mistakesService = new MistakesService(db, uploadDirectory);
-  const statsService = new StatsService(db);
+  const statsService = new StatsService(db, tasksService);
   const charactersService = new CharactersService(db);
 
   // Decorate fastify with services and db for easy access
@@ -114,8 +118,27 @@ function buildApp(opts = {}) {
 
   // JWT
   fastify.register(fastifyJwt, {
-    secret: opts.jwtSecret || config.jwtSecret
+    secret: opts.jwtSecret || config.jwtSecret || getSetting(db, 'jwt_secret'),
+    sign: { expiresIn: '12h' }
   });
+  installAuthorization(fastify, db);
+  const intervalHours = opts.backupIntervalHours ?? config.backupIntervalHours;
+  const backupService = new BackupService(db, uploadDirectory, opts.backupDir || config.backupDir, opts.backupRetention ?? config.backupRetention);
+  fastify.decorate('backupService', backupService);
+  fastify.register(backupRoutes, { prefix: '/api/backups', backupService, authService, intervalHours });
+  let backupTimer;
+  fastify.addHook('onReady', async () => {
+    if (!(intervalHours > 0)) return;
+    const run = () => {
+      try { backupService.create('scheduled'); }
+      catch (error) { backupService.lastError = error.message; fastify.log.error(error, '自动备份失败'); }
+    };
+    const latest = backupService.list()[0];
+    if (!latest || Date.now() - new Date(latest.created_at).getTime() >= intervalHours * 3600000) run();
+    backupTimer = setInterval(run, intervalHours * 3600000);
+    backupTimer.unref();
+  });
+  fastify.addHook('onClose', async () => clearInterval(backupTimer));
 
   // Health check
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

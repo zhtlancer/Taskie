@@ -1,5 +1,5 @@
 const { generateId } = require('../utils/crypto');
-const { getTodayDate, getDayOfWeek } = require('../utils/date');
+const { getTodayDate, getDayOfWeek, getWeekRange, parseDate } = require('../utils/date');
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
@@ -28,7 +28,7 @@ class TasksService {
 
   listTemplates() {
     const rows = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times
       FROM task_templates
       ORDER BY created_at ASC
     `).all();
@@ -41,7 +41,7 @@ class TasksService {
 
   getTemplate(id) {
     const row = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times
       FROM task_templates
       WHERE id = ?
     `).get(id);
@@ -53,7 +53,7 @@ class TasksService {
     };
   }
 
-  createTemplate({ title, subject, days_of_week, points }) {
+  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null }) {
     if (!title || typeof title !== 'string' || title.trim() === '') {
       throw { status: 400, message: 'Template title is required' };
     }
@@ -61,15 +61,22 @@ class TasksService {
       throw { status: 400, message: 'Template subject is required' };
     }
 
+    if (!['fixed_days', 'weekly_times'].includes(schedule_type) ||
+      schedule_type === 'weekly_times' && (!Number.isInteger(weekly_target_times) || weekly_target_times < 1 || weekly_target_times > 7)) {
+      throw { status: 400, message: '每周目标必须为 1 至 7 次' };
+    }
+    if (points !== undefined && (!Number.isSafeInteger(points) || points < 0 || points > 10000)) {
+      throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
+    }
     const id = generateId();
     const daysArr = normalizeDaysOfWeek(days_of_week);
     const pts = typeof points === 'number' && points >= 0 ? points : 10;
     const createdAt = new Date().toISOString();
 
     this.db.prepare(`
-      INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, title.trim(), subject.trim(), JSON.stringify(daysArr), pts, createdAt);
+      INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, title.trim(), subject.trim(), JSON.stringify(daysArr), pts, createdAt, schedule_type, schedule_type === 'weekly_times' ? weekly_target_times : null);
 
     return {
       id,
@@ -77,11 +84,11 @@ class TasksService {
       subject: subject.trim(),
       days_of_week: daysArr,
       points: pts,
-      created_at: createdAt
+      created_at: createdAt, schedule_type, weekly_target_times: schedule_type === 'weekly_times' ? weekly_target_times : null
     };
   }
 
-  updateTemplate(id, { title, subject, days_of_week, points }) {
+  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times }) {
     const existing = this.getTemplate(id);
     if (!existing) {
       throw { status: 404, message: 'Template not found' };
@@ -96,11 +103,17 @@ class TasksService {
     const newPoints = (points !== undefined && typeof points === 'number' && points >= 0)
       ? points : existing.points;
 
+    const schedule = schedule_type ?? existing.schedule_type;
+    const target = weekly_target_times ?? existing.weekly_target_times;
+    if (!['fixed_days', 'weekly_times'].includes(schedule) || schedule === 'weekly_times' && (!Number.isInteger(target) || target < 1 || target > 7)) {
+      throw { status: 400, message: '每周目标必须为 1 至 7 次' };
+    }
+    if (points !== undefined && (!Number.isSafeInteger(points) || points < 0 || points > 10000)) throw { status: 400, message: '积分无效' };
     this.db.prepare(`
       UPDATE task_templates
-      SET title = ?, subject = ?, days_of_week = ?, points = ?
+      SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?
       WHERE id = ?
-    `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, id);
+    `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, schedule, schedule === 'weekly_times' ? target : null, id);
 
     return this.getTemplate(id);
   }
@@ -130,60 +143,38 @@ class TasksService {
 
     const date = targetDate || getTodayDate();
 
-    // Query existing daily tasks
-    let tasks = this.db.prepare(`
-      SELECT id, child_id, template_id, title, subject, points, date, is_completed, completed_at
-      FROM daily_tasks
-      WHERE child_id = ? AND date = ?
-      ORDER BY rowid ASC
-    `).all(childId, date);
-
-    // If no daily tasks exist for this date, automatically generate from templates matching day of week
-    if (tasks.length === 0) {
-      const dayOfWeek = getDayOfWeek(date);
-      const allTemplates = this.listTemplates();
-      const matchingTemplates = allTemplates.filter(t => t.days_of_week.includes(dayOfWeek));
-
-      if (matchingTemplates.length > 0) {
-        const insertDailyTask = this.db.prepare(`
-          INSERT INTO daily_tasks (id, child_id, template_id, title, subject, points, date, is_completed, completed_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL)
-        `);
-
-        const insertTx = this.db.transaction((tmplList) => {
-          for (const tmpl of tmplList) {
-            insertDailyTask.run(
-              generateId(),
-              childId,
-              tmpl.id,
-              tmpl.title,
-              tmpl.subject,
-              tmpl.points,
-              date
-            );
-          }
-        });
-
-        insertTx(matchingTemplates);
-
-        tasks = this.db.prepare(`
-          SELECT id, child_id, template_id, title, subject, points, date, is_completed, completed_at
-          FROM daily_tasks
-          WHERE child_id = ? AND date = ?
-          ORDER BY rowid ASC
-        `).all(childId, date);
+    parseDate(date);
+    const dayOfWeek = getDayOfWeek(date);
+    const matching = this.listTemplates().filter(t => t.schedule_type === 'weekly_times' || t.days_of_week.includes(dayOfWeek));
+    this.db.transaction(() => {
+      const exists = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND date = ? AND template_id = ?');
+      const insert = this.db.prepare(`INSERT INTO daily_tasks
+        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`);
+      for (const t of matching) {
+        if (!exists.get(childId, date, t.id) && (t.schedule_type !== 'weekly_times' || this.weeklyCount(childId, t.id, date) < t.weekly_target_times)) {
+          insert.run(generateId(), childId, t.id, t.title, t.subject, t.points, date, t.schedule_type, t.weekly_target_times);
+        }
       }
-    }
+    })();
+    return this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date = ? ORDER BY rowid').all(childId, date)
+      .map(t => this.describeTask(t)).filter(t => t.schedule_type !== 'weekly_times' || t.is_completed || t.weekly_completed_times < t.weekly_target_times);
+  }
 
-    return tasks.map(t => ({
-      ...t,
-      is_completed: Boolean(t.is_completed)
-    }));
+  weeklyCount(childId, templateId, date) {
+    const { startDate, endDate } = getWeekRange(date);
+    return this.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND template_id = ? AND date BETWEEN ? AND ? AND is_completed = 1')
+      .get(childId, templateId, startDate, endDate).n;
+  }
+
+  describeTask(t) {
+    return { ...t, is_completed: Boolean(t.is_completed),
+      weekly_completed_times: t.schedule_type === 'weekly_times' ? this.weeklyCount(t.child_id, t.template_id, t.date) : undefined };
   }
 
   completeDailyTask(taskId) {
     const task = this.db.prepare(`
-      SELECT id, child_id, template_id, title, subject, points, date, is_completed, completed_at
+      SELECT *
       FROM daily_tasks
       WHERE id = ?
     `).get(taskId);
@@ -195,12 +186,16 @@ class TasksService {
     if (task.is_completed === 1) {
       return {
         success: true,
-        task: { ...task, is_completed: true },
+        task: this.describeTask(task),
         points_earned: 0,
         new_badges: []
       };
     }
 
+    if (task.date > getTodayDate()) throw { status: 400, message: '不能提前完成未来的任务' };
+    if (task.schedule_type === 'weekly_times' && this.weeklyCount(task.child_id, task.template_id, task.date) >= task.weekly_target_times) {
+      throw { status: 409, message: '本周目标已完成' };
+    }
     const now = new Date().toISOString();
     let newBadges = [];
 
@@ -227,17 +222,14 @@ class TasksService {
     tx();
 
     const updatedTask = this.db.prepare(`
-      SELECT id, child_id, template_id, title, subject, points, date, is_completed, completed_at
+      SELECT *
       FROM daily_tasks
       WHERE id = ?
     `).get(taskId);
 
     return {
       success: true,
-      task: {
-        ...updatedTask,
-        is_completed: Boolean(updatedTask.is_completed)
-      },
+      task: this.describeTask(updatedTask),
       points_earned: task.points,
       new_badges: newBadges
     };
@@ -245,7 +237,7 @@ class TasksService {
 
   uncompleteDailyTask(taskId) {
     const task = this.db.prepare(`
-      SELECT id, child_id, template_id, title, subject, points, date, is_completed, completed_at
+      SELECT *
       FROM daily_tasks
       WHERE id = ?
     `).get(taskId);
@@ -257,7 +249,7 @@ class TasksService {
     if (task.is_completed === 0) {
       return {
         success: true,
-        task: { ...task, is_completed: false }
+        task: this.describeTask(task)
       };
     }
 
@@ -279,17 +271,14 @@ class TasksService {
     tx();
 
     const updatedTask = this.db.prepare(`
-      SELECT id, child_id, template_id, title, subject, points, date, is_completed, completed_at
+      SELECT *
       FROM daily_tasks
       WHERE id = ?
     `).get(taskId);
 
     return {
       success: true,
-      task: {
-        ...updatedTask,
-        is_completed: Boolean(updatedTask.is_completed)
-      }
+      task: this.describeTask(updatedTask)
     };
   }
 }

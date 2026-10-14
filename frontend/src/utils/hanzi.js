@@ -1,3 +1,4 @@
+import bundledData from '../assets/hanziData/index.js';
 import { pinyin } from 'pinyin-pro';
 import cnchar from 'cnchar';
 import cncharRadical from 'cnchar-radical';
@@ -13,22 +14,7 @@ try {
 // In-memory cache for character stroke data
 const charDataCache = new Map();
 
-// Eager load pre-bundled characters if in Vite environment
-let bundledFiles = {};
-try {
-  if (typeof import.meta !== 'undefined' && typeof import.meta.glob === 'function') {
-    bundledFiles = import.meta.glob('../assets/hanziData/*.json', { eager: true });
-    for (const path in bundledFiles) {
-      const match = path.match(/([^/]+)\.json$/);
-      if (match) {
-        const char = match[1];
-        charDataCache.set(char, bundledFiles[path].default || bundledFiles[path]);
-      }
-    }
-  }
-} catch (e) {
-  // Ignore in environments without import.meta.glob
-}
+for (const [char, data] of Object.entries(bundledData)) charDataCache.set(char, data);
 
 /**
  * Get pinyin for a Chinese character

@@ -6,7 +6,11 @@ module.exports = {
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite'),
   uploadDir: process.env.UPLOAD_DIR || path.resolve(__dirname, '../uploads'),
   clientDistDir: process.env.CLIENT_DIST_DIR || path.resolve(__dirname, '../../frontend/dist'),
-  jwtSecret: process.env.JWT_SECRET || 'homework-task-secret-key-2026',
+  jwtSecret: process.env.JWT_SECRET || null,
+  timeZone: process.env.TIME_ZONE || 'Asia/Shanghai',
+  backupDir: process.env.BACKUP_DIR || path.resolve(path.dirname(process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite')), 'backups'),
+  backupIntervalHours: Number(process.env.BACKUP_INTERVAL_HOURS || 24),
+  backupRetention: Number(process.env.BACKUP_RETENTION || 7),
   defaultParentPin: process.env.DEFAULT_PARENT_PIN || '1234',
   imageProcessing: {
     maxDimension: parseInt(process.env.IMAGE_MAX_DIMENSION || '1600', 10),

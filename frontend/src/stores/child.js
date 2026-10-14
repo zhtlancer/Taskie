@@ -35,9 +35,11 @@ export const useChildStore = defineStore('child', {
 
     async fetchStats() {
       if (!this.childId) return;
+      const requestedChild = this.childId;
       this.loadingStats = true;
       try {
-        const stats = await api.getChildStats(this.childId);
+        const stats = await api.getChildStats(requestedChild);
+        if (this.childId !== requestedChild) return;
         this.stats = {
           total_points: stats.total_points || 0,
           current_streak: stats.current_streak || 0,
@@ -49,7 +51,7 @@ export const useChildStore = defineStore('child', {
       } catch (err) {
         console.error('Failed to fetch child stats:', err);
       } finally {
-        this.loadingStats = false;
+        if (this.childId === requestedChild) this.loadingStats = false;
       }
     },
 

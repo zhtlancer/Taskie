@@ -18,6 +18,8 @@ logs/
 *.sqlite-wal
 *.sqlite-shm
 backend/data.sqlite*
+data/
+backend/backups/
 
 # Uploaded mistake photos
 backend/uploads/*

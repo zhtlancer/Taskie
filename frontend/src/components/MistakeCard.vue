@@ -54,7 +54,7 @@
         class="mb-4 rounded-xl overflow-hidden max-h-56 border border-slate-200 cursor-zoom-in relative group transition-all hover:border-brand-300"
         title="点击查看高清大图"
       >
-        <img :src="mistake.photo_path" alt="错题图片" class="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-200" />
+        <PrivatePhoto :src="mistake.photo_path" alt="错题图片" class="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-200" />
         <div class="absolute inset-0 bg-slate-900/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold gap-1">
           <span>🔍</span>
           <span>点击查看高清大图</span>
@@ -91,6 +91,7 @@
 </template>
 
 <script setup>
+import PrivatePhoto from './PrivatePhoto.vue';
 defineProps({
   mistake: {
     type: Object,

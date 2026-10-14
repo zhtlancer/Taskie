@@ -5,13 +5,13 @@
   <img src="https://img.shields.io/badge/Platform-iPad%20Air%205%20(1180%C3%97820)-6C63FF?style=flat-square&logo=apple" alt="iPad Optimized" />
   <img src="https://img.shields.io/badge/Frontend-Vue%203%20%2B%20Vite%205-42b883?style=flat-square&logo=vuedotjs" alt="Vue 3" />
   <img src="https://img.shields.io/badge/CSS-Tailwind%20CSS%203-38bdf8?style=flat-square&logo=tailwindcss" alt="Tailwind CSS" />
-  <img src="https://img.shields.io/badge/Backend-Fastify%20%2B%20Node.js%2020-000000?style=flat-square&logo=fastify" alt="Fastify" />
+  <img src="https://img.shields.io/badge/Backend-Fastify%20%2B%20Node.js%2022-000000?style=flat-square&logo=fastify" alt="Fastify" />
   <img src="https://img.shields.io/badge/Database-SQLite%20(better--sqlite3)-003B57?style=flat-square&logo=sqlite" alt="SQLite" />
   <img src="https://img.shields.io/badge/Image-Sharp%20Pipeline-99cc00?style=flat-square" alt="Sharp" />
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-56%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-67%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -29,7 +29,7 @@
 
 ### 1. 🐱 多孩子账号与独立隔离
 - **可爱头像选择**：首页直观的 Emoji 萌宠卡片（如 🐱 小明、🐰 小红），一键点击切换；
-- **独立 PIN 码保护**：孩子可选配置专属 4 位数字密码，任务进度、积分金币、勋章与错题严格物理隔离；
+- **独立 PIN 码保护**：孩子可选配置专属 4 位数字密码，任务进度、积分金币、勋章与错题严格账号数据隔离；
 - **独立家长管理入口**：右上角家长控制台设有独立 PIN 码门禁，防止孩子误改配置。
 
 ### 2. 📋 每日作业任务看板 (iPad Air 5 横屏优化)
@@ -96,7 +96,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, characters, mistakes)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (29 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (40 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -226,15 +226,15 @@ sudo docker run -d \
 ### 方式三：Node.js 本地开发与脚本启动
 
 #### 1. 环境准备
-- Node.js 18.0 或更高版本（推荐 Node.js 20 LTS）
+- Node.js 22.14 或更高版本（推荐最新 Node.js 22 LTS）
 - npm 9.0 或更高版本
 
 #### 2. 安装依赖
 
 ```bash
 # 进入项目目录安装前后端依赖
-cd backend && npm install && cd ..
-cd frontend && npm install && cd ..
+cd backend && npm ci --engine-strict --ignore-scripts && cd ..
+cd frontend && npm ci && cd ..
 ```
 
 #### 3. 初始化演示数据库（可选）
@@ -270,19 +270,64 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **56 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **67 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (29 tests)
+# 运行后端全量测试 (40 tests)
 npm run test:backend
 
 # 运行前端核心逻辑测试 (27 tests)
 npm --prefix frontend test
 ```
 
+可选的浏览器验收覆盖家长登录、周模板保存、备份下载恢复、孩子权限、照片上传和断网恢复。安装 Playwright 测试工具后运行：
+
+```bash
+npm install --no-save --package-lock=false playwright
+npx playwright install chromium
+docker build -t taskie:reliability .
+node scripts/smoke-browser.cjs
+```
+
+该脚本使用临时容器和临时数据库，完成后自动删除容器。已有系统 Chromium 时可设置 `CHROMIUM_PATH`。
+
 ---
 
 ## 💾 数据备份与迁移
+
+### 家长端备份与恢复
+
+登录家长后台，打开「备份与设置」：
+
+- 「立即创建备份」会保存数据库及数据库关联的错题照片，支持下载 `.taskie.gz` 备份包。
+- 默认每 24 小时自动备份，保留最近 7 份；启动时若没有备份或最近备份已过期，会立即补做。
+- 恢复需要当前家长 PIN 和确认勾选。系统先验证备份，再保存恢复前快照；数据库恢复失败会回滚数据库和照片目录。
+- 恢复完成后所有会话失效，需要重新登录。备份中的账号、PIN 和学习记录会替换当前数据。
+- 上传最大 64 MiB，解压后的备份最大 256 MiB；更大数据请使用 NAS 文件备份，并在停服后复制完整数据目录。
+
+Docker 部署的自动备份位于宿主机 `./data/backups`，数据库和照片在 `./data/data.sqlite`、`./data/uploads`。请定期将备份下载到另一台设备，NAS 上的同盘副本无法覆盖磁盘故障。
+
+可用环境变量：
+
+| 变量 | 默认值 | 用途 |
+|---|---|---|
+| `TIME_ZONE` | `Asia/Shanghai` | 任务日期、周界线及连续打卡使用的家庭时区 |
+| `BACKUP_INTERVAL_HOURS` | `24` | 自动备份间隔；设为 `0` 关闭 |
+| `BACKUP_RETENTION` | `7` | 保留的备份份数 |
+| `BACKUP_DIR` | 数据库所在目录下的 `backups` | 备份存储目录 |
+| `JWT_SECRET` | 自动生成并保存到数据库 | 可选的自定义签名密钥；勿使用示例中的固定密钥 |
+
+升级会自动迁移旧数据库并保留账号、任务与历史记录。旧版只保存在前端演示库中的周频次设置无法从服务器恢复，需要在升级后重新设置。
+
+### 登录与网络行为
+
+API 需要有效会话：家长管理账号、模板和备份，孩子仅可访问自己的记录与照片。会话有效期为 12 小时，PIN 登录连续失败 10 次后限制 15 分钟。修改家长 PIN 会让已有会话失效。首次使用请在「备份与设置」修改默认家长 PIN。
+
+正式部署断网会提示失败，不会自动切换演示数据。演示构建须显式设置 `VITE_DEMO_MODE=true`，页面会显示演示模式标识；该模式没有服务器同步或恢复能力。浏览器已有的旧版登录状态需要重新登录。
+
+### 原生运行时手动备份
+
+以下命令用于原生 Node 部署，请先停止服务；运行中优先使用家长端快照备份。
 
 - **数据库**：所有账号、任务、积分与生字均存储在单一文件 `backend/data.sqlite` 中；
 - **图片**：所有错题照片均保存在 `backend/uploads/` 目录中；

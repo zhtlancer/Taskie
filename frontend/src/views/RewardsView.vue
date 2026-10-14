@@ -119,7 +119,7 @@ const childStore = useChildStore();
 
 const childId = computed(() => route.params.id || childStore.childId);
 const totalPoints = computed(() => childStore.stats.total_points || 0);
-const streakDays = computed(() => childStore.stats.current_streak || 5);
+const streakDays = computed(() => childStore.stats.current_streak ?? 0);
 
 const allBadges = ref([]);
 const pointLogs = ref([]);

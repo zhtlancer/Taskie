@@ -120,7 +120,7 @@ describe('Daily Tasks API (/api/daily-tasks)', () => {
     // Check stats: total_points should be 25
     const statsRes = await ctx.app.inject({
       method: 'GET',
-      url: `/api/children/${child.id}/stats`
+      url: `/api/children/${child.id}/stats?date=2026-10-13`
     });
     const stats = JSON.parse(statsRes.body);
     assert.equal(stats.total_points, 25);
@@ -139,7 +139,7 @@ describe('Daily Tasks API (/api/daily-tasks)', () => {
     // Check stats again: points should revert to 0
     const statsRevertedRes = await ctx.app.inject({
       method: 'GET',
-      url: `/api/children/${child.id}/stats`
+      url: `/api/children/${child.id}/stats?date=2026-10-13`
     });
     const statsReverted = JSON.parse(statsRevertedRes.body);
     assert.equal(statsReverted.total_points, 0);

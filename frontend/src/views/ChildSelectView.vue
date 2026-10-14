@@ -134,12 +134,13 @@ onMounted(async () => {
   }
 });
 
-function handleChildSelect(child) {
+async function handleChildSelect(child) {
   if (child.has_pin) {
     activePinChild.value = child;
     pinError.value = '';
   } else {
-    enterChild(child);
+    try { const result = await api.loginChild({ child_id: child.id }); enterChild(result.child); }
+    catch (error) { console.error(error); }
   }
 }
 

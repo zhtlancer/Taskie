@@ -1,8 +1,9 @@
 const { generateId, hashPin } = require('../utils/crypto');
 
 class ChildrenService {
-  constructor(db) {
+  constructor(db, uploadDir) {
     this.db = db;
+    this.uploadDir = uploadDir;
   }
 
   listChildren() {
@@ -96,7 +97,16 @@ class ChildrenService {
       throw { status: 404, message: 'Child not found' };
     }
 
+    const photos = this.db.prepare('SELECT photo_path FROM mistake_records WHERE child_id = ?').all(id);
     this.db.prepare('DELETE FROM children WHERE id = ?').run(id);
+    if (this.uploadDir) for (const { photo_path } of photos) {
+      if (!photo_path?.startsWith('/uploads/')) continue;
+      const fs = require('node:fs'), path = require('node:path');
+      const name = path.basename(photo_path);
+      if (!this.db.prepare('SELECT id FROM mistake_records WHERE photo_path = ?').get(photo_path)) {
+        fs.rmSync(path.join(this.uploadDir, name), { force: true });
+      }
+    }
     return { success: true, id };
   }
 }

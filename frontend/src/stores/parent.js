@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
+import { hasSession, clearTokens } from '../utils/session.js';
 
 export const useParentStore = defineStore('parent', {
   state: () => ({
-    isAuthenticated: sessionStorage.getItem('parent_auth') === 'true',
+    isAuthenticated: hasSession('parent'),
     authError: null
   }),
 
@@ -27,6 +28,7 @@ export const useParentStore = defineStore('parent', {
     logout() {
       this.isAuthenticated = false;
       sessionStorage.removeItem('parent_auth');
+      clearTokens();
     }
   }
 });

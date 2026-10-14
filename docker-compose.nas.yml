@@ -13,6 +13,8 @@ services:
       - DATABASE_PATH=/app/data/data.sqlite
       - UPLOAD_DIR=/app/data/uploads
       - DEFAULT_PARENT_PIN=1234
-      - JWT_SECRET=homework-task-secret-key-2026
+      - TIME_ZONE=Asia/Shanghai
+      - BACKUP_INTERVAL_HOURS=24
+      - BACKUP_RETENTION=7
     volumes:
       - ./data:/app/data

@@ -1,8 +1,17 @@
 const { getTodayDate, shiftDate, getWeekRange, getLastWeekRange, getDateRangeList, getDayOfWeek } = require('../utils/date');
 
 class StatsService {
-  constructor(db) {
+  constructor(db, tasksService) {
     this.db = db;
+    this.tasksService = tasksService;
+  }
+
+  activeTasks(tasks) {
+    if (!this.tasksService) return tasks;
+    return tasks.filter(task => {
+      const described = this.tasksService.describeTask(task);
+      return described.schedule_type !== 'weekly_times' || described.is_completed || described.weekly_completed_times < described.weekly_target_times;
+    });
   }
 
   getHistory(childId, fromDate, toDate) {
@@ -15,7 +24,7 @@ class StatsService {
     const from = fromDate || shiftDate(to, -29); // default 30 days
 
     const tasks = this.db.prepare(`
-      SELECT id, template_id, title, subject, points, date, is_completed, completed_at
+      SELECT *
       FROM daily_tasks
       WHERE child_id = ? AND date >= ? AND date <= ?
       ORDER BY date ASC, rowid ASC
@@ -23,7 +32,7 @@ class StatsService {
 
     // Group tasks by date
     const tasksByDate = new Map();
-    for (const t of tasks) {
+    for (const t of this.activeTasks(tasks)) {
       if (!tasksByDate.has(t.date)) {
         tasksByDate.set(t.date, []);
       }
@@ -86,11 +95,11 @@ class StatsService {
 
     const calcWeekData = (range) => {
       const dates = getDateRangeList(range.startDate, range.endDate);
-      const tasks = this.db.prepare(`
-        SELECT id, template_id, title, subject, points, date, is_completed, completed_at
+      const tasks = this.activeTasks(this.db.prepare(`
+        SELECT *
         FROM daily_tasks
         WHERE child_id = ? AND date >= ? AND date <= ?
-      `).all(childId, range.startDate, range.endDate);
+      `).all(childId, range.startDate, range.endDate));
 
       const pointsRow = this.db.prepare(`
         SELECT COALESCE(SUM(pl.points), 0) AS total_points

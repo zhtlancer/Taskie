@@ -1,439 +1,95 @@
 import axios from 'axios';
-import { mockStore } from './mockStore';
+import { getToken, saveToken, clearTokens } from '../utils/session.js';
 
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 4000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+export const demoMode = import.meta.env.VITE_DEMO_MODE === 'true';
+let mockStore;
+const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api', timeout: 15000 });
+client.interceptors.request.use(config => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
-
-let isBackendAvailable = null; // null: unknown, true: working, false: offline fallback
-
-async function checkBackend() {
-  if (isBackendAvailable !== null) return isBackendAvailable;
-  try {
-    await apiClient.get('/children', { timeout: 1500 });
-    isBackendAvailable = true;
-  } catch (err) {
-    // If connection refused or 404/500 on dev, mark false
-    if (!err.response || err.code === 'ECONNABORTED' || err.code === 'ERR_NETWORK') {
-      isBackendAvailable = false;
-      console.info('[API] Backend offline or unreachable. Using integrated local store.');
-    } else {
-      isBackendAvailable = true;
-    }
+client.interceptors.response.use(response => response, error => {
+  const login = error.config?.url?.includes('-login');
+  if (error.response?.status === 401 && !login) clearTokens();
+  const message = !error.response ? '无法连接服务器，操作未确认。请检查网络并刷新重试。'
+    : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, login } }));
+  return Promise.reject(message);
+});
+const request = async (method, url, data, demo, params) => {
+  if (demoMode) {
+    mockStore ||= (await import('./mockStore')).mockStore;
+    return demo();
   }
-  return isBackendAvailable;
-}
+  return (await client.request({ method, url, data, params, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
+};
+const get = (url, demo, params) => request('get', url, undefined, demo, params);
+const post = (url, data, demo) => request('post', url, data, demo);
+const put = (url, data, demo) => request('put', url, data, demo);
+const remove = (url, demo) => request('delete', url, undefined, demo);
 
 export const api = {
-  // Auth
-  async loginChild({ child_id, pin }) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post('/auth/child-login', { child_id, pin });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.childLogin(child_id, pin);
-        throw (err.response?.data?.error || err.response?.data?.message || '登录失败');
-      }
-    }
-    const res = mockStore.childLogin(child_id, pin);
-    if (!res.success) throw res.error;
-    return res;
-  },
-
   async loginParent({ pin }) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post('/auth/parent-login', { pin });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.parentLogin(pin);
-        throw (err.response?.data?.error || err.response?.data?.message || 'PIN 码错误');
-      }
-    }
-    const res = mockStore.parentLogin(pin);
-    if (!res.success) throw res.error;
-    return res;
+    const result = await post('/auth/parent-login', { pin }, () => mockStore.parentLogin(pin));
+    if (!result.success) throw result.error;
+    saveToken('parent', result.token || 'demo-parent');
+    return result;
   },
-
-  // Children
-  async getChildren() {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get('/children');
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getChildren();
-        throw err;
-      }
-    }
-    return mockStore.getChildren();
+  async loginChild({ child_id, pin }) {
+    const result = await post('/auth/child-login', { child_id, pin }, () => mockStore.childLogin(child_id, pin));
+    if (!result.success) throw result.error;
+    clearTokens();
+    saveToken('child', result.token || 'demo-child');
+    return result;
   },
-
-  async createChild(data) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post('/children', data);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.createChild(data);
-        throw err;
-      }
-    }
-    return mockStore.createChild(data);
-  },
-
-  async updateChild(id, data) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.put(`/children/${id}`, data);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.updateChild(id, data);
-        throw err;
-      }
-    }
-    return mockStore.updateChild(id, data);
-  },
-
-  async deleteChild(id) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.delete(`/children/${id}`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.deleteChild(id);
-        throw err;
-      }
-    }
-    return mockStore.deleteChild(id);
-  },
-
-  // Templates
-  async getTaskTemplates() {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get('/task-templates');
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getTemplates();
-        throw err;
-      }
-    }
-    return mockStore.getTemplates();
-  },
-
-  async createTaskTemplate(data) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post('/task-templates', data);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.createTemplate(data);
-        throw err;
-      }
-    }
-    return mockStore.createTemplate(data);
-  },
-
-  async updateTaskTemplate(id, data) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.put(`/task-templates/${id}`, data);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.updateTemplate(id, data);
-        throw err;
-      }
-    }
-    return mockStore.updateTemplate(id, data);
-  },
-
-  async deleteTaskTemplate(id) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.delete(`/task-templates/${id}`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.deleteTemplate(id);
-        throw err;
-      }
-    }
-    return mockStore.deleteTemplate(id);
-  },
-
-  // Daily Tasks
-  async getDailyTasks(childId, date) {
-    if (await checkBackend()) {
-      try {
-        const params = { child_id: childId };
-        if (date) params.date = date;
-        const res = await apiClient.get('/daily-tasks', { params });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getDailyTasks(childId, date);
-        throw err;
-      }
-    }
-    return mockStore.getDailyTasks(childId, date);
-  },
-
-  async completeDailyTask(taskId) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post(`/daily-tasks/${taskId}/complete`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.completeTask(taskId);
-        throw err;
-      }
-    }
-    return mockStore.completeTask(taskId);
-  },
-
-  async uncompleteDailyTask(taskId) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post(`/daily-tasks/${taskId}/uncomplete`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.uncompleteTask(taskId);
-        throw err;
-      }
-    }
-    return mockStore.uncompleteTask(taskId);
-  },
-
-  // Stats & Badges
-  async getChildStats(childId) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get(`/children/${childId}/stats`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getChildStats(childId);
-        throw err;
-      }
-    }
-    return mockStore.getChildStats(childId);
-  },
-
-  async getChildBadges(childId) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get(`/children/${childId}/badges`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getChildBadges(childId);
-        throw err;
-      }
-    }
-    return mockStore.getChildBadges(childId);
-  },
-
-  async getBadgeDefinitions() {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get('/badge-definitions');
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getBadgeDefinitions();
-        throw err;
-      }
-    }
-    return mockStore.getBadgeDefinitions();
-  },
-
-  async getHistory(childId, days = 7) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get(`/children/${childId}/history`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getHistory(childId, days);
-        throw err;
-      }
-    }
-    return mockStore.getHistory(childId, days);
-  },
-
-  async getWeeklySummary(childId) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.get(`/children/${childId}/weekly-summary`);
-        return res.data;
-      } catch (err) {
-        return null;
-      }
-    }
-    return null;
-  },
-
-  async getPointLogs(childId) {
-    return mockStore.getPointLogs(childId);
-  },
-
-  // Mistakes
-  async getMistakes(childId, subject) {
-    if (await checkBackend()) {
-      try {
-        const params = {};
-        if (childId) params.child_id = childId;
-        if (subject && subject !== '全部') params.subject = subject;
-        const res = await apiClient.get('/mistakes', { params });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getMistakes(childId, subject);
-        throw err;
-      }
-    }
-    return mockStore.getMistakes(childId, subject);
-  },
-
+  getChildren: () => get('/children', () => mockStore.getChildren()),
+  createChild: data => post('/children', data, () => mockStore.createChild(data)),
+  updateChild: (id, data) => put(`/children/${id}`, data, () => mockStore.updateChild(id, data)),
+  deleteChild: id => remove(`/children/${id}`, () => mockStore.deleteChild(id)),
+  getTaskTemplates: () => get('/task-templates', () => mockStore.getTemplates()),
+  createTaskTemplate: data => post('/task-templates', data, () => mockStore.createTemplate(data)),
+  updateTaskTemplate: (id, data) => put(`/task-templates/${id}`, data, () => mockStore.updateTemplate(id, data)),
+  deleteTaskTemplate: id => remove(`/task-templates/${id}`, () => mockStore.deleteTemplate(id)),
+  getDailyTasks: (id, date) => get('/daily-tasks', () => mockStore.getDailyTasks(id, date), { child_id: id, date }),
+  completeDailyTask: id => post(`/daily-tasks/${id}/complete`, undefined, () => mockStore.completeTask(id)),
+  uncompleteDailyTask: id => post(`/daily-tasks/${id}/uncomplete`, undefined, () => mockStore.uncompleteTask(id)),
+  getChildStats: id => get(`/children/${id}/stats`, () => mockStore.getChildStats(id)),
+  getChildBadges: id => get(`/children/${id}/badges`, () => mockStore.getChildBadges(id)),
+  getBadgeDefinitions: () => get('/badge-definitions', () => mockStore.getBadgeDefinitions()),
+  getHistory: (id, days = 30) => get(`/children/${id}/history`, () => mockStore.getHistory(id, days)),
+  getWeeklySummary: id => get(`/children/${id}/weekly-summary`, () => null),
+  getPointLogs: id => get(`/children/${id}/point-logs`, () => mockStore.getPointLogs(id)),
+  getMistakes: (id, subject) => get('/mistakes', () => mockStore.getMistakes(id, subject), { child_id: id, subject: subject === '全部' ? undefined : subject }),
   async createMistake(data) {
     let payload = data;
-    let fallbackPhotoPath = null;
-    let childId = data?.child_id;
-    let subject = data?.subject;
-    let description = data?.description;
-
-    if (typeof FormData !== 'undefined' && data instanceof FormData) {
-      payload = data;
-      childId = data.get('child_id');
-      subject = data.get('subject');
-      description = data.get('description');
-      fallbackPhotoPath = data.get('photo_data_url') || null;
-    } else if (data?.photo_file || data?.photoFile) {
-      const file = data.photo_file || data.photoFile;
+    if (!(data instanceof FormData) && (data.photo_file || data.photoFile)) {
       payload = new FormData();
-      payload.append('child_id', childId);
-      payload.append('subject', subject);
-      payload.append('description', description);
+      for (const field of ['child_id', 'subject', 'description']) payload.append(field, data[field]);
+      const file = data.photo_file || data.photoFile;
       payload.append('file', file, file.name || 'mistake.webp');
-      fallbackPhotoPath = data.photo_data_url || data.photo_path || null;
-      if (fallbackPhotoPath) {
-        payload.append('photo_data_url', fallbackPhotoPath);
-      }
-    } else {
-      fallbackPhotoPath = data?.photo_path || null;
     }
-
-    const isFormData = typeof FormData !== 'undefined' && payload instanceof FormData;
-
-    if (await checkBackend()) {
-      try {
-        const config = isFormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
-        const res = await apiClient.post('/mistakes', payload, config);
-        return res.data;
-      } catch (err) {
-        if (!err.response) {
-          return mockStore.createMistake({
-            child_id: childId,
-            subject,
-            description,
-            photo_path: fallbackPhotoPath
-          });
-        }
-        throw err;
-      }
-    }
-
-    return mockStore.createMistake({
-      child_id: childId,
-      subject,
-      description,
-      photo_path: fallbackPhotoPath
-    });
+    const value = key => payload instanceof FormData ? payload.get(key) : payload[key];
+    return post('/mistakes', payload, () => mockStore.createMistake({ child_id: value('child_id'), subject: value('subject'), description: value('description'), photo_path: value('photo_data_url') || value('photo_path') }));
   },
-
-  async markMistakeMastered(id, isMastered = true) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.put(`/mistakes/${id}/master`, { is_mastered: isMastered });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.markMistakeMastered(id, isMastered);
-        throw err;
-      }
-    }
-    return mockStore.markMistakeMastered(id, isMastered);
+  markMistakeMastered: (id, mastered = true) => put(`/mistakes/${id}/master`, { is_mastered: mastered }, () => mockStore.markMistakeMastered(id, mastered)),
+  deleteMistake: id => remove(`/mistakes/${id}`, () => mockStore.deleteMistake(id)),
+  getCharacters: (id, mastered = null) => get('/characters', () => mockStore.getCharacters(id, mastered), { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }),
+  createCharacter: data => post('/characters', data, () => mockStore.createCharacter(data)),
+  markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }, () => mockStore.markCharacterMastered(id, mastered)),
+  deleteCharacter: id => remove(`/characters/${id}`, () => mockStore.deleteCharacter(id)),
+  async loadPhoto(url) {
+    if (!url.startsWith('/uploads/')) return url;
+    const response = await client.get(url.replace('/uploads/', '../uploads/'), { responseType: 'blob' });
+    return URL.createObjectURL(response.data);
   },
-
-  async deleteMistake(id) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.delete(`/mistakes/${id}`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.deleteMistake(id);
-        throw err;
-      }
-    }
-    return mockStore.deleteMistake(id);
+  getBackups: () => get('/backups', () => ({ backups: [], interval_hours: 0, retention: 0 })),
+  createBackup: () => post('/backups', undefined, () => { throw '演示模式不支持备份'; }),
+  async downloadBackup(name) { return (await client.get(`/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob', timeout: 180000 })).data; },
+  restoreBackup(file, pin) {
+    const data = new FormData(); data.append('pin', pin); data.append('file', file);
+    return post('/backups/restore', data, () => { throw '演示模式不支持恢复'; });
   },
-
-  // Characters (生字本)
-  async getCharacters(childId, isMastered = null) {
-    if (await checkBackend()) {
-      try {
-        const params = {};
-        if (childId) params.child_id = childId;
-        if (isMastered !== null && isMastered !== undefined) {
-          params.is_mastered = isMastered === 1 || isMastered === true || isMastered === '1' ? 1 : 0;
-        }
-        const res = await apiClient.get('/characters', { params });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.getCharacters(childId, isMastered);
-        throw err;
-      }
-    }
-    return mockStore.getCharacters(childId, isMastered);
-  },
-
-  async createCharacter(data) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.post('/characters', data);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.createCharacter(data);
-        throw (err.response?.data?.error || err.response?.data?.message || '添加生字失败');
-      }
-    }
-    return mockStore.createCharacter(data);
-  },
-
-  async markCharacterMastered(id, isMastered = null) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.put(`/characters/${id}/master`, { is_mastered: isMastered });
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.markCharacterMastered(id, isMastered);
-        throw err;
-      }
-    }
-    return mockStore.markCharacterMastered(id, isMastered);
-  },
-
-  async deleteCharacter(id) {
-    if (await checkBackend()) {
-      try {
-        const res = await apiClient.delete(`/characters/${id}`);
-        return res.data;
-      } catch (err) {
-        if (!err.response) return mockStore.deleteCharacter(id);
-        throw err;
-      }
-    }
-    return mockStore.deleteCharacter(id);
-  }
+  changeParentPin: (oldPin, newPin) => put('/auth/parent-pin', { old_pin: oldPin, new_pin: newPin }, () => { throw '演示模式不支持修改 PIN'; })
 };
-
 export default api;
-
