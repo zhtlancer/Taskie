@@ -64,14 +64,17 @@ if (fs.existsSync(config.dbPath)) {
   }
 }
 
-// Pre-flight check 3: Verify better-sqlite3 native engine
+// Pre-flight check 3: Verify better-sqlite3 native engine in an isolated child process
 try {
-  const Database = require('better-sqlite3');
-  const testMemDb = new Database(':memory:');
-  testMemDb.close();
-  console.log('✅ SQLite better-sqlite3 原生引擎加载正常');
+  const { execSync } = require('child_process');
+  execSync('node -e "const Database = require(\'better-sqlite3\'); const db = new Database(\':memory:\'); db.close();"', {
+    stdio: 'pipe',
+    timeout: 5000
+  });
+  console.log('✅ SQLite better-sqlite3 原生引擎加载与内存测试通过');
 } catch (nativeErr) {
-  console.error('❌ [SQLite 引擎加载失败]:', nativeErr.message);
+  console.error('❌ [SQLite 引擎加载失败]: 当前环境下的 SQLite 原生扩展无法执行内存测试');
+  console.error('   底层报错:', nativeErr.message);
   process.exit(1);
 }
 

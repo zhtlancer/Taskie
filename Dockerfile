@@ -27,13 +27,16 @@ ENV NODE_ENV=production \
 COPY backend/package*.json ./backend/
 WORKDIR /app/backend
 
-# Install production dependencies (preserve required shared runtime libraries)
+# Install production dependencies and recompile better-sqlite3 from source
+# (strips vendor prebuilds with advanced instruction sets so it runs reliably on all NAS CPUs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
     libstdc++6 \
     && npm install --omit=dev \
+    && rm -rf node_modules/better-sqlite3/prebuilds \
+    && (cd node_modules/better-sqlite3 && npx --no-install node-gyp rebuild) \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend application source code
