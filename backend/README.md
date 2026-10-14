@@ -70,7 +70,7 @@ backend/
 | `DATABASE_PATH` | `./data.sqlite` | SQLite 数据库文件绝对或相对路径 |
 | `UPLOAD_DIR` | `./uploads` | 错题上传图片存储目录 |
 | `JWT_SECRET` | `homework-task-secret-key-2026` | JWT 签名密钥 |
-| `DEFAULT_PARENT_PIN` | `1234` | 默认初始家长管理 PIN 码 |
+| `DEFAULT_PARENT_PIN` | `1234` | 全新安装时的初始家长 PIN，首次登录后必须修改 |
 | `IMAGE_MAX_DIMENSION` | `1600` | 错题照片最大单边限制（超过则等比缩放） |
 | `IMAGE_FORMAT` | `webp` | 错题照片目标标准化存储格式（`webp` 或 `jpeg`） |
 | `IMAGE_QUALITY` | `85` | 图像压缩质量（1-100） |
@@ -159,9 +159,15 @@ npm test
   {
     "success": true,
     "token": "jwt-token",
-    "role": "parent"
+    "role": "parent",
+    "must_change_pin": false
   }
   ```
+- `must_change_pin` 为 `true` 时表示仍在使用默认 PIN：此时家长会话只能调用修改 PIN 接口，其余家长接口返回 403 和 `"code": "PARENT_PIN_CHANGE_REQUIRED"`。
+
+#### 是否仍为默认 PIN
+- **`GET /api/auth/setup`**（无需登录）
+- **成功响应** (200)：`{ "parent_pin_is_default": true }`
 
 #### 退出登录
 - **`POST /api/auth/logout`**
@@ -170,6 +176,7 @@ npm test
 #### 修改家长 PIN 码
 - **`PUT /api/auth/parent-pin`**
 - **请求体**：`{ "old_pin": "1234", "new_pin": "8888" }`
+- 新 PIN 必须为 4 位数字，且不能与默认 PIN 或当前 PIN 相同；修改后所有会话失效，需要重新登录。
 
 ---
 

@@ -8,6 +8,12 @@ export function clearTokens() {
   for (const role of ['parent', 'child']) sessionStorage.removeItem(key(role));
   sessionStorage.removeItem('parent_auth');
 }
+// Set while the parent signed in with the default PIN and must replace it first.
+export function mustChangePin() { return sessionStorage.getItem('parent_must_change_pin') === 'true'; }
+export function setMustChangePin(value) {
+  if (value) sessionStorage.setItem('parent_must_change_pin', 'true');
+  else sessionStorage.removeItem('parent_must_change_pin');
+}
 export function hasSession(role, childId) {
   const token = getToken(role);
   if (!token) return false;

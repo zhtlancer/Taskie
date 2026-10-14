@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
-import { hasSession, clearTokens } from '../utils/session.js';
+import { hasSession, clearTokens, setMustChangePin } from '../utils/session.js';
 
 export const useParentStore = defineStore('parent', {
   state: () => ({
     isAuthenticated: hasSession('parent'),
-    authError: null
+    authError: null,
+    // Kept in memory only, so the forced PIN change does not ask for the default PIN twice.
+    pendingPin: null
   }),
 
   actions: {
@@ -16,6 +18,8 @@ export const useParentStore = defineStore('parent', {
         if (res.success) {
           this.isAuthenticated = true;
           sessionStorage.setItem('parent_auth', 'true');
+          setMustChangePin(Boolean(res.must_change_pin));
+          this.pendingPin = res.must_change_pin ? pin : null;
           return true;
         }
         return false;
@@ -27,7 +31,9 @@ export const useParentStore = defineStore('parent', {
 
     logout() {
       this.isAuthenticated = false;
+      this.pendingPin = null;
       sessionStorage.removeItem('parent_auth');
+      setMustChangePin(false);
       clearTokens();
     }
   }

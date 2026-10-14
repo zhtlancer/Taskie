@@ -1,4 +1,5 @@
 const { verifyPin, hashPin } = require('../utils/crypto');
+const config = require('../config');
 
 class AuthService {
   constructor(db) {
@@ -50,13 +51,24 @@ class AuthService {
 
     return {
       success: true,
-      role: 'parent'
+      role: 'parent',
+      must_change_pin: this.isParentPinDefault()
     };
+  }
+
+  isParentPinDefault() {
+    return this.db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1';
   }
 
   updateParentPin(oldPin, newPin) {
     if (typeof newPin !== 'string' || !/^\d{4}$/.test(newPin)) {
       return { success: false, status: 400, error: 'PIN 必须为 4 位数字' };
+    }
+    if (newPin === config.defaultParentPin) {
+      return { success: false, status: 400, error: '新 PIN 不能使用默认 PIN，请换一个' };
+    }
+    if (newPin === oldPin) {
+      return { success: false, status: 400, error: '新 PIN 不能与当前 PIN 相同' };
     }
 
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('parent_pin_hash');
@@ -67,10 +79,16 @@ class AuthService {
     }
 
     const newHash = hashPin(newPin);
-    this.db.prepare(`
-      INSERT INTO settings (key, value) VALUES ('parent_pin_hash', ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `).run(newHash);
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO settings (key, value) VALUES ('parent_pin_hash', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run(newHash);
+      this.db.prepare(`
+        INSERT INTO settings (key, value) VALUES ('parent_pin_is_default', '0')
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+      `).run();
+    })();
 
     return { success: true, message: 'Parent PIN updated successfully' };
   }

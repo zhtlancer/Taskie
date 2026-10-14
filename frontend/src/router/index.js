@@ -11,8 +11,9 @@ import ParentChildrenView from '../views/ParentChildrenView.vue';
 import ParentTasksView from '../views/ParentTasksView.vue';
 import ParentRewardsView from '../views/ParentRewardsView.vue';
 import ParentPeriodsView from '../views/ParentPeriodsView.vue';
+import ParentPinSetupView from '../views/ParentPinSetupView.vue';
 import ParentSettingsView from '../views/ParentSettingsView.vue';
-import { hasSession } from '../utils/session.js';
+import { hasSession, mustChangePin } from '../utils/session.js';
 
 const routes = [
   // Child Routes
@@ -69,6 +70,11 @@ const routes = [
     component: ParentTasksView
   },
   {
+    path: '/parent/setup-pin',
+    name: 'ParentPinSetup',
+    component: ParentPinSetupView
+  },
+  {
     path: '/parent/periods',
     name: 'ParentPeriods',
     component: ParentPeriodsView
@@ -93,6 +99,7 @@ const router = createRouter({
 });
 router.beforeEach(to => {
   if (to.path.startsWith('/parent/') && to.path !== '/parent/login' && !hasSession('parent')) return '/parent/login';
+  if (to.path.startsWith('/parent/') && !['/parent/login', '/parent/setup-pin'].includes(to.path) && mustChangePin()) return '/parent/setup-pin';
   if (to.path.startsWith('/child/') && !hasSession('parent') && !hasSession('child', to.params.id)) return '/';
 });
 

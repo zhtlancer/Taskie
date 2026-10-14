@@ -12,7 +12,8 @@ client.interceptors.response.use(response => response, error => {
   if (error.response?.status === 401 && !login) clearTokens();
   const message = !error.response ? '无法连接服务器，操作未确认。请检查网络并刷新重试。'
     : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, login } }));
+  const code = error.response?.data?.code;
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   return Promise.reject(message);
 });
 const request = async (method, url, data, params) =>
@@ -36,6 +37,7 @@ export const api = {
     saveToken('child', result.token);
     return result;
   },
+  getAuthSetup: () => get('/auth/setup'),
   getChildren: () => get('/children'),
   createChild: data => post('/children', data),
   updateChild: (id, data) => put(`/children/${id}`, data),

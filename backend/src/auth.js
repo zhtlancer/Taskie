@@ -23,7 +23,7 @@ function installAuthorization(app, db) {
   app.addHook('onRequest', async (request, reply) => {
     const url = authorizationPath(request);
     if (request.method === 'OPTIONS' || !url.startsWith('/api/') && !url.startsWith('/uploads/')) return;
-    if (url === '/api/health' || request.method === 'GET' && url.replace(/\/$/, '') === '/api/children' ||
+    if (url === '/api/health' || request.method === 'GET' && ['/api/children', '/api/auth/setup'].includes(url.replace(/\/$/, '')) ||
       request.method === 'POST' && ['/api/auth/parent-login', '/api/auth/child-login', '/api/auth/logout'].includes(url)) return;
     try { await request.jwtVerify(); } catch { return reply.code(401).send({ error: '请先登录，或重新登录已过期的会话' }); }
     if (!['parent', 'child'].includes(request.user.role) || request.user.epoch !== app.sessionEpoch()) {
@@ -31,6 +31,11 @@ function installAuthorization(app, db) {
     }
     if (request.user.role === 'child' && !db.prepare('SELECT id FROM children WHERE id = ?').get(request.user.child_id)) {
       return reply.code(401).send({ error: '孩子账号已删除，请重新选择账号' });
+    }
+    // Until the default PIN is replaced, a parent session may only change it.
+    if (request.user.role === 'parent' && url !== '/api/auth/parent-pin' &&
+      db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1') {
+      return reply.code(403).send({ error: '请先修改默认家长 PIN', code: 'PARENT_PIN_CHANGE_REQUIRED' });
     }
     const parentOnly = url.startsWith('/api/backups') || url === '/api/auth/parent-pin' ||
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||

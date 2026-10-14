@@ -64,9 +64,13 @@ async function authRoutes(fastify, options) {
     return reply.send({
       success: true,
       token,
-      role: 'parent'
+      role: 'parent',
+      must_change_pin: result.must_change_pin
     });
   });
+
+  // Public: lets the login page show the default-PIN hint only until it has been changed.
+  fastify.get('/setup', async () => ({ parent_pin_is_default: authService.isParentPinDefault() }));
 
   fastify.post('/logout', async (request, reply) => {
     return reply.send({

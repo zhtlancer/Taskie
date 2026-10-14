@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const config = require('../config');
-const { hashPin } = require('../utils/crypto');
+const { hashPin, verifyPin } = require('../utils/crypto');
 const { formatDate } = require('../utils/date');
 
 const defaultBadges = [
@@ -182,6 +182,12 @@ function initDb(db) {
     const defaultPinHash = hashPin(config.defaultParentPin);
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('parent_pin_hash', defaultPinHash);
     console.log('    [SQLite] 已初始化家长 PIN 码');
+  }
+  // The documented default PIN must be changed before the parent console can be used. Databases
+  // (and backups) from before this flag existed get it from comparing their PIN with the default.
+  if (!getParentPinStmt.get('parent_pin_is_default')) {
+    const isDefault = verifyPin(config.defaultParentPin, getParentPinStmt.get('parent_pin_hash').value);
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('parent_pin_is_default', isDefault ? '1' : '0');
   }
   console.log('    [SQLite] 数据库基础数据初始化完毕');
 }

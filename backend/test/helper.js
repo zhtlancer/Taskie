@@ -3,9 +3,12 @@ const path = require('path');
 const buildApp = require('../src/app');
 const { getDb } = require('../src/db');
 
-function createTestApp({ authenticated = true } = {}) {
+function createTestApp({ authenticated = true, defaultParentPin = false } = {}) {
   // Use in-memory SQLite for isolated, fast tests
   const db = getDb(':memory:');
+  // Most tests exercise the parent console as if the default PIN had already been changed
+  // (the PIN itself stays 1234); the forced-change flow opts back in.
+  if (!defaultParentPin) db.prepare("UPDATE settings SET value = '0' WHERE key = 'parent_pin_is_default'").run();
   const tempUploadDir = path.join(__dirname, '../uploads/test-' + Math.random().toString(36).substring(7));
 
   const app = buildApp({

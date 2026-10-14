@@ -13,9 +13,16 @@
 import { onMounted, onBeforeUnmount, ref } from 'vue';
 import { initAudioUnlock } from './utils/sound';
 import { useRouter } from 'vue-router';
+import { setMustChangePin } from './utils/session.js';
 const router = useRouter(), error = ref('');
 const reload = () => window.location.reload();
 const onError = event => {
+  // The server still holds the default parent PIN: go set a new one instead of showing an error.
+  if (event.detail.code === 'PARENT_PIN_CHANGE_REQUIRED') {
+    setMustChangePin(true);
+    router.replace('/parent/setup-pin');
+    return;
+  }
   error.value = event.detail.message;
   if (event.detail.status === 401 && !event.detail.login) router.replace(router.currentRoute.value.path.startsWith('/parent') ? '/parent/login' : '/');
 };

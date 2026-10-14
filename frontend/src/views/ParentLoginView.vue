@@ -32,9 +32,9 @@
         @complete="handlePinComplete"
       />
 
-      <!-- Default PIN hint -->
-      <div class="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
-        💡 提示：默认初始管理 PIN 码为 <span class="font-bold text-brand-600">1234</span>
+      <!-- Default PIN hint, shown only until the default PIN has been replaced -->
+      <div v-if="defaultPinActive" class="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
+        💡 首次使用：初始 PIN 码为 <span class="font-bold text-brand-600">1234</span>，登录后需要设置新 PIN
       </div>
     </main>
 
@@ -46,7 +46,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import api from '../api/client';
 import { useRouter } from 'vue-router';
 import { useParentStore } from '../stores/parent';
 import PinInput from '../components/PinInput.vue';
@@ -55,13 +56,22 @@ const router = useRouter();
 const parentStore = useParentStore();
 
 const errorMessage = ref('');
+const defaultPinActive = ref(false);
+
+onMounted(async () => {
+  try {
+    defaultPinActive.value = (await api.getAuthSetup()).parent_pin_is_default;
+  } catch {
+    defaultPinActive.value = false;
+  }
+});
 
 async function handlePinComplete(pin) {
   try {
     errorMessage.value = '';
     const success = await parentStore.login(pin);
     if (success) {
-      router.push('/parent/dashboard');
+      router.push(parentStore.pendingPin ? '/parent/setup-pin' : '/parent/dashboard');
     }
   } catch (err) {
     errorMessage.value = typeof err === 'string' ? err : 'PIN 码错误，请重新输入';
