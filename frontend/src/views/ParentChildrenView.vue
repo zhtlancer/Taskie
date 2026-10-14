@@ -67,13 +67,22 @@
           </div>
 
           <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-            <button
-              type="button"
-              @click="openEditModal(child)"
-              class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 font-bold text-xs transition-colors"
-            >
-              ✏️ 编辑资料
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                @click="openEditModal(child)"
+                class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 font-bold text-xs transition-colors"
+              >
+                ✏️ 编辑资料
+              </button>
+              <!-- Opens with the parent session, which may also take categories away -->
+              <router-link
+                :to="`/child/${child.id}/characters`"
+                class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 font-bold text-xs transition-colors"
+              >
+                📖 字词本
+              </router-link>
+            </div>
 
             <button
               type="button"

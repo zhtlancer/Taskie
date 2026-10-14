@@ -136,13 +136,15 @@ describe('Characters API (/api/characters)', () => {
     });
     assert.equal(missingCharRes.statusCode, 400);
 
-    // Multi-character string validation (单字校验)
-    const multiCharRes = await ctx.app.inject({
-      method: 'POST',
-      url: '/api/characters',
-      payload: { child_id: child.id, char: '学习' }
-    });
-    assert.equal(multiCharRes.statusCode, 400);
+    // Entries are 1 to 8 Chinese characters: words are allowed, other text and longer phrases are not.
+    for (const invalid of ['ab', '学a', '一二三四五六七八九']) {
+      const invalidRes = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/characters',
+        payload: { child_id: child.id, char: invalid }
+      });
+      assert.equal(invalidRes.statusCode, 400, invalid);
+    }
 
     // Empty/whitespace char validation
     const emptyCharRes = await ctx.app.inject({
@@ -302,5 +304,66 @@ describe('Characters API (/api/characters)', () => {
       url: `/api/characters/${charItem.id}`
     });
     assert.equal(getCharRes.statusCode, 404);
+  });
+
+  test('Words are stored without stroke count or radical and keep their own pinyin', async () => {
+    ctx = createTestApp();
+    const child = (await ctx.app.inject({ method: 'POST', url: '/api/children', payload: { name: '伊伊' } })).json();
+    const word = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/characters',
+      payload: { child_id: child.id, char: ' 银行 ', pinyin: 'yín háng', strokes: 11, radical: '钅', categories: ['write'] }
+    });
+    assert.equal(word.statusCode, 201, word.body);
+    assert.deepEqual(
+      [word.json().char, word.json().pinyin, word.json().strokes, word.json().radical, word.json().categories],
+      ['银行', 'yín háng', null, null, ['write']]
+    );
+    // A word and its characters are separate entries.
+    assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/characters', payload: { child_id: child.id, char: '银' } })).statusCode, 201);
+    assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/characters', payload: { child_id: child.id, char: '银行' } })).statusCode, 409);
+    assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/characters', payload: { child_id: child.id, char: '一心一意' } })).statusCode, 201);
+  });
+
+  test('Categories: listed in a fixed order, filterable, added by children and removed only by parents', async () => {
+    ctx = createTestApp();
+    const child = (await ctx.app.inject({ method: 'POST', url: '/api/children', payload: { name: '伊伊' } })).json();
+    const other = (await ctx.app.inject({ method: 'POST', url: '/api/children', payload: { name: '成成' } })).json();
+    const create = (char, categories) => ctx.app.inject({ method: 'POST', url: '/api/characters', payload: { child_id: child.id, char, categories } });
+    const swallow = (await create('燕', ['error_prone', 'recognize'])).json();
+    await create('春天', ['write']);
+    await create('雨');
+    assert.deepEqual(swallow.categories, ['recognize', 'error_prone']);
+    assert.equal((await create('风', ['bogus'])).statusCode, 400);
+
+    const list = category => ctx.app.inject({ method: 'GET', url: `/api/characters?child_id=${child.id}${category ? `&category=${category}` : ''}` });
+    assert.deepEqual((await list()).json().map(entry => [entry.char, entry.categories]), [['雨', []], ['春天', ['write']], ['燕', ['recognize', 'error_prone']]]);
+    assert.deepEqual((await list('error_prone')).json().map(entry => entry.char), ['燕']);
+    assert.equal((await list('bogus')).statusCode, 400);
+
+    // The child signs in on their own: adding a category works, removing one does not.
+    const childToken = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json().token;
+    const asChild = (id, categories) => ctx.rawInject({ method: 'PUT', url: `/api/characters/${id}/categories`, headers: { authorization: `Bearer ${childToken}` }, payload: { categories } });
+    const added = await asChild(swallow.id, ['recognize', 'error_prone', 'fix_strokes']);
+    assert.equal(added.statusCode, 200, added.body);
+    assert.deepEqual(added.json().categories, ['recognize', 'fix_strokes', 'error_prone']);
+    const removed = await asChild(swallow.id, ['recognize', 'error_prone']);
+    assert.equal(removed.statusCode, 403);
+    assert.match(removed.json().error, /只有家长/);
+    assert.equal((await asChild(swallow.id, [])).statusCode, 403);
+    // Another child's entries are off limits.
+    const otherEntry = (await ctx.app.inject({ method: 'POST', url: '/api/characters', payload: { child_id: other.id, char: '月' } })).json();
+    assert.equal((await asChild(otherEntry.id, ['write'])).statusCode, 403);
+
+    // Removing the whole entry would drop its categories as well.
+    const asChildDelete = id => ctx.rawInject({ method: 'DELETE', url: `/api/characters/${id}`, headers: { authorization: `Bearer ${childToken}` } });
+    assert.equal((await asChildDelete(swallow.id)).statusCode, 403);
+    const plain = (await list()).json().find(entry => entry.char === '雨');
+    assert.equal((await asChildDelete(plain.id)).statusCode, 200);
+
+    // Parents may remove.
+    const cleared = await ctx.app.inject({ method: 'PUT', url: `/api/characters/${swallow.id}/categories`, payload: { categories: ['recognize'] } });
+    assert.deepEqual(cleared.json().categories, ['recognize']);
+    assert.equal((await ctx.app.inject({ method: 'PUT', url: '/api/characters/missing/categories', payload: { categories: [] } })).statusCode, 404);
   });
 });

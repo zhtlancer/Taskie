@@ -77,6 +77,7 @@ export const api = {
   createCharacter: data => post('/characters', data),
   markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }),
   deleteCharacter: id => remove(`/characters/${id}`),
+  setCharacterCategories: (id, categories) => put(`/characters/${id}/categories`, { categories }),
   async loadPhoto(url) {
     if (!url.startsWith('/uploads/')) return url;
     const response = await client.get(url.replace('/uploads/', '../uploads/'), { responseType: 'blob' });

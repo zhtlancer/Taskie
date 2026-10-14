@@ -101,12 +101,16 @@ function buildApp(opts = {}) {
     fastify.register(fastifyStatic, {
       root: clientDistDir,
       prefix: '/',
-      decorateReply: false
+      decorateReply: false,
+      // Stroke data never changes between releases of the same data package.
+      setHeaders: (reply, filePath) => {
+        if (filePath.includes(`${path.sep}hanzi-data${path.sep}`)) reply.header('cache-control', 'public, max-age=2592000');
+      }
     });
 
     fastify.setNotFoundHandler((request, reply) => {
       const url = request.raw.url || '';
-      if (url.startsWith('/api') || url.startsWith('/uploads')) {
+      if (url.startsWith('/api') || url.startsWith('/uploads') || url.startsWith('/hanzi-data/')) {
         reply.status(404).send({ statusCode: 404, error: 'Not Found', message: 'Route not found' });
         return;
       }

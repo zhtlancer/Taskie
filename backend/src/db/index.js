@@ -226,6 +226,15 @@ function initDb(db) {
       db.pragma('foreign_keys = ON');
     }
   }
+  if (db.pragma('user_version', { simple: true }) < 9) {
+    db.transaction(() => {
+      // The character book also holds words, and entries carry categories such as 会写 or 笔画要改正.
+      if (!db.pragma('table_info(characters)').some(c => c.name === 'categories')) {
+        db.exec("ALTER TABLE characters ADD COLUMN categories TEXT NOT NULL DEFAULT '[]'");
+      }
+      db.pragma('user_version = 9');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

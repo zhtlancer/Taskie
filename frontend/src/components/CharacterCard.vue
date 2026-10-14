@@ -57,29 +57,45 @@
       </button>
     </div>
 
-    <!-- Center Calligraphy Tian-Zi-Ge (田字格大字) -->
-    <div class="relative w-32 h-32 mx-auto rounded-2xl bg-[#FFFDF9] border-2 border-red-300/80 shadow-inner flex items-center justify-center my-1 overflow-hidden">
-      <!-- Tian-Zi-Ge Grid Lines (SVG background) -->
-      <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 128 128">
-        <!-- Horizontal center line -->
-        <line x1="0" y1="64" x2="128" y2="64" stroke="#F87171" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.5" />
-        <!-- Vertical center line -->
-        <line x1="64" y1="0" x2="64" y2="128" stroke="#F87171" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.5" />
-        <!-- Diagonal lines for subtle Mi-zi-ge assistance -->
-        <line x1="0" y1="0" x2="128" y2="128" stroke="#FECDD3" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.3" />
-        <line x1="0" y1="128" x2="128" y2="0" stroke="#FECDD3" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.3" />
-      </svg>
+    <!-- Center Calligraphy Tian-Zi-Ge (田字格大字); a word gets one smaller box per character -->
+    <div class="flex flex-wrap justify-center gap-1 my-1 min-h-[8rem] content-center mx-auto" :class="box.row">
+      <div
+        v-for="(ch, index) in chars"
+        :key="index"
+        class="relative rounded-xl bg-[#FFFDF9] border-2 border-red-300/80 shadow-inner flex items-center justify-center overflow-hidden"
+        :class="box.size"
+      >
+        <!-- Tian-Zi-Ge Grid Lines (SVG background) -->
+        <svg class="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 128 128">
+          <line x1="0" y1="64" x2="128" y2="64" stroke="#F87171" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.5" />
+          <line x1="64" y1="0" x2="64" y2="128" stroke="#F87171" stroke-width="1.2" stroke-dasharray="4,3" opacity="0.5" />
+          <line x1="0" y1="0" x2="128" y2="128" stroke="#FECDD3" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.3" />
+          <line x1="0" y1="128" x2="128" y2="0" stroke="#FECDD3" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.3" />
+        </svg>
+        <!-- Big Calligraphy Hanzi (霞鹜文楷 font-kai) -->
+        <span class="relative z-10 font-kai text-slate-800 leading-none group-hover:scale-105 transition-transform duration-300" :class="box.text">
+          {{ ch }}
+        </span>
+      </div>
+    </div>
 
-      <!-- Big Calligraphy Hanzi (霞鹜文楷 font-kai) -->
-      <span class="relative z-10 font-kai text-6xl text-slate-800 leading-none group-hover:scale-105 transition-transform duration-300">
-        {{ character.char }}
+    <!-- Categories -->
+    <div v-if="categories.length" class="flex flex-wrap justify-center gap-1 mt-1">
+      <span v-for="category in categories" :key="category.key" class="px-1.5 py-0.5 rounded-md border text-[10px] font-black" :class="category.chip">
+        {{ category.label }}
       </span>
     </div>
 
-    <!-- Bottom Meta Information (Strokes & Radical) -->
+    <!-- Bottom Meta Information (Strokes & Radical; words show their length) -->
     <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-400">
-      <span class="text-slate-500">部首：{{ character.radical || '—' }}</span>
-      <span class="text-slate-500">{{ character.strokes || '—' }} 画</span>
+      <template v-if="chars.length > 1">
+        <span class="text-slate-500">词语</span>
+        <span class="text-slate-500">{{ chars.length }} 个字</span>
+      </template>
+      <template v-else>
+        <span class="text-slate-500">部首：{{ character.radical || '—' }}</span>
+        <span class="text-slate-500">{{ character.strokes || '—' }} 画</span>
+      </template>
     </div>
   </div>
 </template>
@@ -88,6 +104,7 @@
 import { ref, computed, watch } from 'vue';
 import { getCharPinyin, speakHanzi } from '../utils/hanzi';
 import { playClick } from '../utils/sound';
+import { categoryInfo, entryChars } from '../utils/wordBook';
 
 const props = defineProps({
   character: {
@@ -103,6 +120,17 @@ const props = defineProps({
 const emit = defineEmits(['select', 'toggle-master']);
 
 const localRevealed = ref(false);
+
+const chars = computed(() => entryChars(props.character.char));
+const categories = computed(() => (props.character.categories || []).map(categoryInfo).filter(Boolean));
+// Box size by word length: one big box, two medium, then small boxes; from tablet width up the
+// row is capped at four boxes (an idiom on one line, eight characters on two).
+const box = computed(() => {
+  const n = chars.value.length;
+  if (n === 1) return { size: 'w-32 h-32', text: 'text-6xl', row: '' };
+  if (n === 2) return { size: 'w-16 h-16', text: 'text-4xl', row: '' };
+  return { size: 'w-12 h-12 sm:w-10 sm:h-10', text: 'text-2xl sm:text-xl', row: 'sm:max-w-[10.75rem]' };
+});
 
 const isRevealed = computed(() => {
   return props.forceShowPinyin || localRevealed.value;

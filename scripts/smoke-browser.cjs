@@ -180,6 +180,38 @@ async function main() {
   await page.locator('img[alt="错题图片"]').waitFor();
   await page.waitForFunction(() => document.querySelector('img[alt="错题图片"]')?.naturalWidth > 0);
   pass('browser authenticated photo upload and private image rendering');
+
+  // --- Character and word book: a word with a category; strokes load from the app, not a CDN.
+  const cdnRequests = [];
+  page.on('request', request => { if (request.url().includes('hanzi-writer-data')) cdnRequests.push(request.url()); });
+  await page.goto(`${base}/child/${child.id}/characters`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /查笔画 · 一键入本/ }).click();
+  const lookup = page.getByRole('dialog');
+  const strokes = page.waitForResponse(response => response.url().includes(`/hanzi-data/${encodeURIComponent('行')}.json`) && response.status() === 200);
+  await lookup.getByPlaceholder('输入汉字或词语（如：学、春天）').fill('银行');
+  await strokes;
+  await lookup.getByText('yín háng', { exact: true }).waitFor();
+  await lookup.getByRole('button', { name: /笔画要改正/ }).click();
+  await lookup.getByRole('button', { name: /加入生字生词本/ }).click();
+  await lookup.getByText('已在生字生词本').waitFor();
+  await lookup.getByTitle('关闭').click();
+  await page.locator('.font-kai', { hasText: '银' }).first().click();
+  const detail = page.getByRole('dialog');
+  const fixMark = detail.getByRole('button', { name: /笔画要改正/ });
+  assert.equal(await fixMark.getAttribute('aria-pressed'), 'true');
+  await fixMark.click();
+  await detail.getByText('去掉「笔画要改正」需要家长操作').waitFor();
+  assert.equal(await detail.getByRole('button', { name: '移出', exact: true }).isDisabled(), true);
+  await detail.getByRole('button', { name: /会写/ }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] button[aria-pressed="true"]')].map(b => b.textContent.trim()).join() .includes('会写'));
+  await detail.getByTitle('关闭弹窗').click();
+  await page.getByRole('button', { name: /易错字/ }).click();
+  await page.getByText('当前筛选下没有字词').waitFor();
+  await page.getByRole('button', { name: /笔画要改正/ }).click();
+  await page.locator('.font-kai', { hasText: '行' }).first().waitFor();
+  assert.deepEqual(cdnRequests, []);
+  pass('browser child adds a word with a category, may add but not remove categories, and strokes load locally');
+
   await page.goto(`${base}/parent/tasks`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL('**/parent/login');
   pass('browser password-free child receives credentials and cannot open parent pages');
@@ -191,6 +223,19 @@ async function main() {
   await page.getByRole('button', { name: '✓ 确认兑换', exact: true }).click();
   await page.getByText('已兑换', { exact: true }).waitFor();
   pass('browser parent approves the redemption');
+
+  // --- The parent opens the child's word book from the console and takes a category away.
+  await page.goto(`${base}/parent/children`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('link', { name: '📖 字词本' }).click();
+  await page.waitForURL(`**/child/${child.id}/characters`);
+  await page.locator('.font-kai', { hasText: '银' }).first().click();
+  const parentDetail = page.getByRole('dialog');
+  await parentDetail.getByText('点一下添加或去掉').waitFor();
+  await parentDetail.getByRole('button', { name: /笔画要改正/ }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] button[aria-pressed="false"]')].some(button => button.textContent.includes('笔画要改正')));
+  assert.equal(await parentDetail.getByRole('button', { name: '移出', exact: true }).isEnabled(), true);
+  await parentDetail.getByTitle('关闭弹窗').click();
+  pass('browser parent opens the word book from the console and removes a category');
 
   // --- Network failure is reported, and the app recovers.
   // Let the login page finish its own requests first, so the failure comes from the click.

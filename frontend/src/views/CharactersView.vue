@@ -16,13 +16,13 @@
           <div>
             <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
               <span>📖</span>
-              <span>生字智能本</span>
+              <span>生字生词本</span>
               <span class="hidden sm:inline text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200">
                 笔顺动画 · 描红临摹
               </span>
             </h1>
             <p class="text-xs font-bold text-slate-400">
-              点开看笔顺演示与临摹，拼音默认遮罩自主考查
+              收录生字和词语，点开看笔顺演示与临摹，拼音默认遮罩自主考查
             </p>
           </div>
         </div>
@@ -31,7 +31,7 @@
         <div class="order-last w-full lg:order-none lg:w-auto flex flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
           <div class="flex items-center gap-2">
             <span class="text-xs font-bold text-slate-400">总收录:</span>
-            <span class="text-sm font-black text-slate-800">{{ characterStore.totalCount }} 字</span>
+            <span class="text-sm font-black text-slate-800">{{ characterStore.totalCount }} 个</span>
           </div>
           <span class="text-slate-200 font-bold">|</span>
           <div class="flex items-center gap-2">
@@ -105,7 +105,7 @@
                 ? 'bg-brand-50 text-brand-600 border-brand-200 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             ]"
-            title="一键揭示或遮罩全部生字拼音"
+            title="一键揭示或遮罩全部拼音"
           >
             <span>{{ globalShowPinyin ? '👁️' : '🙈' }}</span>
             <span>{{ globalShowPinyin ? '全部拼音已显露' : '拼音默认遮罩中' }}</span>
@@ -121,6 +121,24 @@
             <span>查笔画 · 一键入本</span>
           </button>
         </div>
+      </div>
+
+      <!-- Category filter: tap one to show only its entries, tap again to show all -->
+      <div class="flex flex-wrap items-center gap-2 -mt-3 mb-6">
+        <span class="text-xs font-bold text-slate-400">按分类:</span>
+        <button
+          v-for="category in CATEGORIES"
+          :key="category.key"
+          type="button"
+          @click="selectCategory(category.key)"
+          class="px-3 py-1.5 rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center gap-1"
+          :class="currentCategory === category.key ? category.chip + ' ring-2 ring-offset-1 ring-brand-300' : 'bg-white text-slate-500 border-slate-200'"
+          :aria-pressed="currentCategory === category.key ? 'true' : 'false'"
+        >
+          <span>{{ category.icon }}</span>
+          <span>{{ category.label }}</span>
+          <span class="text-[10px] opacity-70">{{ characterStore.categoryCount(category.key) }}</span>
+        </button>
       </div>
 
       <!-- Character Cards Flow / Grid (Responsive for iPad Air 5 1180px) -->
@@ -145,10 +163,10 @@
       >
         <div class="text-6xl mb-4 animate-bounce">📖</div>
         <h3 class="text-xl font-black text-slate-800 mb-2">
-          {{ currentFilter === 'all' ? '生字本还没有收录生字' : '当前分类下暂无生字' }}
+          {{ currentFilter === 'all' && !currentCategory ? '生字生词本还是空的' : '当前筛选下没有字词' }}
         </h3>
         <p class="text-xs font-bold text-slate-400 max-w-sm mb-6 leading-relaxed">
-          在语文课文或作业中遇到不认识、笔画记不清的汉字？点击「查笔画」即可输入任意汉字，看动态书写动画并一键收录到生字本！
+          在语文课文或作业中遇到不认识、笔画记不清的字或词？点击「查笔画」输入汉字或词语，看动态书写动画并一键收录！
         </p>
 
         <button
@@ -157,7 +175,7 @@
           class="h-12 px-6 rounded-2xl bg-gradient-to-r from-brand-500 to-indigo-600 text-white font-black text-sm shadow-button hover:from-brand-600 hover:to-indigo-700 active:scale-95 transition-all flex items-center gap-2"
         >
           <span>🔍</span>
-          <span>立即查笔画添加生字</span>
+          <span>立即查笔画添加字词</span>
         </button>
       </div>
     </div>
@@ -170,6 +188,7 @@
       @close="selectedCharacter = null"
       @toggle-master="handleToggleMaster"
       @delete="handleDeleteCharacter"
+      @updated="selectedCharacter = { ...$event }"
     />
 
     <!-- 2. Real-time Stroke Lookup & Add Modal -->
@@ -193,31 +212,36 @@ import CharacterDetailModal from '../components/CharacterDetailModal.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
+import { CATEGORIES } from '../utils/wordBook';
 
 const route = useRoute();
 const childId = computed(() => route.params.id || 'child-demo-1');
 const characterStore = useCharacterStore();
 
 const currentFilter = ref('all');
+const currentCategory = ref(null);
 const globalShowPinyin = ref(false);
 const selectedCharacter = ref(null);
 const isLookupModalOpen = ref(false);
 
 const filterOptions = computed(() => [
-  { key: 'all', label: '全部生字', icon: '📚', count: characterStore.totalCount },
+  { key: 'all', label: '全部', icon: '📚', count: characterStore.totalCount },
   { key: 'learning', label: '学习中', icon: '🌱', count: characterStore.learningCount },
   { key: 'mastered', label: '已掌握', icon: '✅', count: characterStore.masteredCount },
 ]);
 
 const filteredCharacters = computed(() => {
-  if (currentFilter.value === 'mastered') {
-    return characterStore.characters.filter((c) => Boolean(c.is_mastered));
-  }
-  if (currentFilter.value === 'learning') {
-    return characterStore.characters.filter((c) => !c.is_mastered);
-  }
-  return characterStore.characters;
+  let list = characterStore.characters;
+  if (currentFilter.value === 'mastered') list = list.filter((c) => Boolean(c.is_mastered));
+  if (currentFilter.value === 'learning') list = list.filter((c) => !c.is_mastered);
+  if (currentCategory.value) list = list.filter((c) => c.categories?.includes(currentCategory.value));
+  return list;
 });
+
+function selectCategory(key) {
+  playClick();
+  currentCategory.value = currentCategory.value === key ? null : key;
+}
 
 onMounted(async () => {
   await characterStore.fetchCharacters(childId.value);

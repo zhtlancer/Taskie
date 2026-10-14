@@ -2,9 +2,9 @@ async function charactersRoutes(fastify, options) {
   const { charactersService } = options;
 
   fastify.get('/', async (request, reply) => {
-    const { child_id, is_mastered } = request.query || {};
+    const { child_id, is_mastered, category } = request.query || {};
     try {
-      const list = charactersService.listCharacters({ child_id, is_mastered });
+      const list = charactersService.listCharacters({ child_id, is_mastered, category });
       return reply.send(list);
     } catch (err) {
       return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
@@ -41,9 +41,18 @@ async function charactersRoutes(fastify, options) {
     }
   });
 
+  fastify.put('/:id/categories', async (request, reply) => {
+    try {
+      const updated = charactersService.setCategories(request.params.id, request.body?.categories, { role: request.user?.role });
+      return reply.send(updated);
+    } catch (err) {
+      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+    }
+  });
+
   fastify.delete('/:id', async (request, reply) => {
     try {
-      const result = charactersService.deleteCharacter(request.params.id);
+      const result = charactersService.deleteCharacter(request.params.id, { role: request.user?.role });
       return reply.send(result);
     } catch (err) {
       return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });

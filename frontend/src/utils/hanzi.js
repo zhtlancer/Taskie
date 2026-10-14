@@ -17,13 +17,14 @@ const charDataCache = new Map();
 for (const [char, data] of Object.entries(bundledData)) charDataCache.set(char, data);
 
 /**
- * Get pinyin for a Chinese character
+ * Get pinyin for a Chinese character or word; words are read as a whole so that
+ * polyphonic characters get the reading the word uses (银行 → yín háng).
  * @param {string} char
  * @returns {string} e.g. "xué"
  */
 export function getCharPinyin(char) {
   if (!char) return '';
-  const clean = char.trim()[0];
+  const clean = char.trim();
   if (!clean) return '';
   try {
     return pinyin(clean, { toneType: 'symbol' }) || '';
@@ -95,17 +96,23 @@ export async function charDataLoader(char, onComplete, onError) {
     return;
   }
 
-  // Try fetching from CDN
-  try {
-    const res = await fetch(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/${encodeURIComponent(clean)}.json`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    charDataCache.set(clean, data);
-    if (onComplete) onComplete(data);
-  } catch (err) {
-    console.error(`[HanziWriter] Failed to load character data for ${clean}`, err);
-    if (onError) onError(err);
+  // Stroke data ships with the app (/hanzi-data, see scripts/copy-hanzi-data.mjs); the CDN is
+  // only a fallback, e.g. for the Vite dev server.
+  let lastError;
+  for (const base of ['/hanzi-data', 'https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0.1']) {
+    try {
+      const res = await fetch(`${base}/${encodeURIComponent(clean)}.json`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      charDataCache.set(clean, data);
+      if (onComplete) onComplete(data);
+      return;
+    } catch (err) {
+      lastError = err;
+    }
   }
+  console.error(`[HanziWriter] Failed to load character data for ${clean}`, lastError);
+  if (onError) onError(lastError);
 }
 
 /**

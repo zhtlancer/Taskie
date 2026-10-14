@@ -22,3 +22,10 @@ export function hasSession(role, childId) {
     return payload.exp * 1000 > Date.now() && payload.role === role && (!childId || payload.child_id === childId);
   } catch { return false; }
 }
+// The role the API sees: requests carry the parent session when there is one.
+export function currentRole() {
+  const token = getToken();
+  try {
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).role || null;
+  } catch { return null; }
+}

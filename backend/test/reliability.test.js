@@ -215,7 +215,7 @@ test('current-schema backups missing assignment data are rejected before changin
     const damaged = JSON.parse(gunzipSync(archive));
     const db = new Database(Buffer.from(damaged.database, 'base64'));
     db.exec(corruption);
-    assert.equal(db.pragma('user_version', { simple: true }), 8);
+    assert.equal(db.pragma('user_version', { simple: true }), 9);
     damaged.database = db.serialize().toString('base64');
     db.close();
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
@@ -255,7 +255,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 8);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 9);
   const rows = ctx.db.prepare('SELECT source_template_id, template_created_at FROM daily_tasks').all();
   assert.ok(rows.every(row => row.source_template_id === template.id && row.template_created_at === template.created_at));
   tasks.deleteTemplate(template.id);
@@ -311,6 +311,28 @@ test('old schema migrates without losing existing children and fixed-day templat
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
     assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
-    assert.equal(db.pragma('user_version', { simple: true }), 8);
+    assert.equal(db.pragma('user_version', { simple: true }), 9);
   } finally { db.close(); }
+});
+
+test('v8 character books restore with empty categories; a v9 backup without them is rejected', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  ctx.app.services.charactersService.createCharacter({ child_id: child.id, char: '春', categories: ['write'] });
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const Database = require('better-sqlite3');
+  const legacy = JSON.parse(gunzipSync(archive));
+  const db = new Database(Buffer.from(legacy.database, 'base64'));
+  db.exec('ALTER TABLE characters DROP COLUMN categories');
+  const damaged = { ...legacy, database: db.serialize().toString('base64') };
+  const invalid = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
+  assert.equal(invalid.statusCode, 400);
+  assert.match(invalid.body, /备份缺少生字生词分类/);
+  assert.deepEqual(ctx.app.services.charactersService.listCharacters({ child_id: child.id }).map(c => c.categories), [['write']]);
+  db.pragma('user_version = 8');
+  legacy.database = db.serialize().toString('base64');
+  db.close();
+  const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
+  assert.equal(restored.statusCode, 200, restored.body);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 9);
+  assert.deepEqual(ctx.app.services.charactersService.listCharacters({ child_id: child.id }).map(c => [c.char, c.categories]), [['春', []]]);
 });

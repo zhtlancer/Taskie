@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
--- Character book (生字本)
+-- Character and word book (生字生词本): single characters and words of up to 8 characters
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
   child_id TEXT NOT NULL,
@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS characters (
   is_mastered INTEGER DEFAULT 0,
   created_at TEXT NOT NULL,
   mastered_at TEXT,
+  categories TEXT NOT NULL DEFAULT '[]', -- JSON array of category keys, see characters.service.js
   FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE,
   UNIQUE(child_id, char)
 );

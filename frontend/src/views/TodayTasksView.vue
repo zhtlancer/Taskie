@@ -178,7 +178,7 @@
             class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
           >
             <span>📖</span>
-            <span>生字本</span>
+            <span>生字生词本</span>
           </router-link>
 
           <router-link

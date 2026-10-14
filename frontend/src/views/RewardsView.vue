@@ -30,7 +30,7 @@
             class="hidden lg:flex px-3.5 py-2 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all items-center gap-1.5"
           >
             <span>📖</span>
-            <span>生字本</span>
+            <span>生字生词本</span>
           </router-link>
           <router-link
             :to="`/child/${childId}/today`"

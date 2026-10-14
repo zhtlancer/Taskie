@@ -26,7 +26,7 @@ const tabs = [
   { path: 'today', icon: '📋', label: '今日' },
   { path: 'rewards', icon: '🏆', label: '积分' },
   { path: 'mistakes', icon: '📝', label: '错题' },
-  { path: 'characters', icon: '📖', label: '生字' },
+  { path: 'characters', icon: '📖', label: '字词' },
   { path: 'history', icon: '📊', label: '历史' }
 ];
 </script>

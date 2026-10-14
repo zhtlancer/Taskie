@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
 import { playStarAdded } from '../utils/sound';
+import { cleanEntry } from '../utils/wordBook';
 
 export const useCharacterStore = defineStore('character', {
   state: () => ({
@@ -31,15 +32,14 @@ export const useCharacterStore = defineStore('character', {
       return state.characters;
     },
     isCharInBook: (state) => (char) => {
-      if (!char) return false;
-      const clean = char.trim()[0];
-      return state.characters.some((c) => c.char === clean);
+      const clean = cleanEntry(char);
+      return Boolean(clean) && state.characters.some((c) => c.char === clean);
     },
     getCharRecord: (state) => (char) => {
-      if (!char) return null;
-      const clean = char.trim()[0];
+      const clean = cleanEntry(char);
       return state.characters.find((c) => c.char === clean) || null;
     },
+    categoryCount: (state) => (key) => state.characters.filter((c) => c.categories?.includes(key)).length,
   },
 
   actions: {
@@ -53,16 +53,16 @@ export const useCharacterStore = defineStore('character', {
         this.characters = Array.isArray(data) ? data : [];
       } catch (err) {
         console.error('[CharacterStore] Fetch error:', err);
-        this.error = typeof err === 'string' ? err : err.message || '加载生字本失败';
+        this.error = typeof err === 'string' ? err : err.message || '加载生字生词本失败';
       } finally {
         this.loading = false;
       }
     },
 
-    async addCharacter({ child_id, char, pinyin, strokes, radical }) {
+    async addCharacter({ child_id, char, pinyin, strokes, radical, categories = [] }) {
       const targetChildId = child_id || this.currentChildId;
       if (!targetChildId) throw new Error('缺少孩子账号信息');
-      const clean = (char || '').trim()[0];
+      const clean = cleanEntry(char);
       if (!clean) throw new Error('请输入有效汉字');
 
       // Check if already in book
@@ -79,6 +79,7 @@ export const useCharacterStore = defineStore('character', {
           pinyin,
           strokes,
           radical,
+          categories,
         });
 
         // Add to state list head if not present
@@ -91,7 +92,7 @@ export const useCharacterStore = defineStore('character', {
 
         return { success: true, character: created };
       } catch (err) {
-        const msg = typeof err === 'string' ? err : err.message || '加入生字本失败';
+        const msg = typeof err === 'string' ? err : err.message || '加入生字生词本失败';
         this.error = msg;
         throw new Error(msg);
       } finally {
@@ -120,6 +121,14 @@ export const useCharacterStore = defineStore('character', {
         // Fallback optimistic update
         this.characters[index].is_mastered = nextMastered;
       }
+    },
+
+    // Throws the server's message, e.g. when a child tries to take a category away.
+    async setCategories(id, categories) {
+      const index = this.characters.findIndex((c) => c.id === id);
+      const updated = await api.setCharacterCategories(id, categories);
+      if (index !== -1) this.characters[index] = { ...this.characters[index], ...updated };
+      return updated;
     },
 
     async removeCharacter(id) {

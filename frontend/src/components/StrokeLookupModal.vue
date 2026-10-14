@@ -21,7 +21,7 @@
               <span class="text-xs font-bold text-brand-600 bg-brand-100/70 px-2 py-0.5 rounded-full">动画演示</span>
             </h2>
             <p class="text-xs font-bold text-slate-400">
-              输入任意汉字，实时看矢量书写动画与总笔画，一键加入生字本
+              输入汉字或词语，实时看书写动画与总笔画，一键加入生字生词本
             </p>
           </div>
         </div>
@@ -45,8 +45,8 @@
               ref="charInputRef"
               v-model="inputRaw"
               type="text"
-              maxlength="10"
-              placeholder="输入任意汉字（如：学、春、写）"
+              maxlength="20"
+              placeholder="输入汉字或词语（如：学、春天）"
               class="w-full h-14 pl-5 pr-14 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-brand-500 focus:bg-white text-xl font-black text-slate-800 placeholder:text-slate-300 placeholder:font-normal outline-none transition-all shadow-inner"
               @input="onInputChanged"
               @keydown.enter="onInputConfirm"
@@ -71,11 +71,25 @@
               type="button"
               @click="selectChar(s)"
               class="px-2.5 py-1 rounded-xl text-xs font-black transition-all active:scale-95 shrink-0"
-              :class="currentChar === s ? 'bg-brand-500 text-white shadow-button' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+              :class="entry === s ? 'bg-brand-500 text-white shadow-button' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             >
               {{ s }}
             </button>
           </div>
+        </div>
+
+        <!-- A word: pick which character to animate -->
+        <div v-if="chars.length > 1" class="flex flex-wrap justify-center gap-2 mb-3">
+          <button
+            v-for="(ch, index) in chars"
+            :key="index"
+            type="button"
+            @click="pickChar(index)"
+            class="w-11 h-11 rounded-xl border-2 font-kai text-2xl transition-all active:scale-95"
+            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 text-slate-800'"
+          >
+            {{ ch }}
+          </button>
         </div>
 
         <!-- 2. Character Metadata Strip (Pinyin with sound, Radical, Strokes) -->
@@ -98,7 +112,7 @@
 
           <!-- Radical -->
           <div class="flex items-center gap-1">
-            <span class="text-xs font-bold text-slate-400">部首:</span>
+            <span class="text-xs font-bold text-slate-400">{{ charPrefix }}部首:</span>
             <span class="text-sm font-black text-slate-700 font-reading">{{ radicalInfo.radical }}</span>
           </div>
 
@@ -106,7 +120,7 @@
 
           <!-- Strokes Count -->
           <div class="flex items-center gap-1">
-            <span class="text-xs font-bold text-slate-400">总笔画:</span>
+            <span class="text-xs font-bold text-slate-400">{{ charPrefix }}总笔画:</span>
             <span class="text-sm font-black text-slate-700">{{ strokesCount }} 画</span>
           </div>
 
@@ -114,14 +128,14 @@
 
           <!-- Structure -->
           <div class="flex items-center gap-1">
-            <span class="text-xs font-bold text-slate-400">结构:</span>
+            <span class="text-xs font-bold text-slate-400">{{ charPrefix }}结构:</span>
             <span class="text-xs font-bold text-slate-600">{{ radicalInfo.struct }}</span>
           </div>
         </div>
 
         <!-- 3. Ultra-large Mi-Zi-Ge Hanzi Writer (Size 300px for iPad touch) -->
         <HanziGrid
-          :key="currentChar"
+          :key="`${selectedIndex}-${currentChar}`"
           :character="currentChar"
           :size="300"
           grid-type="mi"
@@ -129,19 +143,36 @@
           @ready="onGridReady"
         />
 
-        <!-- 4. Core Action Button: ⭐ 加入生字本 / ✅ 已在生字本 -->
+        <!-- 4. Core Action Button: ⭐ 加入生字生词本 / ✅ 已在生字生词本 -->
         <div class="w-full max-w-md mt-6 pt-3 border-t border-slate-100 flex flex-col items-center">
+          <!-- Categories to mark the entry with when it is added -->
+          <div v-if="!isAlreadyInBook && entry" class="w-full mb-3">
+            <span class="text-xs font-bold text-slate-400">加入时标记（可选）:</span>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
+              <button
+                v-for="category in CATEGORIES"
+                :key="category.key"
+                type="button"
+                @click="toggleNewCategory(category.key)"
+                class="h-9 rounded-xl border text-xs font-black transition-all active:scale-95"
+                :class="newCategories.includes(category.key) ? category.chip : 'bg-white text-slate-400 border-dashed border-slate-300'"
+                :aria-pressed="newCategories.includes(category.key) ? 'true' : 'false'"
+              >
+                {{ category.icon }} {{ category.label }}
+              </button>
+            </div>
+          </div>
           <!-- Add to Character Book Button -->
           <button
             v-if="!isAlreadyInBook"
             type="button"
             @click="onAddToBook"
-            :disabled="isSubmitting"
+            :disabled="isSubmitting || !entry"
             class="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-500 hover:to-orange-500 text-white font-black text-base shadow-yellow-button active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <span class="text-xl">⭐</span>
-            <span>加入生字本</span>
-            <span class="text-xs opacity-90">（入本后可随时复习打卡）</span>
+            <span>加入生字生词本</span>
+            <span class="hidden sm:inline text-xs opacity-90">（入本后可随时复习打卡）</span>
           </button>
 
           <!-- Already in Book Button -->
@@ -150,8 +181,8 @@
             class="w-full h-14 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-700 font-black text-base flex items-center justify-center gap-2 shadow-xs"
           >
             <span class="text-xl">✅</span>
-            <span>已在生字本</span>
-            <span class="text-xs font-bold text-emerald-600">（随时可以在生字本中临摹复习）</span>
+            <span>已在生字生词本</span>
+            <span class="hidden sm:inline text-xs font-bold text-emerald-600">（随时可以临摹复习）</span>
           </div>
 
           <p v-if="toastMessage" class="mt-2 text-xs font-bold text-emerald-600 animate-pop-in">
@@ -169,6 +200,7 @@ import HanziGrid from './HanziGrid.vue';
 import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../utils/hanzi';
 import { useCharacterStore } from '../stores/character';
 import { playClick } from '../utils/sound';
+import { CATEGORIES, cleanEntry, entryChars } from '../utils/wordBook';
 
 const props = defineProps({
   modelValue: {
@@ -196,15 +228,22 @@ const isOpen = computed({
 
 const charInputRef = ref(null);
 const inputRaw = ref(props.initialChar || '学');
-const currentChar = ref((props.initialChar || '学').trim()[0] || '学');
+// The entry is what gets added: the Chinese characters typed, a character or a word.
+const entry = ref(cleanEntry(props.initialChar) || '学');
+const selectedIndex = ref(0);
 const dynamicStrokes = ref(null);
 const isSubmitting = ref(false);
 const toastMessage = ref('');
+const newCategories = ref([]);
 
-const quickChars = ['学', '春', '写', '生', '书', '画', '笔', '语', '数', '爱', '天', '好'];
+const quickChars = ['学', '春', '写', '生', '书', '画', '笔', '语', '春天', '学习', '一心一意'];
+
+const chars = computed(() => entryChars(entry.value));
+const currentChar = computed(() => chars.value[selectedIndex.value] || chars.value[0] || '');
+const charPrefix = computed(() => (chars.value.length > 1 ? `「${currentChar.value}」` : ''));
 
 const pinyinText = computed(() => {
-  return getCharPinyin(currentChar.value) || '—';
+  return getCharPinyin(entry.value) || '—';
 });
 
 const radicalInfo = computed(() => {
@@ -217,25 +256,41 @@ const strokesCount = computed(() => {
 });
 
 const isAlreadyInBook = computed(() => {
-  return characterStore.isCharInBook(currentChar.value);
+  return characterStore.isCharInBook(entry.value);
 });
 
+// Typing shows the latest character's strokes, as before; the whole entry is what gets added.
 function onInputChanged() {
-  const clean = (inputRaw.value || '').trim();
+  const clean = cleanEntry(inputRaw.value);
   if (clean) {
-    currentChar.value = clean[clean.length - 1]; // Take the latest inputted character
+    entry.value = clean;
+    selectedIndex.value = entryChars(clean).length - 1;
     dynamicStrokes.value = null;
   }
+}
+
+function pickChar(index) {
+  playClick();
+  selectedIndex.value = index;
+  dynamicStrokes.value = null;
+}
+
+function toggleNewCategory(key) {
+  playClick();
+  newCategories.value = newCategories.value.includes(key)
+    ? newCategories.value.filter(item => item !== key)
+    : CATEGORIES.map(c => c.key).filter(k => k === key || newCategories.value.includes(k));
 }
 
 function onInputConfirm() {
   onInputChanged();
 }
 
-function selectChar(char) {
+function selectChar(text) {
   playClick();
-  inputRaw.value = char;
-  currentChar.value = char;
+  inputRaw.value = text;
+  entry.value = text;
+  selectedIndex.value = 0;
   dynamicStrokes.value = null;
 }
 
@@ -247,7 +302,7 @@ function clearInput() {
 
 function onSpeak() {
   playClick();
-  speakHanzi(currentChar.value);
+  speakHanzi(entry.value);
 }
 
 function onGridReady(data) {
@@ -258,21 +313,24 @@ function onGridReady(data) {
 
 async function onAddToBook() {
   playClick();
-  if (!currentChar.value || isSubmitting.value) return;
+  if (!entry.value || isSubmitting.value) return;
 
   isSubmitting.value = true;
   toastMessage.value = '';
+  const single = chars.value.length === 1;
 
   try {
     const res = await characterStore.addCharacter({
       child_id: props.childId,
-      char: currentChar.value,
+      char: entry.value,
       pinyin: pinyinText.value,
-      strokes: strokesCount.value === '—' ? 0 : Number(strokesCount.value),
-      radical: radicalInfo.value.radical,
+      strokes: single && strokesCount.value !== '—' ? Number(strokesCount.value) : null,
+      radical: single ? radicalInfo.value.radical : null,
+      categories: newCategories.value,
     });
 
-    toastMessage.value = `🌟 成功将「${currentChar.value}」加入生字本！`;
+    toastMessage.value = `🌟 成功将「${entry.value}」加入生字生词本！`;
+    newCategories.value = [];
     emit('added', res.character);
     setTimeout(() => {
       toastMessage.value = '';

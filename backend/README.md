@@ -36,7 +36,7 @@ backend/
 │   │   ├── rewards.service.js   # 积分、连续打卡 (Streak) 与徽章自动解锁逻辑
 │   │   ├── mistakes.service.js  # 错题记录与照片上传
 │   │   ├── stats.service.js     # 历史记录与本周/上周汇总统计
-│   │   └── characters.service.js# 生字本数据管理与掌握状态切换
+│   │   └── characters.service.js# 生字生词本：字词、分类与掌握状态
 │   ├── routes/
 │   │   ├── auth.routes.js       # /api/auth/*
 │   │   ├── children.routes.js   # /api/children/*
@@ -337,14 +337,16 @@ npm test
 
 ---
 
-### 8. 生字本管理 (Characters)
+### 8. 生字生词本 (Characters)
 
-- **`GET /api/characters?child_id=<childId>&is_mastered=<0|1>`**：获取指定孩子的生字列表
-  - 支持按掌握状态 `is_mastered` 过滤（`0` 未掌握，`1` 已掌握）；
+每条记录是一个汉字或一个词语（1 至 8 个汉字），带有分类 `categories`：`recognize`（会认读）、`write`（会写）、`fix_strokes`（笔画要改正）、`error_prone`（易错字），可多选，按此顺序返回。
+
+- **`GET /api/characters?child_id=<childId>&is_mastered=<0|1>&category=<key>`**：获取指定孩子的字词列表
+  - 支持按掌握状态 `is_mastered` 过滤（`0` 未掌握，`1` 已掌握），按分类 `category` 过滤；
   - 默认按 `created_at DESC` 倒序返回；
   - 严格按 `child_id` 实施多孩子数据隔离。
 - **`GET /api/characters/:id`**：获取指定生字详情
-- **`POST /api/characters`**：将汉字加入生字本 (201)
+- **`POST /api/characters`**：将汉字或词语加入生字生词本 (201)
   - 请求体：
     ```json
     {
@@ -352,18 +354,22 @@ npm test
       "char": "学",
       "pinyin": "xué",
       "strokes": 8,
-      "radical": "子"
+      "radical": "子",
+      "categories": ["write"]
     }
     ```
   - 校验规则：
     - `child_id` 必须存在且合法；
-    - `char` 单字校验（单字符且非空）；
-    - 唯一性校验：同一孩子不可重复添加相同汉字，重复添加返回 409。
+    - `char` 为 1 至 8 个汉字；词语不保存 `strokes` 与 `radical`；
+    - `categories` 可选，只能是上述四个分类；
+    - 唯一性校验：同一孩子不可重复添加相同字词，重复添加返回 409。
 - **`PUT /api/characters/:id/master`**：切换 / 标记掌握状态
   - 可传 `{ "is_mastered": true|false }` 显式设置；
   - 若不传请求体，则自动取反切换状态；
   - 设为已掌握时记录 `mastered_at` ISO 时间戳，取消掌握时清空为 null。
-- **`DELETE /api/characters/:id`**：从生字本移除生字 (200)
+- **`PUT /api/characters/:id/categories`**：设置分类，请求体 `{ "categories": ["recognize", "write"] }`
+  - 孩子只能添加分类，去掉任何分类返回 403（“只有家长可以去掉分类”）；家长可任意设置。
+- **`DELETE /api/characters/:id`**：从生字生词本移除 (200)；带分类的字词只有家长可以移除，孩子移除返回 403。
 
 ### 9. 积分兑换、临时任务、长期任务与假期
 
