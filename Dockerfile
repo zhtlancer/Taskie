@@ -1,11 +1,11 @@
 # ==========================================
 # Stage 1: Build Frontend Assets
 # ==========================================
-FROM node:20-bookworm-slim AS frontend-builder
+FROM node:22-bookworm-slim AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY frontend/ ./
 RUN npm run build
@@ -13,7 +13,7 @@ RUN npm run build
 # ==========================================
 # Stage 2: Production Container Runtime
 # ==========================================
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
@@ -28,16 +28,17 @@ COPY backend/package*.json ./backend/
 WORKDIR /app/backend
 
 # Install production dependencies and recompile better-sqlite3 from source
-# (strips vendor prebuilds with advanced instruction sets so it runs reliably on all NAS CPUs)
+# Use a locally compiled addon and verify it before publishing the image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
     libstdc++6 \
     && npm install -g node-gyp \
-    && npm install --omit=dev \
+    && npm ci --omit=dev --engine-strict \
     && rm -rf node_modules/better-sqlite3/prebuilds \
     && (cd node_modules/better-sqlite3 && node-gyp rebuild --release --force_build=1) \
+    && node -e "const assert = require('node:assert/strict'); const Database = require('better-sqlite3'); const db = new Database(':memory:'); assert.equal(db.prepare('SELECT 1 AS ok').get().ok, 1); db.close();" \
     && npm uninstall -g node-gyp \
     && rm -rf /var/lib/apt/lists/*
 
