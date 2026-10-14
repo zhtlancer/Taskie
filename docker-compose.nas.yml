@@ -16,5 +16,8 @@ services:
       - TIME_ZONE=Asia/Shanghai
       - BACKUP_INTERVAL_HOURS=24
       - BACKUP_RETENTION=7
+      # 运行程序的用户（启动时自动接管 ./data）。保持默认即可；如需修改，请使用专用普通账户的 uid/gid，不要使用管理员账户
+      - PUID=1000
+      - PGID=1000
     volumes:
       - ./data:/app/data

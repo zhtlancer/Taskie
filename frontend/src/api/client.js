@@ -1,8 +1,6 @@
 import axios from 'axios';
 import { getToken, saveToken, clearTokens } from '../utils/session.js';
 
-export const demoMode = import.meta.env.VITE_DEMO_MODE === 'true';
-let mockStore;
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api', timeout: 15000 });
 client.interceptors.request.use(config => {
   const token = getToken();
@@ -17,51 +15,46 @@ client.interceptors.response.use(response => response, error => {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, login } }));
   return Promise.reject(message);
 });
-const request = async (method, url, data, demo, params) => {
-  if (demoMode) {
-    mockStore ||= (await import('./mockStore')).mockStore;
-    return demo();
-  }
-  return (await client.request({ method, url, data, params, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
-};
-const get = (url, demo, params) => request('get', url, undefined, demo, params);
-const post = (url, data, demo) => request('post', url, data, demo);
-const put = (url, data, demo) => request('put', url, data, demo);
-const remove = (url, demo) => request('delete', url, undefined, demo);
+const request = async (method, url, data, params) =>
+  (await client.request({ method, url, data, params, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
+const get = (url, params) => request('get', url, undefined, params);
+const post = (url, data) => request('post', url, data);
+const put = (url, data) => request('put', url, data);
+const remove = url => request('delete', url);
 
 export const api = {
   async loginParent({ pin }) {
-    const result = await post('/auth/parent-login', { pin }, () => mockStore.parentLogin(pin));
+    const result = await post('/auth/parent-login', { pin });
     if (!result.success) throw result.error;
-    saveToken('parent', result.token || 'demo-parent');
+    saveToken('parent', result.token);
     return result;
   },
   async loginChild({ child_id, pin }) {
-    const result = await post('/auth/child-login', { child_id, pin }, () => mockStore.childLogin(child_id, pin));
+    const result = await post('/auth/child-login', { child_id, pin });
     if (!result.success) throw result.error;
     clearTokens();
-    saveToken('child', result.token || 'demo-child');
+    saveToken('child', result.token);
     return result;
   },
-  getChildren: () => get('/children', () => mockStore.getChildren()),
-  createChild: data => post('/children', data, () => mockStore.createChild(data)),
-  updateChild: (id, data) => put(`/children/${id}`, data, () => mockStore.updateChild(id, data)),
-  deleteChild: id => remove(`/children/${id}`, () => mockStore.deleteChild(id)),
-  getTaskTemplates: () => get('/task-templates', () => mockStore.getTemplates()),
-  createTaskTemplate: data => post('/task-templates', data, () => mockStore.createTemplate(data)),
-  updateTaskTemplate: (id, data) => put(`/task-templates/${id}`, data, () => mockStore.updateTemplate(id, data)),
-  deleteTaskTemplate: id => remove(`/task-templates/${id}`, () => mockStore.deleteTemplate(id)),
-  getDailyTasks: (id, date) => get('/daily-tasks', () => mockStore.getDailyTasks(id, date), { child_id: id, date }),
-  completeDailyTask: id => post(`/daily-tasks/${id}/complete`, undefined, () => mockStore.completeTask(id)),
-  uncompleteDailyTask: id => post(`/daily-tasks/${id}/uncomplete`, undefined, () => mockStore.uncompleteTask(id)),
-  getChildStats: id => get(`/children/${id}/stats`, () => mockStore.getChildStats(id)),
-  getChildBadges: id => get(`/children/${id}/badges`, () => mockStore.getChildBadges(id)),
-  getBadgeDefinitions: () => get('/badge-definitions', () => mockStore.getBadgeDefinitions()),
-  getHistory: (id, days = 30) => get(`/children/${id}/history`, () => mockStore.getHistory(id, days), { days }),
-  getWeeklySummary: id => get(`/children/${id}/weekly-summary`, () => mockStore.getWeeklySummary(id)),
-  getPointLogs: id => get(`/children/${id}/point-logs`, () => mockStore.getPointLogs(id)),
-  getMistakes: (id, subject) => get('/mistakes', () => mockStore.getMistakes(id, subject), { child_id: id, subject: subject === '全部' ? undefined : subject }),
-  async createMistake(data) {
+  getChildren: () => get('/children'),
+  createChild: data => post('/children', data),
+  updateChild: (id, data) => put(`/children/${id}`, data),
+  deleteChild: id => remove(`/children/${id}`),
+  getTaskTemplates: () => get('/task-templates'),
+  createTaskTemplate: data => post('/task-templates', data),
+  updateTaskTemplate: (id, data) => put(`/task-templates/${id}`, data),
+  deleteTaskTemplate: id => remove(`/task-templates/${id}`),
+  getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
+  completeDailyTask: id => post(`/daily-tasks/${id}/complete`),
+  uncompleteDailyTask: id => post(`/daily-tasks/${id}/uncomplete`),
+  getChildStats: id => get(`/children/${id}/stats`),
+  getChildBadges: id => get(`/children/${id}/badges`),
+  getBadgeDefinitions: () => get('/badge-definitions'),
+  getHistory: (id, days = 30) => get(`/children/${id}/history`, { days }),
+  getWeeklySummary: id => get(`/children/${id}/weekly-summary`),
+  getPointLogs: id => get(`/children/${id}/point-logs`),
+  getMistakes: (id, subject) => get('/mistakes', { child_id: id, subject: subject === '全部' ? undefined : subject }),
+  createMistake(data) {
     let payload = data;
     if (!(data instanceof FormData) && (data.photo_file || data.photoFile)) {
       payload = new FormData();
@@ -69,47 +62,45 @@ export const api = {
       const file = data.photo_file || data.photoFile;
       payload.append('file', file, file.name || 'mistake.webp');
     }
-    const value = key => payload instanceof FormData ? payload.get(key) : payload[key];
-    return post('/mistakes', payload, () => mockStore.createMistake({ child_id: value('child_id'), subject: value('subject'), description: value('description'), photo_path: value('photo_data_url') || value('photo_path') }));
+    return post('/mistakes', payload);
   },
-  markMistakeMastered: (id, mastered = true) => put(`/mistakes/${id}/master`, { is_mastered: mastered }, () => mockStore.markMistakeMastered(id, mastered)),
-  deleteMistake: id => remove(`/mistakes/${id}`, () => mockStore.deleteMistake(id)),
-  getCharacters: (id, mastered = null) => get('/characters', () => mockStore.getCharacters(id, mastered), { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }),
-  createCharacter: data => post('/characters', data, () => mockStore.createCharacter(data)),
-  markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }, () => mockStore.markCharacterMastered(id, mastered)),
-  deleteCharacter: id => remove(`/characters/${id}`, () => mockStore.deleteCharacter(id)),
+  markMistakeMastered: (id, mastered = true) => put(`/mistakes/${id}/master`, { is_mastered: mastered }),
+  deleteMistake: id => remove(`/mistakes/${id}`),
+  getCharacters: (id, mastered = null) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }),
+  createCharacter: data => post('/characters', data),
+  markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }),
+  deleteCharacter: id => remove(`/characters/${id}`),
   async loadPhoto(url) {
     if (!url.startsWith('/uploads/')) return url;
     const response = await client.get(url.replace('/uploads/', '../uploads/'), { responseType: 'blob' });
     return URL.createObjectURL(response.data);
   },
-  getRewardItems: () => get('/reward-items', () => mockStore.getRewardItems()),
-  createRewardItem: data => post('/reward-items', data, () => mockStore.createRewardItem(data)),
-  updateRewardItem: (id, data) => put(`/reward-items/${id}`, data, () => mockStore.updateRewardItem(id, data)),
-  deleteRewardItem: id => remove(`/reward-items/${id}`, () => mockStore.deleteRewardItem(id)),
-  getChildRedemptions: (id, params = {}) => get(`/children/${id}/redemptions`, () => mockStore.getRedemptions({ ...params, childId: id }), params),
-  requestRedemption: (id, rewardId) => post(`/children/${id}/redemptions`, { reward_id: rewardId }, () => mockStore.requestRedemption(id, rewardId)),
-  getRedemptions: (status, params = {}) => get('/redemptions', () => mockStore.getRedemptions({ ...params, status }), { ...params, status }),
-  approveRedemption: id => post(`/redemptions/${id}/approve`, undefined, () => mockStore.resolveRedemption(id, 'approved')),
-  rejectRedemption: id => post(`/redemptions/${id}/reject`, undefined, () => mockStore.resolveRedemption(id, 'rejected')),
-  cancelRedemption: id => post(`/redemptions/${id}/cancel`, undefined, () => mockStore.resolveRedemption(id, 'cancelled')),
-  // Holiday periods are not simulated in demo mode: they list as empty and cannot be edited.
-  getChildPeriods: id => get(`/children/${id}/periods`, () => []),
-  createPeriod: (childId, data) => post(`/children/${childId}/periods`, data, () => { throw '演示模式不支持假期设置'; }),
-  updatePeriod: (id, data) => put(`/periods/${id}`, data, () => { throw '演示模式不支持假期设置'; }),
-  deletePeriod: id => remove(`/periods/${id}`, () => { throw '演示模式不支持假期设置'; }),
-  createPeriodTask: (periodId, data) => post(`/periods/${periodId}/tasks`, data, () => { throw '演示模式不支持假期设置'; }),
-  updatePeriodTask: (id, data) => put(`/period-tasks/${id}`, data, () => { throw '演示模式不支持假期设置'; }),
-  deletePeriodTask: id => remove(`/period-tasks/${id}`, () => { throw '演示模式不支持假期设置'; }),
-  logPeriodProgress: (taskId, data) => post(`/period-tasks/${taskId}/logs`, data, () => { throw '演示模式不支持假期任务'; }),
-  deletePeriodLog: id => remove(`/period-task-logs/${id}`, () => { throw '演示模式不支持假期任务'; }),
-  getBackups: () => get('/backups', () => ({ backups: [], interval_hours: 0, retention: 0 })),
-  createBackup: () => post('/backups', undefined, () => { throw '演示模式不支持备份'; }),
+  getRewardItems: () => get('/reward-items'),
+  createRewardItem: data => post('/reward-items', data),
+  updateRewardItem: (id, data) => put(`/reward-items/${id}`, data),
+  deleteRewardItem: id => remove(`/reward-items/${id}`),
+  getChildRedemptions: (id, params = {}) => get(`/children/${id}/redemptions`, params),
+  requestRedemption: (id, rewardId) => post(`/children/${id}/redemptions`, { reward_id: rewardId }),
+  getRedemptions: (status, params = {}) => get('/redemptions', { ...params, status }),
+  approveRedemption: id => post(`/redemptions/${id}/approve`),
+  rejectRedemption: id => post(`/redemptions/${id}/reject`),
+  cancelRedemption: id => post(`/redemptions/${id}/cancel`),
+  getChildPeriods: id => get(`/children/${id}/periods`),
+  createPeriod: (childId, data) => post(`/children/${childId}/periods`, data),
+  updatePeriod: (id, data) => put(`/periods/${id}`, data),
+  deletePeriod: id => remove(`/periods/${id}`),
+  createPeriodTask: (periodId, data) => post(`/periods/${periodId}/tasks`, data),
+  updatePeriodTask: (id, data) => put(`/period-tasks/${id}`, data),
+  deletePeriodTask: id => remove(`/period-tasks/${id}`),
+  logPeriodProgress: (taskId, data) => post(`/period-tasks/${taskId}/logs`, data),
+  deletePeriodLog: id => remove(`/period-task-logs/${id}`),
+  getBackups: () => get('/backups'),
+  createBackup: () => post('/backups'),
   async downloadBackup(name) { return (await client.get(`/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob', timeout: 180000 })).data; },
   restoreBackup(file, pin) {
     const data = new FormData(); data.append('pin', pin); data.append('file', file);
-    return post('/backups/restore', data, () => { throw '演示模式不支持恢复'; });
+    return post('/backups/restore', data);
   },
-  changeParentPin: (oldPin, newPin) => put('/auth/parent-pin', { old_pin: oldPin, new_pin: newPin }, () => { throw '演示模式不支持修改 PIN'; })
+  changeParentPin: (oldPin, newPin) => put('/auth/parent-pin', { old_pin: oldPin, new_pin: newPin })
 };
 export default api;

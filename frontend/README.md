@@ -62,7 +62,7 @@ frontend/
 │   ├── style.css              # 全局样式与自定义关键帧动画
 │   ├── api/
 │   │   ├── client.js          # RESTful Axios 接口客户端（含后端状态感知）
-│   │   └── mockStore.js       # 本地响应式存储（支持无后端独立预览与测试）
+│   │   └── redemptions.js     # 兑换申请分页加载
 │   ├── stores/
 │   │   ├── child.js           # 孩子状态与打卡数据 Pinia Store
 │   │   └── parent.js          # 家长管理与 PIN 码鉴权 Pinia Store
@@ -130,5 +130,5 @@ npm run build
    VITE_BACKEND_URL=http://localhost:3000
    ```
 
-2. **独立预览与智能容灾（Mock Fallback）**：
-   系统内置响应式持久化数据存储（`mockStore`），在后端未启动或处于离线演示时，所有功能（含每周特定次数目标计算、飘金币、撒花动效、徽章解锁、历史图表、错题管理）均可 100% 独立运行并持久化保存。
+2. **需要后端运行**：
+   前端所有数据都来自后端 API，开发时请先启动后端（`npm run dev:backend`，可先 `npm run seed:backend` 写入演示数据）。断网时页面会提示操作未确认，不会切换到本地数据。

@@ -47,10 +47,19 @@ COPY --from=frontend-builder /app/frontend/dist /app/public
 # Create persistent storage directories
 RUN mkdir -p /app/data /app/data/uploads
 
+# Start as root only to hand /app/data to PUID:PGID (default 1000, the image's node user),
+# then run the app unprivileged; see docker-entrypoint.sh.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 3000
 
 # Volume mount point for SQLite database and uploaded photos
 VOLUME ["/app/data"]
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+
 WORKDIR /app/backend
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "src/server.js"]

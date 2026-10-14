@@ -11,7 +11,6 @@ export function clearTokens() {
 export function hasSession(role, childId) {
   const token = getToken(role);
   if (!token) return false;
-  if (import.meta.env.VITE_DEMO_MODE === 'true') return true;
   try {
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     return payload.exp * 1000 > Date.now() && payload.role === role && (!childId || payload.child_id === childId);
