@@ -592,11 +592,24 @@ class MockStore {
         ? this.getWeeklyCompletedCount(childId, t.template_id, targetDate)
         : null;
 
+      if (schedType !== 'weekly_times') {
+        return { ...t, schedule_type: schedType, weekly_target_times: targetTimes, weekly_completed_times: weeklyCompleted, is_optional: false };
+      }
+      // Same rule as the server: optional while times still needed (from earlier days) < days left incl. today.
+      const { start } = getWeekBoundaries(targetDate);
+      const doneBefore = this.state.daily_tasks.filter(d => d.child_id === childId && d.template_id === t.template_id &&
+        d.is_completed && d.date >= start && d.date < targetDate).length;
+      const dayOfWeek = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
+      const daysLeft = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      const target = targetTimes || 1;
       return {
         ...t,
         schedule_type: schedType,
         weekly_target_times: targetTimes,
-        weekly_completed_times: weeklyCompleted
+        weekly_completed_times: weeklyCompleted,
+        weekly_remaining_times: Math.max(0, target - weeklyCompleted),
+        week_days_left: daysLeft,
+        is_optional: target - doneBefore < daysLeft
       };
     });
   }

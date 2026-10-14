@@ -65,6 +65,16 @@
             </span>
           </span>
 
+          <!-- Flexible vs required today: times still needed against days left this week -->
+          <span
+            v-if="!isWeeklyTargetMet && !task.is_completed && task.week_days_left"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold"
+            :class="task.is_optional ? 'bg-sky-50 text-sky-700' : 'bg-rose-50 text-rose-600'"
+          >
+            <span v-if="task.is_optional">🌤️ 今天可选 · 本周还剩 {{ task.week_days_left }} 天，还差 {{ task.weekly_remaining_times }} 次</span>
+            <span v-else>⏰ 今天要做 · 本周只剩 {{ task.week_days_left }} 天，还差 {{ task.weekly_remaining_times }} 次</span>
+          </span>
+
           <!-- Mini progress dots -->
           <div class="flex items-center gap-0.5 ml-1">
             <span

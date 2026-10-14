@@ -1,4 +1,5 @@
 const { getTodayDate, shiftDate, getWeekRange, getLastWeekRange, getDateRangeList, getDayOfWeek } = require('../utils/date');
+const { isActiveTask, summarizeDay } = require('./tasks.service');
 
 class StatsService {
   constructor(db, tasksService) {
@@ -6,12 +7,14 @@ class StatsService {
     this.tasksService = tasksService;
   }
 
-  activeTasks(tasks) {
-    if (!this.tasksService) return tasks;
-    return tasks.filter(task => {
-      const described = this.tasksService.describeTask(task);
-      return described.schedule_type !== 'weekly_times' || described.is_completed || described.weekly_completed_times < described.weekly_target_times;
-    });
+  // Active tasks grouped by date, described with the same weekly rules as the today view.
+  tasksByDate(childId, fromDate, toDate) {
+    const byDate = new Map();
+    for (const task of this.tasksService.describeTasksBetween(childId, fromDate, toDate).filter(isActiveTask)) {
+      if (!byDate.has(task.date)) byDate.set(task.date, []);
+      byDate.get(task.date).push(task);
+    }
+    return byDate;
   }
 
   getHistory(childId, fromDate, toDate) {
@@ -23,29 +26,8 @@ class StatsService {
     const to = toDate || getTodayDate();
     const from = fromDate || shiftDate(to, -29); // default 30 days
 
-    const tasks = this.db.prepare(`
-      SELECT *
-      FROM daily_tasks
-      WHERE child_id = ? AND date >= ? AND date <= ?
-      ORDER BY date ASC, rowid ASC
-    `).all(childId, from, to);
-
-    // Group tasks by date
-    const tasksByDate = new Map();
-    for (const t of this.activeTasks(tasks)) {
-      if (!tasksByDate.has(t.date)) {
-        tasksByDate.set(t.date, []);
-      }
-      tasksByDate.get(t.date).push({
-        id: t.id,
-        template_id: t.template_id,
-        title: t.title,
-        subject: t.subject,
-        points: t.points,
-        is_completed: Boolean(t.is_completed),
-        completed_at: t.completed_at
-      });
-    }
+    getDateRangeList(from, to);
+    const tasksByDate = this.tasksByDate(childId, from, to);
 
     // Query points by date from point_logs
     const pointLogs = this.db.prepare(`
@@ -66,18 +48,27 @@ class StatsService {
 
     for (const d of allDates) {
       const dayTasks = tasksByDate.get(d) || [];
-      const totalTasks = dayTasks.length;
-      const completedTasks = dayTasks.filter(t => t.is_completed).length;
-      const completionRate = totalTasks > 0 ? Number((completedTasks / totalTasks).toFixed(2)) : 0;
+      const summary = summarizeDay(dayTasks);
+      const completionRate = summary.total > 0 ? Number((summary.completed / summary.total).toFixed(2)) : 0;
       const pointsEarned = pointsByDate.get(d) || 0;
 
       history.push({
         date: d,
-        total_tasks: totalTasks,
-        completed_tasks: completedTasks,
+        total_tasks: summary.total,
+        completed_tasks: summary.completed,
         completion_rate: completionRate,
+        all_done: summary.all_done,
         points_earned: pointsEarned,
-        tasks: dayTasks
+        tasks: dayTasks.map(t => ({
+          id: t.id,
+          template_id: t.template_id,
+          title: t.title,
+          subject: t.subject,
+          points: t.points,
+          is_completed: t.is_completed,
+          is_optional: t.is_optional,
+          completed_at: t.completed_at
+        }))
       });
     }
 
@@ -95,11 +86,7 @@ class StatsService {
 
     const calcWeekData = (range) => {
       const dates = getDateRangeList(range.startDate, range.endDate);
-      const tasks = this.activeTasks(this.db.prepare(`
-        SELECT *
-        FROM daily_tasks
-        WHERE child_id = ? AND date >= ? AND date <= ?
-      `).all(childId, range.startDate, range.endDate));
+      const tasksByDate = this.tasksByDate(childId, range.startDate, range.endDate);
 
       const pointsRow = this.db.prepare(`
         SELECT COALESCE(SUM(pl.points), 0) AS total_points
@@ -108,32 +95,24 @@ class StatsService {
         WHERE pl.child_id = ? AND dt.date >= ? AND dt.date <= ?
       `).get(childId, range.startDate, range.endDate);
 
-      const tasksByDate = new Map();
-      for (const t of tasks) {
-        if (!tasksByDate.has(t.date)) {
-          tasksByDate.set(t.date, []);
-        }
-        tasksByDate.get(t.date).push(t);
-      }
-
-      const totalTasks = tasks.length;
-      const completedTasks = tasks.filter(t => t.is_completed === 1).length;
-      const completionRate = totalTasks > 0 ? Number((completedTasks / totalTasks).toFixed(2)) : 0;
-
       const dailyBreakdown = dates.map(d => {
         const dayTasks = tasksByDate.get(d) || [];
-        const dayTotal = dayTasks.length;
-        const dayCompleted = dayTasks.filter(t => t.is_completed === 1).length;
-        const dayPoints = dayTasks.filter(t => t.is_completed === 1).reduce((sum, t) => sum + t.points, 0);
+        const summary = summarizeDay(dayTasks);
+        const dayPoints = dayTasks.filter(t => t.is_completed).reduce((sum, t) => sum + t.points, 0);
 
         return {
           date: d,
           day_of_week: getDayOfWeek(d),
-          total_tasks: dayTotal,
-          completed_tasks: dayCompleted,
+          total_tasks: summary.total,
+          completed_tasks: summary.completed,
+          all_done: summary.all_done,
           points: dayPoints
         };
       });
+
+      const totalTasks = dailyBreakdown.reduce((sum, day) => sum + day.total_tasks, 0);
+      const completedTasks = dailyBreakdown.reduce((sum, day) => sum + day.completed_tasks, 0);
+      const completionRate = totalTasks > 0 ? Number((completedTasks / totalTasks).toFixed(2)) : 0;
 
       return {
         start_date: range.startDate,

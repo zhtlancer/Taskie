@@ -27,6 +27,19 @@ function normalizeChildIds(childIds) {
   return [...new Set(childIds)];
 }
 
+// Weekly tasks whose target is already met are hidden unless completed that day.
+function isActiveTask(task) {
+  return task.schedule_type !== 'weekly_times' || task.is_completed || task.weekly_completed_times < task.weekly_target_times;
+}
+
+// Optional weekly tasks only count once completed, so skipping one never breaks a day,
+// and a day with nothing completed is never all done.
+function summarizeDay(tasks) {
+  const counted = tasks.filter(task => isActiveTask(task) && (!task.is_optional || task.is_completed));
+  const completed = counted.filter(task => task.is_completed).length;
+  return { total: counted.length, completed, all_done: completed > 0 && completed === counted.length };
+}
+
 class TasksService {
   constructor(db, rewardsService) {
     this.db = db;
@@ -207,8 +220,7 @@ class TasksService {
         }
       }
     })();
-    return this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date = ? ORDER BY rowid').all(childId, date)
-      .map(t => this.describeTask(t)).filter(t => t.schedule_type !== 'weekly_times' || t.is_completed || t.weekly_completed_times < t.weekly_target_times);
+    return this.describeTasksBetween(childId, date, date).filter(isActiveTask);
   }
 
   weeklyCount(childId, templateId, date) {
@@ -218,8 +230,44 @@ class TasksService {
   }
 
   describeTask(t) {
-    return { ...t, is_completed: Boolean(t.is_completed),
-      weekly_completed_times: t.schedule_type === 'weekly_times' ? this.weeklyCount(t.child_id, t.template_id, t.date) : undefined };
+    return this.describeTasksBetween(t.child_id, t.date, t.date).find(task => task.id === t.id);
+  }
+
+  // Describes a child's tasks between two dates with weekly progress, using one query over
+  // the surrounding weeks. A weekly task is optional on a day while the times still needed
+  // (counting only earlier days, so past days never change) are fewer than the days left
+  // in the week including that day; once there is no slack it is required that day.
+  describeTasksBetween(childId, fromDate, toDate) {
+    const weekStarts = new Map();
+    const weekOf = date => {
+      if (!weekStarts.has(date)) weekStarts.set(date, getWeekRange(date).startDate);
+      return weekStarts.get(date);
+    };
+    const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
+      .all(childId, weekOf(fromDate), getWeekRange(toDate).endDate);
+    const keyOf = row => `${weekOf(row.date)}|${row.template_id ?? row.id}`;
+    const completions = new Map();
+    for (const row of rows) {
+      if (row.schedule_type !== 'weekly_times' || !row.is_completed) continue;
+      if (!completions.has(keyOf(row))) completions.set(keyOf(row), []);
+      completions.get(keyOf(row)).push(row.date);
+    }
+
+    return rows.filter(row => row.date >= fromDate && row.date <= toDate).map(row => {
+      const task = { ...row, is_completed: Boolean(row.is_completed) };
+      if (row.schedule_type !== 'weekly_times') return { ...task, is_optional: false };
+      const done = completions.get(keyOf(row)) || [];
+      const target = row.weekly_target_times || 1;
+      const dayOfWeek = getDayOfWeek(row.date);
+      const daysLeft = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      return {
+        ...task,
+        weekly_completed_times: done.length,
+        weekly_remaining_times: Math.max(0, target - done.length),
+        week_days_left: daysLeft,
+        is_optional: target - done.filter(date => date < row.date).length < daysLeft
+      };
+    });
   }
 
   completeDailyTask(taskId) {
@@ -344,3 +392,5 @@ class TasksService {
 }
 
 module.exports = TasksService;
+module.exports.isActiveTask = isActiveTask;
+module.exports.summarizeDay = summarizeDay;

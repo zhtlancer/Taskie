@@ -203,7 +203,7 @@
         <div class="mt-3 shrink-0">
           <!-- When all completed -->
           <div
-            v-if="totalCount > 0 && completedCount === totalCount"
+            v-if="allDone"
             class="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white flex items-center justify-between shadow-lg shadow-emerald-200 animate-pop-in"
           >
             <div class="flex items-center gap-3">
@@ -212,7 +212,9 @@
                 <h4 class="text-sm font-black tracking-wide">
                   太棒啦！今日作业任务已全部完成！
                 </h4>
-                <p class="text-xs text-emerald-100 font-medium">已获得全部任务积分，保持连续打卡哦！</p>
+                <p class="text-xs text-emerald-100 font-medium">
+                  {{ optionalPendingCount > 0 ? `还有 ${optionalPendingCount} 项本周弹性任务，可以多做多得分哦！` : '已获得全部任务积分，保持连续打卡哦！' }}
+                </p>
               </div>
             </div>
             <button
@@ -307,8 +309,12 @@ const filteredTasks = computed(() => {
   return tasks.value.filter(t => t.subject === selectedSubject.value);
 });
 
-const totalCount = computed(() => tasks.value.length);
-const completedCount = computed(() => tasks.value.filter(t => t.is_completed).length);
+// Flexible weekly tasks only count once done, so skipping one never blocks the all-done celebration.
+const countedTasks = computed(() => tasks.value.filter(t => !t.is_optional || t.is_completed));
+const totalCount = computed(() => countedTasks.value.length);
+const completedCount = computed(() => countedTasks.value.filter(t => t.is_completed).length);
+const allDone = computed(() => completedCount.value > 0 && completedCount.value === totalCount.value);
+const optionalPendingCount = computed(() => tasks.value.filter(t => t.is_optional && !t.is_completed).length);
 const completionRate = computed(() => {
   if (totalCount.value === 0) return 0;
   return Math.round((completedCount.value / totalCount.value) * 100);
@@ -356,13 +362,13 @@ async function handleTaskToggle(task) {
 
       if (res && res.task && res.task.weekly_completed_times !== undefined) {
         task.weekly_completed_times = res.task.weekly_completed_times;
+        task.weekly_remaining_times = res.task.weekly_remaining_times;
       } else if (task.weekly_completed_times !== undefined) {
         task.weekly_completed_times = (task.weekly_completed_times || 0) + 1;
       }
 
       // Check if this was the last remaining task completed
-      const allDoneNow = tasks.value.every(t => t.is_completed);
-      if (allDoneNow) {
+      if (allDone.value) {
         fireCelebration(true);
       } else if (res && res.new_badges && res.new_badges.length > 0) {
         // Unlocked badge alert
