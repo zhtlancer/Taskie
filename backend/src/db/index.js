@@ -3,6 +3,7 @@ const path = require('path');
 const Database = require('better-sqlite3');
 const config = require('../config');
 const { hashPin } = require('../utils/crypto');
+const { formatDate } = require('../utils/date');
 
 const defaultBadges = [
   {
@@ -134,6 +135,28 @@ function initDb(db) {
         db.exec('ALTER TABLE point_logs ADD COLUMN period_log_id TEXT REFERENCES period_task_logs(id) ON DELETE SET NULL');
       }
       db.pragma('user_version = 5');
+    })();
+  }
+  if (db.pragma('user_version', { simple: true }) < 6) {
+    db.transaction(() => {
+      const columns = new Set(db.pragma('table_info(point_logs)').map(c => c.name));
+      if (!columns.has('activity_date')) db.exec('ALTER TABLE point_logs ADD COLUMN activity_date TEXT');
+      if (!columns.has('activity_title')) db.exec('ALTER TABLE point_logs ADD COLUMN activity_title TEXT');
+      db.exec(`UPDATE point_logs SET
+        activity_date = COALESCE(activity_date,
+          (SELECT date FROM daily_tasks WHERE id = point_logs.daily_task_id),
+          (SELECT date FROM period_task_logs WHERE id = point_logs.period_log_id)),
+        activity_title = COALESCE(activity_title,
+          (SELECT title FROM daily_tasks WHERE id = point_logs.daily_task_id),
+          (SELECT CASE WHEN t.mode = 'progress' THEN t.title || ' ' || l.amount || t.unit ELSE t.title END
+            FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id WHERE l.id = point_logs.period_log_id))`);
+      // Already deleted sources cannot reveal their original title or backfill date.
+      // Retain these entries on their known earning date with an explicit label.
+      const fill = db.prepare('UPDATE point_logs SET activity_date = COALESCE(activity_date, ?), activity_title = COALESCE(activity_title, ?) WHERE id = ?');
+      for (const row of db.prepare('SELECT id, earned_at FROM point_logs WHERE activity_date IS NULL OR activity_title IS NULL').all()) {
+        fill.run(formatDate(new Date(row.earned_at)), '历史积分记录（来源已删除）', row.id);
+      }
+      db.pragma('user_version = 6');
     })();
   }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');

@@ -88,6 +88,10 @@ class BackupService {
         !candidate.pragma('table_info(point_logs)').some(column => column.name === 'period_log_id'))) {
         throw fail('备份缺少假期数据，无法恢复');
       }
+      if (schemaVersion >= 6 && !['activity_date', 'activity_title'].every(name =>
+        candidate.pragma('table_info(point_logs)').some(column => column.name === name))) {
+        throw fail('备份缺少积分历史快照，无法恢复');
+      }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {

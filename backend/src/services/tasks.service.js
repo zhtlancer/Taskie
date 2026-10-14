@@ -3,16 +3,16 @@ const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, 
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
-    return days.map(d => parseInt(d, 10)).filter(d => !isNaN(d) && d >= 0 && d <= 6);
+    return [...new Set(days.map(d => parseInt(d, 10)).filter(d => !isNaN(d) && d >= 0 && d <= 6))];
   }
   if (typeof days === 'string') {
     try {
       const parsed = JSON.parse(days);
       if (Array.isArray(parsed)) {
-        return parsed.map(d => parseInt(d, 10)).filter(d => !isNaN(d) && d >= 0 && d <= 6);
+        return normalizeDaysOfWeek(parsed);
       }
     } catch {
-      return days.split(',').map(d => parseInt(d.trim(), 10)).filter(d => !isNaN(d) && d >= 0 && d <= 6);
+      return normalizeDaysOfWeek(days.split(','));
     }
   }
   return [0, 1, 2, 3, 4, 5, 6];
@@ -246,14 +246,14 @@ class TasksService {
   }
 
   describeTask(t) {
-    return this.describeTasksBetween(t.child_id, t.date, t.date).find(task => task.id === t.id);
+    return this.describeTasksBetween(t.child_id, t.date, t.date, { includePaused: true }).find(task => task.id === t.id);
   }
 
   // Describes a child's tasks between two dates with weekly progress, using one query over
   // the surrounding weeks. A weekly task is optional on a day while the times still needed
   // (counting only earlier days, so past days never change) are fewer than the days left
   // in the week including that day; once there is no slack it is required that day.
-  describeTasksBetween(childId, fromDate, toDate) {
+  describeTasksBetween(childId, fromDate, toDate, { includePaused = false } = {}) {
     const weekStarts = new Map();
     const weekOf = date => {
       if (!weekStarts.has(date)) weekStarts.set(date, getWeekRange(date).startDate);
@@ -271,7 +271,8 @@ class TasksService {
       completions.get(keyOf(row)).push(row.date);
     }
 
-    return rows.filter(row => row.date >= fromDate && row.date <= toDate).map(row => {
+    return rows.filter(row => row.date >= fromDate && row.date <= toDate &&
+      (includePaused || row.is_completed || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
       const task = { ...row, is_completed: Boolean(row.is_completed) };
       if (row.schedule_type !== 'weekly_times') return { ...task, is_optional: false };
       const done = completions.get(keyOf(row)) || [];
@@ -319,18 +320,33 @@ class TasksService {
 
   // Tells whether a date was a rest day for a child: nothing required was scheduled. Opened days
   // use their generated tasks (only flexible weekly ones means rest); unopened days are rest days
-  // unless a fixed-day template applied.
+  // unless a fixed-day template or a weekly deadline applied.
   restDayChecker(childId, fromDate, toDate) {
     const schedule = this.scheduleFor(childId);
     const byDate = new Map();
-    for (const task of this.describeTasksBetween(childId, fromDate, toDate).filter(isActiveTask)) {
+    const weeklyDone = new Map();
+    const weeklyKey = (templateId, date) => `${getWeekRange(date).startDate}|${templateId}`;
+    for (const task of this.describeTasksBetween(childId, getWeekRange(fromDate).startDate, toDate).filter(isActiveTask)) {
       if (!byDate.has(task.date)) byDate.set(task.date, []);
       byDate.get(task.date).push(task);
+      if (task.schedule_type === 'weekly_times' && task.is_completed) {
+        const key = weeklyKey(task.source_template_id ?? task.template_id, task.date);
+        if (!weeklyDone.has(key)) weeklyDone.set(key, []);
+        weeklyDone.get(key).push(task.date);
+      }
     }
     return date => {
       if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional);
       if (!schedule.childSince || date < schedule.childSince) return true;
-      return !schedule.assigned.some(t => t.schedule_type !== 'weekly_times' && t.since <= date && schedule.allowedOn(t.id, date));
+      return !schedule.assigned.some(t => {
+        if (t.since > date || !schedule.allowedOn(t.id, date)) return false;
+        if (t.schedule_type !== 'weekly_times') return true;
+        const { startDate, endDate } = getWeekRange(date);
+        const start = [startDate, schedule.childSince, t.since].sort().at(-1);
+        const target = Math.min(t.weekly_target_times, schedule.availableDays(t.id, start, endDate));
+        const doneBefore = (weeklyDone.get(weeklyKey(t.id, date)) || []).filter(day => day < date).length;
+        return target - doneBefore >= schedule.availableDays(t.id, date, endDate);
+      });
     };
   }
 
@@ -375,9 +391,9 @@ class TasksService {
 
       // 2. Insert point log
       this.db.prepare(`
-        INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(generateId(), task.child_id, task.id, task.points, now);
+        INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at, activity_date, activity_title)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(generateId(), task.child_id, task.id, task.points, now, task.date, task.title);
 
       // 3. Trigger badge unlocks
       if (this.rewardsService) {

@@ -31,12 +31,12 @@ class StatsService {
 
     // Query points by date from point_logs
     const pointLogs = this.db.prepare(`
-      SELECT COALESCE(dt.date, ptl.date) AS date, COALESCE(SUM(pl.points), 0) AS points
+      SELECT COALESCE(pl.activity_date, dt.date, ptl.date) AS date, COALESCE(SUM(pl.points), 0) AS points
       FROM point_logs pl
       LEFT JOIN daily_tasks dt ON pl.daily_task_id = dt.id
       LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
-      WHERE pl.child_id = ? AND COALESCE(dt.date, ptl.date) >= ? AND COALESCE(dt.date, ptl.date) <= ?
-      GROUP BY COALESCE(dt.date, ptl.date)
+      WHERE pl.child_id = ? AND COALESCE(pl.activity_date, dt.date, ptl.date) >= ? AND COALESCE(pl.activity_date, dt.date, ptl.date) <= ?
+      GROUP BY COALESCE(pl.activity_date, dt.date, ptl.date)
     `).all(childId, from, to);
 
     const pointsByDate = new Map();
@@ -89,18 +89,20 @@ class StatsService {
       const dates = getDateRangeList(range.startDate, range.endDate);
       const tasksByDate = this.tasksByDate(childId, range.startDate, range.endDate);
 
-      const pointsRow = this.db.prepare(`
-        SELECT COALESCE(SUM(pl.points), 0) AS total_points
+      const pointRows = this.db.prepare(`
+        SELECT COALESCE(pl.activity_date, dt.date, ptl.date) AS date, COALESCE(SUM(pl.points), 0) AS points
         FROM point_logs pl
         LEFT JOIN daily_tasks dt ON pl.daily_task_id = dt.id
         LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
-        WHERE pl.child_id = ? AND COALESCE(dt.date, ptl.date) >= ? AND COALESCE(dt.date, ptl.date) <= ?
-      `).get(childId, range.startDate, range.endDate);
+        WHERE pl.child_id = ? AND COALESCE(pl.activity_date, dt.date, ptl.date) >= ? AND COALESCE(pl.activity_date, dt.date, ptl.date) <= ?
+        GROUP BY COALESCE(pl.activity_date, dt.date, ptl.date)
+      `).all(childId, range.startDate, range.endDate);
+      const pointsByDate = new Map(pointRows.map(row => [row.date, row.points]));
 
       const dailyBreakdown = dates.map(d => {
         const dayTasks = tasksByDate.get(d) || [];
         const summary = summarizeDay(dayTasks);
-        const dayPoints = dayTasks.filter(t => t.is_completed).reduce((sum, t) => sum + t.points, 0);
+        const dayPoints = pointsByDate.get(d) || 0;
 
         return {
           date: d,
@@ -122,7 +124,7 @@ class StatsService {
         total_tasks: totalTasks,
         completed_tasks: completedTasks,
         completion_rate: completionRate,
-        total_points: pointsRow ? pointsRow.total_points : 0,
+        total_points: pointRows.reduce((sum, row) => sum + row.points, 0),
         daily_breakdown: dailyBreakdown,
         completion: this.getWeeklyCompletion(childId, range.startDate, range.endDate)
       };
@@ -146,9 +148,10 @@ class StatsService {
     const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
     const sinceDate = iso => formatDate(new Date(iso));
     const childSince = sinceDate(child.created_at);
-    const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
-      .all(childId, weekStart, cutoff);
     const schedule = this.tasksService.scheduleFor(childId);
+    const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
+      .all(childId, weekStart, cutoff)
+      .filter(row => row.is_completed || !schedule.isPaused(row.source_template_id ?? row.template_id, row.date));
     const allTemplates = this.tasksService.listTemplates().map(t => ({ ...t, since: sinceDate(t.created_at) }));
     const templatesById = new Map(allTemplates.map(t => [t.id, t]));
     const templates = allTemplates.filter(t => t.child_ids === null || t.child_ids.includes(childId));

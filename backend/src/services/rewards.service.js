@@ -120,7 +120,7 @@ class RewardsService {
       FROM point_logs pl
       LEFT JOIN daily_tasks dt ON pl.daily_task_id = dt.id
       LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
-      WHERE pl.child_id = ? AND COALESCE(dt.date, ptl.date) = ?
+      WHERE pl.child_id = ? AND COALESCE(pl.activity_date, dt.date, ptl.date) = ?
     `).get(childId, today);
 
     const todayPoints = todayPointsRow ? todayPointsRow.points : 0;

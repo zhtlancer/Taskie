@@ -196,8 +196,9 @@ class PeriodsService {
       this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, date, created_at) VALUES (?, ?, ?, ?, ?)')
         .run(logId, taskId, logAmount, logDate, now);
       if (task.points > 0) {
-        this.db.prepare('INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at, period_log_id) VALUES (?, ?, NULL, ?, ?, ?)')
-          .run(generateId(), period.child_id, task.points * logAmount, now, logId);
+        const title = task.mode === 'progress' ? `${task.title} ${logAmount}${task.unit}` : task.title;
+        this.db.prepare('INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at, period_log_id, activity_date, activity_title) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)')
+          .run(generateId(), period.child_id, task.points * logAmount, now, logId, logDate, title);
       }
       if (this.rewardsService) newBadges = this.rewardsService.checkAndUnlockBadges(period.child_id);
     })();

@@ -38,10 +38,34 @@ test('weekly targets must fit the allowed days', async t => {
   const create = payload => ctx.app.inject({ method: 'POST', url: '/api/task-templates', payload: { title: '周末作业', subject: '语文', schedule_type: 'weekly_times', ...payload } });
   assert.equal((await create({ weekly_target_times: 3, days_of_week: [6, 0] })).statusCode, 400);
   assert.equal((await create({ weekly_target_times: 1, days_of_week: [] })).statusCode, 400);
+  assert.equal((await create({ weekly_target_times: 3, days_of_week: [6, 6, 0] })).statusCode, 400);
+  const deduped = (await create({ weekly_target_times: 2, days_of_week: [6, 6, 0] })).json();
+  assert.deepEqual(deduped.days_of_week, [6, 0]);
+  assert.throws(() => tasksService.updateTemplate(deduped.id, { title: '不应保存', weekly_target_times: 3, days_of_week: [6, 6, 0] }), error => error.status === 400);
+  assert.equal(tasksService.getTemplate(deduped.id).title, '周末作业');
   const ok = (await create({ weekly_target_times: 2, days_of_week: [6, 0] })).json();
   assert.deepEqual(ok.days_of_week, [6, 0]);
   assert.throws(() => tasksService.updateTemplate(ok.id, { days_of_week: [0] }), { status: 400, message: '每周目标次数不能超过可完成的天数' });
   assert.equal(tasksService.updateTemplate(ok.id, { days_of_week: [0], weekly_target_times: 1 }).weekly_target_times, 1);
+});
+
+test('unopened weekly deadlines break streaks, while early completion and paused deadlines do not', async t => {
+  const { ctx, child, tasksService, rewardsService, day, backdateAll } = await fixture(t);
+  const sunday = tasksService.createTemplate({ title: '周日任务', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 1, days_of_week: [0] });
+  backdateAll();
+  for (const n of [-15, -1]) tasksService.completeDailyTask(tasksService.getDailyTasks(child.id, day(n))[0].id);
+  // Two completed Sundays with an unopened, missed Sunday in between.
+  const first = day(-15), missed = day(-8), last = day(-1);
+  assert.equal(rewardsService.getCurrentStreak(child.id, last), 1);
+  assert.equal(tasksService.restDayChecker(child.id, first, last)(missed), false);
+  ctx.app.services.periodsService.createPeriod(child.id, { name: '休息', start_date: missed, end_date: missed, paused_template_ids: [sunday.id] });
+  assert.equal(rewardsService.getCurrentStreak(child.id, last), 2);
+  ctx.app.services.periodsService.deletePeriod(ctx.app.services.periodsService.listPeriods(child.id)[0].id);
+  // Completing the missed week's goal on Saturday means Sunday is a rest day.
+  tasksService.updateTemplate(sunday.id, { days_of_week: [6, 0] });
+  tasksService.completeDailyTask(tasksService.getDailyTasks(child.id, day(-9))[0].id);
+  assert.equal(rewardsService.getCurrentStreak(child.id, last), 3);
+  assert.equal(tasksService.restDayChecker(child.id, first, last)(missed), true);
 });
 
 test('weekly completion owes a weekend task only once its days can no longer be used', async t => {

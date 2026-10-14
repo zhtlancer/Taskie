@@ -103,6 +103,63 @@ test('paused days are rest days for the streak and are not owed in weekly comple
   assert.deepEqual(completion.items.map(i => [i.title, i.completed, i.total]), [['校内作业', 2, 2]]);
 });
 
+test('already generated paused tasks stop counting in history, weekly completion and streak without erasing completions', async t => {
+  const { ctx, child, createPeriod, asParent } = await fixture(t);
+  const { tasksService: tasks, statsService: stats, rewardsService: rewards } = ctx.app.services;
+  const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
+  const day = n => shiftDate(monday, n);
+  const fixed = tasks.createTemplate({ title: '校内任务', subject: '数学' });
+  const weekly = tasks.createTemplate({ title: '阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 3 });
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00Z`);
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(`${day(-30)}T04:00:00Z`);
+  const rows = [0, 1, 2, 3].flatMap(n => tasks.getDailyTasks(child.id, day(n)));
+  tasks.completeDailyTask(rows.find(row => row.date === day(1) && row.template_id === fixed.id).id);
+  const completedWeekly = rows.find(row => row.date === day(3) && row.template_id === weekly.id);
+  tasks.completeDailyTask(completedWeekly.id);
+  const holiday = (await createPeriod({ name: '补设假期', start_date: day(0), end_date: day(6), paused_template_ids: [fixed.id, weekly.id] })).json();
+  const points = rewards.getTotalPoints(child.id);
+  const hidden = stats.getHistory(child.id, day(0), day(0))[0];
+  assert.deepEqual([hidden.total_tasks, hidden.completed_tasks, hidden.tasks.length], [0, 0, 0]);
+  assert.equal(tasks.restDayChecker(child.id, day(0), day(6))(day(0)), true);
+  assert.deepEqual([stats.getWeeklySummary(child.id, day(0)).current_week.completion.total_units,
+    stats.getWeeklySummary(child.id, day(0)).current_week.completion.completed_units], [2, 2]);
+  assert.equal(tasks.getDailyTasks(child.id, day(2)).length, 0);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM daily_tasks').get().n, rows.length);
+  assert.equal(rewards.getTotalPoints(child.id), points);
+  assert.equal(tasks.uncompleteDailyTask(completedWeekly.id).task.is_completed, false);
+  assert.equal(stats.getWeeklySummary(child.id, day(0)).current_week.completion.total_units, 1);
+  assert.equal((await asParent('POST', `/api/daily-tasks/${completedWeekly.id}/complete`)).statusCode, 409);
+  await asParent('PUT', `/api/periods/${holiday.id}`, { paused_template_ids: [] });
+  assert.equal(tasks.getDailyTasks(child.id, day(0)).some(row => row.template_id === fixed.id), true);
+});
+
+test('deleting holiday tasks or periods keeps dated point history and original titles, including backfills', async t => {
+  const { ctx, child, today, createPeriod, asParent, stats } = await fixture(t);
+  const yesterday = shiftDate(today, -1);
+  const period = (await createPeriod({ name: '假期', start_date: yesterday, end_date: today })).json();
+  const progress = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '阅读', subject: '语文', mode: 'progress', total_amount: 10, unit: '页', points: 2 })).json();
+  const check = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '读书', subject: '语文', points: 10 })).json();
+  await asParent('POST', `/api/period-tasks/${progress.id}/logs`, { amount: 3, date: yesterday });
+  const current = (await asParent('POST', `/api/period-tasks/${progress.id}/logs`, { amount: 2 })).json();
+  await asParent('POST', `/api/period-tasks/${check.id}/logs`, {});
+  // Correcting an entry still removes its points and snapshot.
+  await asParent('DELETE', `/api/period-task-logs/${current.log_id}`);
+  await asParent('PUT', `/api/period-tasks/${progress.id}`, { title: '改名', unit: '篇' });
+  const historyBefore = ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned);
+  assert.deepEqual(historyBefore, [6, 10]);
+  await asParent('DELETE', `/api/period-tasks/${progress.id}`);
+  await asParent('DELETE', `/api/periods/${period.id}`);
+  assert.deepEqual([(await stats()).total_points, (await stats()).today_points], [16, 10]);
+  assert.deepEqual(ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned), historyBefore);
+  const summary = ctx.app.services.statsService.getWeeklySummary(child.id);
+  assert.equal(summary.current_week.daily_breakdown.find(day => day.date === today).points, 10);
+  const totalAcrossWeeks = summary.current_week.total_points + summary.last_week.total_points;
+  assert.equal(totalAcrossWeeks, 16);
+  const ledger = (await asParent('GET', `/api/children/${child.id}/point-logs`)).json();
+  assert.deepEqual(ledger.map(row => row.title).sort(), ['读书', '阅读 3页']);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM point_logs WHERE period_log_id IS NULL AND activity_date IS NOT NULL').get().n, 2);
+});
+
 test('check-off and progress holiday tasks earn points, pace the rest and protect spent points', async t => {
   const { ctx, child, createChild, login, today, asParent, asChild, createPeriod, stats } = await fixture(t);
   const period = (await createPeriod({ name: '寒假', start_date: shiftDate(today, -5), end_date: shiftDate(today, 4) })).json();
@@ -195,5 +252,45 @@ test('backups keep periods and progress, restore older backups and reject incomp
   assert.throws(() => restore(rewrite(withoutPeriods, 5)), /备份缺少假期数据/);
   restore(rewrite(withoutPeriods, 4));
   assert.deepEqual(ctx.app.services.periodsService.listPeriods(child.id), []);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 5);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 6);
+});
+
+test('v5 point histories migrate to durable snapshots; incomplete v6 backups fail before altering live data', async t => {
+  const { ctx, child, today, createPeriod, asParent } = await fixture(t);
+  const yesterday = shiftDate(today, -1);
+  const period = (await createPeriod({ name: '旧假期', start_date: yesterday, end_date: today })).json();
+  const task = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '旧阅读', subject: '语文', mode: 'progress', total_amount: 10, unit: '页', points: 2 })).json();
+  await asParent('POST', `/api/period-tasks/${task.id}/logs`, { amount: 3, date: yesterday });
+  const removed = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '已删任务', subject: '数学', points: 4 })).json();
+  await asParent('POST', `/api/period-tasks/${removed.id}/logs`, {});
+  await asParent('DELETE', `/api/period-tasks/${removed.id}`);
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const data = JSON.parse(gunzipSync(archive));
+  const Database = require('better-sqlite3');
+  const old = new Database(Buffer.from(data.database, 'base64'));
+  old.exec('ALTER TABLE point_logs DROP COLUMN activity_date; ALTER TABLE point_logs DROP COLUMN activity_title');
+  data.database = old.serialize().toString('base64');
+  const epoch = ctx.app.sessionEpoch(), backups = ctx.app.backupService.list();
+  assert.throws(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /备份缺少积分历史快照/);
+  assert.equal(ctx.app.sessionEpoch(), epoch);
+  assert.deepEqual(ctx.app.backupService.list(), backups);
+  old.pragma('user_version = 5');
+  data.database = old.serialize().toString('base64');
+  old.close();
+  ctx.app.backupService.restore(gzipSync(JSON.stringify(data)));
+  const { initDb } = require('../src/db');
+  initDb(ctx.db); // Repeating initialization must preserve the migrated snapshots.
+  const entries = ctx.db.prepare('SELECT activity_date, activity_title FROM point_logs ORDER BY points DESC').all();
+  assert.deepEqual(entries, [
+    { activity_date: yesterday, activity_title: '旧阅读 3页' },
+    { activity_date: today, activity_title: '历史积分记录（来源已删除）' }
+  ]);
+  await asParent('DELETE', `/api/periods/${period.id}`);
+  assert.deepEqual(ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned), [6, 4]);
+  // Current backups keep those snapshots even after all sources have been deleted.
+  const restoredArchive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  ctx.db.exec('DELETE FROM point_logs');
+  ctx.app.backupService.restore(restoredArchive);
+  assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 10);
+  assert.deepEqual(ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned), [6, 4]);
 });

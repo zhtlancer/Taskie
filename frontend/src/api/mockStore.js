@@ -1,6 +1,11 @@
 // Local reactive fallback store when backend is unavailable or during demo/offline preview
 
 const STORAGE_KEY = 'homework_app_state_v2';
+const uniqueTemplateDays = days => [...new Set((Array.isArray(days) ? days : [0, 1, 2, 3, 4, 5, 6])
+  .map(day => parseInt(day, 10)).filter(day => !isNaN(day) && day >= 0 && day <= 6))];
+const validateTemplateDays = (schedule, target, days) => {
+  if (!days.length || schedule === 'weekly_times' && target > days.length) throw '每周目标次数不能超过可完成的天数，请至少选择一天';
+};
 
 const defaultBadges = [
   {
@@ -483,6 +488,7 @@ class MockStore {
   getTemplates() {
     return this.state.task_templates.map(t => ({
       ...t,
+      days_of_week: uniqueTemplateDays(t.days_of_week),
       schedule_type: t.schedule_type || 'fixed_days',
       weekly_target_times: t.weekly_target_times || null,
       child_ids: t.child_ids ?? null
@@ -490,13 +496,16 @@ class MockStore {
   }
 
   createTemplate({ title, subject, schedule_type = 'fixed_days', days_of_week, weekly_target_times, points, child_ids = null }) {
+    const days = uniqueTemplateDays(days_of_week);
+    const target = schedule_type === 'weekly_times' ? (Number(weekly_target_times) || 3) : null;
+    validateTemplateDays(schedule_type, target, days);
     const newTmpl = {
       id: 'tmpl-' + Date.now(),
       title: title.trim(),
       subject: subject.trim(),
       schedule_type: schedule_type || 'fixed_days',
-      days_of_week: days_of_week || [0, 1, 2, 3, 4, 5, 6],
-      weekly_target_times: schedule_type === 'weekly_times' ? (Number(weekly_target_times) || 3) : null,
+      days_of_week: days,
+      weekly_target_times: target,
       points: Number(points) || 10,
       child_ids,
       created_at: new Date().toISOString()
@@ -509,13 +518,15 @@ class MockStore {
   updateTemplate(id, { title, subject, schedule_type, days_of_week, weekly_target_times, points, child_ids }) {
     const tmpl = this.state.task_templates.find(t => t.id === id);
     if (!tmpl) throw new Error('Template not found');
+    const schedule = schedule_type ?? tmpl.schedule_type ?? 'fixed_days';
+    const days = uniqueTemplateDays(days_of_week ?? tmpl.days_of_week);
+    const target = schedule === 'weekly_times' ? (Number(weekly_target_times ?? tmpl.weekly_target_times) || 3) : null;
+    validateTemplateDays(schedule, target, days);
     if (title) tmpl.title = title.trim();
     if (subject) tmpl.subject = subject.trim();
-    if (schedule_type) tmpl.schedule_type = schedule_type;
-    if (days_of_week) tmpl.days_of_week = days_of_week;
-    if (weekly_target_times !== undefined) {
-      tmpl.weekly_target_times = tmpl.schedule_type === 'weekly_times' ? (Number(weekly_target_times) || 3) : null;
-    }
+    tmpl.schedule_type = schedule;
+    tmpl.days_of_week = days;
+    tmpl.weekly_target_times = target;
     if (points !== undefined) tmpl.points = Number(points);
     if (child_ids !== undefined) {
       tmpl.child_ids = child_ids;

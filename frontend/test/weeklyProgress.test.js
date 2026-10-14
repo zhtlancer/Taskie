@@ -46,3 +46,12 @@ test('demo weekly tasks limited to the weekend only appear then, and Sunday leav
   assert.deepEqual(pick(weekend('2026-10-17')), { is_optional: true, week_days_left: 2, weekly_remaining_times: 1 });
   assert.deepEqual(pick(weekend('2026-10-18')), { is_optional: false, week_days_left: 1, weekly_remaining_times: 1 });
 });
+
+test('demo deduplicates weekdays before checking the weekly target and invalid edits leave the template intact', () => {
+  assert.throws(() => mockStore.createTemplate({ title: '周末', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 3, days_of_week: [6, 6, 0] }), /可完成的天数/);
+  const created = mockStore.createTemplate({ title: '周末', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 2, days_of_week: [6, 6, 0] });
+  assert.deepEqual(created.days_of_week, [6, 0]);
+  assert.throws(() => mockStore.updateTemplate(created.id, { title: '不应保存', weekly_target_times: 3, days_of_week: [6, 6, 0] }), /可完成的天数/);
+  assert.equal(created.title, '周末');
+  assert.equal(created.weekly_target_times, 2);
+});

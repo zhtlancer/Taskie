@@ -2,7 +2,7 @@ async function rewardsRoutes(fastify, options) {
   const { rewardsService } = options;
   fastify.get('/children/:id/point-logs', async request => fastify.db.prepare(`
     SELECT pl.id, pl.points, pl.earned_at,
-      COALESCE(dt.title, CASE WHEN pt.mode = 'progress' THEN pt.title || ' ' || ptl.amount || pt.unit ELSE pt.title END) AS title
+      COALESCE(pl.activity_title, dt.title, CASE WHEN pt.mode = 'progress' THEN pt.title || ' ' || ptl.amount || pt.unit ELSE pt.title END) AS title
     FROM point_logs pl
     LEFT JOIN daily_tasks dt ON dt.id = pl.daily_task_id
     LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
