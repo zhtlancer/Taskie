@@ -23,7 +23,8 @@ function installAuthorization(app, db) {
   app.addHook('onRequest', async (request, reply) => {
     const url = authorizationPath(request);
     if (request.method === 'OPTIONS' || !url.startsWith('/api/') && !url.startsWith('/uploads/')) return;
-    if (url === '/api/health' || request.method === 'GET' && ['/api/children', '/api/auth/setup'].includes(url.replace(/\/$/, '')) ||
+    // Device pairing comes before signing in; the device gate already protects everything else.
+    if (url === '/api/health' || url.startsWith('/api/device/') || request.method === 'GET' && ['/api/children', '/api/auth/setup'].includes(url.replace(/\/$/, '')) ||
       request.method === 'POST' && ['/api/auth/parent-login', '/api/auth/child-login', '/api/auth/logout'].includes(url)) return;
     try { await request.jwtVerify(); } catch { return reply.code(401).send({ error: '请先登录，或重新登录已过期的会话' }); }
     if (!['parent', 'child'].includes(request.user.role) || request.user.epoch !== app.sessionEpoch()) {
@@ -37,7 +38,7 @@ function installAuthorization(app, db) {
       db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1') {
       return reply.code(403).send({ error: '请先修改默认家长 PIN', code: 'PARENT_PIN_CHANGE_REQUIRED' });
     }
-    const parentOnly = url.startsWith('/api/backups') || url === '/api/auth/parent-pin' ||
+    const parentOnly = url.startsWith('/api/backups') || url === '/api/auth/parent-pin' || url.startsWith('/api/devices') ||
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||
       /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/reward-items') && request.method !== 'GET' ||

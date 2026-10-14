@@ -36,6 +36,22 @@ async function main() {
   page.on('pageerror', error => errors.push(error.message));
   const pressPin = async pin => { for (const digit of pin) await page.getByRole('button', { name: digit, exact: true }).click(); };
 
+  // --- Device authorization: everything is blocked until this browser is paired.
+  const blocked = await fetch(`${base}/api/children`);
+  assert.equal(blocked.status, 401);
+  assert.equal((await blocked.json()).code, 'DEVICE_NOT_AUTHORIZED');
+  await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
+  await page.getByText('这台设备还没有授权').waitFor();
+  const code = (await page.locator('#code').innerText()).replace(/\D/g, '');
+  assert.match(code, /^\d{6}$/);
+  assert.match(docker(['exec', name, 'node', 'src/cli.js', 'approve-device', code, '冒烟测试浏览器']), /已授权设备/);
+  // The pairing page notices the approval and opens the requested page.
+  await page.waitForURL('**/parent/login');
+  const deviceCookie = (await context.cookies()).find(cookie => cookie.name === 'taskie_device');
+  assert.ok(deviceCookie?.httpOnly, 'the device token must be an HttpOnly cookie');
+  const device = { cookie: `taskie_device=${deviceCookie.value}` };
+  pass('browser is blocked until paired, then the server command authorizes it');
+
   // --- First login must replace the default parent PIN.
   await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL('**/parent/login');
@@ -49,14 +65,14 @@ async function main() {
   await pressPin(NEW_PIN);
   await page.waitForURL('**/parent/dashboard');
   assert.ok(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')));
-  assert.deepEqual(await (await fetch(`${base}/api/auth/setup`)).json(), { parent_pin_is_default: false });
+  assert.deepEqual(await (await fetch(`${base}/api/auth/setup`, { headers: device })).json(), { parent_pin_is_default: false });
   pass('browser forces replacing the default parent PIN, then signs in with the new one');
 
   // Test data through the API, as the parent.
-  const login = await (await fetch(`${base}/api/auth/parent-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: NEW_PIN }) })).json();
+  const login = await (await fetch(`${base}/api/auth/parent-login`, { method: 'POST', headers: { ...device, 'content-type': 'application/json' }, body: JSON.stringify({ pin: NEW_PIN }) })).json();
   assert.equal(login.must_change_pin, false);
   const api = async (method, url, body) => {
-    const headers = { authorization: `Bearer ${login.token}`, ...(body ? { 'content-type': 'application/json' } : {}) };
+    const headers = { ...device, authorization: `Bearer ${login.token}`, ...(body ? { 'content-type': 'application/json' } : {}) };
     const response = await fetch(`${base}/api${url}`, { method, headers, body: body && JSON.stringify(body) });
     assert.ok(response.ok, `${method} ${url}: ${await response.clone().text()}`);
     return response.json();
@@ -168,19 +184,31 @@ async function main() {
   await page.getByRole('button', { name: /浏览器测试孩子/ }).waitFor();
   assert.equal(errors.length, 0, JSON.stringify(errors));
   pass('browser network recovery and zero JavaScript errors');
-  await context.close();
 
-  // --- Phones: every page fits the screen width, and the child tab bar navigates.
+  // --- A second device (a phone) is authorized from the parent console by its pairing code.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, timezoneId: 'Asia/Shanghai' });
   const mobile = await phone.newPage();
   await mobile.route(/fonts\.(?:googleapis|gstatic)\.com/, route => route.abort());
   mobile.on('pageerror', error => errors.push(error.message));
+  await mobile.goto(base, { waitUntil: 'domcontentloaded' });
+  await mobile.getByText('这台设备还没有授权').waitFor();
+  const phoneCode = (await mobile.locator('#code').innerText()).replace(/\D/g, '');
+  await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('例如 384921').fill(phoneCode);
+  await page.getByPlaceholder('例如 妈妈的 iPhone').fill('冒烟测试手机');
+  await page.getByRole('button', { name: '授权这台设备', exact: true }).click();
+  await page.getByText('已授权「冒烟测试手机」').waitFor();
+  await page.getByText('当前设备').waitFor();
+  await mobile.getByRole('button', { name: /浏览器测试孩子/ }).waitFor();
+  pass('browser parent authorizes a second device by its pairing code, which then opens the app');
+  await context.close();
+
+  // --- Phones: every page fits the screen width, and the child tab bar navigates.
   const fitsWidth = async path => {
     await mobile.goto(`${base}${path}`, { waitUntil: 'networkidle' });
     const width = await mobile.evaluate(() => document.documentElement.scrollWidth);
     assert.ok(width <= 390, `${path} is ${width}px wide on a 390px phone`);
   };
-  await mobile.goto(base, { waitUntil: 'domcontentloaded' });
   await mobile.getByRole('button', { name: /浏览器测试孩子/ }).click();
   await mobile.waitForURL(`**/child/${child.id}/today`);
   for (const tab of ['rewards', 'mistakes', 'characters', 'history', 'today']) await fitsWidth(`/child/${child.id}/${tab}`);

@@ -11,6 +11,9 @@ module.exports = {
   backupDir: process.env.BACKUP_DIR || path.resolve(path.dirname(process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite')), 'backups'),
   backupIntervalHours: Number(process.env.BACKUP_INTERVAL_HOURS || 24),
   backupRetention: Number(process.env.BACKUP_RETENTION || 7),
+  // Device authorization gate; DEVICE_AUTH=off disables it (e.g. for local development).
+  deviceAuth: process.env.DEVICE_AUTH !== 'off',
+  authorizedTokensFile: process.env.AUTHORIZED_TOKENS_FILE || path.resolve(path.dirname(process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite')), 'authorized_tokens'),
   defaultParentPin: process.env.DEFAULT_PARENT_PIN || '1234',
   imageProcessing: {
     maxDimension: parseInt(process.env.IMAGE_MAX_DIMENSION || '1600', 10),

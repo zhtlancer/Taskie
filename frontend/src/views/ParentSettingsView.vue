@@ -28,6 +28,27 @@
         </form>
       </section>
       <section class="bg-white rounded-2xl p-6 space-y-4">
+        <h3 class="text-lg font-bold">设备授权</h3>
+        <p class="text-sm text-slate-600">新设备第一次打开时会显示 6 位配对码。确认是自己家的设备后，在这里输入配对码并起个名字即可授权；以后这台设备就不用再配对。设备丢失时在下方撤销。</p>
+        <form @submit.prevent="approveDevice" class="flex flex-wrap gap-3 items-end">
+          <label>配对码<input v-model="pairCode" inputmode="numeric" autocomplete="off" maxlength="7" required placeholder="例如 384921" class="block border rounded-xl p-3 mt-2 w-36 tracking-widest font-bold" /></label>
+          <label>设备名称<input v-model="pairLabel" maxlength="30" required placeholder="例如 妈妈的 iPhone" class="block border rounded-xl p-3 mt-2" /></label>
+          <button :disabled="busy" class="px-5 py-3 bg-brand-500 text-white rounded-xl disabled:opacity-50 whitespace-nowrap">授权这台设备</button>
+        </form>
+        <ul class="divide-y">
+          <li v-for="device in devices" :key="device.id" class="py-3 flex items-center justify-between gap-4">
+            <span class="min-w-0">
+              <span class="font-bold">{{ device.label }}</span>
+              <span v-if="device.current" class="ml-2 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-xs font-bold">当前设备</span>
+              <span class="block text-xs text-slate-400">
+                授权于 {{ formatTime(device.created_at) }} · 最近使用 {{ device.last_seen_at ? formatTime(device.last_seen_at) : '暂无' }}
+              </span>
+            </span>
+            <button :disabled="busy" @click="revokeDevice(device)" class="text-rose-600 font-bold whitespace-nowrap">撤销</button>
+          </li>
+        </ul>
+      </section>
+      <section class="bg-white rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">修改家长 PIN</h3>
         <form @submit.prevent="changePin" class="flex flex-wrap gap-3 items-end">
           <label>当前 PIN<input v-model="oldPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autocomplete="current-password" class="block border rounded-xl p-3 mt-2" /></label>
@@ -47,7 +68,20 @@ import ParentNavBar from '../components/ParentNavBar.vue';
 const router = useRouter();
 const info = ref({ backups: [], interval_hours: 0, retention: 7 });
 const busy = ref(false), message = ref(''), file = ref(null), restorePin = ref(''), confirmed = ref(false), oldPin = ref(''), newPin = ref('');
-async function load() { info.value = await api.getBackups(); }
+const devices = ref([]), pairCode = ref(''), pairLabel = ref('');
+async function load() { [info.value, devices.value] = await Promise.all([api.getBackups(), api.getDevices()]); }
+const formatTime = time => (time ? new Date(time).toLocaleString('zh-CN') : '未知');
+function approveDevice() { return run(async () => {
+  const device = await api.approveDevice(pairCode.value, pairLabel.value);
+  pairCode.value = ''; pairLabel.value = '';
+  devices.value = await api.getDevices();
+  message.value = `已授权「${device.label}」，新设备页面会自动进入应用。`;
+}); }
+function revokeDevice(device) {
+  const warning = device.current ? '这是你正在使用的设备，撤销后需要重新配对。' : '撤销后这台设备将无法打开应用，需要重新配对。';
+  if (!confirm(`确定撤销「${device.label}」吗？${warning}`)) return;
+  return run(async () => { await api.revokeDevice(device.id); devices.value = await api.getDevices(); message.value = `已撤销「${device.label}」。`; });
+}
 async function run(action) {
   busy.value = true; message.value = '';
   try { await action(); } catch (error) { message.value = String(error); } finally { busy.value = false; }

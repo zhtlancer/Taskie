@@ -8,6 +8,11 @@ client.interceptors.request.use(config => {
   return config;
 });
 client.interceptors.response.use(response => response, error => {
+  // This browser lost or never had device authorization: show the pairing page.
+  if (error.response?.data?.code === 'DEVICE_NOT_AUTHORIZED' && typeof window !== 'undefined') {
+    window.location.href = '/api/device/page';
+    return new Promise(() => {});
+  }
   const login = error.config?.url?.includes('-login');
   if (error.response?.status === 401 && !login) clearTokens();
   const message = !error.response ? '无法连接服务器，操作未确认。请检查网络并刷新重试。'
@@ -101,6 +106,9 @@ export const api = {
   deletePeriodTask: id => remove(`/period-tasks/${id}`),
   logPeriodProgress: (taskId, data) => post(`/period-tasks/${taskId}/logs`, data),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
+  getDevices: () => get('/devices'),
+  approveDevice: (code, label) => post('/devices/approve', { code, label }),
+  revokeDevice: id => remove(`/devices/${id}`),
   getBackups: () => get('/backups'),
   createBackup: () => post('/backups'),
   async downloadBackup(name) { return (await client.get(`/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob', timeout: 180000 })).data; },

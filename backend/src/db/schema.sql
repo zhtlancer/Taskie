@@ -209,3 +209,18 @@ CREATE TABLE IF NOT EXISTS period_task_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_period_task_logs_task ON period_task_logs(period_task_id, date);
+
+-- Pending device pairings: a short code shown on an unauthorized device until a parent approves it.
+-- Authorized devices themselves live in the authorized_tokens file, by token hash.
+CREATE TABLE IF NOT EXISTS device_pairings (
+  code TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+-- When each authorized device was last used (not backed up).
+CREATE TABLE IF NOT EXISTS device_seen (
+  token_hash TEXT PRIMARY KEY,
+  last_seen_at TEXT NOT NULL
+);

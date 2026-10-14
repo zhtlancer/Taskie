@@ -3,7 +3,7 @@ const path = require('path');
 const buildApp = require('../src/app');
 const { getDb } = require('../src/db');
 
-function createTestApp({ authenticated = true, defaultParentPin = false } = {}) {
+function createTestApp({ authenticated = true, defaultParentPin = false, deviceAuth = false } = {}) {
   // Use in-memory SQLite for isolated, fast tests
   const db = getDb(':memory:');
   // Most tests exercise the parent console as if the default PIN had already been changed
@@ -17,7 +17,10 @@ function createTestApp({ authenticated = true, defaultParentPin = false } = {}) 
     uploadDir: tempUploadDir,
     jwtSecret: 'test-jwt-secret',
     backupDir: path.join(tempUploadDir, '../backups-' + Math.random().toString(36).slice(2)),
-    backupIntervalHours: 0
+    backupIntervalHours: 0,
+    // Feature tests run as an already-authorized device; the device gate has its own tests.
+    deviceAuth,
+    authorizedTokensFile: path.join(tempUploadDir, '../authorized-tokens-' + Math.random().toString(36).slice(2))
   });
   const rawInject = app.inject.bind(app);
   if (authenticated) app.inject = async options => {

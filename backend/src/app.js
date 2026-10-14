@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const Fastify = require('fastify');
-const cors = require('@fastify/cors');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const fastifyJwt = require('@fastify/jwt');
@@ -19,6 +18,7 @@ const CharactersService = require('./services/characters.service');
 const RedemptionsService = require('./services/redemptions.service');
 const PeriodsService = require('./services/periods.service');
 const { installAuthorization, getSetting } = require('./auth');
+const { DeviceRegistry, installDeviceGate, deviceRoutes } = require('./device-auth');
 const BackupService = require('./services/backup.service');
 const backupRoutes = require('./routes/backups.routes');
 
@@ -80,12 +80,6 @@ function buildApp(opts = {}) {
 
   console.log('  4/4 正在挂载路由与静态资源中间件...');
 
-  // CORS
-  fastify.register(cors, {
-    origin: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true
-  });
 
   // Multipart upload support (limits: 10MB per file)
   fastify.register(multipart, {
@@ -130,6 +124,11 @@ function buildApp(opts = {}) {
     secret: opts.jwtSecret || config.jwtSecret || getSetting(db, 'jwt_secret'),
     sign: { expiresIn: '12h' }
   });
+  // The device gate runs before every other check: unauthorized devices only reach the pairing page.
+  const deviceRegistry = new DeviceRegistry(db, opts.authorizedTokensFile || config.authorizedTokensFile);
+  fastify.decorate('deviceRegistry', deviceRegistry);
+  if (opts.deviceAuth ?? config.deviceAuth) installDeviceGate(fastify, deviceRegistry);
+  fastify.register(deviceRoutes, { prefix: '/api', registry: deviceRegistry });
   installAuthorization(fastify, db);
   const intervalHours = opts.backupIntervalHours ?? config.backupIntervalHours;
   const backupService = new BackupService(db, uploadDirectory, opts.backupDir || config.backupDir, opts.backupRetention ?? config.backupRetention);
