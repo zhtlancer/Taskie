@@ -123,8 +123,16 @@ describe('Rewards & Gamification API', () => {
     const streakNextMorning = rewardsService.getCurrentStreak(child.id, '2026-10-14');
     assert.equal(streakNextMorning, 3);
 
-    // If day is 2026-10-15 and 2026-10-14 had no tasks, streak breaks to 0
+    // If day is 2026-10-15 and nothing was done on a scheduled 2026-10-14, the streak breaks to 0
+    const { tasksService } = ctx.app.services;
+    const template = tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6] });
+    ctx.db.prepare("UPDATE task_templates SET created_at = '2026-10-01T00:00:00.000Z'").run();
+    ctx.db.prepare("UPDATE children SET created_at = '2026-10-01T00:00:00.000Z'").run();
     const streakBroken = rewardsService.getCurrentStreak(child.id, '2026-10-15');
     assert.equal(streakBroken, 0);
+
+    // A day with nothing scheduled (2026-10-14 is a Wednesday) is a rest day: it neither counts nor breaks
+    tasksService.updateTemplate(template.id, { days_of_week: [0, 1, 2, 4, 5, 6] });
+    assert.equal(rewardsService.getCurrentStreak(child.id, '2026-10-15'), 3);
   });
 });

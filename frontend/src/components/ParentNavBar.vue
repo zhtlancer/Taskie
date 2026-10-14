@@ -33,7 +33,7 @@
         <router-link
           to="/parent/tasks"
           class="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-          :class="$route.path === '/parent/tasks' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
+          :class="['/parent/tasks', '/parent/periods'].includes($route.path) ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
         >
           📝 任务模板
         </router-link>

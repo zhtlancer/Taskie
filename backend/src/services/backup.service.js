@@ -7,7 +7,8 @@ const { initDb } = require('../db');
 
 // Only genuine older schemas may have their newer tables created by initDb.
 const REQUIRED_TABLES = ['children', 'task_templates', 'daily_tasks', 'point_logs', 'badge_definitions', 'child_badges', 'mistake_records', 'settings', 'characters'];
-const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions'];
+const PERIOD_TABLES = ['periods', 'period_paused_templates', 'period_tasks', 'period_task_logs'];
+const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES];
 const MAX_SIZE = 256 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), { statusCode: 400 });
 const safeName = name => typeof name === 'string' && /^[\w-]+\.(?:jpg|jpeg|png|webp)$/i.test(name);
@@ -82,6 +83,10 @@ class BackupService {
       if (schemaVersion >= 4 && !['source_template_id', 'template_created_at'].every(name =>
         candidate.pragma('table_info(daily_tasks)').some(column => column.name === name))) {
         throw fail('备份缺少任务历史快照，无法恢复');
+      }
+      if (schemaVersion >= 5 && (!PERIOD_TABLES.every(t => tables.includes(t)) ||
+        !candidate.pragma('table_info(point_logs)').some(column => column.name === 'period_log_id'))) {
+        throw fail('备份缺少假期数据，无法恢复');
       }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);

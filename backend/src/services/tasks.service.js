@@ -1,5 +1,5 @@
 const { generateId } = require('../utils/crypto');
-const { getTodayDate, getDayOfWeek, getWeekRange, parseDate } = require('../utils/date');
+const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
@@ -25,6 +25,14 @@ function normalizeChildIds(childIds) {
     throw { status: 400, message: '请至少选择一个孩子，或设为全部孩子' };
   }
   return [...new Set(childIds)];
+}
+
+// Weekly tasks may be limited to some weekdays (e.g. a weekend task); the target must fit them.
+function validateWeeklyDays(scheduleType, target, days) {
+  if (days.length === 0) throw { status: 400, message: '请至少选择一天' };
+  if (scheduleType === 'weekly_times' && target > days.length) {
+    throw { status: 400, message: '每周目标次数不能超过可完成的天数' };
+  }
 }
 
 // Weekly tasks whose target is already met are hidden unless completed that day.
@@ -131,6 +139,7 @@ class TasksService {
     const childIds = normalizeChildIds(child_ids);
     const id = generateId();
     const daysArr = normalizeDaysOfWeek(days_of_week);
+    validateWeeklyDays(schedule_type, weekly_target_times, daysArr);
     const pts = typeof points === 'number' && points >= 0 ? points : 10;
     const createdAt = new Date().toISOString();
 
@@ -166,6 +175,7 @@ class TasksService {
       throw { status: 400, message: '每周目标必须为 1 至 7 次' };
     }
     if (points !== undefined && (!Number.isSafeInteger(points) || points < 0 || points > 10000)) throw { status: 400, message: '积分无效' };
+    validateWeeklyDays(schedule, target, newDays);
     const childIds = child_ids === undefined ? undefined : normalizeChildIds(child_ids);
     this.db.transaction(() => {
       this.db.prepare(`
@@ -205,11 +215,17 @@ class TasksService {
     const date = targetDate || getTodayDate();
 
     parseDate(date);
-    const dayOfWeek = getDayOfWeek(date);
-    const matching = this.listTemplates().filter(t => (t.child_ids === null || t.child_ids.includes(childId)) &&
-      (t.schedule_type === 'weekly_times' || t.days_of_week.includes(dayOfWeek)));
+    const schedule = this.scheduleFor(childId);
+    const matching = schedule.assigned.filter(t => schedule.allowedOn(t.id, date));
     this.db.transaction(() => {
-      if (date === getTodayDate()) this.removeUnassignedTodayTasks();
+      if (date === getTodayDate()) {
+        this.removeUnassignedTodayTasks();
+        // Pausing a template for a holiday drops today's pending task; completed ones stay.
+        const remove = this.db.prepare('DELETE FROM daily_tasks WHERE id = ?');
+        for (const row of this.db.prepare('SELECT id, COALESCE(source_template_id, template_id) AS template FROM daily_tasks WHERE child_id = ? AND date = ? AND is_completed = 0').all(childId, date)) {
+          if (row.template && schedule.isPaused(row.template, date)) remove.run(row.id);
+        }
+      }
       const exists = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND date = ? AND template_id = ?');
       const insert = this.db.prepare(`INSERT INTO daily_tasks
         (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, source_template_id, template_created_at)
@@ -245,7 +261,9 @@ class TasksService {
     };
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekOf(fromDate), getWeekRange(toDate).endDate);
-    const keyOf = row => `${weekOf(row.date)}|${row.source_template_id ?? row.template_id ?? row.id}`;
+    const sourceOf = row => row.source_template_id ?? row.template_id;
+    const keyOf = row => `${weekOf(row.date)}|${sourceOf(row) ?? row.id}`;
+    const schedule = this.scheduleFor(childId);
     const completions = new Map();
     for (const row of rows) {
       if (row.schedule_type !== 'weekly_times' || !row.is_completed) continue;
@@ -258,8 +276,8 @@ class TasksService {
       if (row.schedule_type !== 'weekly_times') return { ...task, is_optional: false };
       const done = completions.get(keyOf(row)) || [];
       const target = row.weekly_target_times || 1;
-      const dayOfWeek = getDayOfWeek(row.date);
-      const daysLeft = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      // The task's own day plus the remaining days this week it may still be done.
+      const daysLeft = 1 + schedule.availableDays(sourceOf(row), shiftDate(row.date, 1), getWeekRange(row.date).endDate);
       return {
         ...task,
         weekly_completed_times: done.length,
@@ -268,6 +286,52 @@ class TasksService {
         is_optional: target - done.filter(date => date < row.date).length < daysLeft
       };
     });
+  }
+
+  // The templates that apply to a child and when each may be done: from the date it was created,
+  // on its allowed weekdays, except while one of the child's holiday periods pauses it.
+  scheduleFor(childId) {
+    const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
+    const sinceDate = iso => formatDate(new Date(iso));
+    const templates = this.listTemplates().map(t => ({ ...t, since: sinceDate(t.created_at) }));
+    const byId = new Map(templates.map(t => [t.id, t]));
+    const pausedRanges = this.db.prepare(`
+      SELECT p.start_date, p.end_date, pt.template_id FROM periods p
+      JOIN period_paused_templates pt ON pt.period_id = p.id
+      WHERE p.child_id = ?
+    `).all(childId);
+    const isPaused = (templateId, date) => pausedRanges.some(range =>
+      range.template_id === templateId && range.start_date <= date && range.end_date >= date);
+    // Deleted templates are unknown and treated as available every day.
+    const allowedOn = (templateId, date) => {
+      const template = byId.get(templateId);
+      return !isPaused(templateId, date) && (!template || template.days_of_week.includes(getDayOfWeek(date)));
+    };
+    return {
+      childSince: child ? sinceDate(child.created_at) : null,
+      byId,
+      assigned: templates.filter(t => t.child_ids === null || t.child_ids.includes(childId)),
+      isPaused,
+      allowedOn,
+      availableDays: (templateId, from, to) => from > to ? 0 : getDateRangeList(from, to).filter(date => allowedOn(templateId, date)).length
+    };
+  }
+
+  // Tells whether a date was a rest day for a child: nothing required was scheduled. Opened days
+  // use their generated tasks (only flexible weekly ones means rest); unopened days are rest days
+  // unless a fixed-day template applied.
+  restDayChecker(childId, fromDate, toDate) {
+    const schedule = this.scheduleFor(childId);
+    const byDate = new Map();
+    for (const task of this.describeTasksBetween(childId, fromDate, toDate).filter(isActiveTask)) {
+      if (!byDate.has(task.date)) byDate.set(task.date, []);
+      byDate.get(task.date).push(task);
+    }
+    return date => {
+      if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional);
+      if (!schedule.childSince || date < schedule.childSince) return true;
+      return !schedule.assigned.some(t => t.schedule_type !== 'weekly_times' && t.since <= date && schedule.allowedOn(t.id, date));
+    };
   }
 
   completeDailyTask(taskId) {
@@ -292,6 +356,9 @@ class TasksService {
 
     if (task.date > getTodayDate()) throw { status: 400, message: '不能提前完成未来的任务' };
     if (this.isUnassignedTodayTask(task)) throw { status: 409, message: '任务已取消分配，请刷新今日任务' };
+    if (this.scheduleFor(task.child_id).isPaused(task.source_template_id ?? task.template_id, task.date)) {
+      throw { status: 409, message: '假期中这项任务已暂停，请刷新今日任务' };
+    }
     if (task.schedule_type === 'weekly_times' && this.weeklyCount(task.child_id, task.source_template_id ?? task.template_id, task.date) >= task.weekly_target_times) {
       throw { status: 409, message: '本周目标已完成' };
     }

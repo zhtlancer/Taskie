@@ -33,11 +33,12 @@ const chartData = computed(() => {
     if (!item.date) return '';
     const d = new Date(item.date);
     const dayName = weekdayNames[d.getDay()];
-    return `${d.getMonth() + 1}/${d.getDate()} (${dayName})`;
+    // Days with nothing scheduled are rest days, not failures.
+    return item.total_tasks === 0 ? `${d.getMonth() + 1}/${d.getDate()} (${dayName}·休息)` : `${d.getMonth() + 1}/${d.getDate()} (${dayName})`;
   });
 
   const completionRates = props.historyData.map(item => {
-    return Math.round((item.completion_rate || 0) * 100);
+    return item.total_tasks === 0 ? null : Math.round((item.completion_rate || 0) * 100);
   });
 
   return {
@@ -69,7 +70,7 @@ const chartOptions = {
       padding: 10,
       cornerRadius: 10,
       callbacks: {
-        label: (context) => `完成率: ${context.raw}%`
+        label: (context) => context.raw === null ? '休息日：没有安排任务' : `完成率: ${context.raw}%`
       }
     }
   },

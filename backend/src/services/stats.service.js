@@ -31,11 +31,12 @@ class StatsService {
 
     // Query points by date from point_logs
     const pointLogs = this.db.prepare(`
-      SELECT dt.date, COALESCE(SUM(pl.points), 0) AS points
+      SELECT COALESCE(dt.date, ptl.date) AS date, COALESCE(SUM(pl.points), 0) AS points
       FROM point_logs pl
-      JOIN daily_tasks dt ON pl.daily_task_id = dt.id
-      WHERE pl.child_id = ? AND dt.date >= ? AND dt.date <= ?
-      GROUP BY dt.date
+      LEFT JOIN daily_tasks dt ON pl.daily_task_id = dt.id
+      LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
+      WHERE pl.child_id = ? AND COALESCE(dt.date, ptl.date) >= ? AND COALESCE(dt.date, ptl.date) <= ?
+      GROUP BY COALESCE(dt.date, ptl.date)
     `).all(childId, from, to);
 
     const pointsByDate = new Map();
@@ -91,8 +92,9 @@ class StatsService {
       const pointsRow = this.db.prepare(`
         SELECT COALESCE(SUM(pl.points), 0) AS total_points
         FROM point_logs pl
-        JOIN daily_tasks dt ON pl.daily_task_id = dt.id
-        WHERE pl.child_id = ? AND dt.date >= ? AND dt.date <= ?
+        LEFT JOIN daily_tasks dt ON pl.daily_task_id = dt.id
+        LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
+        WHERE pl.child_id = ? AND COALESCE(dt.date, ptl.date) >= ? AND COALESCE(dt.date, ptl.date) <= ?
       `).get(childId, range.startDate, range.endDate);
 
       const dailyBreakdown = dates.map(d => {
@@ -141,12 +143,12 @@ class StatsService {
   getWeeklyCompletion(childId, weekStart, weekEnd, asOf = getTodayDate()) {
     const cutoff = asOf < weekEnd ? asOf : weekEnd;
     if (cutoff < weekStart) return { as_of: cutoff, total_units: 0, completed_units: 0, completion_rate: null, items: [] };
-    const daysAfterCutoff = getDateRangeList(cutoff, weekEnd).length - 1;
     const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
     const sinceDate = iso => formatDate(new Date(iso));
     const childSince = sinceDate(child.created_at);
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekStart, cutoff);
+    const schedule = this.tasksService.scheduleFor(childId);
     const allTemplates = this.tasksService.listTemplates().map(t => ({ ...t, since: sinceDate(t.created_at) }));
     const templatesById = new Map(allTemplates.map(t => [t.id, t]));
     const templates = allTemplates.filter(t => t.child_ids === null || t.child_ids.includes(childId));
@@ -175,9 +177,8 @@ class StatsService {
           if (row.is_completed) item.completed++;
         }
       } else if (date >= childSince) {
-        const dayOfWeek = getDayOfWeek(date);
         for (const t of templates) {
-          if (t.schedule_type !== 'weekly_times' && t.days_of_week.includes(dayOfWeek) && t.since <= date) itemFor(keyFor(t), t).total++;
+          if (t.schedule_type !== 'weekly_times' && schedule.allowedOn(t.id, date) && t.since <= date) itemFor(keyFor(t), t).total++;
         }
       }
     }
@@ -201,7 +202,9 @@ class StatsService {
       // The first week only owes as many occurrences as there are days after
       // creation. Real backfilled completions still count, even before creation.
       const start = [weekStart, childSince, since].sort().at(-1);
-      const effectiveTarget = start > weekEnd ? 0 : Math.min(target, getDateRangeList(start, weekEnd).length);
+      // Weekly tasks limited to some weekdays only owe as many times as those days allow.
+      const effectiveTarget = Math.min(target, schedule.availableDays(item.template_id, start, weekEnd));
+      const daysAfterCutoff = schedule.availableDays(item.template_id, shiftDate(cutoff, 1), weekEnd);
       // Old deleted templates lost their identity before snapshots existed. Keep
       // each earned completion; do not invent shared quotas from matching titles.
       const due = legacyOrphan ? completed : Math.max(completed, effectiveTarget - daysAfterCutoff, 0);

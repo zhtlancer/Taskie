@@ -149,3 +149,53 @@ CREATE TABLE IF NOT EXISTS reward_redemptions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reward_redemptions_child ON reward_redemptions(child_id, status);
+
+-- Holiday and vacation periods, set per child
+CREATE TABLE IF NOT EXISTS periods (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  start_date TEXT NOT NULL, -- YYYY-MM-DD, inclusive
+  end_date TEXT NOT NULL,   -- YYYY-MM-DD, inclusive
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_periods_child ON periods(child_id, start_date);
+
+-- Daily and weekly templates paused during a period; unlisted templates keep running
+CREATE TABLE IF NOT EXISTS period_paused_templates (
+  period_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  PRIMARY KEY (period_id, template_id),
+  FOREIGN KEY (period_id) REFERENCES periods(id) ON DELETE CASCADE,
+  FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE CASCADE
+);
+
+-- Tasks to finish over a whole period, such as holiday homework
+CREATE TABLE IF NOT EXISTS period_tasks (
+  id TEXT PRIMARY KEY,
+  period_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'check', -- check: done once | progress: logged towards total_amount
+  total_amount INTEGER NOT NULL DEFAULT 1,
+  unit TEXT,
+  points INTEGER NOT NULL DEFAULT 0,   -- per unit for progress, on completion for check
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (period_id) REFERENCES periods(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_period_tasks_period ON period_tasks(period_id);
+
+-- Progress entries; the points they earn are point_logs rows linked by period_log_id
+CREATE TABLE IF NOT EXISTS period_task_logs (
+  id TEXT PRIMARY KEY,
+  period_task_id TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  date TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (period_task_id) REFERENCES period_tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_period_task_logs_task ON period_task_logs(period_task_id, date);

@@ -29,40 +29,31 @@ class RewardsService {
     return this.getTotalPoints(childId) - this.getSpentPoints(childId);
   }
 
+  // Consecutive days with a completed task. Rest days (nothing required was scheduled, such as a
+  // weekend without tasks) are skipped rather than breaking the streak, and today only counts once
+  // something is done, so an unfinished today never breaks it either.
   getCurrentStreak(childId, referenceDate) {
     const today = referenceDate || getTodayDate();
-    const yesterday = shiftDate(today, -1);
+    // Logging holiday-task progress counts as doing something that day.
+    const completedDates = new Set(this.db.prepare(`
+      SELECT date FROM daily_tasks WHERE child_id = ? AND is_completed = 1 AND date <= ?
+      UNION
+      SELECT l.date FROM period_task_logs l
+      JOIN period_tasks t ON t.id = l.period_task_id JOIN periods p ON p.id = t.period_id
+      WHERE p.child_id = ? AND l.date <= ?
+    `).all(childId, today, childId, today).map(r => r.date));
+    if (completedDates.size === 0) return 0;
 
-    const rows = this.db.prepare(`
-      SELECT DISTINCT date
-      FROM daily_tasks
-      WHERE child_id = ? AND is_completed = 1
-      ORDER BY date DESC
-    `).all(childId);
-
-    const completedDates = new Set(rows.map(r => r.date));
-
-    if (completedDates.has(today)) {
-      let streak = 0;
-      let curr = today;
-      while (completedDates.has(curr)) {
-        streak++;
-        curr = shiftDate(curr, -1);
-      }
-      return streak;
+    const earliest = [...completedDates].sort()[0];
+    const isRestDay = this.tasksService
+      ? this.tasksService.restDayChecker(childId, earliest, today)
+      : () => false;
+    let streak = 0;
+    for (let date = completedDates.has(today) ? today : shiftDate(today, -1); date >= earliest; date = shiftDate(date, -1)) {
+      if (completedDates.has(date)) streak++;
+      else if (!isRestDay(date)) break;
     }
-
-    if (completedDates.has(yesterday)) {
-      let streak = 0;
-      let curr = yesterday;
-      while (completedDates.has(curr)) {
-        streak++;
-        curr = shiftDate(curr, -1);
-      }
-      return streak;
-    }
-
-    return 0;
+    return streak;
   }
 
   getTotalCompletedTasksCount(childId) {
@@ -127,8 +118,9 @@ class RewardsService {
     const todayPointsRow = this.db.prepare(`
       SELECT COALESCE(SUM(pl.points), 0) AS points
       FROM point_logs pl
-      JOIN daily_tasks dt ON pl.daily_task_id = dt.id
-      WHERE pl.child_id = ? AND dt.date = ?
+      LEFT JOIN daily_tasks dt ON pl.daily_task_id = dt.id
+      LEFT JOIN period_task_logs ptl ON ptl.id = pl.period_log_id
+      WHERE pl.child_id = ? AND COALESCE(dt.date, ptl.date) = ?
     `).get(childId, today);
 
     const todayPoints = todayPointsRow ? todayPointsRow.points : 0;

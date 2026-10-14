@@ -178,9 +178,17 @@
             <span class="animate-spin mr-2">⏳</span> 正在加载今日任务...
           </div>
 
+          <!-- Holiday tasks for the whole period -->
+          <PeriodTasksPanel
+            v-if="!loading && activePeriod"
+            :period="activePeriod"
+            :today="todayString"
+            @changed="refreshPeriods"
+          />
+
           <!-- Empty state -->
           <div
-            v-else-if="filteredTasks.length === 0"
+            v-if="!loading && filteredTasks.length === 0 && !activePeriod"
             class="flex flex-col items-center justify-center h-64 text-slate-400"
           >
             <span class="text-5xl mb-3">🏖️</span>
@@ -188,8 +196,15 @@
             <span class="text-xs text-slate-400 mt-1">可以选择“全部”查看或在家长端添加任务</span>
           </div>
 
+          <div
+            v-if="!loading && activePeriod && filteredTasks.length === 0"
+            class="text-center py-6 text-sm font-bold text-slate-400"
+          >
+            假期中，今天没有日常任务～
+          </div>
+
           <!-- 2 Columns Grid -->
-          <div v-else class="grid grid-cols-2 gap-3.5">
+          <div v-if="!loading && filteredTasks.length > 0" class="grid grid-cols-2 gap-3.5">
             <TaskCard
               v-for="task in filteredTasks"
               :key="task.id"
@@ -199,8 +214,8 @@
           </div>
         </div>
 
-        <!-- Bottom Motivation Banner -->
-        <div class="mt-3 shrink-0">
+        <!-- Bottom Motivation Banner (hidden on holiday days without daily tasks) -->
+        <div v-if="totalCount > 0 || !activePeriod" class="mt-3 shrink-0">
           <!-- When all completed -->
           <div
             v-if="allDone"
@@ -265,6 +280,7 @@ import ProgressRing from '../components/ProgressRing.vue';
 import StreakBadge from '../components/StreakBadge.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
+import PeriodTasksPanel from '../components/PeriodTasksPanel.vue';
 import { playAllDone, playBadgeUnlocked, playClick } from '../utils/sound';
 
 const route = useRoute();
@@ -282,6 +298,21 @@ const childAvatar = computed(() => childStore.childAvatar);
 
 const tasks = ref([]);
 const loading = ref(true);
+const periods = ref([]);
+const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
+const todayString = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+
+async function refreshPeriods() {
+  try {
+    periods.value = await api.getChildPeriods(childId.value);
+  } catch (err) {
+    console.error('Failed to load holiday periods:', err);
+  }
+  await childStore.fetchStats();
+}
 const selectedSubject = ref('全部');
 const streakRef = ref(null);
 
@@ -331,7 +362,7 @@ function getSubjectTaskCount(subjName) {
 }
 
 onMounted(async () => {
-  await loadTasks();
+  await Promise.all([loadTasks(), refreshPeriods()]);
 });
 
 async function loadTasks() {

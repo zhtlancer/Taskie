@@ -126,6 +126,16 @@ function initDb(db) {
       db.pragma('user_version = 4');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 5) {
+    db.transaction(() => {
+      // Periods and their tasks are created by schema.sql. Earned points outlive a deleted
+      // period or task; only undoing a progress entry takes its points back.
+      if (!db.pragma('table_info(point_logs)').some(c => c.name === 'period_log_id')) {
+        db.exec('ALTER TABLE point_logs ADD COLUMN period_log_id TEXT REFERENCES period_task_logs(id) ON DELETE SET NULL');
+      }
+      db.pragma('user_version = 5');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

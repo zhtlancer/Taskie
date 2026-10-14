@@ -36,7 +36,9 @@ function installAuthorization(app, db) {
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||
       /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/reward-items') && request.method !== 'GET' ||
-      /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject)\/?$/.test(url);
+      /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject)\/?$/.test(url) ||
+      /^\/api\/children\/[^/]+\/periods\/?$/.test(url) && request.method !== 'GET' ||
+      url.startsWith('/api/periods/') || /^\/api\/period-tasks\/[^/]+\/?$/.test(url);
     if (parentOnly && request.user.role !== 'parent') return reply.code(403).send({ error: '需要家长权限' });
     if (url.startsWith('/uploads/')) {
       const photo = db.prepare('SELECT child_id FROM mistake_records WHERE photo_path = ?').get(`/uploads/${request.params['*']}`);
@@ -59,6 +61,14 @@ function installAuthorization(app, db) {
         if (row) app.requireChildAccess(request, row.child_id);
       }
     }
+    // Children may log and undo progress only on their own holiday tasks.
+    const periodOwner = url.startsWith('/api/period-tasks/')
+      ? db.prepare('SELECT p.child_id FROM period_tasks t JOIN periods p ON p.id = t.period_id WHERE t.id = ?').get(request.params.id)
+      : url.startsWith('/api/period-task-logs/')
+        ? db.prepare(`SELECT p.child_id FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id
+            JOIN periods p ON p.id = t.period_id WHERE l.id = ?`).get(request.params.id)
+        : null;
+    if (periodOwner) app.requireChildAccess(request, periodOwner.child_id);
     if (url.replace(/\/$/, '') === '/api/daily-tasks' ||
       ['/api/mistakes', '/api/characters'].includes(url.replace(/\/$/, '')) && !request.isMultipart()) {
       app.requireChildAccess(request, request.method === 'GET' ? request.query.child_id : request.body?.child_id);

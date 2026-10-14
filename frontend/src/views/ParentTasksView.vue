@@ -15,14 +15,19 @@
           </p>
         </div>
 
-        <button
-          type="button"
-          @click="openAddModal"
-          class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all"
-        >
-          <span>➕</span>
-          <span>新增任务模板</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <router-link to="/parent/periods" class="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50">
+            🏖️ 假期安排
+          </router-link>
+          <button
+            type="button"
+            @click="openAddModal"
+            class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all"
+          >
+            <span>➕</span>
+            <span>新增任务模板</span>
+          </button>
+        </div>
       </div>
 
       <!-- Loading State -->
@@ -73,6 +78,9 @@
                 <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-xs font-black">
                   <span>🎯</span>
                   <span>每周完成特定次数：每周 {{ tmpl.weekly_target_times || 3 }} 次</span>
+                </div>
+                <div v-if="Array.isArray(tmpl.days_of_week) && tmpl.days_of_week.length < 7" class="mt-1.5 text-[11px] font-bold text-slate-500">
+                  仅限 {{ [1, 2, 3, 4, 5, 6, 0].filter(day => tmpl.days_of_week.includes(day)).map(day => dayNames[day]).join('、') }} 完成
                 </div>
               </div>
 
@@ -253,7 +261,7 @@
               </button>
               <button
                 type="button"
-                @click="form.schedule_type = 'weekly_times'"
+                @click="selectWeeklyTimes"
                 class="py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                 :class="[
                   form.schedule_type === 'weekly_times'
@@ -277,8 +285,9 @@
                 v-for="times in [1, 2, 3, 4, 5]"
                 :key="times"
                 type="button"
+                :disabled="times > form.days_of_week.length"
                 @click="form.weekly_target_times = times"
-                class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all"
+                class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40"
                 :class="[
                   form.weekly_target_times === times
                     ? 'bg-indigo-600 border-indigo-600 text-white font-black shadow-sm'
@@ -300,10 +309,12 @@
             </div>
           </div>
 
-          <!-- Mode B: Days of Week Selector (Fixed Days) -->
-          <div v-else>
+          <!-- Days of Week: when a fixed task repeats, or which days a weekly task may be done -->
+          <div>
             <div class="flex items-center justify-between mb-1.5">
-              <label class="text-xs font-bold text-slate-600">适用星期</label>
+              <label class="text-xs font-bold text-slate-600">
+                {{ form.schedule_type === 'weekly_times' ? '可在哪几天完成' : '适用星期' }}
+              </label>
               <div class="flex gap-2">
                 <button
                   type="button"
@@ -387,7 +398,7 @@
             </button>
             <button
               type="submit"
-              :disabled="submitting || !form.title.trim() || form.child_ids?.length === 0 || (form.schedule_type === 'fixed_days' && form.days_of_week.length === 0)"
+              :disabled="submitting || !form.title.trim() || form.child_ids?.length === 0 || form.days_of_week.length === 0 || (form.schedule_type === 'weekly_times' && form.weekly_target_times > form.days_of_week.length)"
               class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
             >
               {{ submitting ? '保存中...' : '确认保存' }}
@@ -480,6 +491,12 @@ function toggleDay(day) {
   }
 }
 
+// New weekly tasks may be done any day unless the parent narrows it (e.g. to the weekend).
+function selectWeeklyTimes() {
+  if (form.value.schedule_type !== 'weekly_times' && !isEditing.value) form.value.days_of_week = [0, 1, 2, 3, 4, 5, 6];
+  form.value.schedule_type = 'weekly_times';
+}
+
 function setWeekPreset(type) {
   if (type === 'workdays') {
     form.value.days_of_week = [1, 2, 3, 4, 5];
@@ -531,7 +548,7 @@ async function submitTemplateForm() {
       schedule_type: form.value.schedule_type,
       weekly_target_times: form.value.schedule_type === 'weekly_times' ? (Number(form.value.weekly_target_times) || 3) : null,
       points: form.value.points,
-      days_of_week: form.value.schedule_type === 'fixed_days' ? form.value.days_of_week : [0, 1, 2, 3, 4, 5, 6],
+      days_of_week: form.value.days_of_week,
       child_ids: form.value.child_ids
     };
 

@@ -38,3 +38,11 @@ test('demo completions on earlier days restore slack for later days', () => {
 function pick(task) {
   return { is_optional: task.is_optional, week_days_left: task.week_days_left, weekly_remaining_times: task.weekly_remaining_times };
 }
+
+test('demo weekly tasks limited to the weekend only appear then, and Sunday leaves no slack', () => {
+  mockStore.state.task_templates = [{ id: 'weekend', title: '周末作业', subject: '语文', points: 10, schedule_type: 'weekly_times', weekly_target_times: 1, days_of_week: [6, 0], child_ids: null }];
+  const weekend = date => mockStore.getDailyTasks('a', date).find(task => task.template_id === 'weekend');
+  assert.equal(weekend('2026-10-16'), undefined);
+  assert.deepEqual(pick(weekend('2026-10-17')), { is_optional: true, week_days_left: 2, weekly_remaining_times: 1 });
+  assert.deepEqual(pick(weekend('2026-10-18')), { is_optional: false, week_days_left: 1, weekly_remaining_times: 1 });
+});

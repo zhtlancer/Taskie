@@ -95,6 +95,18 @@ test('counting all-done days uses a constant number of queries however much hist
   tasksService.createTemplate({ title: '阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 3 });
   const today = getTodayDate();
   let expected = 0;
+  const prepare = ctx.db.prepare.bind(ctx.db);
+  const countQueries = () => {
+    let queries = 0;
+    ctx.db.prepare = sql => { queries++; return prepare(sql); };
+    try {
+      assert.equal(rewardsService.getAllDoneDaysCount(child.id), expected);
+    } finally {
+      ctx.db.prepare = prepare;
+    }
+    return queries;
+  };
+  let queriesWithShortHistory;
   for (let n = 120; n >= 1; n--) {
     const date = shiftDate(today, -n);
     for (const task of tasksService.getDailyTasks(child.id, date)) {
@@ -102,17 +114,12 @@ test('counting all-done days uses a constant number of queries however much hist
     }
     // Reading is never done, so it becomes required (and unmet) from Friday to Sunday.
     if (n % 5 && [1, 2, 3, 4].includes(new Date(`${date}T00:00:00Z`).getUTCDay())) expected++;
+    if (n === 100) queriesWithShortHistory = countQueries();
   }
 
-  const prepare = ctx.db.prepare.bind(ctx.db);
-  let queries = 0;
-  ctx.db.prepare = sql => { queries++; return prepare(sql); };
-  try {
-    assert.equal(rewardsService.getAllDoneDaysCount(child.id), expected);
-  } finally {
-    ctx.db.prepare = prepare;
-  }
-  assert.ok(queries <= 3, `expected at most 3 queries, got ${queries}`);
+  const queries = countQueries();
+  assert.equal(queries, queriesWithShortHistory, '120 days of history must not need more queries than 20');
+  assert.ok(queries <= 6, `expected a handful of queries, got ${queries}`);
 });
 
 function pick(task) {

@@ -572,9 +572,8 @@ class MockStore {
       const matchingTemplates = this.state.task_templates.filter(t => {
         if (tasks.some(task => task.template_id === t.id)) return false;
         if (Array.isArray(t.child_ids) && !t.child_ids.includes(childId)) return false;
-        if (t.schedule_type === 'weekly_times') {
-          return true; // Weekly frequency tasks appear every day until/during the week
-        }
+        // Weekly tasks without a day list (older demo data) may be done any day.
+        if (t.schedule_type === 'weekly_times' && !Array.isArray(t.days_of_week)) return true;
         return Array.isArray(t.days_of_week) && t.days_of_week.includes(dayOfWeek);
       });
 
@@ -615,8 +614,14 @@ class MockStore {
       const doneBefore = this.state.daily_tasks.filter(d => d.child_id === childId &&
         (d.source_template_id ?? d.template_id ?? d.id) === (t.source_template_id ?? t.template_id ?? t.id) &&
         d.schedule_type === 'weekly_times' && d.is_completed && d.date >= start && d.date < targetDate).length;
-      const dayOfWeek = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
-      const daysLeft = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+      // Today plus the remaining days this week the task may still be done.
+      const allowedDays = Array.isArray(tmpl?.days_of_week) ? tmpl.days_of_week : [0, 1, 2, 3, 4, 5, 6];
+      const weekdayOf = date => new Date(`${date}T00:00:00Z`).getUTCDay();
+      const weekEnd = addDays(targetDate, (7 - weekdayOf(targetDate)) % 7);
+      let daysLeft = 1;
+      for (let date = addDays(targetDate, 1); date <= weekEnd; date = addDays(date, 1)) {
+        if (allowedDays.includes(weekdayOf(date))) daysLeft++;
+      }
       const target = targetTimes || 1;
       return {
         ...t,

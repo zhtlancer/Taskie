@@ -164,12 +164,19 @@
                   {{ formatDate(item.date) }}
                 </div>
                 <div class="text-xs text-slate-400">
-                  完成 {{ item.completed_tasks }} / {{ item.total_tasks }} 项
+                  {{ item.total_tasks === 0 ? '休息日' : `完成 ${item.completed_tasks} / ${item.total_tasks} 项` }}
                 </div>
               </div>
 
               <div class="text-right">
                 <span
+                  v-if="item.total_tasks === 0"
+                  class="text-xs font-black px-2.5 py-1 rounded-lg bg-slate-100 text-slate-400"
+                >
+                  休息
+                </span>
+                <span
+                  v-else
                   class="text-xs font-black px-2.5 py-1 rounded-lg"
                   :class="item.completion_rate >= 1 ? 'bg-emerald-100 text-emerald-800' : 'bg-brand-50 text-brand-600'"
                 >
