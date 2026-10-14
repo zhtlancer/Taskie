@@ -131,7 +131,12 @@
           </div>
 
           <!-- Quick Stats Summary -->
-          <div class="grid grid-cols-2 gap-3 text-center text-xs">
+          <div class="grid grid-cols-3 gap-3 text-center text-xs">
+            <div class="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-100">
+              <span class="text-slate-400 font-semibold block text-[11px]">本周完成度·截至今天</span>
+              <span class="text-base font-black text-emerald-600">{{ formatRate(item.week?.current_week?.completion?.completion_rate) }}</span>
+              <span class="block text-[10px] font-bold text-slate-400">上周 {{ formatRate(item.week?.last_week?.completion?.completion_rate) }}</span>
+            </div>
             <div class="p-2.5 rounded-xl bg-amber-50/60 border border-amber-100">
               <span class="text-slate-400 font-semibold block text-[11px]">累计总积分</span>
               <span class="text-base font-black text-amber-600">{{ item.stats.total_points || 0 }} 分</span>
@@ -167,6 +172,10 @@ const overallCompletionRate = computed(() => {
   return Math.round((completedTasks / totalTasks) * 100);
 });
 
+function formatRate(rate) {
+  return rate === null || rate === undefined ? '—' : `${Math.round(rate * 100)}%`;
+}
+
 const totalPointsIssued = computed(() => {
   return childrenStats.value.reduce((sum, item) => sum + (item.stats.total_points || 0), 0);
 });
@@ -175,8 +184,8 @@ onMounted(async () => {
   try {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
-      const stats = await api.getChildStats(child.id);
-      return { child, stats };
+      const [stats, week] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id)]);
+      return { child, stats, week };
     });
     childrenStats.value = await Promise.all(statsPromises);
   } catch (err) {

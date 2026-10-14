@@ -212,11 +212,11 @@ class TasksService {
       if (date === getTodayDate()) this.removeUnassignedTodayTasks();
       const exists = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND date = ? AND template_id = ?');
       const insert = this.db.prepare(`INSERT INTO daily_tasks
-        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)`);
+        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, source_template_id, template_created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)`);
       for (const t of matching) {
         if (!exists.get(childId, date, t.id) && (t.schedule_type !== 'weekly_times' || this.weeklyCount(childId, t.id, date) < t.weekly_target_times)) {
-          insert.run(generateId(), childId, t.id, t.title, t.subject, t.points, date, t.schedule_type, t.weekly_target_times);
+          insert.run(generateId(), childId, t.id, t.title, t.subject, t.points, date, t.schedule_type, t.weekly_target_times, t.id, t.created_at);
         }
       }
     })();
@@ -225,7 +225,7 @@ class TasksService {
 
   weeklyCount(childId, templateId, date) {
     const { startDate, endDate } = getWeekRange(date);
-    return this.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND template_id = ? AND date BETWEEN ? AND ? AND is_completed = 1')
+    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND is_completed = 1")
       .get(childId, templateId, startDate, endDate).n;
   }
 
@@ -245,7 +245,7 @@ class TasksService {
     };
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekOf(fromDate), getWeekRange(toDate).endDate);
-    const keyOf = row => `${weekOf(row.date)}|${row.template_id ?? row.id}`;
+    const keyOf = row => `${weekOf(row.date)}|${row.source_template_id ?? row.template_id ?? row.id}`;
     const completions = new Map();
     for (const row of rows) {
       if (row.schedule_type !== 'weekly_times' || !row.is_completed) continue;
@@ -292,7 +292,7 @@ class TasksService {
 
     if (task.date > getTodayDate()) throw { status: 400, message: '不能提前完成未来的任务' };
     if (this.isUnassignedTodayTask(task)) throw { status: 409, message: '任务已取消分配，请刷新今日任务' };
-    if (task.schedule_type === 'weekly_times' && this.weeklyCount(task.child_id, task.template_id, task.date) >= task.weekly_target_times) {
+    if (task.schedule_type === 'weekly_times' && this.weeklyCount(task.child_id, task.source_template_id ?? task.template_id, task.date) >= task.weekly_target_times) {
       throw { status: 409, message: '本周目标已完成' };
     }
     const now = new Date().toISOString();

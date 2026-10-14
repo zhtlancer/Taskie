@@ -115,6 +115,17 @@ function initDb(db) {
     // reward_items and reward_redemptions are created by schema.sql.
     db.pragma('user_version = 3');
   }
+  if (db.pragma('user_version', { simple: true }) < 4) {
+    db.transaction(() => {
+      const columns = new Set(db.pragma('table_info(daily_tasks)').map(c => c.name));
+      if (!columns.has('source_template_id')) db.exec('ALTER TABLE daily_tasks ADD COLUMN source_template_id TEXT');
+      if (!columns.has('template_created_at')) db.exec('ALTER TABLE daily_tasks ADD COLUMN template_created_at TEXT');
+      db.exec(`UPDATE daily_tasks SET source_template_id = template_id,
+        template_created_at = (SELECT created_at FROM task_templates WHERE id = daily_tasks.template_id)
+        WHERE source_template_id IS NULL AND template_id IS NOT NULL`);
+      db.pragma('user_version = 4');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

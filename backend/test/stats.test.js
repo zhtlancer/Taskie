@@ -60,4 +60,22 @@ describe('Stats API (/api/children/:id/history & weekly-summary)', () => {
     assert.equal(weekSummary.current_week.total_points, 30);
     assert.equal(weekSummary.current_week.daily_breakdown.length, 7);
   });
+
+  test('History honours a days window ending today, and rejects invalid windows', async () => {
+    ctx = createTestApp();
+    const child = (await ctx.app.inject({ method: 'POST', url: '/api/children', payload: { name: '孩子' } })).json();
+    const { getTodayDate, shiftDate } = require('../src/utils/date');
+    const today = getTodayDate();
+
+    const week = (await ctx.app.inject({ method: 'GET', url: `/api/children/${child.id}/history?days=7` })).json();
+    assert.deepEqual(week.map(d => d.date), Array.from({ length: 7 }, (_, i) => shiftDate(today, i - 6)));
+    // Without days or from, the default 30-day window is unchanged.
+    assert.equal((await ctx.app.inject({ method: 'GET', url: `/api/children/${child.id}/history` })).json().length, 30);
+    // An explicit from still wins over days.
+    assert.equal((await ctx.app.inject({ method: 'GET', url: `/api/children/${child.id}/history?days=7&from=${shiftDate(today, -1)}` })).json().length, 2);
+
+    for (const days of ['0', '367', 'abc', '-3', '1.5']) {
+      assert.equal((await ctx.app.inject({ method: 'GET', url: `/api/children/${child.id}/history?days=${days}` })).statusCode, 400, days);
+    }
+  });
 });

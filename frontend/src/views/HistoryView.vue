@@ -56,10 +56,13 @@
 
         <div class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-card flex items-center justify-between">
           <div>
-            <span class="text-xs font-bold text-slate-400">近 7 天平均完成率</span>
+            <span class="text-xs font-bold text-slate-400">本周完成度（截至今天）</span>
             <div class="text-2xl font-black text-brand-600 mt-1">
-              {{ avgCompletionRate }}%
+              {{ formatRate(thisWeek?.completion_rate) }}
             </div>
+            <span class="text-[11px] font-bold text-slate-400">
+              上周 {{ formatRate(lastWeek?.completion_rate) }}
+            </span>
           </div>
           <span class="text-3xl">📈</span>
         </div>
@@ -74,6 +77,42 @@
           <span class="text-3xl">🪙</span>
         </div>
       </div>
+
+      <!-- This Week's Completion by Task -->
+      <section
+        v-if="thisWeek && thisWeek.items.length"
+        class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card mb-6"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <span>🗓️</span>
+            <span>本周任务完成度</span>
+          </h2>
+          <span class="text-xs font-bold text-slate-400">
+            截至今天应完成 {{ thisWeek.total_units }} 次，已完成 {{ thisWeek.completed_units }} 次 · 没打开的日子也算在内哦
+          </span>
+        </div>
+        <div class="grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
+          <div v-for="item in thisWeek.items" :key="item.key">
+            <div class="flex items-center justify-between text-sm mb-1">
+              <span class="font-bold text-slate-700 font-chinese truncate">
+                {{ item.title }}
+                <span v-if="item.schedule_type === 'weekly_times'" class="text-[11px] text-indigo-500 font-bold">每周{{ item.weekly_target }}次</span>
+              </span>
+              <span class="text-xs font-black shrink-0" :class="item.completed >= item.total ? 'text-emerald-600' : 'text-slate-500'">
+                {{ item.completed }} / {{ item.total }}
+              </span>
+            </div>
+            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+              <div
+                class="h-full rounded-full transition-all duration-500"
+                :class="item.completed >= item.total ? 'bg-emerald-500' : 'bg-brand-500'"
+                :style="{ width: `${Math.round((item.completed / item.total) * 100)}%` }"
+              ></div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Main Section: Weekly Chart & Day List -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -162,16 +201,16 @@ const childStore = useChildStore();
 
 const childId = computed(() => route.params.id || childStore.childId);
 const historyList = ref([]);
+const thisWeek = ref(null);
+const lastWeek = ref(null);
 
 const totalCompletedTasks = computed(() => {
   return historyList.value.reduce((sum, item) => sum + (item.completed_tasks || 0), 0);
 });
 
-const avgCompletionRate = computed(() => {
-  if (historyList.value.length === 0) return 0;
-  const sum = historyList.value.reduce((acc, item) => acc + (item.completion_rate || 0), 0);
-  return Math.round((sum / historyList.value.length) * 100);
-});
+function formatRate(rate) {
+  return rate === null || rate === undefined ? '—' : `${Math.round(rate * 100)}%`;
+}
 
 const totalPointsEarned = computed(() => {
   return historyList.value.reduce((sum, item) => sum + (item.points_earned || 0), 0);
@@ -179,8 +218,10 @@ const totalPointsEarned = computed(() => {
 
 onMounted(async () => {
   try {
-    const data = await api.getHistory(childId.value, 7);
+    const [data, summary] = await Promise.all([api.getHistory(childId.value, 7), api.getWeeklySummary(childId.value)]);
     historyList.value = data || [];
+    thisWeek.value = summary?.current_week?.completion || null;
+    lastWeek.value = summary?.last_week?.completion || null;
   } catch (err) {
     console.error('Failed to load history stats:', err);
   }

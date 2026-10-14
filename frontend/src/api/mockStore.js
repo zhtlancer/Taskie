@@ -109,6 +109,12 @@ function getWeekBoundaries(dateStr) {
   };
 }
 
+function addDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function getInitialState() {
   const today = getTodayString();
   const child1Id = 'child-demo-1';
@@ -520,6 +526,12 @@ class MockStore {
   }
 
   deleteTemplate(id) {
+    const template = this.state.task_templates.find(t => t.id === id);
+    for (const task of this.state.daily_tasks.filter(t => t.template_id === id)) {
+      task.source_template_id ||= id;
+      task.template_created_at ||= template?.created_at;
+      task.template_id = null;
+    }
     this.state.task_templates = this.state.task_templates.filter(t => t.id !== id);
     this.save();
     return { success: true, id };
@@ -530,7 +542,8 @@ class MockStore {
     const { start, end } = getWeekBoundaries(date || getTodayString());
     return this.state.daily_tasks.filter(t =>
       t.child_id === childId &&
-      t.template_id === templateId &&
+      (t.source_template_id ?? t.template_id) === templateId &&
+      t.schedule_type === 'weekly_times' &&
       t.date >= start &&
       t.date <= end &&
       t.is_completed
@@ -569,6 +582,8 @@ class MockStore {
         id: `dt-${childId}-${targetDate}-${t.id}-${Date.now()}`,
         child_id: childId,
         template_id: t.id,
+        source_template_id: t.id,
+        template_created_at: t.created_at,
         title: t.title,
         subject: t.subject,
         schedule_type: t.schedule_type || 'fixed_days',
@@ -589,7 +604,7 @@ class MockStore {
       const schedType = t.schedule_type || tmpl?.schedule_type || 'fixed_days';
       const targetTimes = t.weekly_target_times || tmpl?.weekly_target_times || null;
       const weeklyCompleted = schedType === 'weekly_times'
-        ? this.getWeeklyCompletedCount(childId, t.template_id, targetDate)
+        ? this.getWeeklyCompletedCount(childId, t.source_template_id ?? t.template_id, targetDate)
         : null;
 
       if (schedType !== 'weekly_times') {
@@ -597,8 +612,9 @@ class MockStore {
       }
       // Same rule as the server: optional while times still needed (from earlier days) < days left incl. today.
       const { start } = getWeekBoundaries(targetDate);
-      const doneBefore = this.state.daily_tasks.filter(d => d.child_id === childId && d.template_id === t.template_id &&
-        d.is_completed && d.date >= start && d.date < targetDate).length;
+      const doneBefore = this.state.daily_tasks.filter(d => d.child_id === childId &&
+        (d.source_template_id ?? d.template_id ?? d.id) === (t.source_template_id ?? t.template_id ?? t.id) &&
+        d.schedule_type === 'weekly_times' && d.is_completed && d.date >= start && d.date < targetDate).length;
       const dayOfWeek = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
       const daysLeft = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
       const target = targetTimes || 1;
@@ -639,7 +655,7 @@ class MockStore {
     this.save();
 
     const tmpl = this.state.task_templates.find(tpl => tpl.id === task.template_id);
-    const weeklyCount = this.getWeeklyCompletedCount(task.child_id, task.template_id, task.date);
+    const weeklyCount = this.getWeeklyCompletedCount(task.child_id, task.source_template_id ?? task.template_id, task.date);
 
     return {
       success: true,
@@ -666,7 +682,7 @@ class MockStore {
     this.save();
 
     const tmpl = this.state.task_templates.find(tpl => tpl.id === task.template_id);
-    const weeklyCount = this.getWeeklyCompletedCount(task.child_id, task.template_id, task.date);
+    const weeklyCount = this.getWeeklyCompletedCount(task.child_id, task.source_template_id ?? task.template_id, task.date);
 
     return {
       success: true,
@@ -871,6 +887,83 @@ class MockStore {
 
   getPointLogs(childId) {
     return this.state.point_logs.filter(p => !childId || p.child_id === childId);
+  }
+
+  // Weekly completion as of today (mirrors the server): fixed-day tasks owe one unit per scheduled
+  // day so far; weekly tasks owe what can no longer be made up; unopened days are projected.
+  getWeeklyCompletion(childId, weekStart, asOf = getTodayString()) {
+    const weekEnd = addDays(weekStart, 6);
+    const cutoff = asOf < weekEnd ? asOf : weekEnd;
+    if (cutoff < weekStart) return { as_of: cutoff, total_units: 0, completed_units: 0, completion_rate: null, items: [] };
+    let daysAfterCutoff = 0;
+    for (let date = cutoff; date < weekEnd; date = addDays(date, 1)) daysAfterCutoff++;
+    const child = this.state.children.find(c => c.id === childId);
+    const sinceDate = iso => {
+      if (!iso) return '0000-00-00';
+      const date = new Date(iso);
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
+    const childSince = sinceDate(child?.created_at);
+    const rows = this.state.daily_tasks.filter(t => t.child_id === childId && t.date >= weekStart && t.date <= cutoff);
+    const templates = this.state.task_templates.filter(t => !Array.isArray(t.child_ids) || t.child_ids.includes(childId));
+    const templatesById = new Map(this.state.task_templates.map(t => [t.id, t]));
+    const items = new Map();
+    const sourceId = source => source.source_template_id ?? source.template_id ?? (source.date ? null : source.id);
+    const keyFor = source => JSON.stringify([sourceId(source) ?? `row:${source.id}`, source.schedule_type || 'fixed_days']);
+    const itemFor = (key, source) => {
+      if (!items.has(key)) {
+        const id = sourceId(source);
+        items.set(key, { key, template_id: id, title: source.title, subject: source.subject,
+          schedule_type: source.schedule_type || 'fixed_days', total: 0, completed: 0, target: 0, done: 0,
+          since: sinceDate(source.template_created_at || templatesById.get(id)?.created_at), legacyOrphan: id === null });
+      }
+      return items.get(key);
+    };
+    const opened = new Set(rows.map(r => r.date));
+    for (let date = weekStart; date <= cutoff; date = addDays(date, 1)) {
+      if (opened.has(date)) {
+        for (const r of rows.filter(r => r.date === date && r.schedule_type !== 'weekly_times')) {
+          const item = itemFor(keyFor(r), r);
+          item.total++;
+          if (r.is_completed) item.completed++;
+        }
+      } else if (date >= childSince) {
+        const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
+        for (const t of templates) {
+          if (t.schedule_type !== 'weekly_times' && t.days_of_week?.includes(dayOfWeek) && sinceDate(t.created_at) <= date) itemFor(keyFor(t), t).total++;
+        }
+      }
+    }
+    for (const r of rows.filter(r => r.schedule_type === 'weekly_times')) {
+      const item = itemFor(keyFor(r), r);
+      item.target = item.legacyOrphan ? 1 : r.weekly_target_times || 1;
+      if (r.is_completed) item.done++;
+    }
+    if (cutoff >= childSince) {
+      for (const t of templates) {
+        if (t.schedule_type === 'weekly_times' && sinceDate(t.created_at) <= cutoff && !items.has(keyFor(t))) itemFor(keyFor(t), t).target = t.weekly_target_times || 1;
+      }
+    }
+    const list = [...items.values()].map(({ target, done, since, legacyOrphan, ...item }) => {
+      if (item.schedule_type !== 'weekly_times') return item;
+      const completed = Math.min(done, target);
+      const start = [weekStart, childSince, since].sort().at(-1);
+      let availableDays = 0;
+      for (let date = start; date <= weekEnd; date = addDays(date, 1)) availableDays++;
+      const effectiveTarget = Math.min(target, availableDays);
+      return { ...item, total: legacyOrphan ? completed : Math.max(completed, effectiveTarget - daysAfterCutoff, 0), completed, weekly_target: target };
+    }).filter(item => item.total > 0);
+    const total = list.reduce((sum, i) => sum + i.total, 0);
+    const completed = list.reduce((sum, i) => sum + i.completed, 0);
+    return { as_of: cutoff, total_units: total, completed_units: completed, completion_rate: total > 0 ? Number((completed / total).toFixed(2)) : null, items: list };
+  }
+
+  getWeeklySummary(childId) {
+    const today = getTodayString();
+    const dayOfWeek = new Date(`${today}T00:00:00Z`).getUTCDay();
+    const start = addDays(today, dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+    const week = weekStart => ({ start_date: weekStart, end_date: addDays(weekStart, 6), completion: this.getWeeklyCompletion(childId, weekStart) });
+    return { current_week: week(start), last_week: week(addDays(start, -7)) };
   }
 
   // Rewards shop (mirrors the server: pending requests hold points)

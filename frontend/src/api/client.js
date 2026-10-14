@@ -57,8 +57,8 @@ export const api = {
   getChildStats: id => get(`/children/${id}/stats`, () => mockStore.getChildStats(id)),
   getChildBadges: id => get(`/children/${id}/badges`, () => mockStore.getChildBadges(id)),
   getBadgeDefinitions: () => get('/badge-definitions', () => mockStore.getBadgeDefinitions()),
-  getHistory: (id, days = 30) => get(`/children/${id}/history`, () => mockStore.getHistory(id, days)),
-  getWeeklySummary: id => get(`/children/${id}/weekly-summary`, () => null),
+  getHistory: (id, days = 30) => get(`/children/${id}/history`, () => mockStore.getHistory(id, days), { days }),
+  getWeeklySummary: id => get(`/children/${id}/weekly-summary`, () => mockStore.getWeeklySummary(id)),
   getPointLogs: id => get(`/children/${id}/point-logs`, () => mockStore.getPointLogs(id)),
   getMistakes: (id, subject) => get('/mistakes', () => mockStore.getMistakes(id, subject), { child_id: id, subject: subject === '全部' ? undefined : subject }),
   async createMistake(data) {
