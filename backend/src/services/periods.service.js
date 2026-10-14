@@ -1,5 +1,6 @@
 const { generateId } = require('../utils/crypto');
-const { formatDate, getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
+const { getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
+const { completedOn } = require('../utils/goals');
 
 const MODES = ['check', 'progress'];
 const INPUT_MODES = ['increment', 'position'];
@@ -74,6 +75,7 @@ class PeriodsService {
       // Holiday tasks follow their period's dates.
       this.db.prepare('UPDATE period_tasks SET start_date = ?, end_date = ? WHERE period_id = ?')
         .run(fields.start_date, fields.end_date, id);
+      for (const task of this.db.prepare('SELECT * FROM period_tasks WHERE period_id = ?').all(id)) this.prunePendingDailyRows(task);
       if (body.paused_template_ids !== undefined) this.setPausedTemplates(id, fields.paused_template_ids);
     })();
     return this.describePeriod(this.getPeriod(id));
@@ -133,18 +135,20 @@ class PeriodsService {
   // Progress so far and pacing. With a deadline, what is left is spread over the days remaining
   // (today included); without one, the finish date is estimated from the last 7 days' pace.
   describeTask(task, today = getTodayDate()) {
-    const logs = this.db.prepare('SELECT id, amount, position, date, created_at FROM period_task_logs WHERE period_task_id = ? ORDER BY date DESC, created_at DESC')
+    const logs = this.db.prepare('SELECT id, amount, position, date, created_at FROM period_task_logs WHERE period_task_id = ? ORDER BY date DESC, created_at DESC, rowid DESC')
       .all(task.id);
+    const latest = this.db.prepare('SELECT id FROM period_task_logs WHERE period_task_id = ? ORDER BY rowid DESC LIMIT 1').get(task.id);
+    const undoInOrder = Boolean(task.completed_at) || logs.some(log => log.position !== null);
     const done = Math.min(task.total_amount, logs.reduce((sum, log) => sum + log.amount, 0));
     const todayAmount = logs.filter(log => log.date === today).reduce((sum, log) => sum + log.amount, 0);
     const remaining = task.total_amount - done;
-    const completedOn = task.completed_at ? formatDate(new Date(task.completed_at)) : null;
-    const status = completedOn ? 'completed' : today < task.start_date ? 'upcoming' : task.end_date && today > task.end_date ? 'ended' : 'active';
+    const finishedOn = completedOn(task, logs[0]?.date);
+    const status = finishedOn ? 'completed' : today < task.start_date ? 'upcoming' : task.end_date && today > task.end_date ? 'ended' : 'active';
 
     let daysLeft = null, suggestedToday = null, recentRate = null, estimatedFinish = null;
     if (status === 'active' || status === 'upcoming') {
       if (task.end_date) {
-        daysLeft = getDateRangeList(today < task.start_date ? task.start_date : today, task.end_date).length;
+        daysLeft = (parseDate(task.end_date) - parseDate(today < task.start_date ? task.start_date : today)) / 86400000 + 1;
         suggestedToday = Math.max(0, Math.ceil((remaining + todayAmount) / daysLeft) - todayAmount);
       } else if (status === 'active') {
         const since = [task.start_date, shiftDate(today, -6)].sort().at(-1);
@@ -165,14 +169,14 @@ class PeriodsService {
       done_amount: done,
       remaining_amount: remaining,
       is_completed: status === 'completed',
-      completed_on: completedOn,
+      completed_on: finishedOn,
       today_amount: todayAmount,
       today_logged: logs.some(log => log.date === today),
       days_left: daysLeft,
       suggested_today: suggestedToday,
       recent_daily_rate: recentRate,
       estimated_finish_date: estimatedFinish,
-      logs
+      logs: logs.map(log => ({ ...log, can_undo: !undoInOrder || log.id === latest.id }))
     };
   }
 
@@ -191,12 +195,14 @@ class PeriodsService {
 
   insertTask(fields) {
     const id = generateId();
-    this.db.prepare(`INSERT INTO period_tasks (id, period_id, child_id, title, subject, mode, input_mode, total_amount, unit, points,
-        completion_bonus, start_date, end_date, daily_required, completed_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
-      .run(id, fields.period_id, fields.child_id, fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit,
-        fields.points, fields.completion_bonus, fields.start_date, fields.end_date, fields.daily_required ? 1 : 0, new Date().toISOString());
-    return this.describeTask(this.getTask(id));
+    return this.db.transaction(() => {
+      this.db.prepare(`INSERT INTO period_tasks (id, period_id, child_id, title, subject, mode, input_mode, total_amount, unit, points,
+          completion_bonus, start_date, end_date, daily_required, completed_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
+        .run(id, fields.period_id, fields.child_id, fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit,
+          fields.points, fields.completion_bonus, fields.start_date, fields.end_date, fields.daily_required ? 1 : 0, new Date().toISOString());
+      return this.describeTask(this.getTask(id));
+    })();
   }
 
   updateTask(id, body) {
@@ -208,16 +214,19 @@ class PeriodsService {
     // Changing the total of a finished task could award its completion bonus twice.
     if (existing.completed_at && fields.total_amount !== existing.total_amount) throw { status: 409, message: '任务已完成，不能修改总量；如需修改请先撤销最后一次进度' };
     if (fields.total_amount < done) throw { status: 400, message: `总量不能小于已完成的 ${done}${existing.unit || ''}` };
+    if (!existing.completed_at && done > 0 && fields.total_amount === done) {
+      throw { status: 400, message: '未完成任务的总量必须大于已记录进度，请通过记录剩余进度完成任务' };
+    }
     // Holiday tasks keep their period's dates.
     const dates = existing.period_id ? existing : this.validateGoalDates({ start_date: existing.start_date, end_date: existing.end_date, ...body });
-    this.db.transaction(() => {
+    return this.db.transaction(() => {
       this.db.prepare(`UPDATE period_tasks SET title = ?, subject = ?, mode = ?, input_mode = ?, total_amount = ?, unit = ?, points = ?,
           completion_bonus = ?, start_date = ?, end_date = ?, daily_required = ? WHERE id = ?`)
         .run(fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit, fields.points,
           fields.completion_bonus, dates.start_date, dates.end_date, fields.daily_required ? 1 : 0, id);
-      if (!fields.daily_required) this.removePendingDailyRows(id);
+      this.prunePendingDailyRows(this.getTask(id));
+      return this.describeTask(this.getTask(id));
     })();
-    return this.describeTask(this.getTask(id));
   }
 
   // Progress entries go with the task; the points they earned stay with the child.
@@ -233,6 +242,15 @@ class PeriodsService {
   // Days already logged stay in history; days still waiting for an entry are dropped.
   removePendingDailyRows(taskId) {
     this.db.prepare('DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0').run(taskId);
+  }
+
+  prunePendingDailyRows(task) {
+    if (!task.daily_required) return this.removePendingDailyRows(task.id);
+    const lastDate = this.db.prepare('SELECT MAX(date) AS date FROM period_task_logs WHERE period_task_id = ?').get(task.id).date;
+    const finishedOn = completedOn(task, lastDate);
+    this.db.prepare(`DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0
+      AND (date < ? OR (? IS NOT NULL AND date > ?) OR (? IS NOT NULL AND date > ?))`)
+      .run(task.id, task.start_date, task.end_date, task.end_date, finishedOn, finishedOn);
   }
 
   validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false }) {
@@ -312,6 +330,7 @@ class PeriodsService {
         }
       }
       this.markDailyRow(task, logDate);
+      this.prunePendingDailyRows(this.getTask(taskId));
       if (this.rewardsService) newBadges = this.rewardsService.checkAndUnlockBadges(task.child_id);
     })();
     return {
@@ -326,7 +345,8 @@ class PeriodsService {
 
   // Undoing an entry takes back its points (and the completion bonus if it finished the task).
   // Children may only undo today's entries, and not once those points were spent on rewards;
-  // parents can always correct.
+  // parents can correct past or spent entries. Position entries and completed tasks must be undone
+  // newest first, so later positions and their completion rewards cannot survive an earlier undo.
   deleteLog(logId, { role }) {
     const log = this.db.prepare(`
       SELECT l.*, t.child_id FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id WHERE l.id = ?
@@ -339,6 +359,12 @@ class PeriodsService {
         throw { status: 409, message: '这次进度的积分已用于兑换奖励，不能撤销' };
       }
     }
+    const taskBefore = this.getTask(log.period_task_id);
+    const latest = this.db.prepare('SELECT id FROM period_task_logs WHERE period_task_id = ? ORDER BY rowid DESC LIMIT 1').get(log.period_task_id);
+    const hasPositions = this.db.prepare('SELECT 1 FROM period_task_logs WHERE period_task_id = ? AND position IS NOT NULL LIMIT 1').get(log.period_task_id);
+    if ((taskBefore.completed_at || hasPositions) && latest.id !== logId) {
+      throw { status: 409, message: '请先撤销后续进度，再撤销这条记录' };
+    }
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM point_logs WHERE period_log_id = ?').run(logId);
       this.db.prepare('DELETE FROM period_task_logs WHERE id = ?').run(logId);
@@ -346,6 +372,7 @@ class PeriodsService {
       const done = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS done FROM period_task_logs WHERE period_task_id = ?').get(task.id).done;
       if (done < task.total_amount) this.db.prepare('UPDATE period_tasks SET completed_at = NULL WHERE id = ?').run(task.id);
       this.markDailyRow(task, log.date);
+      this.prunePendingDailyRows(this.getTask(task.id));
     })();
     return { success: true, task: this.describeTask(this.getTask(log.period_task_id)) };
   }

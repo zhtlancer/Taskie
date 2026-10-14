@@ -125,6 +125,118 @@ test('holiday tasks are long-term tasks that follow their period; deleting a goa
   assert.deepEqual(ctx.db.prepare('SELECT date, is_completed FROM daily_tasks WHERE goal_id = ?').all(book.id), [{ date: shiftDate(today, -1), is_completed: 1 }]);
 });
 
+test('position progress and completed tasks undo newest first without duplicating completion rewards', async t => {
+  const { ctx, headers, addGoal, log, points } = await fixture(t);
+  for (const input_mode of ['position', 'increment']) {
+    const book = (await addGoal({ title: input_mode, total_amount: 100, input_mode, points: 1, completion_bonus: 50 })).json();
+    const before = points();
+    const first = (await log(book.id, input_mode === 'position' ? { position: 20 } : { amount: 20 })).json();
+    const final = (await log(book.id, input_mode === 'position' ? { position: 100 } : { amount: 80 })).json();
+    assert.equal(points() - before, 150);
+    assert.equal(final.task.logs.find(l => l.id === first.log_id).can_undo, false);
+    for (const inject of [ctx.app.inject, options => ctx.rawInject({ ...options, headers })]) {
+      const res = await inject({ method: 'DELETE', url: `/api/period-task-logs/${first.log_id}` });
+      assert.equal(res.statusCode, 409, res.body);
+      assert.equal(points() - before, 150);
+    }
+    assert.equal((await log(book.id, input_mode === 'position' ? { position: 100 } : { amount: 20 })).statusCode, 409);
+    const undone = await ctx.rawInject({ method: 'DELETE', url: `/api/period-task-logs/${final.log_id}`, headers });
+    assert.equal(undone.statusCode, 200);
+    assert.deepEqual([undone.json().task.status, undone.json().task.done_amount, points() - before], ['active', 20, 20]);
+    assert.equal((await log(book.id, input_mode === 'position' ? { position: 100 } : { amount: 80 })).statusCode, 201);
+    assert.equal(points() - before, 150);
+  }
+});
+
+test('position entries cannot be removed out of order even before completion or after changing input mode', async t => {
+  const { ctx, headers, addGoal, log, points } = await fixture(t);
+  const book = (await addGoal({ title: '阅读', total_amount: 100, input_mode: 'position', points: 1 })).json();
+  const first = (await log(book.id, { position: 20 })).json();
+  const second = (await log(book.id, { position: 40 })).json();
+  await ctx.app.inject({ method: 'PUT', url: `/api/period-tasks/${book.id}`, payload: { input_mode: 'increment' } });
+  assert.equal((await ctx.rawInject({ method: 'DELETE', url: `/api/period-task-logs/${first.log_id}`, headers })).statusCode, 409);
+  assert.equal(points(), 40);
+  assert.equal((await ctx.rawInject({ method: 'DELETE', url: `/api/period-task-logs/${second.log_id}`, headers })).json().task.done_amount, 20);
+});
+
+test('multi-year goals can be created, listed and edited without losing their task list', async t => {
+  const { ctx, child, addGoal, today } = await fixture(t);
+  const created = await addGoal({ title: '长期阅读', total_amount: 1000, end_date: shiftDate(today, 400) });
+  assert.equal(created.statusCode, 201, created.body);
+  const book = created.json();
+  assert.deepEqual([book.days_left, book.suggested_today], [401, 3]);
+  const update = await ctx.app.inject({ method: 'PUT', url: `/api/period-tasks/${book.id}`, payload: { end_date: shiftDate(today, 800) } });
+  assert.equal(update.statusCode, 200);
+  assert.equal(update.json().days_left, 801);
+  const list = await ctx.app.inject({ method: 'GET', url: `/api/children/${child.id}/goals` });
+  assert.equal(list.statusCode, 200);
+  assert.equal(list.json()[0].id, book.id);
+  const invalid = await addGoal({ title: '非法日期', total_amount: 10, end_date: '2027-02-30' });
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM period_tasks').get().n, 1);
+});
+
+test('backfilled completion uses progress dates, removes later pending rows and stops daily obligations', async t => {
+  const { ctx, child, addGoal, today } = await fixture(t);
+  const { tasksService, statsService } = ctx.app.services;
+  const past = shiftDate(today, -7);
+  const book = (await addGoal({ title: '补录读完', total_amount: 100, start_date: past, daily_required: true })).json();
+  tasksService.getDailyTasks(child.id, today);
+  const completed = await ctx.app.inject({ method: 'POST', url: `/api/period-tasks/${book.id}/logs`, payload: { amount: 100, date: past } });
+  assert.equal(completed.statusCode, 201);
+  assert.equal(completed.json().task.completed_on, past);
+  assert.deepEqual(ctx.db.prepare('SELECT date, is_completed FROM daily_tasks WHERE goal_id = ?').all(book.id), [{ date: past, is_completed: 1 }]);
+  assert.equal(tasksService.getDailyTasks(child.id, today).some(row => row.goal_id === book.id), false);
+  assert.equal(tasksService.dailyGoalsOn(child.id, shiftDate(past, 1)).length, 0);
+  assert.deepEqual(statsService.getWeeklyCompletion(child.id, past, shiftDate(past, 6), today).items.map(i => [i.completed, i.total]), [[1, 1]]);
+  // Existing v8 rows with the old wall-clock completion timestamp and stale daily rows are safe too.
+  tasksService.db.prepare('INSERT INTO daily_tasks (id,child_id,title,subject,points,date,origin,goal_id) VALUES (?, ?, ?, ?, 0, ?, ?, ?)')
+    .run('legacy-pending', child.id, book.title, book.subject, today, 'goal', book.id);
+  assert.equal(tasksService.getDailyTasks(child.id, today).some(row => row.goal_id === book.id), false);
+  assert.equal(statsService.getWeeklyCompletion(child.id, today, today, today).total_units, 0);
+  await ctx.app.inject({ method: 'DELETE', url: `/api/period-task-logs/${completed.json().log_id}` });
+  assert.equal(tasksService.getDailyTasks(child.id, today).find(row => row.goal_id === book.id).is_completed, false);
+});
+
+test('changing goal dates removes out-of-range pending rows while preserving completed history and points', async t => {
+  const { ctx, child, addGoal, log, points, today } = await fixture(t);
+  const book = (await addGoal({ title: '每天阅读', total_amount: 100, start_date: shiftDate(today, -1), daily_required: true, points: 2 })).json();
+  await ctx.app.inject({ method: 'POST', url: `/api/period-tasks/${book.id}/logs`, payload: { amount: 5, date: shiftDate(today, -1) } });
+  const tasks = ctx.app.services.tasksService;
+  tasks.getDailyTasks(child.id, today);
+  tasks.getDailyTasks(child.id, shiftDate(today, 6));
+  const edited = await ctx.app.inject({ method: 'PUT', url: `/api/period-tasks/${book.id}`, payload: { start_date: shiftDate(today, 1), end_date: shiftDate(today, 3) } });
+  assert.equal(edited.statusCode, 200);
+  assert.deepEqual(ctx.db.prepare('SELECT date, is_completed FROM daily_tasks WHERE goal_id = ?').all(book.id), [{ date: shiftDate(today, -1), is_completed: 1 }]);
+  assert.equal(points(), 10);
+  assert.equal(tasks.getDailyTasks(child.id, today).some(row => row.goal_id === book.id), false);
+  assert.equal((await log(book.id, { amount: 1 })).statusCode, 400);
+  assert.ok(tasks.getDailyTasks(child.id, shiftDate(today, 1)).some(row => row.goal_id === book.id));
+});
+
+test('holiday date edits also clear pending goal rows outside the new period', async t => {
+  const { ctx, child, today } = await fixture(t);
+  const period = (await ctx.app.inject({ method: 'POST', url: `/api/children/${child.id}/periods`, payload: { name: '假期', start_date: today, end_date: shiftDate(today, 9) } })).json();
+  const book = (await ctx.app.inject({ method: 'POST', url: `/api/periods/${period.id}/tasks`, payload: { title: '假期阅读', subject: '语文', mode: 'progress', total_amount: 100, unit: '页', daily_required: true } })).json();
+  ctx.app.services.tasksService.getDailyTasks(child.id, today);
+  const edited = await ctx.app.inject({ method: 'PUT', url: `/api/periods/${period.id}`, payload: { start_date: shiftDate(today, 1) } });
+  assert.equal(edited.statusCode, 200);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM daily_tasks WHERE goal_id = ?').get(book.id).n, 0);
+  assert.equal(ctx.app.services.tasksService.getDailyTasks(child.id, today).length, 0);
+});
+
+test('reducing an unfinished total to recorded progress is rejected and normal completion still awards once', async t => {
+  const { ctx, addGoal, log, points } = await fixture(t);
+  const book = (await addGoal({ title: '阅读', total_amount: 100, points: 1, completion_bonus: 50 })).json();
+  await log(book.id, { amount: 20 });
+  const edited = await ctx.app.inject({ method: 'PUT', url: `/api/period-tasks/${book.id}`, payload: { total_amount: 20 } });
+  assert.equal(edited.statusCode, 400);
+  assert.equal(ctx.db.prepare('SELECT total_amount FROM period_tasks WHERE id = ?').get(book.id).total_amount, 100);
+  assert.equal(points(), 20);
+  const finished = (await log(book.id, { amount: 80 })).json();
+  assert.deepEqual([finished.task.is_completed, finished.task.remaining_amount, points()], [true, 0, 150]);
+});
+
 test('v7 holiday tasks migrate to long-term tasks with their progress, child and dates', () => {
   const db = new Database(':memory:');
   try {

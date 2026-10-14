@@ -8,6 +8,7 @@
 import { computed } from 'vue';
 import { Chart as ChartJS, Tooltip, Legend, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js';
 import { Line } from 'vue-chartjs';
+import { goalChartDates } from '../utils/goalDates';
 
 ChartJS.register(Tooltip, Legend, LineElement, PointElement, CategoryScale, LinearScale, Filler);
 
@@ -16,20 +17,7 @@ const props = defineProps({
   today: { type: String, required: true }
 });
 
-const addDays = (date, days) => {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-};
-
-// From the start to the deadline (or today without one), at most the last 90 days.
-const dates = computed(() => {
-  const goal = props.goal;
-  const last = goal.end_date && goal.end_date > props.today ? goal.end_date : goal.completed_on || props.today;
-  const list = [];
-  for (let date = goal.start_date; date <= last && list.length < 400; date = addDays(date, 1)) list.push(date);
-  return list.slice(-90);
-});
+const dates = computed(() => goalChartDates(props.goal, props.today));
 
 const chartData = computed(() => {
   const goal = props.goal;

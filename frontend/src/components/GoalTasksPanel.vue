@@ -81,7 +81,8 @@
             v-for="entry in todayLogs(goal)"
             :key="entry.id"
             type="button"
-            :disabled="busy"
+            :disabled="busy || !entry.can_undo"
+            :title="entry.can_undo ? '撤销这条进度' : '请先撤销后续进度'"
             class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-500 hover:text-rose-500"
             @click="undo(entry)"
           >

@@ -139,6 +139,27 @@ async function main() {
   await page.getByText('太棒啦！今日作业任务已全部完成！').waitFor();
   pass('browser child checks off tasks, logs long-term progress by page and reaches all done');
 
+  // Later page entries depend on earlier positions: only the latest can be undone.
+  const firstPosition = Number(panelValue.match(/\d+/)[0]);
+  await page.evaluate(async ({ childId, position }) => {
+    const headers = { Authorization: `Bearer ${sessionStorage.getItem('taskie_child_token')}`, 'content-type': 'application/json' };
+    const goals = await (await fetch(`/api/children/${childId}/goals`, { headers })).json();
+    const book = goals.find(goal => goal.title === '浏览器读绘本');
+    const response = await fetch(`/api/period-tasks/${book.id}/logs`, { method: 'POST', headers, body: JSON.stringify({ position }) });
+    if (!response.ok) throw new Error(await response.text());
+  }, { childId: child.id, position: firstPosition + 1 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const earlierUndo = page.getByRole('button', { name: `今天 读到第 ${firstPosition} 页 · 撤销`, exact: true });
+  const latestUndo = page.getByRole('button', { name: `今天 读到第 ${firstPosition + 1} 页 · 撤销`, exact: true });
+  await latestUndo.waitFor();
+  assert.equal(await earlierUndo.isDisabled(), true);
+  assert.equal(await latestUndo.isEnabled(), true);
+  await latestUndo.click();
+  await page.getByText(`读到第 ${firstPosition} / 40 页`).waitFor();
+  assert.equal(await earlierUndo.isEnabled(), true);
+  await page.getByText('太棒啦！今日作业任务已全部完成！').waitFor();
+  pass('browser only allows undoing the latest page entry and preserves the daily completion');
+
   // --- Child redeems a reward.
   await page.goto(`${base}/child/${child.id}/rewards`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '兑换', exact: true }).click();

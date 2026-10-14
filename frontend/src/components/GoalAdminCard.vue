@@ -24,9 +24,9 @@
       <div class="h-full rounded-full" :class="task.is_completed ? 'bg-emerald-500' : 'bg-sky-500'" :style="{ width: `${Math.round((task.done_amount / task.total_amount) * 100)}%` }"></div>
     </div>
     <div v-if="task.logs.length" class="flex flex-wrap gap-1 mb-2">
-      <span v-for="entry in task.logs.slice(0, 6)" :key="entry.id" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 text-[11px] font-bold text-slate-500">
+      <span v-for="entry in visibleLogs" :key="entry.id" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 text-[11px] font-bold text-slate-500">
         {{ entry.date.slice(5) }} {{ task.mode === 'check' ? '✓' : entry.position ? `第${entry.position}${task.unit}` : `+${entry.amount}` }}
-        <button type="button" class="text-slate-300 hover:text-rose-500" title="删除这条记录" @click="emit('remove-log', entry)">✕</button>
+        <button type="button" :disabled="!entry.can_undo" class="text-slate-300 hover:text-rose-500 disabled:cursor-not-allowed disabled:hover:text-slate-300" :title="entry.can_undo ? '删除这条记录' : '请先撤销后续进度'" @click="emit('remove-log', entry)">✕</button>
       </span>
     </div>
     <div class="flex items-center gap-2">
@@ -38,7 +38,10 @@
 </template>
 
 <script setup>
-defineProps({ task: { type: Object, required: true } });
+import { computed } from 'vue';
+const props = defineProps({ task: { type: Object, required: true } });
+// Keep the entry that must be undone first visible even when it was backfilled far in the past.
+const visibleLogs = computed(() => [...props.task.logs].sort((a, b) => Number(b.can_undo) - Number(a.can_undo)).slice(0, 6));
 const emit = defineEmits(['backfill', 'edit', 'remove', 'remove-log']);
 
 const statusInfo = {

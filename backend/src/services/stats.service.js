@@ -149,9 +149,11 @@ class StatsService {
     const sinceDate = iso => formatDate(new Date(iso));
     const childSince = sinceDate(child.created_at);
     const schedule = this.tasksService.scheduleFor(childId);
+    const goalsOn = this.tasksService.dailyGoalSchedule(childId);
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
-      .filter(row => row.is_completed || !schedule.isPaused(row.source_template_id ?? row.template_id, row.date));
+      .filter(row => row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
+        !schedule.isPaused(row.source_template_id ?? row.template_id, row.date)));
     const allTemplates = this.tasksService.listTemplates().map(t => ({ ...t, since: sinceDate(t.created_at) }));
     const templatesById = new Map(allTemplates.map(t => [t.id, t]));
     const templates = allTemplates.filter(t => t.child_ids === null || t.child_ids.includes(childId));
@@ -176,7 +178,6 @@ class StatsService {
     // added ahead of time do not, so the templates of an unopened day are still projected.
     // Daily-required long-term tasks count on every day they applied, projected where no row exists.
     const openedDates = new Set(rows.filter(row => row.origin === 'template').map(row => row.date));
-    const goalsOn = this.tasksService.dailyGoalSchedule(childId);
     for (const date of getDateRangeList(weekStart, cutoff)) {
       for (const row of rows) {
         if (row.date !== date || row.origin === 'template') continue;

@@ -1,6 +1,7 @@
 const { generateId } = require('../utils/crypto');
 const { insertGoalDailyRow } = require('./periods.service');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
+const { completedOn } = require('../utils/goals');
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
@@ -265,7 +266,13 @@ class TasksService {
       if (!weekStarts.has(date)) weekStarts.set(date, getWeekRange(date).startDate);
       return weekStarts.get(date);
     };
-    const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
+    // Filter obsolete pending goal rows in this query, keeping history reads at a constant cost.
+    const rows = this.db.prepare(`SELECT d.* FROM daily_tasks d WHERE d.child_id = ? AND d.date BETWEEN ? AND ?
+      AND (d.is_completed = 1 OR d.goal_id IS NULL OR EXISTS (
+        SELECT 1 FROM period_tasks g WHERE g.id = d.goal_id AND g.daily_required = 1
+        AND g.start_date <= d.date AND (g.end_date IS NULL OR g.end_date >= d.date)
+        AND (g.completed_at IS NULL OR d.date <= (SELECT MAX(date) FROM period_task_logs WHERE period_task_id = g.id))
+      )) ORDER BY d.date, d.rowid`)
       .all(childId, weekOf(fromDate), getWeekRange(toDate).endDate);
     const sourceOf = row => row.source_template_id ?? row.template_id;
     const keyOf = row => `${weekOf(row.date)}|${sourceOf(row) ?? row.id}`;
@@ -366,8 +373,9 @@ class TasksService {
 
   // Loads a child's daily-required long-term tasks once and answers, per date, which applied.
   dailyGoalSchedule(childId) {
-    const goals = this.db.prepare('SELECT * FROM period_tasks WHERE child_id = ? AND daily_required = 1').all(childId)
-      .map(goal => ({ ...goal, completedOn: goal.completed_at ? formatDate(new Date(goal.completed_at)) : null }));
+    const goals = this.db.prepare(`SELECT t.*, (SELECT MAX(date) FROM period_task_logs WHERE period_task_id = t.id) AS last_progress_date
+      FROM period_tasks t WHERE child_id = ? AND daily_required = 1`).all(childId)
+      .map(goal => ({ ...goal, completedOn: completedOn(goal, goal.last_progress_date) }));
     return date => goals.filter(goal => goal.start_date <= date && (!goal.end_date || goal.end_date >= date) &&
       (!goal.completedOn || goal.completedOn >= date));
   }
