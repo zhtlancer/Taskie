@@ -303,13 +303,13 @@ npm run test:backend
 npm --prefix frontend test
 ```
 
-可选的浏览器验收覆盖家长登录、周模板保存、备份下载恢复、孩子权限、照片上传和断网恢复。安装 Playwright 测试工具后运行：
+浏览器验收会在 Chromium 中走一遍主要流程：首次登录强制修改家长 PIN、周模板保存、添加临时任务、备份下载与恢复、孩子打卡与全勤、按页记录长期任务进度、积分兑换与家长确认、照片上传、孩子权限，以及断网提示与恢复；同时确认容器以普通用户运行。每次推送到 `main` 时 CI 都会自动运行，通过后才会发布镜像。本地运行：
 
 ```bash
-npm install --no-save --package-lock=false playwright
+npm install --no-save --package-lock=false playwright@1.64.0
 npx playwright install chromium
 docker build -t taskie:reliability .
-node scripts/smoke-browser.cjs
+npm run test:browser
 ```
 
 该脚本使用临时容器和临时数据库，完成后自动删除容器。已有系统 Chromium 时可设置 `CHROMIUM_PATH`。

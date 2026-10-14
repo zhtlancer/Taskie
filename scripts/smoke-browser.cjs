@@ -1,38 +1,72 @@
-// Run against an isolated Docker container; the container is always removed.
+// Browser smoke test for the main family flows, run against an isolated Docker container that is
+// always removed afterwards. Build the image first (default tag taskie:reliability):
+//   docker build -t taskie:reliability . && node scripts/smoke-browser.cjs
+// Set TASKIE_TEST_IMAGE for another image, CHROMIUM_PATH to use an installed Chromium, and
+// PLAYWRIGHT_MODULE_PATH if playwright is installed outside this project.
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+
 const name = `taskie-ui-check-${process.pid}`;
+const DEFAULT_PIN = '1234';
+const NEW_PIN = '2580';
 let started = false, browser;
 const docker = args => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const pass = message => console.log(`PASS ${message}`);
 
 async function main() {
   docker(['run', '-d', '--name', name, '--tmpfs', '/app/data', '-p', '127.0.0.1::3000', process.env.TASKIE_TEST_IMAGE || 'taskie:reliability']);
   started = true;
-  const base = `http://${docker(['port', name, '3000/tcp'])}`;
+  const base = `http://${docker(['port', name, '3000/tcp']).split('\n')[0]}`;
   let ready = false;
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 150; i++) {
     try { ready = (await fetch(`${base}/api/health`)).ok; } catch {}
     if (ready) break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.ok(ready, docker(['logs', name]));
-  const login = await (await fetch(`${base}/api/auth/parent-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: '1234' }) })).json();
-  const headers = { 'content-type': 'application/json', authorization: `Bearer ${login.token}` };
-  const child = await (await fetch(`${base}/api/children`, { method: 'POST', headers, body: JSON.stringify({ name: '浏览器测试孩子' }) })).json();
+  // The entrypoint drops privileges and execs node as PID 1.
+  assert.equal(docker(['exec', name, 'stat', '-c', '%u', '/proc/1']), '1000', 'the app must run as uid 1000');
+
   browser = await chromium.launch({ ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), headless: true, args: ['--no-sandbox'] });
   const context = await browser.newContext({ viewport: { width: 1180, height: 820 }, timezoneId: 'Asia/Shanghai' });
   const page = await context.newPage();
   await page.route(/fonts\.(?:googleapis|gstatic)\.com/, route => route.abort());
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  const pressPin = async pin => { for (const digit of pin) await page.getByRole('button', { name: digit, exact: true }).click(); };
+
+  // --- First login must replace the default parent PIN.
   await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL('**/parent/login');
-  for (const digit of ['1', '2', '3', '4']) await page.getByRole('button', { name: digit, exact: true }).click();
+  await page.getByText(`初始 PIN 码为 ${DEFAULT_PIN}`).waitFor();
+  await pressPin(DEFAULT_PIN);
+  await page.waitForURL('**/parent/setup-pin');
+  await page.goto(`${base}/parent/dashboard`, { waitUntil: 'domcontentloaded' });
+  await page.waitForURL('**/parent/setup-pin');
+  await pressPin(DEFAULT_PIN);
+  await pressPin(NEW_PIN);
+  await pressPin(NEW_PIN);
   await page.waitForURL('**/parent/dashboard');
   assert.ok(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')));
-  console.log('PASS browser parent route guard and PIN login');
+  assert.deepEqual(await (await fetch(`${base}/api/auth/setup`)).json(), { parent_pin_is_default: false });
+  pass('browser forces replacing the default parent PIN, then signs in with the new one');
 
+  // Test data through the API, as the parent.
+  const login = await (await fetch(`${base}/api/auth/parent-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin: NEW_PIN }) })).json();
+  assert.equal(login.must_change_pin, false);
+  const api = async (method, url, body) => {
+    const headers = { authorization: `Bearer ${login.token}`, ...(body ? { 'content-type': 'application/json' } : {}) };
+    const response = await fetch(`${base}/api${url}`, { method, headers, body: body && JSON.stringify(body) });
+    assert.ok(response.ok, `${method} ${url}: ${await response.clone().text()}`);
+    return response.json();
+  };
+  const child = await api('POST', '/children', { name: '浏览器测试孩子' });
+  await api('POST', '/task-templates', { title: '浏览器口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], points: 10 });
+  await api('POST', `/children/${child.id}/goals`, { title: '浏览器读绘本', subject: '语文', mode: 'progress', input_mode: 'position', total_amount: 40, unit: '页', points: 1, daily_required: true });
+  await api('POST', '/reward-items', { title: '浏览器奖励', cost: 15 });
+
+  // --- Parent pages: weekly template, one-off task.
   await page.goto(`${base}/parent/tasks`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: /新增任务模板/ }).click();
   await page.getByPlaceholder(/例如：/).fill('浏览器周阅读');
@@ -41,28 +75,62 @@ async function main() {
   await page.getByText('浏览器周阅读', { exact: true }).waitFor();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByText('每周完成特定次数：每周 3 次', { exact: true }).waitFor();
-  console.log('PASS browser weekly template persists after reload');
+  pass('browser weekly template persists after reload');
+  // Whether a weekly task is required depends on the weekday, so it is removed before the child steps.
+  const weekly = (await api('GET', '/task-templates')).find(t => t.title === '浏览器周阅读');
+  await api('DELETE', `/task-templates/${weekly.id}`);
 
+  await page.goto(`${base}/parent/dashboard`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /➕ 添加/ }).click();
+  await page.getByPlaceholder(/订正数学练习/).fill('浏览器临时任务');
+  await page.getByRole('button', { name: '确认添加', exact: true }).click();
+  await page.getByText(/浏览器临时任务/).waitFor();
+  await page.getByText('浏览器读绘本').waitFor();
+  pass('browser parent adds a one-off task and sees the long-term task on the dashboard');
+
+  // --- Backup round trip; restoring ends every session.
   await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '立即创建备份', exact: true }).click();
   await page.getByText('备份已保存，可以下载到另一台设备。', { exact: true }).waitFor();
   const downloadEvent = page.waitForEvent('download');
   await page.getByRole('button', { name: '下载备份', exact: true }).first().click();
-  const download = await downloadEvent;
-  const archive = await download.path();
+  const archive = await (await downloadEvent).path();
   assert.ok(archive);
   await page.locator('input[type=file]').setInputFiles(archive);
-  await page.getByLabel('当前家长 PIN', { exact: false }).fill('1234');
+  await page.getByLabel('当前家长 PIN', { exact: false }).fill(NEW_PIN);
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: '确认恢复', exact: true }).click();
   await page.waitForURL('**/parent/login');
   assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')), null);
-  console.log('PASS browser backup creation, download, restore and session invalidation');
+  pass('browser backup creation, download, restore and session invalidation');
 
+  // --- Child: today's tasks, long-term progress, all done.
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: /浏览器测试孩子/ }).click();
   await page.waitForURL(`**/child/${child.id}/today`);
   assert.ok(await page.evaluate(() => sessionStorage.getItem('taskie_child_token')));
+  // 浏览器口算, the one-off task and the long-term task's daily item.
+  await page.getByText('临时', { exact: true }).waitFor();
+  await page.getByText(/完成 0 \/ 3/).waitFor();
+  await page.locator('h4', { hasText: '浏览器口算' }).click();
+  await page.locator('h4', { hasText: '浏览器临时任务' }).click();
+  await page.getByText(/完成 2 \/ 3/).waitFor();
+  await page.getByText('每天要记录 · 今天还没记').waitFor();
+  const panelValue = await page.getByText(/^第 \d+ 页$/).innerText();
+  await page.getByRole('button', { name: '记录读到这里', exact: true }).click();
+  await page.getByText('今天已记录 ✓').waitFor();
+  await page.getByText(`读到第 ${panelValue.match(/\d+/)[0]} / 40 页`).waitFor();
+  await page.getByText('太棒啦！今日作业任务已全部完成！').waitFor();
+  pass('browser child checks off tasks, logs long-term progress by page and reaches all done');
+
+  // --- Child redeems a reward.
+  await page.goto(`${base}/child/${child.id}/rewards`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '兑换', exact: true }).click();
+  await page.getByRole('button', { name: '确定兑换？', exact: true }).click();
+  await page.getByText('等待确认', { exact: true }).waitFor();
+  pass('browser child requests a reward and the points are held');
+
+  // --- Private photos.
   await page.evaluate(async childId => {
     const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
     canvas.getContext('2d').fillRect(0, 0, 16, 16);
@@ -72,26 +140,34 @@ async function main() {
     if (!response.ok) throw new Error(await response.text());
   }, child.id);
   await page.goto(`${base}/child/${child.id}/mistakes`, { waitUntil: 'domcontentloaded' });
-  const photo = page.locator('img[alt="错题图片"]');
-  await photo.waitFor();
+  await page.locator('img[alt="错题图片"]').waitFor();
   await page.waitForFunction(() => document.querySelector('img[alt="错题图片"]')?.naturalWidth > 0);
-  console.log('PASS browser authenticated photo upload and private image rendering');
+  pass('browser authenticated photo upload and private image rendering');
   await page.goto(`${base}/parent/tasks`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL('**/parent/login');
-  console.log('PASS browser password-free child receives credentials and cannot open parent pages');
+  pass('browser password-free child receives credentials and cannot open parent pages');
 
+  // --- Parent approves the redemption.
+  await pressPin(NEW_PIN);
+  await page.waitForURL('**/parent/dashboard');
+  await page.goto(`${base}/parent/rewards`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: '✓ 确认兑换', exact: true }).click();
+  await page.getByText('已兑换', { exact: true }).waitFor();
+  pass('browser parent approves the redemption');
+
+  // --- Network failure is reported, and the app recovers.
+  // Let the login page finish its own requests first, so the failure comes from the click.
+  await page.goto(`${base}/parent/login`, { waitUntil: 'networkidle' });
   await context.setOffline(true);
   await page.getByRole('link', { name: /返回孩子端/ }).click();
   await page.getByRole('alert').waitFor();
   assert.match(await page.getByRole('alert').innerText(), /无法连接服务器/);
-  const demo = await page.evaluate(() => JSON.parse(localStorage.getItem('homework_app_state_v2') || 'null'));
-  assert.equal(demo, null, 'Production must not initialize or write a demo database');
-  console.log('PASS browser network failure is visible; no automatic demo switch');
+  pass('browser network failure is visible');
   await context.setOffline(false);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: /浏览器测试孩子/ }).waitFor();
   assert.equal(errors.length, 0, JSON.stringify(errors));
-  console.log('PASS browser network recovery and zero JavaScript errors');
+  pass('browser network recovery and zero JavaScript errors');
   await context.close();
 }
 

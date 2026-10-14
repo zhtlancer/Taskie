@@ -28,8 +28,28 @@ jobs:
       - run: npm ci --prefix frontend
       - run: npm test
 
-  build-and-push:
+  # Builds the image and drives the main family flows in Chromium against a throwaway container.
+  browser-smoke:
     needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build test image
+        run: docker build -t taskie:reliability .
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.64.0
+          npx playwright install --with-deps chromium
+      - name: Browser smoke test
+        run: npm run test:browser
+
+  build-and-push:
+    needs: [test, browser-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read

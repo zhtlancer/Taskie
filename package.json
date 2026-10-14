@@ -12,6 +12,7 @@
     "test:backend": "npm --prefix backend test",
     "test:frontend": "npm --prefix frontend test",
     "test": "npm run test:backend && npm run test:frontend",
+    "test:browser": "node scripts/smoke-browser.cjs",
     "seed:backend": "npm --prefix backend run seed"
   }
 }
