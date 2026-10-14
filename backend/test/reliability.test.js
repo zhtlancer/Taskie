@@ -52,6 +52,30 @@ test('child credentials cannot administer or access another child and photo', as
   assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'private.jpg')), false);
 });
 
+test('children cannot generate or check off back-dated tasks', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  await ctx.app.inject({ method: 'POST', url: '/api/task-templates', payload: { title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], points: 10 } });
+  const login = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json();
+  const headers = { authorization: `Bearer ${login.token}` };
+  const today = getTodayDate(), yesterday = shiftDate(today, -1);
+
+  for (const date of [yesterday, '2020-01-01', shiftDate(today, 1)]) {
+    assert.equal((await ctx.rawInject({ method: 'GET', url: `/api/daily-tasks?child_id=${child.id}&date=${date}`, headers })).statusCode, 403, date);
+  }
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks').get().n, 0);
+
+  const past = (await ctx.app.inject({ method: 'GET', url: `/api/daily-tasks?child_id=${child.id}&date=${yesterday}` })).json()[0];
+  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${past.id}/complete`, headers })).statusCode, 403);
+  assert.equal((await ctx.app.inject({ method: 'POST', url: `/api/daily-tasks/${past.id}/complete` })).statusCode, 200);
+  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${past.id}/uncomplete`, headers })).statusCode, 403);
+
+  const current = (await ctx.rawInject({ method: 'GET', url: `/api/daily-tasks?child_id=${child.id}`, headers })).json()[0];
+  assert.equal(current.date, today);
+  assert.equal((await ctx.rawInject({ method: 'GET', url: `/api/daily-tasks?child_id=${child.id}&date=${today}`, headers })).statusCode, 200);
+  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${current.id}/complete`, headers })).json().points_earned, 10);
+  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${current.id}/uncomplete`, headers })).statusCode, 200);
+});
+
 test('login failures are rate limited', async t => {
   const ctx = await fixture(t);
   for (let i = 0; i < 10; i++) assert.equal((await ctx.rawInject({ method: 'POST', url: '/api/auth/parent-login', payload: { pin: '9999' } })).statusCode, 401);
