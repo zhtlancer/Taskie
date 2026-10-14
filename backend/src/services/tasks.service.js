@@ -1,4 +1,5 @@
 const { generateId } = require('../utils/crypto');
+const { insertGoalDailyRow } = require('./periods.service');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 
 function normalizeDaysOfWeek(days) {
@@ -235,6 +236,11 @@ class TasksService {
           insert.run(generateId(), childId, t.id, t.title, t.subject, t.points, date, t.schedule_type, t.weekly_target_times, t.id, t.created_at);
         }
       }
+      const goalRow = this.db.prepare('SELECT id FROM daily_tasks WHERE goal_id = ? AND date = ?');
+      const loggedOn = this.db.prepare('SELECT 1 FROM period_task_logs WHERE period_task_id = ? AND date = ?');
+      for (const goal of this.dailyGoalsOn(childId, date)) {
+        if (!goalRow.get(goal.id, date)) insertGoalDailyRow(this.db, goal, date, Boolean(loggedOn.get(goal.id, date)));
+      }
     })();
     return this.describeTasksBetween(childId, date, date).filter(isActiveTask);
   }
@@ -323,6 +329,7 @@ class TasksService {
   // unless a fixed-day template or a weekly deadline applied.
   restDayChecker(childId, fromDate, toDate) {
     const schedule = this.scheduleFor(childId);
+    const goalsOn = this.dailyGoalSchedule(childId);
     const byDate = new Map();
     const weeklyDone = new Map();
     const weeklyKey = (templateId, date) => `${getWeekRange(date).startDate}|${templateId}`;
@@ -338,6 +345,7 @@ class TasksService {
     return date => {
       if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional);
       if (!schedule.childSince || date < schedule.childSince) return true;
+      if (goalsOn(date).length) return false;
       return !schedule.assigned.some(t => {
         if (t.since > date || !schedule.allowedOn(t.id, date)) return false;
         if (t.schedule_type !== 'weekly_times') return true;
@@ -350,6 +358,57 @@ class TasksService {
     };
   }
 
+  // Long-term tasks whose progress must be logged on this date: daily-required, running then, and
+  // not finished on an earlier day.
+  dailyGoalsOn(childId, date) {
+    return this.dailyGoalSchedule(childId)(date);
+  }
+
+  // Loads a child's daily-required long-term tasks once and answers, per date, which applied.
+  dailyGoalSchedule(childId) {
+    const goals = this.db.prepare('SELECT * FROM period_tasks WHERE child_id = ? AND daily_required = 1').all(childId)
+      .map(goal => ({ ...goal, completedOn: goal.completed_at ? formatDate(new Date(goal.completed_at)) : null }));
+    return date => goals.filter(goal => goal.start_date <= date && (!goal.end_date || goal.end_date >= date) &&
+      (!goal.completedOn || goal.completedOn >= date));
+  }
+
+  // --- One-off tasks ---
+
+  // A one-off task a parent adds for one child on one day (e.g. homework assigned that day).
+  // It is an ordinary daily task for that day: required, counted in all-done, history, weekly
+  // completion and the streak, and checked off like any other.
+  createAdhocTask(childId, { title, subject, points = 10, date }) {
+    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: 'Child not found' };
+    if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
+    if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
+    if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
+    const taskDate = date ?? getTodayDate();
+    try {
+      parseDate(taskDate);
+    } catch {
+      throw { status: 400, message: '日期必须为 YYYY-MM-DD' };
+    }
+    const id = generateId();
+    this.db.prepare(`INSERT INTO daily_tasks
+      (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'adhoc')`)
+      .run(id, childId, title.trim(), subject.trim(), points, taskDate);
+    return this.describeTask(this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id));
+  }
+
+  listAdhocTasks(childId, fromDate = getTodayDate()) {
+    return this.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND origin = 'adhoc' AND date >= ? ORDER BY date, rowid")
+      .all(childId, fromDate).map(row => ({ ...row, is_completed: Boolean(row.is_completed) }));
+  }
+
+  // Removing a one-off task also removes the points it earned (its point log goes with it).
+  deleteAdhocTask(id) {
+    const task = this.db.prepare('SELECT origin FROM daily_tasks WHERE id = ?').get(id);
+    if (!task || task.origin !== 'adhoc') throw { status: 404, message: '临时任务不存在' };
+    this.db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(id);
+    return { success: true, id };
+  }
+
   completeDailyTask(taskId) {
     const task = this.db.prepare(`
       SELECT *
@@ -360,6 +419,9 @@ class TasksService {
     if (!task) {
       throw { status: 404, message: 'Daily task not found' };
     }
+
+    // A long-term task's daily row is completed by logging progress, never directly.
+    if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里记录今天的进度' };
 
     if (task.is_completed === 1) {
       return {
@@ -427,6 +489,7 @@ class TasksService {
     if (!task) {
       throw { status: 404, message: 'Daily task not found' };
     }
+    if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里撤销今天的进度' };
 
     if (task.is_completed === 0) {
       return {

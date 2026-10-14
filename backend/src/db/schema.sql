@@ -172,18 +172,27 @@ CREATE TABLE IF NOT EXISTS period_paused_templates (
   FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE CASCADE
 );
 
--- Tasks to finish over a whole period, such as holiday homework
+-- Long-term tasks for one child (e.g. reading a book), either standalone or holiday tasks.
+-- Keep in sync with the v8 migration in db/index.js.
 CREATE TABLE IF NOT EXISTS period_tasks (
   id TEXT PRIMARY KEY,
-  period_id TEXT NOT NULL,
+  period_id TEXT,                         -- set for holiday tasks, whose dates follow the period
+  child_id TEXT NOT NULL,
   title TEXT NOT NULL,
   subject TEXT NOT NULL,
-  mode TEXT NOT NULL DEFAULT 'check', -- check: done once | progress: logged towards total_amount
+  mode TEXT NOT NULL DEFAULT 'check',     -- check: done once | progress: logged towards total_amount
+  input_mode TEXT NOT NULL DEFAULT 'increment', -- progress entries: increment (done today) | position (reached page N)
   total_amount INTEGER NOT NULL DEFAULT 1,
   unit TEXT,
-  points INTEGER NOT NULL DEFAULT 0,   -- per unit for progress, on completion for check
+  points INTEGER NOT NULL DEFAULT 0,      -- per unit for progress, on completion for check
+  completion_bonus INTEGER NOT NULL DEFAULT 0,
+  start_date TEXT NOT NULL,
+  end_date TEXT,                          -- NULL: no deadline
+  daily_required INTEGER NOT NULL DEFAULT 0, -- 1: logging progress is a required task each day
+  completed_at TEXT,
   created_at TEXT NOT NULL,
-  FOREIGN KEY (period_id) REFERENCES periods(id) ON DELETE CASCADE
+  FOREIGN KEY (period_id) REFERENCES periods(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_period_tasks_period ON period_tasks(period_id);
@@ -193,6 +202,7 @@ CREATE TABLE IF NOT EXISTS period_task_logs (
   id TEXT PRIMARY KEY,
   period_task_id TEXT NOT NULL,
   amount INTEGER NOT NULL,
+  position INTEGER,                       -- page reached, for position entries
   date TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (period_task_id) REFERENCES period_tasks(id) ON DELETE CASCADE

@@ -32,6 +32,7 @@ const mistakesRoutes = require('./routes/mistakes.routes');
 const charactersRoutes = require('./routes/characters.routes');
 const redemptionsRoutes = require('./routes/redemptions.routes');
 const periodsRoutes = require('./routes/periods.routes');
+const adhocTasksRoutes = require('./routes/adhoc-tasks.routes');
 
 function buildApp(opts = {}) {
   console.log('  1/4 正在配置 Fastify 与上传目录...');
@@ -163,6 +164,7 @@ function buildApp(opts = {}) {
   fastify.register(charactersRoutes, { prefix: '/api/characters', charactersService });
   fastify.register(redemptionsRoutes, { prefix: '/api', redemptionsService });
   fastify.register(periodsRoutes, { prefix: '/api', periodsService });
+  fastify.register(adhocTasksRoutes, { prefix: '/api', tasksService });
 
   return fastify;
 }

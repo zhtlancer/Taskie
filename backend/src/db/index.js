@@ -159,6 +159,73 @@ function initDb(db) {
       db.pragma('user_version = 6');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 7) {
+    db.transaction(() => {
+      // 'template': generated from a task template; 'adhoc': a one-off task a parent added for a day.
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'origin')) {
+        db.exec("ALTER TABLE daily_tasks ADD COLUMN origin TEXT NOT NULL DEFAULT 'template'");
+      }
+      db.pragma('user_version = 7');
+    })();
+  }
+  if (db.pragma('user_version', { simple: true }) < 8) {
+    // Holiday tasks become general long-term tasks: they may stand alone (no period), so the table
+    // is rebuilt with a nullable period_id. Foreign keys are off while the old table is replaced
+    // so its progress entries are not cascade-deleted.
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        if (!db.pragma('table_info(period_tasks)').some(c => c.name === 'child_id')) {
+          db.exec(`
+          CREATE TABLE period_tasks_v8 (
+            id TEXT PRIMARY KEY,
+            period_id TEXT,                         -- set for holiday tasks, whose dates follow the period
+            child_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            mode TEXT NOT NULL DEFAULT 'check',     -- check: done once | progress: logged towards total_amount
+            input_mode TEXT NOT NULL DEFAULT 'increment', -- progress entries: increment (done today) | position (reached page N)
+            total_amount INTEGER NOT NULL DEFAULT 1,
+            unit TEXT,
+            points INTEGER NOT NULL DEFAULT 0,      -- per unit for progress, on completion for check
+            completion_bonus INTEGER NOT NULL DEFAULT 0,
+            start_date TEXT NOT NULL,
+            end_date TEXT,                          -- NULL: no deadline
+            daily_required INTEGER NOT NULL DEFAULT 0, -- 1: logging progress is a required task each day
+            completed_at TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (period_id) REFERENCES periods(id) ON DELETE CASCADE,
+            FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+          );
+          `);
+          db.exec(`INSERT INTO period_tasks_v8 (id, period_id, child_id, title, subject, mode, input_mode, total_amount, unit,
+              points, completion_bonus, start_date, end_date, daily_required, completed_at, created_at)
+            SELECT t.id, t.period_id, p.child_id, t.title, t.subject, t.mode, 'increment', t.total_amount, t.unit,
+              t.points, 0, p.start_date, p.end_date, 0,
+              CASE WHEN (SELECT COALESCE(SUM(amount), 0) FROM period_task_logs WHERE period_task_id = t.id) >= t.total_amount
+                THEN (SELECT MAX(created_at) FROM period_task_logs WHERE period_task_id = t.id) END,
+              t.created_at
+            FROM period_tasks t JOIN periods p ON p.id = t.period_id`);
+          db.exec('DROP TABLE period_tasks');
+          db.exec('ALTER TABLE period_tasks_v8 RENAME TO period_tasks');
+          db.exec('CREATE INDEX IF NOT EXISTS idx_period_tasks_period ON period_tasks(period_id)');
+        }
+        db.exec('CREATE INDEX IF NOT EXISTS idx_period_tasks_child ON period_tasks(child_id)');
+        if (!db.pragma('table_info(period_task_logs)').some(c => c.name === 'position')) {
+          db.exec('ALTER TABLE period_task_logs ADD COLUMN position INTEGER');
+        }
+        // A long-term task with daily_required gets a daily_tasks row each day, linked here.
+        if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'goal_id')) {
+          db.exec('ALTER TABLE daily_tasks ADD COLUMN goal_id TEXT');
+        }
+        db.exec('CREATE INDEX IF NOT EXISTS idx_daily_tasks_goal ON daily_tasks(goal_id, date)');
+        if (db.pragma('foreign_key_check').length) throw new Error('长期任务迁移后外键检查失败');
+        db.pragma('user_version = 8');
+      })();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

@@ -365,6 +365,23 @@ npm test
   - 设为已掌握时记录 `mastered_at` ISO 时间戳，取消掌握时清空为 null。
 - **`DELETE /api/characters/:id`**：从生字本移除生字 (200)
 
+### 9. 积分兑换、临时任务、长期任务与假期
+
+以下接口的写操作均需家长权限（孩子可兑换、撤回自己的申请，并记录、撤销自己当天的长期任务进度）。
+
+| 方法与路径 | 说明 |
+|---|---|
+| `GET/POST /api/reward-items`，`PUT/DELETE /api/reward-items/:id` | 奖励列表与管理 |
+| `GET/POST /api/children/:id/redemptions` | 孩子的兑换记录、申请兑换（积分先冻结） |
+| `GET /api/redemptions?status=pending`，`POST /api/redemptions/:id/{approve,reject,cancel}` | 待确认列表、确认、拒绝、撤回 |
+| `GET/POST /api/children/:id/adhoc-tasks`，`DELETE /api/adhoc-tasks/:id` | 临时任务（某一天的一次性任务） |
+| `GET/POST /api/children/:id/goals` | 长期任务列表（含假期任务）、新建独立长期任务 |
+| `GET/POST /api/children/:id/periods`，`PUT/DELETE /api/periods/:id` | 假期及假期中暂停的模板 |
+| `POST /api/periods/:id/tasks` | 新建假期任务（日期跟随假期） |
+| `PUT/DELETE /api/period-tasks/:id` | 修改、删除长期任务或假期任务 |
+| `POST /api/period-tasks/:id/logs` | 记录进度：`{ "amount": 5 }` 或按位置 `{ "position": 57 }`，家长可加 `date` 补记 |
+| `DELETE /api/period-task-logs/:id` | 撤销一条进度记录并扣回积分 |
+
 ---
 
 ## 🧪 接口验证示例 (cURL)

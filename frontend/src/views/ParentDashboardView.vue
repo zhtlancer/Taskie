@@ -146,9 +146,83 @@
               <span class="text-base font-black text-brand-600">{{ item.child.has_pin ? '已设置 PIN' : '免密直登' }}</span>
             </div>
           </div>
+
+          <!-- Active long-term tasks -->
+          <div v-if="item.goals.length" class="mt-4 pt-3 border-t border-slate-100">
+            <span class="block text-xs font-bold text-slate-500 mb-2">📚 长期任务</span>
+            <ul class="space-y-2">
+              <li v-for="goal in item.goals" :key="goal.id" class="text-xs">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                  <span class="font-bold text-slate-700 font-chinese truncate">{{ goal.title }}</span>
+                  <span class="shrink-0 font-bold text-slate-500">
+                    {{ goal.mode === 'progress' ? `${goal.done_amount}/${goal.total_amount} ${goal.unit}` : '未完成' }}
+                    <span v-if="goal.daily_required" :class="goal.today_logged ? 'text-emerald-600' : 'text-rose-500'">· 今天{{ goal.today_logged ? '已记录' : '未记录' }}</span>
+                  </span>
+                </div>
+                <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                  <div class="h-full rounded-full bg-indigo-500" :style="{ width: `${Math.round((goal.done_amount / goal.total_amount) * 100)}%` }"></div>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- One-off tasks for today and later days -->
+          <div class="mt-4 pt-3 border-t border-slate-100">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-slate-500">📌 临时任务</span>
+              <button type="button" class="px-3 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-xs" @click="openAdhoc(item.child)">
+                ➕ 添加
+              </button>
+            </div>
+            <p v-if="!item.adhoc.length" class="text-[11px] text-slate-400">今天及以后没有临时任务，老师临时布置的作业可以加在这里。</p>
+            <ul v-else class="space-y-1.5">
+              <li v-for="task in item.adhoc" :key="task.id" class="flex items-center gap-2 text-xs">
+                <span class="w-12 shrink-0 font-bold" :class="task.date === today ? 'text-orange-600' : 'text-slate-400'">{{ dayLabel(task.date) }}</span>
+                <span class="flex-1 truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700'">{{ task.subject }} · {{ task.title }}</span>
+                <span class="text-amber-500 font-black shrink-0">★{{ task.points }}</span>
+                <button type="button" class="text-slate-300 hover:text-rose-500 shrink-0" title="删除" @click="removeAdhoc(item, task)">✕</button>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </main>
+
+    <!-- Add One-off Task Modal -->
+    <div v-if="adhocForm" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="adhocForm = null">
+      <form class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100 space-y-4" @submit.prevent="saveAdhoc">
+        <h3 class="text-xl font-black text-slate-800 font-chinese">➕ 给{{ adhocForm.child.name }}加临时任务</h3>
+        <p v-if="adhocError" class="px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ adhocError }}</p>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">任务名称</label>
+          <input v-model="adhocForm.title" type="text" maxlength="50" required placeholder="例如：订正数学练习、准备手抄报" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:border-brand-500 outline-none font-chinese" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">所属学科</label>
+          <div class="grid grid-cols-4 gap-2">
+            <button v-for="sub in ['语文', '数学', '英语', '其他']" :key="sub" type="button" class="py-2 rounded-xl text-xs font-bold border font-chinese" :class="adhocForm.subject === sub ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-700'" @click="adhocForm.subject = sub">{{ sub }}</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1.5">哪一天</label>
+            <input v-model="adhocForm.date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
+            <div class="flex gap-1.5 mt-1.5">
+              <button type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600" @click="adhocForm.date = today">今天</button>
+              <button type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600" @click="adhocForm.date = addDays(today, 1)">明天</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1.5">奖励积分</label>
+            <input v-model.number="adhocForm.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:border-brand-500" />
+          </div>
+        </div>
+        <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
+          <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100" @click="adhocForm = null">取消</button>
+          <button type="submit" :disabled="adhocSaving || !adhocForm.title.trim()" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ adhocSaving ? '保存中...' : '确认添加' }}</button>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -159,6 +233,64 @@ import ParentNavBar from '../components/ParentNavBar.vue';
 
 const childrenStats = ref([]);
 const loading = ref(true);
+const adhocForm = ref(null);
+const adhocSaving = ref(false);
+const adhocError = ref('');
+
+const addDays = (date, days) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const today = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+
+function dayLabel(date) {
+  if (date === today) return '今天';
+  if (date === addDays(today, 1)) return '明天';
+  return date.slice(5).replace('-', '/');
+}
+
+function openAdhoc(child) {
+  adhocError.value = '';
+  adhocForm.value = { child, title: '', subject: '语文', date: today, points: 10 };
+}
+
+const activeGoals = goals => goals.filter(goal => goal.status === 'active');
+
+async function refreshChild(item) {
+  const [stats, adhoc] = await Promise.all([api.getChildStats(item.child.id), api.getAdhocTasks(item.child.id)]);
+  item.stats = stats;
+  item.adhoc = adhoc;
+}
+
+async function saveAdhoc() {
+  adhocSaving.value = true;
+  adhocError.value = '';
+  try {
+    const { child, title, subject, date, points } = adhocForm.value;
+    await api.createAdhocTask(child.id, { title, subject, date, points: points || 0 });
+    await refreshChild(childrenStats.value.find(item => item.child.id === child.id));
+    adhocForm.value = null;
+  } catch (err) {
+    adhocError.value = typeof err === 'string' ? err : '添加失败，请重试';
+  } finally {
+    adhocSaving.value = false;
+  }
+}
+
+async function removeAdhoc(item, task) {
+  const warning = task.is_completed ? '，孩子因此获得的积分也会扣回' : '';
+  if (!confirm(`确定删除临时任务「${task.title}」吗${warning}？`)) return;
+  try {
+    await api.deleteAdhocTask(task.id);
+    await refreshChild(item);
+  } catch (err) {
+    console.error('Failed to delete one-off task:', err);
+  }
+}
 
 const overallCompletionRate = computed(() => {
   if (childrenStats.value.length === 0) return 0;
@@ -184,8 +316,9 @@ onMounted(async () => {
   try {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
-      const [stats, week] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id)]);
-      return { child, stats, week };
+      const [stats, week, adhoc, goals] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id)]);
+      return { child, stats, week, adhoc, goals: activeGoals(goals) };
     });
     childrenStats.value = await Promise.all(statsPromises);
   } catch (err) {

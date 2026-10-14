@@ -114,6 +114,25 @@
         </div>
       </section>
 
+      <!-- Long-term task progress curves -->
+      <section v-if="chartGoals.length" class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card mb-6">
+        <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4">
+          <span>📚</span>
+          <span>长期任务进度</span>
+        </h2>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div v-for="goal in chartGoals" :key="goal.id">
+            <div class="flex items-center justify-between text-sm mb-1">
+              <span class="font-bold text-slate-700 font-chinese truncate">{{ goal.title }}</span>
+              <span class="text-xs font-black shrink-0" :class="goal.is_completed ? 'text-emerald-600' : 'text-indigo-600'">
+                {{ goal.is_completed ? '已完成 🎉' : `${goal.done_amount} / ${goal.total_amount} ${goal.unit || ''}` }}
+              </span>
+            </div>
+            <GoalProgressChart :goal="goal" :today="today" />
+          </div>
+        </div>
+      </section>
+
       <!-- Main Section: Weekly Chart & Day List -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left 2 Cols: Bar Chart -->
@@ -200,6 +219,7 @@ import { useRoute } from 'vue-router';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import WeeklyChart from '../components/WeeklyChart.vue';
+import GoalProgressChart from '../components/GoalProgressChart.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
 
@@ -210,6 +230,19 @@ const childId = computed(() => route.params.id || childStore.childId);
 const historyList = ref([]);
 const thisWeek = ref(null);
 const lastWeek = ref(null);
+const goals = ref([]);
+const today = (() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+})();
+// Progress-based long-term tasks that are running or finished within the last 30 days.
+const chartGoals = computed(() => {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 30);
+  const since = d.toISOString().slice(0, 10);
+  return goals.value.filter(goal => goal.mode === 'progress' && goal.logs.length &&
+    (goal.status === 'active' || (goal.completed_on || goal.end_date || '') >= since));
+});
 
 const totalCompletedTasks = computed(() => {
   return historyList.value.reduce((sum, item) => sum + (item.completed_tasks || 0), 0);
@@ -225,7 +258,8 @@ const totalPointsEarned = computed(() => {
 
 onMounted(async () => {
   try {
-    const [data, summary] = await Promise.all([api.getHistory(childId.value, 7), api.getWeeklySummary(childId.value)]);
+    const [data, summary, goalList] = await Promise.all([api.getHistory(childId.value, 7), api.getWeeklySummary(childId.value), api.getChildGoals(childId.value)]);
+    goals.value = goalList || [];
     historyList.value = data || [];
     thisWeek.value = summary?.current_week?.completion || null;
     lastWeek.value = summary?.last_week?.completion || null;

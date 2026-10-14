@@ -39,8 +39,8 @@ class RewardsService {
       SELECT date FROM daily_tasks WHERE child_id = ? AND is_completed = 1 AND date <= ?
       UNION
       SELECT l.date FROM period_task_logs l
-      JOIN period_tasks t ON t.id = l.period_task_id JOIN periods p ON p.id = t.period_id
-      WHERE p.child_id = ? AND l.date <= ?
+      JOIN period_tasks t ON t.id = l.period_task_id
+      WHERE t.child_id = ? AND l.date <= ?
     `).all(childId, today, childId, today).map(r => r.date));
     if (completedDates.size === 0) return 0;
 

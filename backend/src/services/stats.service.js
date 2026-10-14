@@ -158,7 +158,9 @@ class StatsService {
 
     const items = new Map();
     const sourceId = source => source.source_template_id ?? source.template_id ?? (source.date ? null : source.id);
-    const keyFor = source => JSON.stringify([sourceId(source) ?? `row:${source.id}`, source.schedule_type || 'fixed_days']);
+    const keyFor = source => source.goal_id
+      ? JSON.stringify([`goal:${source.goal_id}`])
+      : JSON.stringify([sourceId(source) ?? `row:${source.id}`, source.schedule_type || 'fixed_days']);
     const itemFor = (key, source) => {
       if (!items.has(key)) {
         const id = sourceId(source);
@@ -170,11 +172,24 @@ class StatsService {
       return items.get(key);
     };
 
-    const openedDates = new Set(rows.map(row => row.date));
+    // A day counts as opened once template tasks were generated for it; one-off tasks a parent
+    // added ahead of time do not, so the templates of an unopened day are still projected.
+    // Daily-required long-term tasks count on every day they applied, projected where no row exists.
+    const openedDates = new Set(rows.filter(row => row.origin === 'template').map(row => row.date));
+    const goalsOn = this.tasksService.dailyGoalSchedule(childId);
     for (const date of getDateRangeList(weekStart, cutoff)) {
+      for (const row of rows) {
+        if (row.date !== date || row.origin === 'template') continue;
+        const item = itemFor(keyFor(row), row);
+        item.total++;
+        if (row.is_completed) item.completed++;
+      }
+      for (const goal of goalsOn(date)) {
+        if (!rows.some(row => row.goal_id === goal.id && row.date === date)) itemFor(keyFor({ goal_id: goal.id }), goal).total++;
+      }
       if (openedDates.has(date)) {
         for (const row of rows) {
-          if (row.date !== date || row.schedule_type === 'weekly_times') continue;
+          if (row.date !== date || row.schedule_type === 'weekly_times' || row.origin !== 'template') continue;
           const item = itemFor(keyFor(row), row);
           item.total++;
           if (row.is_completed) item.completed++;

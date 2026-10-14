@@ -92,6 +92,13 @@ class BackupService {
         candidate.pragma('table_info(point_logs)').some(column => column.name === name))) {
         throw fail('备份缺少积分历史快照，无法恢复');
       }
+      if (schemaVersion >= 7 && !candidate.pragma('table_info(daily_tasks)').some(column => column.name === 'origin')) {
+        throw fail('备份缺少临时任务数据，无法恢复');
+      }
+      const hasColumn = (table, name) => candidate.pragma(`table_info(${table})`).some(column => column.name === name);
+      if (schemaVersion >= 8 && !(hasColumn('period_tasks', 'child_id') && hasColumn('period_task_logs', 'position') && hasColumn('daily_tasks', 'goal_id'))) {
+        throw fail('备份缺少长期任务数据，无法恢复');
+      }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {

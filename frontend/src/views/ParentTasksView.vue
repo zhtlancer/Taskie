@@ -17,7 +17,7 @@
 
         <div class="flex items-center gap-2">
           <router-link to="/parent/periods" class="px-4 py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50">
-            🏖️ 假期安排
+            🏖️ 假期与长期任务
           </router-link>
           <button
             type="button"

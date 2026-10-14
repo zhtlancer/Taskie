@@ -42,8 +42,9 @@ function installAuthorization(app, db) {
       /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/reward-items') && request.method !== 'GET' ||
       /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject)\/?$/.test(url) ||
-      /^\/api\/children\/[^/]+\/periods\/?$/.test(url) && request.method !== 'GET' ||
-      url.startsWith('/api/periods/') || /^\/api\/period-tasks\/[^/]+\/?$/.test(url);
+      /^\/api\/children\/[^/]+\/(?:periods|goals)\/?$/.test(url) && request.method !== 'GET' ||
+      url.startsWith('/api/periods/') || /^\/api\/period-tasks\/[^/]+\/?$/.test(url) ||
+      /^\/api\/children\/[^/]+\/adhoc-tasks\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/adhoc-tasks/');
     if (parentOnly && request.user.role !== 'parent') return reply.code(403).send({ error: '需要家长权限' });
     if (url.startsWith('/uploads/')) {
       const photo = db.prepare('SELECT child_id FROM mistake_records WHERE photo_path = ?').get(`/uploads/${request.params['*']}`);
@@ -68,10 +69,9 @@ function installAuthorization(app, db) {
     }
     // Children may log and undo progress only on their own holiday tasks.
     const periodOwner = url.startsWith('/api/period-tasks/')
-      ? db.prepare('SELECT p.child_id FROM period_tasks t JOIN periods p ON p.id = t.period_id WHERE t.id = ?').get(request.params.id)
+      ? db.prepare('SELECT child_id FROM period_tasks WHERE id = ?').get(request.params.id)
       : url.startsWith('/api/period-task-logs/')
-        ? db.prepare(`SELECT p.child_id FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id
-            JOIN periods p ON p.id = t.period_id WHERE l.id = ?`).get(request.params.id)
+        ? db.prepare('SELECT t.child_id FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id WHERE l.id = ?').get(request.params.id)
         : null;
     if (periodOwner) app.requireChildAccess(request, periodOwner.child_id);
     if (url.replace(/\/$/, '') === '/api/daily-tasks' ||

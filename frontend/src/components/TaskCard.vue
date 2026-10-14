@@ -33,6 +33,9 @@
           >
             {{ task.subject }}
           </span>
+          <span v-if="task.origin === 'adhoc'" class="px-2 py-0.5 rounded-lg text-xs font-black shrink-0 bg-orange-100 text-orange-700">
+            临时
+          </span>
 
           <!-- Task Title with child-friendly Chinese typography -->
           <h4

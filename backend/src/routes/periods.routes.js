@@ -15,6 +15,10 @@ async function periodsRoutes(fastify, options) {
   fastify.put('/periods/:id', handle(async request => periodsService.updatePeriod(request.params.id, request.body || {})));
   fastify.delete('/periods/:id', handle(async request => periodsService.deletePeriod(request.params.id)));
 
+  fastify.get('/children/:id/goals', handle(async request => periodsService.listGoals(request.params.id)));
+  fastify.post('/children/:id/goals', handle(async (request, reply) =>
+    reply.code(201).send(periodsService.createGoal(request.params.id, request.body || {}))));
+
   fastify.post('/periods/:id/tasks', handle(async (request, reply) =>
     reply.code(201).send(periodsService.createTask(request.params.id, request.body || {}))));
   fastify.put('/period-tasks/:id', handle(async request => periodsService.updateTask(request.params.id, request.body || {})));

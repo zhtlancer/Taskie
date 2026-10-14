@@ -178,17 +178,18 @@
             <span class="animate-spin mr-2">⏳</span> 正在加载今日任务...
           </div>
 
-          <!-- Holiday tasks for the whole period -->
-          <PeriodTasksPanel
-            v-if="!loading && activePeriod"
+          <!-- Long-term tasks (reading a book, holiday homework), with the holiday banner during a period -->
+          <GoalTasksPanel
+            v-if="!loading && (activePeriod || activeGoals.length)"
+            :goals="activeGoals"
             :period="activePeriod"
             :today="todayString"
-            @changed="refreshPeriods"
+            @changed="refreshGoals"
           />
 
           <!-- Empty state -->
           <div
-            v-if="!loading && filteredTasks.length === 0 && !activePeriod"
+            v-if="!loading && filteredTasks.length === 0 && !activePeriod && !activeGoals.length"
             class="flex flex-col items-center justify-center h-64 text-slate-400"
           >
             <span class="text-5xl mb-3">🏖️</span>
@@ -197,10 +198,10 @@
           </div>
 
           <div
-            v-if="!loading && activePeriod && filteredTasks.length === 0"
+            v-if="!loading && (activePeriod || activeGoals.length) && filteredTasks.length === 0"
             class="text-center py-6 text-sm font-bold text-slate-400"
           >
-            假期中，今天没有日常任务～
+            {{ activePeriod ? '假期中，今天没有日常任务～' : '今天没有日常任务～' }}
           </div>
 
           <!-- 2 Columns Grid -->
@@ -215,7 +216,7 @@
         </div>
 
         <!-- Bottom Motivation Banner (hidden on holiday days without daily tasks) -->
-        <div v-if="totalCount > 0 || !activePeriod" class="mt-3 shrink-0">
+        <div v-if="totalCount > 0 || !(activePeriod || activeGoals.length)" class="mt-3 shrink-0">
           <!-- When all completed -->
           <div
             v-if="allDone"
@@ -280,7 +281,7 @@ import ProgressRing from '../components/ProgressRing.vue';
 import StreakBadge from '../components/StreakBadge.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
-import PeriodTasksPanel from '../components/PeriodTasksPanel.vue';
+import GoalTasksPanel from '../components/GoalTasksPanel.vue';
 import { playAllDone, playBadgeUnlocked, playClick } from '../utils/sound';
 
 const route = useRoute();
@@ -299,19 +300,34 @@ const childAvatar = computed(() => childStore.childAvatar);
 const tasks = ref([]);
 const loading = ref(true);
 const periods = ref([]);
+const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
+// Running long-term tasks, plus any finished today so the child sees the celebration.
+const activeGoals = computed(() => goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString));
 const todayString = (() => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 })();
 
-async function refreshPeriods() {
+async function loadGoals() {
   try {
-    periods.value = await api.getChildPeriods(childId.value);
+    [periods.value, goals.value] = await Promise.all([api.getChildPeriods(childId.value), api.getChildGoals(childId.value)]);
   } catch (err) {
-    console.error('Failed to load holiday periods:', err);
+    console.error('Failed to load long-term tasks:', err);
+  }
+}
+
+// Logging progress may complete a daily-required item, so today's tasks are refreshed too.
+async function refreshGoals() {
+  const wasAllDone = allDone.value;
+  await loadGoals();
+  try {
+    tasks.value = await api.getDailyTasks(childId.value);
+  } catch (err) {
+    console.error('Failed to refresh daily tasks:', err);
   }
   await childStore.fetchStats();
+  if (!wasAllDone && allDone.value) fireCelebration(true);
 }
 const selectedSubject = ref('全部');
 const streakRef = ref(null);
@@ -333,11 +349,14 @@ const formattedDate = computed(() => {
   return `${weekDays[d.getDay()]} · ${d.getMonth() + 1}月${d.getDate()}日`;
 });
 
+// Daily items of long-term tasks are logged in their panel, so the card grid leaves them out
+// (they still count towards today's progress).
+const cardTasks = computed(() => tasks.value.filter(t => t.origin !== 'goal'));
 const filteredTasks = computed(() => {
   if (selectedSubject.value === '全部') {
-    return tasks.value;
+    return cardTasks.value;
   }
-  return tasks.value.filter(t => t.subject === selectedSubject.value);
+  return cardTasks.value.filter(t => t.subject === selectedSubject.value);
 });
 
 // Flexible weekly tasks only count once done, so skipping one never blocks the all-done celebration.
@@ -357,12 +376,12 @@ function selectSubject(subjName) {
 }
 
 function getSubjectTaskCount(subjName) {
-  if (subjName === '全部') return tasks.value.length;
-  return tasks.value.filter(t => t.subject === subjName).length;
+  if (subjName === '全部') return cardTasks.value.length;
+  return cardTasks.value.filter(t => t.subject === subjName).length;
 }
 
 onMounted(async () => {
-  await Promise.all([loadTasks(), refreshPeriods()]);
+  await Promise.all([loadTasks(), loadGoals()]);
 });
 
 async function loadTasks() {

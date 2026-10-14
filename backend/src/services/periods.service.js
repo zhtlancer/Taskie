@@ -1,7 +1,8 @@
 const { generateId } = require('../utils/crypto');
-const { getTodayDate, getDateRangeList, parseDate } = require('../utils/date');
+const { formatDate, getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 
 const MODES = ['check', 'progress'];
+const INPUT_MODES = ['increment', 'position'];
 
 function validateDate(value, label) {
   try {
@@ -11,9 +12,15 @@ function validateDate(value, label) {
   }
 }
 
-// Holiday and vacation periods, set per child. During a period the parent can pause some daily
-// and weekly templates, and add period tasks to finish over the whole period: either checked
-// off once, or logged as progress towards a total (e.g. 40 pages), earning points per unit.
+// Holiday periods and long-term tasks, per child.
+//
+// During a holiday period the parent can pause some daily and weekly templates. Long-term tasks
+// (stored in period_tasks) are finished over many days, such as reading a 200-page book or holiday
+// homework: either checked off once, or logged as progress towards a total. Progress is entered
+// as the amount done ("increment") or as the page reached ("position"), earns points per unit plus
+// an optional bonus on completion, and with daily_required logging becomes a required task each
+// day. A task either stands alone with its own dates (no end date means no deadline) or belongs to
+// a holiday period, whose dates it follows.
 class PeriodsService {
   constructor(db, rewardsService) {
     this.db = db;
@@ -41,29 +48,7 @@ class PeriodsService {
       status,
       days_total: getDateRangeList(period.start_date, period.end_date).length,
       paused_template_ids: paused.map(row => row.template_id),
-      tasks: tasks.map(task => this.describeTask(task, period, today))
-    };
-  }
-
-  // Progress so far plus pacing: what is left over the days remaining (today included).
-  describeTask(task, period, today = getTodayDate()) {
-    const done = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS done FROM period_task_logs WHERE period_task_id = ?').get(task.id).done;
-    const todayAmount = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS amount FROM period_task_logs WHERE period_task_id = ? AND date = ?')
-      .get(task.id, today).amount;
-    const remaining = Math.max(0, task.total_amount - done);
-    const daysLeft = today > period.end_date ? 0 : getDateRangeList(today < period.start_date ? period.start_date : today, period.end_date).length;
-    const logs = this.db.prepare('SELECT id, amount, date, created_at FROM period_task_logs WHERE period_task_id = ? ORDER BY date DESC, created_at DESC')
-      .all(task.id);
-    return {
-      ...task,
-      done_amount: Math.min(done, task.total_amount),
-      remaining_amount: remaining,
-      is_completed: remaining === 0,
-      today_amount: todayAmount,
-      days_left: daysLeft,
-      // Spread what is left evenly; whatever was already logged today counts towards today's share.
-      suggested_today: remaining === 0 || daysLeft === 0 ? 0 : Math.max(0, Math.ceil((remaining + todayAmount) / daysLeft) - todayAmount),
-      logs
+      tasks: tasks.map(task => this.describeTask(task, today))
     };
   }
 
@@ -86,6 +71,9 @@ class PeriodsService {
     this.db.transaction(() => {
       this.db.prepare('UPDATE periods SET name = ?, start_date = ?, end_date = ? WHERE id = ?')
         .run(fields.name, fields.start_date, fields.end_date, id);
+      // Holiday tasks follow their period's dates.
+      this.db.prepare('UPDATE period_tasks SET start_date = ?, end_date = ? WHERE period_id = ?')
+        .run(fields.start_date, fields.end_date, id);
       if (body.paused_template_ids !== undefined) this.setPausedTemplates(id, fields.paused_template_ids);
     })();
     return this.describePeriod(this.getPeriod(id));
@@ -94,7 +82,10 @@ class PeriodsService {
   // Points already earned in the period stay with the child (point_logs keep them, unlinked).
   deletePeriod(id) {
     if (!this.getPeriod(id)) throw { status: 404, message: '假期不存在' };
-    this.db.prepare('DELETE FROM periods WHERE id = ?').run(id);
+    this.db.transaction(() => {
+      for (const { id: taskId } of this.db.prepare('SELECT id FROM period_tasks WHERE period_id = ?').all(id)) this.removePendingDailyRows(taskId);
+      this.db.prepare('DELETE FROM periods WHERE id = ?').run(id);
+    })();
     return { success: true, id };
   }
 
@@ -124,100 +115,221 @@ class PeriodsService {
     }
   }
 
-  // --- Period tasks ---
+  // --- Long-term tasks ---
 
   getTask(id) {
     return this.db.prepare('SELECT * FROM period_tasks WHERE id = ?').get(id) || null;
   }
 
+  // Every long-term task of a child, standalone and holiday ones, newest first.
+  listGoals(childId, today = getTodayDate()) {
+    this.requireChild(childId);
+    return this.db.prepare(`
+      SELECT t.*, p.name AS period_name FROM period_tasks t LEFT JOIN periods p ON p.id = t.period_id
+      WHERE t.child_id = ? ORDER BY t.start_date DESC, t.created_at DESC
+    `).all(childId).map(task => this.describeTask(task, today));
+  }
+
+  // Progress so far and pacing. With a deadline, what is left is spread over the days remaining
+  // (today included); without one, the finish date is estimated from the last 7 days' pace.
+  describeTask(task, today = getTodayDate()) {
+    const logs = this.db.prepare('SELECT id, amount, position, date, created_at FROM period_task_logs WHERE period_task_id = ? ORDER BY date DESC, created_at DESC')
+      .all(task.id);
+    const done = Math.min(task.total_amount, logs.reduce((sum, log) => sum + log.amount, 0));
+    const todayAmount = logs.filter(log => log.date === today).reduce((sum, log) => sum + log.amount, 0);
+    const remaining = task.total_amount - done;
+    const completedOn = task.completed_at ? formatDate(new Date(task.completed_at)) : null;
+    const status = completedOn ? 'completed' : today < task.start_date ? 'upcoming' : task.end_date && today > task.end_date ? 'ended' : 'active';
+
+    let daysLeft = null, suggestedToday = null, recentRate = null, estimatedFinish = null;
+    if (status === 'active' || status === 'upcoming') {
+      if (task.end_date) {
+        daysLeft = getDateRangeList(today < task.start_date ? task.start_date : today, task.end_date).length;
+        suggestedToday = Math.max(0, Math.ceil((remaining + todayAmount) / daysLeft) - todayAmount);
+      } else if (status === 'active') {
+        const since = [task.start_date, shiftDate(today, -6)].sort().at(-1);
+        const days = getDateRangeList(since, today).length;
+        const recent = logs.filter(log => log.date >= since).reduce((sum, log) => sum + log.amount, 0);
+        if (recent > 0) {
+          recentRate = Number((recent / days).toFixed(1));
+          // Today still counts as a reading day until something is logged; then the rest starts tomorrow.
+          const daysNeeded = Math.ceil(remaining / (recent / days));
+          estimatedFinish = shiftDate(today, todayAmount > 0 ? daysNeeded : daysNeeded - 1);
+        }
+      }
+    }
+    return {
+      ...task,
+      daily_required: Boolean(task.daily_required),
+      status,
+      done_amount: done,
+      remaining_amount: remaining,
+      is_completed: status === 'completed',
+      completed_on: completedOn,
+      today_amount: todayAmount,
+      today_logged: logs.some(log => log.date === today),
+      days_left: daysLeft,
+      suggested_today: suggestedToday,
+      recent_daily_rate: recentRate,
+      estimated_finish_date: estimatedFinish,
+      logs
+    };
+  }
+
+  // A holiday task: its child and dates come from the period.
   createTask(periodId, body) {
     const period = this.getPeriod(periodId);
     if (!period) throw { status: 404, message: '假期不存在' };
-    const fields = this.validateTask(body);
+    return this.insertTask({ ...this.validateTask(body), period_id: periodId, child_id: period.child_id, start_date: period.start_date, end_date: period.end_date });
+  }
+
+  // A standalone long-term task, starting today unless given; the end date (deadline) is optional.
+  createGoal(childId, body) {
+    this.requireChild(childId);
+    return this.insertTask({ ...this.validateTask(body), ...this.validateGoalDates(body), period_id: null, child_id: childId });
+  }
+
+  insertTask(fields) {
     const id = generateId();
-    this.db.prepare(`INSERT INTO period_tasks (id, period_id, title, subject, mode, total_amount, unit, points, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, periodId, fields.title, fields.subject, fields.mode, fields.total_amount, fields.unit, fields.points, new Date().toISOString());
-    return this.describeTask(this.getTask(id), period);
+    this.db.prepare(`INSERT INTO period_tasks (id, period_id, child_id, title, subject, mode, input_mode, total_amount, unit, points,
+        completion_bonus, start_date, end_date, daily_required, completed_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
+      .run(id, fields.period_id, fields.child_id, fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit,
+        fields.points, fields.completion_bonus, fields.start_date, fields.end_date, fields.daily_required ? 1 : 0, new Date().toISOString());
+    return this.describeTask(this.getTask(id));
   }
 
   updateTask(id, body) {
     const existing = this.getTask(id);
-    if (!existing) throw { status: 404, message: '假期任务不存在' };
-    const fields = this.validateTask({ ...existing, ...body });
+    if (!existing) throw { status: 404, message: '长期任务不存在' };
+    const fields = this.validateTask({ ...existing, daily_required: Boolean(existing.daily_required), ...body });
     const done = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS done FROM period_task_logs WHERE period_task_id = ?').get(id).done;
     if (fields.mode !== existing.mode && done > 0) throw { status: 409, message: '已有进度记录，不能更改完成方式' };
-    this.db.prepare('UPDATE period_tasks SET title = ?, subject = ?, mode = ?, total_amount = ?, unit = ?, points = ? WHERE id = ?')
-      .run(fields.title, fields.subject, fields.mode, fields.total_amount, fields.unit, fields.points, id);
-    return this.describeTask(this.getTask(id), this.getPeriod(existing.period_id));
+    // Changing the total of a finished task could award its completion bonus twice.
+    if (existing.completed_at && fields.total_amount !== existing.total_amount) throw { status: 409, message: '任务已完成，不能修改总量；如需修改请先撤销最后一次进度' };
+    if (fields.total_amount < done) throw { status: 400, message: `总量不能小于已完成的 ${done}${existing.unit || ''}` };
+    // Holiday tasks keep their period's dates.
+    const dates = existing.period_id ? existing : this.validateGoalDates({ start_date: existing.start_date, end_date: existing.end_date, ...body });
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE period_tasks SET title = ?, subject = ?, mode = ?, input_mode = ?, total_amount = ?, unit = ?, points = ?,
+          completion_bonus = ?, start_date = ?, end_date = ?, daily_required = ? WHERE id = ?`)
+        .run(fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit, fields.points,
+          fields.completion_bonus, dates.start_date, dates.end_date, fields.daily_required ? 1 : 0, id);
+      if (!fields.daily_required) this.removePendingDailyRows(id);
+    })();
+    return this.describeTask(this.getTask(id));
   }
 
+  // Progress entries go with the task; the points they earned stay with the child.
   deleteTask(id) {
-    if (!this.getTask(id)) throw { status: 404, message: '假期任务不存在' };
-    this.db.prepare('DELETE FROM period_tasks WHERE id = ?').run(id);
+    if (!this.getTask(id)) throw { status: 404, message: '长期任务不存在' };
+    this.db.transaction(() => {
+      this.removePendingDailyRows(id);
+      this.db.prepare('DELETE FROM period_tasks WHERE id = ?').run(id);
+    })();
     return { success: true, id };
   }
 
-  validateTask({ title, subject, mode = 'check', total_amount, unit, points = 0 }) {
+  // Days already logged stay in history; days still waiting for an entry are dropped.
+  removePendingDailyRows(taskId) {
+    this.db.prepare('DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0').run(taskId);
+  }
+
+  validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false }) {
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
     if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
     if (!MODES.includes(mode)) throw { status: 400, message: '完成方式无效' };
+    if (!INPUT_MODES.includes(input_mode)) throw { status: 400, message: '记录方式无效' };
     if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
-    if (mode === 'check') return { title: title.trim(), subject: subject.trim(), mode, total_amount: 1, unit: null, points };
+    if (!Number.isSafeInteger(completion_bonus) || completion_bonus < 0 || completion_bonus > 100000) throw { status: 400, message: '完成奖励必须为 0 至 100000 的整数' };
+    if (typeof daily_required !== 'boolean') throw { status: 400, message: '“每天要记录”设置无效' };
+    const common = { title: title.trim(), subject: subject.trim(), mode, points, completion_bonus, daily_required };
+    if (mode === 'check') return { ...common, input_mode: 'increment', total_amount: 1, unit: null };
     if (!Number.isSafeInteger(total_amount) || total_amount < 1 || total_amount > 100000) throw { status: 400, message: '总量必须为 1 至 100000 的整数' };
     if (typeof unit !== 'string' || !unit.trim() || unit.trim().length > 10) throw { status: 400, message: '请填写单位，如 页、篇、次' };
-    return { title: title.trim(), subject: subject.trim(), mode, total_amount, unit: unit.trim(), points };
+    return { ...common, input_mode, total_amount, unit: unit.trim() };
+  }
+
+  validateGoalDates({ start_date, end_date }) {
+    const start = start_date ?? getTodayDate();
+    validateDate(start, '开始日期');
+    const end = end_date || null;
+    if (end !== null) {
+      validateDate(end, '截止日期');
+      if (end < start) throw { status: 400, message: '截止日期不能早于开始日期' };
+    }
+    return { start_date: start, end_date: end };
   }
 
   // --- Progress ---
 
-  // Children log progress for today only; parents may also backfill earlier days of the period.
-  logProgress(taskId, { amount, date }, { role }) {
+  // Children log progress for today only; parents may also backfill earlier days of the task.
+  // Position entries give the page reached; the amount logged is how far that is past the progress
+  // so far. Reaching the total completes the task and awards its bonus with that entry.
+  logProgress(taskId, { amount, position, date }, { role }) {
     const task = this.getTask(taskId);
-    if (!task) throw { status: 404, message: '假期任务不存在' };
-    const period = this.getPeriod(task.period_id);
+    if (!task) throw { status: 404, message: '长期任务不存在' };
     const today = getTodayDate();
     const logDate = date ?? today;
     if (role !== 'parent' && logDate !== today) throw { status: 403, message: '只能记录今天的进度' };
     validateDate(logDate, '日期');
-    if (logDate < period.start_date || logDate > period.end_date) throw { status: 400, message: '不在假期日期内' };
+    if (logDate < task.start_date || task.end_date && logDate > task.end_date) throw { status: 400, message: '不在任务日期内' };
     if (logDate > today) throw { status: 400, message: '不能记录未来的进度' };
-    const logAmount = task.mode === 'check' ? 1 : amount;
-    if (!Number.isSafeInteger(logAmount) || logAmount < 1) throw { status: 400, message: '进度必须为正整数' };
+    const byPosition = task.mode === 'progress' && task.input_mode === 'position';
 
-    let logId, newBadges = [];
+    let logId, logAmount, bonus = 0, newBadges = [];
     this.db.transaction(() => {
       const done = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS done FROM period_task_logs WHERE period_task_id = ?').get(taskId).done;
       const remaining = task.total_amount - done;
       if (remaining <= 0) throw { status: 409, message: '这项任务已经完成了' };
-      if (logAmount > remaining) throw { status: 400, message: `最多还能记录 ${remaining}${task.unit || ''}` };
+      if (task.mode === 'check') logAmount = 1;
+      else if (byPosition) {
+        if (!Number.isSafeInteger(position) || position <= done) throw { status: 400, message: `请填写读到的位置，需大于上次的第 ${done} ${task.unit}` };
+        if (position > task.total_amount) throw { status: 400, message: `最多到第 ${task.total_amount} ${task.unit}` };
+        logAmount = position - done;
+      } else {
+        logAmount = amount;
+        if (!Number.isSafeInteger(logAmount) || logAmount < 1) throw { status: 400, message: '进度必须为正整数' };
+        if (logAmount > remaining) throw { status: 400, message: `最多还能记录 ${remaining}${task.unit || ''}` };
+      }
       logId = generateId();
       const now = new Date().toISOString();
-      this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, date, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(logId, taskId, logAmount, logDate, now);
+      this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now);
+      const award = (points, title) => this.db.prepare(`INSERT INTO point_logs
+        (id, child_id, daily_task_id, points, earned_at, period_log_id, activity_date, activity_title) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`)
+        .run(generateId(), task.child_id, points, now, logId, logDate, title);
       if (task.points > 0) {
-        const title = task.mode === 'progress' ? `${task.title} ${logAmount}${task.unit}` : task.title;
-        this.db.prepare('INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at, period_log_id, activity_date, activity_title) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)')
-          .run(generateId(), period.child_id, task.points * logAmount, now, logId, logDate, title);
+        const title = task.mode === 'check' ? task.title
+          : byPosition ? `${task.title} 读到第 ${done + logAmount} ${task.unit}` : `${task.title} ${logAmount}${task.unit}`;
+        award(task.points * logAmount, title);
       }
-      if (this.rewardsService) newBadges = this.rewardsService.checkAndUnlockBadges(period.child_id);
+      if (logAmount === remaining) {
+        this.db.prepare('UPDATE period_tasks SET completed_at = ? WHERE id = ?').run(now, taskId);
+        if (task.completion_bonus > 0) {
+          bonus = task.completion_bonus;
+          award(bonus, `${task.title} 完成奖励`);
+        }
+      }
+      this.markDailyRow(task, logDate);
+      if (this.rewardsService) newBadges = this.rewardsService.checkAndUnlockBadges(task.child_id);
     })();
     return {
       success: true,
       log_id: logId,
-      points_earned: task.points * logAmount,
-      task: this.describeTask(this.getTask(taskId), period),
+      points_earned: task.points * logAmount + bonus,
+      completion_bonus: bonus,
+      task: this.describeTask(this.getTask(taskId)),
       new_badges: newBadges
     };
   }
 
-  // Undoing an entry takes back its points. Children may only undo today's entries, and not once
-  // those points were spent on rewards; parents can always correct.
+  // Undoing an entry takes back its points (and the completion bonus if it finished the task).
+  // Children may only undo today's entries, and not once those points were spent on rewards;
+  // parents can always correct.
   deleteLog(logId, { role }) {
     const log = this.db.prepare(`
-      SELECT l.*, p.child_id, t.period_id FROM period_task_logs l
-      JOIN period_tasks t ON t.id = l.period_task_id JOIN periods p ON p.id = t.period_id
-      WHERE l.id = ?
+      SELECT l.*, t.child_id FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id WHERE l.id = ?
     `).get(logId);
     if (!log) throw { status: 404, message: '进度记录不存在' };
     if (role !== 'parent') {
@@ -230,8 +342,22 @@ class PeriodsService {
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM point_logs WHERE period_log_id = ?').run(logId);
       this.db.prepare('DELETE FROM period_task_logs WHERE id = ?').run(logId);
+      const task = this.getTask(log.period_task_id);
+      const done = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS done FROM period_task_logs WHERE period_task_id = ?').get(task.id).done;
+      if (done < task.total_amount) this.db.prepare('UPDATE period_tasks SET completed_at = NULL WHERE id = ?').run(task.id);
+      this.markDailyRow(task, log.date);
     })();
-    return { success: true, task: this.describeTask(this.getTask(log.period_task_id), this.getPeriod(log.period_id)) };
+    return { success: true, task: this.describeTask(this.getTask(log.period_task_id)) };
+  }
+
+  // Keeps a daily-required task's row for that day in step with whether progress was logged then.
+  markDailyRow(task, date) {
+    if (!task.daily_required) return;
+    const logged = Boolean(this.db.prepare('SELECT 1 FROM period_task_logs WHERE period_task_id = ? AND date = ?').get(task.id, date));
+    const row = this.db.prepare('SELECT id FROM daily_tasks WHERE goal_id = ? AND date = ?').get(task.id, date);
+    const completedAt = logged ? new Date().toISOString() : null;
+    if (row) this.db.prepare('UPDATE daily_tasks SET is_completed = ?, completed_at = ? WHERE id = ?').run(logged ? 1 : 0, completedAt, row.id);
+    else if (logged) insertGoalDailyRow(this.db, task, date, true);
   }
 
   requireChild(childId) {
@@ -239,4 +365,14 @@ class PeriodsService {
   }
 }
 
+// The daily row for a daily-required long-term task. It earns no points itself (progress entries
+// do); it only makes logging that day a required task.
+function insertGoalDailyRow(db, task, date, completed = false) {
+  db.prepare(`INSERT INTO daily_tasks (id, child_id, template_id, title, subject, points, date, is_completed, completed_at,
+      schedule_type, weekly_target_times, origin, goal_id)
+    VALUES (?, ?, NULL, ?, ?, 0, ?, ?, ?, 'fixed_days', NULL, 'goal', ?)`)
+    .run(generateId(), task.child_id, task.title, task.subject, date, completed ? 1 : 0, completed ? new Date().toISOString() : null, task.id);
+}
+
 module.exports = PeriodsService;
+module.exports.insertGoalDailyRow = insertGoalDailyRow;
