@@ -122,3 +122,30 @@ CREATE TABLE IF NOT EXISTS characters (
 CREATE INDEX IF NOT EXISTS idx_characters_child ON characters(child_id);
 CREATE INDEX IF NOT EXISTS idx_characters_child_mastered ON characters(child_id, is_mastered);
 CREATE INDEX IF NOT EXISTS idx_characters_child_created ON characters(child_id, created_at);
+
+-- Rewards parents offer in exchange for points
+CREATE TABLE IF NOT EXISTS reward_items (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  icon_emoji TEXT NOT NULL DEFAULT '🎁',
+  cost INTEGER NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+-- Redemption requests; title, icon and cost are snapshots so history survives reward edits
+CREATE TABLE IF NOT EXISTS reward_redemptions (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL,
+  reward_id TEXT,
+  title TEXT NOT NULL,
+  icon_emoji TEXT NOT NULL,
+  cost INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected | cancelled
+  requested_at TEXT NOT NULL,
+  resolved_at TEXT,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE,
+  FOREIGN KEY (reward_id) REFERENCES reward_items(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_reward_redemptions_child ON reward_redemptions(child_id, status);

@@ -6,6 +6,7 @@ export const useChildStore = defineStore('child', {
     currentChild: JSON.parse(sessionStorage.getItem('current_child') || 'null'),
     stats: {
       total_points: 0,
+      available_points: 0,
       current_streak: 0,
       today_total_tasks: 0,
       today_completed_tasks: 0,
@@ -42,6 +43,7 @@ export const useChildStore = defineStore('child', {
         if (this.childId !== requestedChild) return;
         this.stats = {
           total_points: stats.total_points || 0,
+          available_points: stats.available_points ?? stats.total_points ?? 0,
           current_streak: stats.current_streak || 0,
           today_total_tasks: stats.today_total_tasks || 0,
           today_completed_tasks: stats.today_completed_tasks || 0,

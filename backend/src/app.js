@@ -16,6 +16,7 @@ const RewardsService = require('./services/rewards.service');
 const MistakesService = require('./services/mistakes.service');
 const StatsService = require('./services/stats.service');
 const CharactersService = require('./services/characters.service');
+const RedemptionsService = require('./services/redemptions.service');
 const { installAuthorization, getSetting } = require('./auth');
 const BackupService = require('./services/backup.service');
 const backupRoutes = require('./routes/backups.routes');
@@ -28,6 +29,7 @@ const rewardsRoutes = require('./routes/rewards.routes');
 const statsRoutes = require('./routes/stats.routes');
 const mistakesRoutes = require('./routes/mistakes.routes');
 const charactersRoutes = require('./routes/characters.routes');
+const redemptionsRoutes = require('./routes/redemptions.routes');
 
 function buildApp(opts = {}) {
   console.log('  1/4 正在配置 Fastify 与上传目录...');
@@ -56,6 +58,7 @@ function buildApp(opts = {}) {
   const mistakesService = new MistakesService(db, uploadDirectory);
   const statsService = new StatsService(db, tasksService);
   const charactersService = new CharactersService(db);
+  const redemptionsService = new RedemptionsService(db, rewardsService);
 
   // Decorate fastify with services and db for easy access
   fastify.decorate('db', db);
@@ -66,7 +69,8 @@ function buildApp(opts = {}) {
     rewardsService,
     mistakesService,
     statsService,
-    charactersService
+    charactersService,
+    redemptionsService
   });
 
   console.log('  4/4 正在挂载路由与静态资源中间件...');
@@ -153,6 +157,7 @@ function buildApp(opts = {}) {
   fastify.register(statsRoutes, { prefix: '/api', statsService });
   fastify.register(mistakesRoutes, { prefix: '/api/mistakes', mistakesService, uploadDir: uploadDirectory });
   fastify.register(charactersRoutes, { prefix: '/api/characters', charactersService });
+  fastify.register(redemptionsRoutes, { prefix: '/api', redemptionsService });
 
   return fastify;
 }

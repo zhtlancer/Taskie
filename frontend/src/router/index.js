@@ -9,6 +9,7 @@ import ParentLoginView from '../views/ParentLoginView.vue';
 import ParentDashboardView from '../views/ParentDashboardView.vue';
 import ParentChildrenView from '../views/ParentChildrenView.vue';
 import ParentTasksView from '../views/ParentTasksView.vue';
+import ParentRewardsView from '../views/ParentRewardsView.vue';
 import ParentSettingsView from '../views/ParentSettingsView.vue';
 import { hasSession } from '../utils/session.js';
 
@@ -65,6 +66,11 @@ const routes = [
     path: '/parent/tasks',
     name: 'ParentTasks',
     component: ParentTasksView
+  },
+  {
+    path: '/parent/rewards',
+    name: 'ParentRewards',
+    component: ParentRewardsView
   },
 
   // Catch-all redirect

@@ -15,6 +15,19 @@ class RewardsService {
     return row ? row.total : 0;
   }
 
+  // Points held by pending requests are already unavailable, so a child cannot over-request.
+  getSpentPoints(childId) {
+    return this.db.prepare(`
+      SELECT COALESCE(SUM(cost), 0) AS spent
+      FROM reward_redemptions
+      WHERE child_id = ? AND status IN ('pending', 'approved')
+    `).get(childId).spent;
+  }
+
+  getAvailablePoints(childId) {
+    return this.getTotalPoints(childId) - this.getSpentPoints(childId);
+  }
+
   getCurrentStreak(childId, referenceDate) {
     const today = referenceDate || getTodayDate();
     const yesterday = shiftDate(today, -1);
@@ -119,6 +132,7 @@ class RewardsService {
 
     return {
       total_points: totalPoints,
+      available_points: totalPoints - this.getSpentPoints(childId),
       current_streak: currentStreak,
       today_total_tasks: todayTotal,
       today_completed_tasks: todayCompleted,

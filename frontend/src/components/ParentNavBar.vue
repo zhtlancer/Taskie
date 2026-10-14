@@ -37,6 +37,13 @@
         >
           📝 任务模板
         </router-link>
+        <router-link
+          to="/parent/rewards"
+          class="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+          :class="$route.path === '/parent/rewards' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
+        >
+          🎁 奖励兑换
+        </router-link>
       </nav>
 
       <!-- Right: Sound Toggle & Return to Child Side button -->

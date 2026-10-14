@@ -45,7 +45,8 @@ async function dailyTasksRoutes(fastify, options) {
   fastify.post('/:id/uncomplete', async (request, reply) => {
     try {
       ensureChildTodayTask(request, request.params.id);
-      const result = tasksService.uncompleteDailyTask(request.params.id);
+      // Parents may still correct a mistaken check-off after points were spent.
+      const result = tasksService.uncompleteDailyTask(request.params.id, { allowNegativeBalance: request.user.role === 'parent' });
       return reply.send(result);
     } catch (err) {
       return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });

@@ -286,7 +286,7 @@ class TasksService {
     };
   }
 
-  uncompleteDailyTask(taskId) {
+  uncompleteDailyTask(taskId, { allowNegativeBalance = false } = {}) {
     const task = this.db.prepare(`
       SELECT *
       FROM daily_tasks
@@ -302,6 +302,14 @@ class TasksService {
         success: true,
         task: this.describeTask(task)
       };
+    }
+
+    // Undoing a task must not refund points that were already spent on rewards.
+    if (!allowNegativeBalance && this.rewardsService) {
+      const earned = this.db.prepare('SELECT COALESCE(SUM(points), 0) AS points FROM point_logs WHERE daily_task_id = ?').get(taskId).points;
+      if (this.rewardsService.getAvailablePoints(task.child_id) < earned) {
+        throw { status: 409, message: '这项任务的积分已用于兑换奖励，不能取消打卡' };
+      }
     }
 
     const tx = this.db.transaction(() => {

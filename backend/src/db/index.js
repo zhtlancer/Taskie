@@ -111,6 +111,10 @@ function initDb(db) {
       db.pragma('user_version = 2');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 3) {
+    // reward_items and reward_redemptions are created by schema.sql.
+    db.pragma('user_version = 3');
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

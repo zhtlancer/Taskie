@@ -169,6 +169,35 @@ test('backup restore keeps template assignments and accepts backups from before 
   assert.equal(ctx.app.services.tasksService.getTemplate(template.id).child_ids, null);
 });
 
+test('backup restore keeps rewards and redemptions, and backups from before rewards existed still restore', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  const item = ctx.app.services.redemptionsService.createItem({ title: '看动画', cost: 1 });
+  ctx.db.prepare('INSERT INTO point_logs (id, child_id, points, earned_at) VALUES (?, ?, ?, ?)').run('seed-points', child.id, 5, new Date().toISOString());
+  const redemption = ctx.app.services.redemptionsService.requestRedemption(child.id, item.id);
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  ctx.app.services.redemptionsService.resolveRedemption(redemption.id, 'cancelled');
+  ctx.app.services.redemptionsService.deleteItem(item.id);
+  assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) })).statusCode, 200);
+  assert.equal(ctx.app.services.redemptionsService.getItem(item.id).title, '看动画');
+  assert.equal(ctx.app.services.redemptionsService.getRedemption(redemption.id).status, 'pending');
+
+  const Database = require('better-sqlite3');
+  for (const [version, status, pattern] of [[2, 200, null], [3, 400, /备份缺少积分兑换数据/]]) {
+    const damaged = JSON.parse(gunzipSync(archive));
+    const db = new Database(Buffer.from(damaged.database, 'base64'));
+    db.exec('DROP TABLE reward_redemptions; DROP TABLE reward_items');
+    db.pragma(`user_version = ${version}`);
+    damaged.database = db.serialize().toString('base64');
+    db.close();
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
+    assert.equal(res.statusCode, status, res.body);
+    if (pattern) assert.match(res.body, pattern);
+  }
+  // The v2 backup restored successfully and simply has no rewards yet.
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM reward_items').get().n, 0);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM reward_redemptions').get().n, 0);
+});
+
 test('current-schema backups missing assignment data are rejected before changing live data or photos', async t => {
   const ctx = await fixture(t), child = await createChild(ctx);
   const service = ctx.app.services.tasksService;
@@ -186,7 +215,7 @@ test('current-schema backups missing assignment data are rejected before changin
     const damaged = JSON.parse(gunzipSync(archive));
     const db = new Database(Buffer.from(damaged.database, 'base64'));
     db.exec(corruption);
-    assert.equal(db.pragma('user_version', { simple: true }), 2);
+    assert.equal(db.pragma('user_version', { simple: true }), 3);
     damaged.database = db.serialize().toString('base64');
     db.close();
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
@@ -247,6 +276,6 @@ test('old schema migrates without losing existing children and fixed-day templat
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
     assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
-    assert.equal(db.pragma('user_version', { simple: true }), 2);
+    assert.equal(db.pragma('user_version', { simple: true }), 3);
   } finally { db.close(); }
 });

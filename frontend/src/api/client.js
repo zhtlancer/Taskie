@@ -83,6 +83,16 @@ export const api = {
     const response = await client.get(url.replace('/uploads/', '../uploads/'), { responseType: 'blob' });
     return URL.createObjectURL(response.data);
   },
+  getRewardItems: () => get('/reward-items', () => mockStore.getRewardItems()),
+  createRewardItem: data => post('/reward-items', data, () => mockStore.createRewardItem(data)),
+  updateRewardItem: (id, data) => put(`/reward-items/${id}`, data, () => mockStore.updateRewardItem(id, data)),
+  deleteRewardItem: id => remove(`/reward-items/${id}`, () => mockStore.deleteRewardItem(id)),
+  getChildRedemptions: (id, params = {}) => get(`/children/${id}/redemptions`, () => mockStore.getRedemptions({ ...params, childId: id }), params),
+  requestRedemption: (id, rewardId) => post(`/children/${id}/redemptions`, { reward_id: rewardId }, () => mockStore.requestRedemption(id, rewardId)),
+  getRedemptions: (status, params = {}) => get('/redemptions', () => mockStore.getRedemptions({ ...params, status }), { ...params, status }),
+  approveRedemption: id => post(`/redemptions/${id}/approve`, undefined, () => mockStore.resolveRedemption(id, 'approved')),
+  rejectRedemption: id => post(`/redemptions/${id}/reject`, undefined, () => mockStore.resolveRedemption(id, 'rejected')),
+  cancelRedemption: id => post(`/redemptions/${id}/cancel`, undefined, () => mockStore.resolveRedemption(id, 'cancelled')),
   getBackups: () => get('/backups', () => ({ backups: [], interval_hours: 0, retention: 0 })),
   createBackup: () => post('/backups', undefined, () => { throw '演示模式不支持备份'; }),
   async downloadBackup(name) { return (await client.get(`/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob', timeout: 180000 })).data; },

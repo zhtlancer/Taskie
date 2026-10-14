@@ -351,8 +351,19 @@ function getInitialState() {
     badge_definitions: defaultBadges,
     mistakes: mistakes,
     characters: characters,
+    reward_items: getDefaultRewardItems(),
+    reward_redemptions: [],
     parent_pin: '1234'
   };
+}
+
+function getDefaultRewardItems() {
+  const created_at = new Date().toISOString();
+  return [
+    { id: 'reward-1', title: '看30分钟动画', icon_emoji: '📺', cost: 50, is_active: true, created_at },
+    { id: 'reward-2', title: '周末去公园玩', icon_emoji: '🎡', cost: 150, is_active: true, created_at },
+    { id: 'reward-3', title: '挑选一个小玩具', icon_emoji: '🧸', cost: 300, is_active: true, created_at }
+  ];
 }
 
 class MockStore {
@@ -368,6 +379,11 @@ class MockStore {
         if (!this.state.characters) {
           const init = getInitialState();
           this.state.characters = init.characters;
+          this.save();
+        }
+        if (!this.state.reward_items) {
+          this.state.reward_items = getDefaultRewardItems();
+          this.state.reward_redemptions = [];
           this.save();
         }
       } else {
@@ -628,6 +644,8 @@ class MockStore {
   uncompleteTask(taskId) {
     const task = this.state.daily_tasks.find(t => t.id === taskId);
     if (!task) throw new Error('Task not found');
+    const earned = this.state.point_logs.filter(p => p.daily_task_id === taskId).reduce((sum, p) => sum + p.points, 0);
+    if (this.getAvailablePoints(task.child_id) < earned) throw '这项任务的积分已用于兑换奖励，不能取消打卡';
     task.is_completed = false;
     task.completed_at = null;
     this.state.point_logs = this.state.point_logs.filter(p => p.daily_task_id !== taskId);
@@ -666,6 +684,7 @@ class MockStore {
 
     return {
       total_points: totalPoints,
+      available_points: this.getAvailablePoints(childId),
       current_streak: streak,
       today_total_tasks: tasks.length,
       today_completed_tasks: completedTasks.length,
@@ -839,6 +858,77 @@ class MockStore {
 
   getPointLogs(childId) {
     return this.state.point_logs.filter(p => !childId || p.child_id === childId);
+  }
+
+  // Rewards shop (mirrors the server: pending requests hold points)
+  getAvailablePoints(childId) {
+    const earned = this.state.point_logs.filter(p => p.child_id === childId).reduce((sum, p) => sum + p.points, 0);
+    const spent = (this.state.reward_redemptions || [])
+      .filter(r => r.child_id === childId && ['pending', 'approved'].includes(r.status))
+      .reduce((sum, r) => sum + r.cost, 0);
+    return earned - spent;
+  }
+
+  getRewardItems() {
+    return [...(this.state.reward_items || [])].sort((a, b) => a.cost - b.cost);
+  }
+
+  createRewardItem({ title, icon_emoji = '🎁', cost }) {
+    if (!title?.trim() || !Number.isSafeInteger(cost) || cost < 1) throw '请填写奖励名称和有效的所需积分';
+    const item = { id: 'reward-' + Date.now(), title: title.trim(), icon_emoji, cost, is_active: true, created_at: new Date().toISOString() };
+    (this.state.reward_items ||= []).push(item);
+    this.save();
+    return item;
+  }
+
+  updateRewardItem(id, changes) {
+    const item = (this.state.reward_items || []).find(i => i.id === id);
+    if (!item) throw '奖励不存在';
+    for (const key of ['title', 'icon_emoji', 'cost', 'is_active']) if (changes[key] !== undefined) item[key] = changes[key];
+    this.save();
+    return item;
+  }
+
+  deleteRewardItem(id) {
+    this.state.reward_items = (this.state.reward_items || []).filter(i => i.id !== id);
+    this.save();
+    return { success: true, id };
+  }
+
+  getRedemptions({ childId, status, limit = 200, offset = 0 } = {}) {
+    return (this.state.reward_redemptions || [])
+      .filter(r => (!childId || r.child_id === childId) &&
+        (!status || (status === 'history' ? r.status !== 'pending' : r.status === status)))
+      .map(r => {
+        const child = this.state.children.find(c => c.id === r.child_id);
+        return { ...r, child_name: child?.name, child_avatar_emoji: child?.avatar_emoji };
+      })
+      .sort((a, b) => b.requested_at.localeCompare(a.requested_at) || b.id.localeCompare(a.id))
+      .slice(offset, offset + limit);
+  }
+
+  requestRedemption(childId, rewardId) {
+    const item = (this.state.reward_items || []).find(i => i.id === rewardId && i.is_active);
+    if (!item) throw '奖励不存在或已下架';
+    const available = this.getAvailablePoints(childId);
+    if (available < item.cost) throw `积分不足：还差 ${item.cost - available} 分`;
+    const redemption = {
+      id: 'redeem-' + Date.now(), child_id: childId, reward_id: item.id, title: item.title, icon_emoji: item.icon_emoji,
+      cost: item.cost, status: 'pending', requested_at: new Date().toISOString(), resolved_at: null
+    };
+    (this.state.reward_redemptions ||= []).push(redemption);
+    this.save();
+    return redemption;
+  }
+
+  resolveRedemption(id, status) {
+    const redemption = (this.state.reward_redemptions || []).find(r => r.id === id);
+    if (!redemption) throw '兑换记录不存在';
+    if (redemption.status !== 'pending') throw '该兑换申请已处理';
+    redemption.status = status;
+    redemption.resolved_at = new Date().toISOString();
+    this.save();
+    return redemption;
   }
 }
 

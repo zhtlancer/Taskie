@@ -1,5 +1,8 @@
 const { randomBytes } = require('node:crypto');
 
+// Authorize the route selected by Fastify, not an encoded spelling of its URL.
+const authorizationPath = request => request.routeOptions.url || request.raw.url.split('?')[0];
+
 function getSetting(db, key) {
   let row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   if (!row) {
@@ -18,7 +21,7 @@ function installAuthorization(app, db) {
     }
   });
   app.addHook('onRequest', async (request, reply) => {
-    const url = request.raw.url.split('?')[0];
+    const url = authorizationPath(request);
     if (request.method === 'OPTIONS' || !url.startsWith('/api/') && !url.startsWith('/uploads/')) return;
     if (url === '/api/health' || request.method === 'GET' && url.replace(/\/$/, '') === '/api/children' ||
       request.method === 'POST' && ['/api/auth/parent-login', '/api/auth/child-login', '/api/auth/logout'].includes(url)) return;
@@ -31,24 +34,26 @@ function installAuthorization(app, db) {
     }
     const parentOnly = url.startsWith('/api/backups') || url === '/api/auth/parent-pin' ||
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||
-      /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET';
+      /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
+      url.startsWith('/api/reward-items') && request.method !== 'GET' ||
+      /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject)\/?$/.test(url);
     if (parentOnly && request.user.role !== 'parent') return reply.code(403).send({ error: '需要家长权限' });
     if (url.startsWith('/uploads/')) {
-      const photo = db.prepare('SELECT child_id FROM mistake_records WHERE photo_path = ?').get(url);
+      const photo = db.prepare('SELECT child_id FROM mistake_records WHERE photo_path = ?').get(`/uploads/${request.params['*']}`);
       if (!photo) return reply.code(404).send({ error: '照片不存在' });
       app.requireChildAccess(request, photo.child_id);
     }
   });
   app.addHook('preHandler', async request => {
     if (!request.user || request.user.role === 'parent') return;
-    const url = request.raw.url.split('?')[0];
+    const url = authorizationPath(request);
     const child = url.match(/^\/api\/children\/([^/]+)/);
-    if (child) app.requireChildAccess(request, child[1]);
+    if (child) app.requireChildAccess(request, request.params.id);
     if (url.startsWith('/api/daily-tasks/')) {
       const row = db.prepare('SELECT child_id FROM daily_tasks WHERE id = ?').get(request.params.id);
       if (row) app.requireChildAccess(request, row.child_id);
     }
-    for (const [prefix, table] of [['/api/mistakes/', 'mistake_records'], ['/api/characters/', 'characters']]) {
+    for (const [prefix, table] of [['/api/mistakes/', 'mistake_records'], ['/api/characters/', 'characters'], ['/api/redemptions/', 'reward_redemptions']]) {
       if (url.startsWith(prefix)) {
         const row = db.prepare(`SELECT child_id FROM ${table} WHERE id = ?`).get(request.params.id);
         if (row) app.requireChildAccess(request, row.child_id);
