@@ -34,9 +34,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     g++ \
     libstdc++6 \
+    && npm install -g node-gyp \
     && npm install --omit=dev \
     && rm -rf node_modules/better-sqlite3/prebuilds \
-    && (cd node_modules/better-sqlite3 && npx --no-install node-gyp rebuild) \
+    && (cd node_modules/better-sqlite3 && node-gyp rebuild --release --force_build=1) \
+    && npm uninstall -g node-gyp \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend application source code
