@@ -2,14 +2,26 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 
+// Mirror all console.error and console.warn to stdout so Container Manager stdout logs capture everything
+const originalConsoleError = console.error;
+console.error = (...args) => {
+  console.log('🔴 [ERROR]', ...args);
+  originalConsoleError(...args);
+};
+const originalConsoleWarn = console.warn;
+console.warn = (...args) => {
+  console.log('🟡 [WARN]', ...args);
+  originalConsoleWarn(...args);
+};
+
 // Top-level crash listeners so any fatal errors are printed immediately to stdout/stderr
 process.on('uncaughtException', (err) => {
-  console.error('\n💥 [Taskie FATAL uncaughtException]:', err.stack || err.message || err);
+  console.log('\n💥 [Taskie FATAL uncaughtException]:', err.stack || err.message || err);
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('\n💥 [Taskie FATAL unhandledRejection]:', reason);
+  console.log('\n💥 [Taskie FATAL unhandledRejection]:', reason);
   process.exit(1);
 });
 
@@ -24,7 +36,7 @@ console.log('前端静态目录:', config.clientDistDir);
 console.log('监听地址:', `${config.host}:${config.port}`);
 console.log('==================================================');
 
-// Pre-flight check: Verify write permissions for the data directory
+// Pre-flight check 1: Verify write permissions for the data directory
 const dbDir = path.dirname(config.dbPath);
 try {
   if (!fs.existsSync(dbDir)) {
@@ -39,6 +51,28 @@ try {
   console.error('   目标目录:', dbDir);
   console.error('   底层报错:', permErr.message);
   console.error('👉 解决办法：请在群晖 File Station 中右键 docker/taskie 文件夹 -> 属性 -> 权限 -> 赋予读写权限！\n');
+}
+
+// Pre-flight check 2: Verify that dbPath is NOT accidentally created as a directory by Docker
+if (fs.existsSync(config.dbPath)) {
+  const stat = fs.statSync(config.dbPath);
+  if (stat.isDirectory()) {
+    console.error('❌ [挂载严重错误] 数据库路径被 Docker 挂载成了目录，而不是 SQLite 文件！');
+    console.error('   当前路径:', config.dbPath);
+    console.error('👉 解决办法：请在群晖宿主机上删除该 data.sqlite 目录，确保使用目录级挂载 ./data:/app/data\n');
+    process.exit(1);
+  }
+}
+
+// Pre-flight check 3: Verify better-sqlite3 native engine
+try {
+  const Database = require('better-sqlite3');
+  const testMemDb = new Database(':memory:');
+  testMemDb.close();
+  console.log('✅ SQLite better-sqlite3 原生引擎加载正常');
+} catch (nativeErr) {
+  console.error('❌ [SQLite 引擎加载失败]:', nativeErr.message);
+  process.exit(1);
 }
 
 console.log('📦 正在加载应用核心模块与路由...');

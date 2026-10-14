@@ -27,6 +27,7 @@ const mistakesRoutes = require('./routes/mistakes.routes');
 const charactersRoutes = require('./routes/characters.routes');
 
 function buildApp(opts = {}) {
+  console.log('  1/4 正在配置 Fastify 与上传目录...');
   const fastify = Fastify({
     logger: opts.logger !== undefined ? opts.logger : true,
     ...opts.fastifyOptions
@@ -39,9 +40,11 @@ function buildApp(opts = {}) {
   }
 
   // Database
+  console.log('  2/4 正在连接与初始化 SQLite 数据库...');
   const db = opts.db || getDb(opts.dbPath);
 
   // Services
+  console.log('  3/4 正在实例化业务服务层 (Auth, Tasks, Rewards, Mistakes, Characters)...');
   const authService = new AuthService(db);
   const childrenService = new ChildrenService(db);
   const rewardsService = new RewardsService(db);
@@ -61,6 +64,8 @@ function buildApp(opts = {}) {
     statsService,
     charactersService
   });
+
+  console.log('  4/4 正在挂载路由与静态资源中间件...');
 
   // CORS
   fastify.register(cors, {

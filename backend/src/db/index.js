@@ -82,10 +82,11 @@ const defaultBadges = [
 let globalDb = null;
 
 function initDb(db) {
-  // Read and execute schema
+  console.log('    [SQLite] 正在执行 schema.sql 初始化/校验数据表结构...');
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
   db.exec(schemaSql);
+  console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
   const insertBadgeStmt = db.prepare(`
@@ -99,6 +100,7 @@ function initDb(db) {
     }
   });
   insertMany(defaultBadges);
+  console.log('    [SQLite] 默认成就徽章检查就绪，检查管理员 PIN...');
 
   // Seed default parent PIN in settings if not existing
   const getParentPinStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
@@ -106,44 +108,51 @@ function initDb(db) {
   if (!existingParentPin) {
     const defaultPinHash = hashPin(config.defaultParentPin);
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('parent_pin_hash', defaultPinHash);
+    console.log('    [SQLite] 已初始化默认家长 PIN 码 (1234)');
   }
+  console.log('    [SQLite] 数据库基础数据初始化完毕');
+}
+
+function configureAndInitDb(dbPath) {
+  if (dbPath !== ':memory:') {
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+  }
+
+  console.log('    [SQLite] 正在打开数据库连接:', dbPath);
+  const db = new Database(dbPath);
+
+  // Use DELETE mode directly for Synology NAS/Docker volume stability (WAL requires POSIX shm which fails on NAS mounts)
+  const journalMode = (process.env.SQLITE_JOURNAL_MODE || 'DELETE').toUpperCase();
+  try {
+    db.pragma(`journal_mode = ${journalMode}`);
+    console.log(`    [SQLite] journal_mode 设置为: ${journalMode}`);
+  } catch (jErr) {
+    console.warn(`    ⚠️ [SQLite] 设置 journal_mode=${journalMode} 失败，降级为 DELETE:`, jErr.message);
+    try { db.pragma('journal_mode = DELETE'); } catch (_) {}
+  }
+
+  try {
+    db.pragma('busy_timeout = 10000');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('foreign_keys = ON');
+  } catch (pErr) {
+    console.warn('    ⚠️ [SQLite] 设置 pragma 参数警告:', pErr.message);
+  }
+
+  initDb(db);
+  return db;
 }
 
 function getDb(customPath) {
   if (customPath) {
-    if (customPath !== ':memory:') {
-      const dbDir = path.dirname(customPath);
-      if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
-      }
-    }
-    const db = new Database(customPath);
-    try {
-      db.pragma('journal_mode = WAL');
-    } catch (walErr) {
-      console.warn('⚠️ SQLite WAL 模式不受支持，降级为 DELETE 模式:', walErr.message);
-      try { db.pragma('journal_mode = DELETE'); } catch (_) {}
-    }
-    db.pragma('foreign_keys = ON');
-    initDb(db);
-    return db;
+    return configureAndInitDb(customPath);
   }
 
   if (!globalDb) {
-    // Ensure parent directory exists
-    const dbDir = path.dirname(config.dbPath);
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-    }
-    globalDb = new Database(config.dbPath);
-    try {
-      globalDb.pragma('journal_mode = WAL');
-    } catch (walErr) {
-      console.warn('⚠️ SQLite WAL 模式不受支持，降级为 DELETE 模式:', walErr.message);
-      try { globalDb.pragma('journal_mode = DELETE'); } catch (_) {}
-    }
-    globalDb.pragma('foreign_keys = ON');
-    initDb(globalDb);
+    globalDb = configureAndInitDb(config.dbPath);
   }
 
   return globalDb;
