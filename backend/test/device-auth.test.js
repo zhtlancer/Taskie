@@ -115,16 +115,16 @@ test('pairing requests are capped and expire', async t => {
 
 test('the server command approves, lists and revokes devices', t => {
   const dir = fs.mkdtempSync(path.join(__dirname, '../uploads/cli-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let db;
+  t.after(() => { db?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const env = { ...process.env, DATABASE_PATH: path.join(dir, 'data.sqlite'), UPLOAD_DIR: path.join(dir, 'uploads') };
   const cli = (...args) => execFileSync(process.execPath, [path.join(__dirname, '../src/cli.js'), ...args], { env, encoding: 'utf8' });
   // A device asks for a code through the same database the server uses.
   const { getDb } = require('../src/db');
   const { DeviceRegistry } = require('../src/device-auth');
-  const db = getDb(env.DATABASE_PATH);
+  db = getDb(env.DATABASE_PATH);
   const registry = new DeviceRegistry(db, path.join(dir, 'authorized_tokens'));
   const { code } = registry.startPairing('a-device-token-that-is-long-enough-to-use');
-  db.close();
 
   assert.match(cli('approve-device', code, '爸爸的', 'iPhone'), /已授权设备「爸爸的 iPhone」/);
   assert.ok(registry.isAuthorized('a-device-token-that-is-long-enough-to-use'));
@@ -143,4 +143,97 @@ test('other websites cannot read the API through an authorized device (no CORS)'
   assert.equal(res.headers['access-control-allow-credentials'], undefined);
   const preflight = await call('OPTIONS', '/api/children', { cookie: device, headers: { origin: 'https://evil.example', 'access-control-request-method': 'GET' } });
   assert.equal(preflight.headers['access-control-allow-origin'], undefined);
+});
+
+test('pairing, approvals, wrong codes and revocations are recorded with source and browser, never the token', async t => {
+  const { ctx, call, tokenFrom, authorize, parentToken } = await fixture(t);
+  const phone = { 'x-forwarded-for': '203.0.113.9', 'user-agent': 'TestPhone/1.0' };
+  const first = await call('POST', '/api/device/pair', { headers: phone });
+  const token = tokenFrom(first);
+  const { code } = first.json();
+  // Asking again for the same code is not a new request.
+  await call('POST', '/api/device/pair', { cookie: token, headers: phone });
+
+  const parentDevice = authorize('家长手机');
+  const headers = { authorization: `Bearer ${await parentToken(parentDevice)}` };
+  const approve = payload => call('POST', '/api/devices/approve', { cookie: parentDevice, payload, headers });
+  await approve({ code: code === '000000' ? '000001' : '000000' });
+  await approve({ code, label: '小红的平板' });
+  const id = hashToken(token).slice(0, 16);
+  assert.equal((await call('DELETE', `/api/devices/${id}`, { cookie: parentDevice, headers })).statusCode, 200);
+
+  const res = await call('GET', '/api/devices/events', { cookie: parentDevice, headers });
+  assert.equal(res.statusCode, 200);
+  const events = res.json();
+  assert.deepEqual(events.map(e => [e.type, e.source, e.device_id, e.label, e.actor, e.code]), [
+    ['revoked', 'web', id, '小红的平板', '家长手机', null],
+    ['approved', 'web', id, '小红的平板', '家长手机', code],
+    ['approve_failed', 'web', null, null, '家长手机', code === '000000' ? '000001' : '000000'],
+    ['pair_requested', 'web', id, null, null, code]
+  ]);
+  assert.deepEqual([events[3].ip, events[3].user_agent], ['203.0.113.9 → 127.0.0.1', 'TestPhone/1.0']);
+  assert.ok(!JSON.stringify(events).includes(token) && !JSON.stringify(events).includes(parentDevice));
+
+  // Children cannot read the history.
+  const child = ctx.app.services.childrenService.createChild({ name: '小明' });
+  const childToken = (await call('POST', '/api/auth/child-login', { cookie: parentDevice, payload: { child_id: child.id } })).json().token;
+  assert.equal((await call('GET', '/api/devices/events', { cookie: parentDevice, headers: { authorization: `Bearer ${childToken}` } })).statusCode, 403);
+});
+
+test('repeated rejections are recorded once a minute and a flood of pairing requests cannot push out approvals', async t => {
+  const { ctx, call, authorize, parentToken } = await fixture(t);
+  const registry = ctx.app.deviceRegistry;
+  const count = type => ctx.db.prepare('SELECT COUNT(*) n FROM device_events WHERE type = ?').get(type).n;
+  for (let i = 0; i < 33; i++) await call('POST', '/api/device/pair');
+  assert.deepEqual([count('pair_requested'), count('pair_rejected')], [30, 1]);
+
+  const parentDevice = authorize();
+  const headers = { authorization: `Bearer ${await parentToken(parentDevice)}` };
+  for (let i = 0; i < 13; i++) await call('POST', '/api/devices/approve', { cookie: parentDevice, headers, payload: { code: '999999' } });
+  assert.deepEqual([count('approve_failed'), count('approve_blocked')], [10, 1]);
+
+  for (let i = 0; i < 400; i++) registry.record('pair_requested', { code: '123456' });
+  assert.deepEqual([count('pair_requested'), count('approve_failed')], [300, 10]);
+});
+
+test('server commands and hand edits of the file reach the history and the server log once', t => {
+  const dir = fs.mkdtempSync(path.join(__dirname, '../uploads/cli-'));
+  let db;
+  t.after(() => { db?.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const env = { ...process.env, DATABASE_PATH: path.join(dir, 'data.sqlite'), UPLOAD_DIR: path.join(dir, 'uploads') };
+  const cli = (...args) => execFileSync(process.execPath, [path.join(__dirname, '../src/cli.js'), ...args], { env, encoding: 'utf8' });
+  const { getDb } = require('../src/db');
+  const { DeviceRegistry } = require('../src/device-auth');
+  db = getDb(env.DATABASE_PATH);
+  const lines = [];
+  const logger = { info: (fields, msg) => lines.push(['info', msg, fields]), warn: (fields, msg) => lines.push(['warn', msg, fields]) };
+  const file = path.join(dir, 'authorized_tokens');
+  const server = new DeviceRegistry(db, file, { logger });
+  const token = 'a-device-token-that-is-long-enough-to-use';
+  const { code } = server.startPairing(token, { source: 'web', user_agent: 'TestPad/2.0' });
+  assert.match(lines.at(-1)[1], new RegExp(`设备授权：新设备请求配对，配对码 ${code}`));
+
+  // The command records its approval; the server logs it when it notices the file changed.
+  cli('approve-device', code, '爸爸的', 'iPhone');
+  assert.ok(server.isAuthorized(token));
+  assert.deepEqual(lines.at(-1).slice(0, 2), ['info', '设备授权：授权了设备「爸爸的 iPhone」（服务器命令）']);
+  const id = hashToken(token).slice(0, 16);
+  const rows = () => db.prepare('SELECT type, source, device_id, label FROM device_events ORDER BY id').all();
+  assert.deepEqual(rows().map(r => [r.type, r.source]), [['pair_requested', 'web'], ['approved', 'cli']]);
+
+  // Hand edits are recorded as such.
+  const other = hashToken('another-token-that-is-long-enough-to-use');
+  fs.appendFileSync(file, `${other} 2026-01-01T00:00:00.000Z 手动添加\n`);
+  server.entries();
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').split('\n').filter(line => !line.includes('爸爸')).join('\n'));
+  server.entries();
+  assert.deepEqual(rows().slice(2), [
+    { type: 'file_added', source: 'file', device_id: other.slice(0, 16), label: '手动添加' },
+    { type: 'file_removed', source: 'file', device_id: id, label: '爸爸的 iPhone' }
+  ]);
+  cli('revoke-device', other.slice(0, 16));
+  server.entries();
+  assert.deepEqual(rows().slice(4), [{ type: 'revoked', source: 'cli', device_id: other.slice(0, 16), label: '手动添加' }]);
+  assert.equal(lines.at(-1)[1], '设备授权：撤销了设备「手动添加」（服务器命令）');
+  assert.ok(!JSON.stringify(lines).includes(token));
 });

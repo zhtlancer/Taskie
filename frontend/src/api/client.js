@@ -109,6 +109,7 @@ export const api = {
   getDevices: () => get('/devices'),
   approveDevice: (code, label) => post('/devices/approve', { code, label }),
   revokeDevice: id => remove(`/devices/${id}`),
+  getDeviceEvents: () => get('/devices/events?limit=50'),
   getBackups: () => get('/backups'),
   createBackup: () => post('/backups'),
   async downloadBackup(name) { return (await client.get(`/backups/${encodeURIComponent(name)}/download`, { responseType: 'blob', timeout: 180000 })).data; },

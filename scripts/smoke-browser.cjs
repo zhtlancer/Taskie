@@ -222,6 +222,17 @@ async function main() {
   await page.getByText('当前设备').waitFor();
   await mobile.getByRole('button', { name: /浏览器测试孩子/ }).waitFor();
   pass('browser parent authorizes a second device by its pairing code, which then opens the app');
+
+  // Both approvals are in the parent console's history and the container log.
+  await page.getByText('授权了「冒烟测试手机」').waitFor();
+  await page.getByText('授权了「冒烟测试浏览器」').waitFor();
+  await page.getByText('服务器命令').first().waitFor();
+  const logs = execFileSync('docker', ['logs', name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  assert.match(logs, /设备授权：授权了设备「冒烟测试浏览器」（服务器命令）/);
+  assert.match(logs, /设备授权：授权了设备「冒烟测试手机」（在「冒烟测试浏览器」上操作）/);
+  assert.match(logs, new RegExp(`设备授权：新设备请求配对，配对码 ${phoneCode}`));
+  assert.doesNotMatch(logs, new RegExp(deviceCookie.value));
+  pass('browser device authorization history shows both approvals, which also reach the container log without tokens');
   await context.close();
 
   // --- Phones: every page fits the screen width, and the child tab bar navigates.

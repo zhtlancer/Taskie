@@ -32,7 +32,7 @@
         <p class="text-sm text-slate-600">新设备第一次打开时会显示 6 位配对码。确认是自己家的设备后，在这里输入配对码并起个名字即可授权；以后这台设备就不用再配对。设备丢失时在下方撤销。</p>
         <form @submit.prevent="approveDevice" class="flex flex-wrap gap-3 items-end">
           <label>配对码<input v-model="pairCode" inputmode="numeric" autocomplete="off" maxlength="7" required placeholder="例如 384921" class="block border rounded-xl p-3 mt-2 w-36 tracking-widest font-bold" /></label>
-          <label>设备名称<input v-model="pairLabel" maxlength="30" required placeholder="例如 妈妈的 iPhone" class="block border rounded-xl p-3 mt-2" /></label>
+          <label class="w-full sm:w-auto">设备名称<input v-model="pairLabel" maxlength="30" required placeholder="例如 妈妈的 iPhone" class="block w-full sm:w-64 border rounded-xl p-3 mt-2" /></label>
           <button :disabled="busy" class="px-5 py-3 bg-brand-500 text-white rounded-xl disabled:opacity-50 whitespace-nowrap">授权这台设备</button>
         </form>
         <ul class="divide-y">
@@ -47,6 +47,22 @@
             <button :disabled="busy" @click="revokeDevice(device)" class="text-rose-600 font-bold whitespace-nowrap">撤销</button>
           </li>
         </ul>
+        <div class="rounded-xl bg-slate-50 p-4">
+          <h4 class="font-bold text-slate-700">最近的授权记录</h4>
+          <p class="text-xs text-slate-400 mt-1">来源 IP 仅供参考，可能经过代理转发。</p>
+          <p v-if="!deviceEvents.length" class="text-sm text-slate-400 mt-3">暂无记录</p>
+          <ul class="divide-y divide-slate-200 mt-2">
+            <li v-for="event in shownEvents" :key="event.id" class="py-2 text-sm">
+              <span class="font-bold" :class="isWarning(event) ? 'text-rose-600' : 'text-slate-700'">{{ describeEvent(event) }}</span>
+              <span class="block text-xs text-slate-400 break-all" :title="event.user_agent || ''">
+                {{ formatTime(event.at) }}<template v-if="describeOrigin(event)"> · {{ describeOrigin(event) }}</template>
+              </span>
+            </li>
+          </ul>
+          <button v-if="deviceEvents.length > shownEvents.length" type="button" @click="showAllEvents = true" class="mt-2 text-sm font-bold text-brand-600">
+            显示全部 {{ deviceEvents.length }} 条
+          </button>
+        </div>
       </section>
       <section class="bg-white rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">修改家长 PIN</h3>
@@ -60,27 +76,30 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../api/client';
 import { clearTokens } from '../utils/session.js';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.js';
 const router = useRouter();
 const info = ref({ backups: [], interval_hours: 0, retention: 7 });
 const busy = ref(false), message = ref(''), file = ref(null), restorePin = ref(''), confirmed = ref(false), oldPin = ref(''), newPin = ref('');
-const devices = ref([]), pairCode = ref(''), pairLabel = ref('');
-async function load() { [info.value, devices.value] = await Promise.all([api.getBackups(), api.getDevices()]); }
+const devices = ref([]), pairCode = ref(''), pairLabel = ref(''), deviceEvents = ref([]), showAllEvents = ref(false);
+const shownEvents = computed(() => (showAllEvents.value ? deviceEvents.value : deviceEvents.value.slice(0, 10)));
+async function load() { [info.value, devices.value, deviceEvents.value] = await Promise.all([api.getBackups(), api.getDevices(), api.getDeviceEvents()]); }
+async function loadDevices() { [devices.value, deviceEvents.value] = await Promise.all([api.getDevices(), api.getDeviceEvents()]); }
 const formatTime = time => (time ? new Date(time).toLocaleString('zh-CN') : '未知');
 function approveDevice() { return run(async () => {
   const device = await api.approveDevice(pairCode.value, pairLabel.value);
   pairCode.value = ''; pairLabel.value = '';
-  devices.value = await api.getDevices();
+  await loadDevices();
   message.value = `已授权「${device.label}」，新设备页面会自动进入应用。`;
 }); }
 function revokeDevice(device) {
   const warning = device.current ? '这是你正在使用的设备，撤销后需要重新配对。' : '撤销后这台设备将无法打开应用，需要重新配对。';
   if (!confirm(`确定撤销「${device.label}」吗？${warning}`)) return;
-  return run(async () => { await api.revokeDevice(device.id); devices.value = await api.getDevices(); message.value = `已撤销「${device.label}」。`; });
+  return run(async () => { await api.revokeDevice(device.id); await loadDevices(); message.value = `已撤销「${device.label}」。`; });
 }
 async function run(action) {
   busy.value = true; message.value = '';

@@ -219,8 +219,22 @@ CREATE TABLE IF NOT EXISTS device_pairings (
   expires_at TEXT NOT NULL
 );
 
--- When each authorized device was last used (not backed up).
+-- When each authorized device was last used (not restored from backups).
 CREATE TABLE IF NOT EXISTS device_seen (
   token_hash TEXT PRIMARY KEY,
   last_seen_at TEXT NOT NULL
+);
+
+-- Device authorization history for the parent console and the container log (not restored from backups).
+CREATE TABLE IF NOT EXISTS device_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  type TEXT NOT NULL,   -- pair_requested, pair_rejected, approved, approve_failed, approve_blocked, revoked, file_added, file_removed
+  source TEXT NOT NULL, -- web, cli or file
+  device_id TEXT,       -- first 16 hex digits of the token hash, as shown in the device list
+  label TEXT,
+  actor TEXT,           -- the authorized device that acted from the parent console
+  code TEXT,            -- the pairing code shown or entered
+  ip TEXT,              -- X-Forwarded-For chain and connecting address, for reference only
+  user_agent TEXT
 );

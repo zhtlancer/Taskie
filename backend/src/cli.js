@@ -34,7 +34,7 @@ function openRegistry() {
 const commands = {
   'approve-device'(code, ...label) {
     if (!code) throw new Error('用法：node src/cli.js approve-device <配对码> [备注]');
-    const device = openRegistry().approve(code, label.join(' '));
+    const device = openRegistry().approve(code, label.join(' '), { source: 'cli' });
     console.log(`已授权设备「${device.label}」（编号 ${device.id}）。新设备页面会自动进入应用。`);
   },
   'list-devices'() {
@@ -46,7 +46,7 @@ const commands = {
   },
   'revoke-device'(id) {
     if (!id) throw new Error('用法：node src/cli.js revoke-device <设备编号>');
-    openRegistry().remove(id);
+    openRegistry().remove(id, { source: 'cli' });
     console.log(`已撤销设备 ${id}。`);
   }
 };

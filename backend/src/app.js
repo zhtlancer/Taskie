@@ -125,7 +125,7 @@ function buildApp(opts = {}) {
     sign: { expiresIn: '12h' }
   });
   // The device gate runs before every other check: unauthorized devices only reach the pairing page.
-  const deviceRegistry = new DeviceRegistry(db, opts.authorizedTokensFile || config.authorizedTokensFile);
+  const deviceRegistry = new DeviceRegistry(db, opts.authorizedTokensFile || config.authorizedTokensFile, { logger: fastify.log });
   fastify.decorate('deviceRegistry', deviceRegistry);
   if (opts.deviceAuth ?? config.deviceAuth) installDeviceGate(fastify, deviceRegistry);
   fastify.register(deviceRoutes, { prefix: '/api', registry: deviceRegistry });
