@@ -17,6 +17,17 @@ CREATE TABLE IF NOT EXISTS task_templates (
   created_at TEXT NOT NULL
 );
 
+-- Children a template is limited to (used only when task_templates.assign_all = 0)
+CREATE TABLE IF NOT EXISTS template_children (
+  template_id TEXT NOT NULL,
+  child_id TEXT NOT NULL,
+  PRIMARY KEY (template_id, child_id),
+  FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_template_children_child ON template_children(child_id);
+
 -- Daily task instances generated from templates
 CREATE TABLE IF NOT EXISTS daily_tasks (
   id TEXT PRIMARY KEY,

@@ -18,6 +18,15 @@ function normalizeDaysOfWeek(days) {
   return [0, 1, 2, 3, 4, 5, 6];
 }
 
+// null means the template applies to every child.
+function normalizeChildIds(childIds) {
+  if (childIds === null) return null;
+  if (!Array.isArray(childIds) || childIds.length === 0 || !childIds.every(id => typeof id === 'string' && id)) {
+    throw { status: 400, message: '请至少选择一个孩子，或设为全部孩子' };
+  }
+  return [...new Set(childIds)];
+}
+
 class TasksService {
   constructor(db, rewardsService) {
     this.db = db;
@@ -28,32 +37,70 @@ class TasksService {
 
   listTemplates() {
     const rows = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all
       FROM task_templates
       ORDER BY created_at ASC
     `).all();
 
-    return rows.map(r => ({
-      ...r,
-      days_of_week: normalizeDaysOfWeek(r.days_of_week)
-    }));
+    const assigned = new Map();
+    for (const { template_id, child_id } of this.db.prepare('SELECT template_id, child_id FROM template_children').all()) {
+      if (!assigned.has(template_id)) assigned.set(template_id, []);
+      assigned.get(template_id).push(child_id);
+    }
+    return rows.map(r => this.describeTemplate(r, assigned.get(r.id)));
+  }
+
+  describeTemplate({ assign_all, ...row }, childIds = []) {
+    return {
+      ...row,
+      days_of_week: normalizeDaysOfWeek(row.days_of_week),
+      child_ids: assign_all ? null : childIds
+    };
+  }
+
+  setTemplateChildren(templateId, childIds) {
+    this.db.prepare('DELETE FROM template_children WHERE template_id = ?').run(templateId);
+    this.db.prepare('UPDATE task_templates SET assign_all = ? WHERE id = ?').run(childIds === null ? 1 : 0, templateId);
+    if (childIds === null) return;
+    const exists = this.db.prepare('SELECT id FROM children WHERE id = ?');
+    const insert = this.db.prepare('INSERT INTO template_children (template_id, child_id) VALUES (?, ?)');
+    for (const childId of childIds) {
+      if (!exists.get(childId)) throw { status: 400, message: '指定的孩子不存在' };
+      insert.run(templateId, childId);
+    }
+    this.removeUnassignedTodayTasks(templateId);
+  }
+
+  removeUnassignedTodayTasks(templateId = null) {
+    // Assignment edits revoke pending tasks today, while completed and historical
+    // snapshots (and their point logs) remain intact.
+    this.db.prepare(`DELETE FROM daily_tasks
+      WHERE date = ? AND is_completed = 0 AND (? IS NULL OR template_id = ?)
+        AND EXISTS (SELECT 1 FROM task_templates WHERE id = daily_tasks.template_id AND assign_all = 0)
+        AND NOT EXISTS (SELECT 1 FROM template_children
+          WHERE template_id = daily_tasks.template_id AND child_id = daily_tasks.child_id)`)
+      .run(getTodayDate(), templateId, templateId);
+  }
+
+  isUnassignedTodayTask(task) {
+    if (task.date !== getTodayDate()) return false;
+    const template = this.getTemplate(task.template_id);
+    return template && template.child_ids !== null && !template.child_ids.includes(task.child_id);
   }
 
   getTemplate(id) {
     const row = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all
       FROM task_templates
       WHERE id = ?
     `).get(id);
 
     if (!row) return null;
-    return {
-      ...row,
-      days_of_week: normalizeDaysOfWeek(row.days_of_week)
-    };
+    const childIds = this.db.prepare('SELECT child_id FROM template_children WHERE template_id = ?').all(id).map(r => r.child_id);
+    return this.describeTemplate(row, childIds);
   }
 
-  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null }) {
+  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null, child_ids = null }) {
     if (!title || typeof title !== 'string' || title.trim() === '') {
       throw { status: 400, message: 'Template title is required' };
     }
@@ -68,27 +115,24 @@ class TasksService {
     if (points !== undefined && (!Number.isSafeInteger(points) || points < 0 || points > 10000)) {
       throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
     }
+    const childIds = normalizeChildIds(child_ids);
     const id = generateId();
     const daysArr = normalizeDaysOfWeek(days_of_week);
     const pts = typeof points === 'number' && points >= 0 ? points : 10;
     const createdAt = new Date().toISOString();
 
-    this.db.prepare(`
-      INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title.trim(), subject.trim(), JSON.stringify(daysArr), pts, createdAt, schedule_type, schedule_type === 'weekly_times' ? weekly_target_times : null);
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, title.trim(), subject.trim(), JSON.stringify(daysArr), pts, createdAt, schedule_type, schedule_type === 'weekly_times' ? weekly_target_times : null);
+      this.setTemplateChildren(id, childIds);
+    })();
 
-    return {
-      id,
-      title: title.trim(),
-      subject: subject.trim(),
-      days_of_week: daysArr,
-      points: pts,
-      created_at: createdAt, schedule_type, weekly_target_times: schedule_type === 'weekly_times' ? weekly_target_times : null
-    };
+    return this.getTemplate(id);
   }
 
-  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times }) {
+  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times, child_ids }) {
     const existing = this.getTemplate(id);
     if (!existing) {
       throw { status: 404, message: 'Template not found' };
@@ -109,11 +153,15 @@ class TasksService {
       throw { status: 400, message: '每周目标必须为 1 至 7 次' };
     }
     if (points !== undefined && (!Number.isSafeInteger(points) || points < 0 || points > 10000)) throw { status: 400, message: '积分无效' };
-    this.db.prepare(`
-      UPDATE task_templates
-      SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?
-      WHERE id = ?
-    `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, schedule, schedule === 'weekly_times' ? target : null, id);
+    const childIds = child_ids === undefined ? undefined : normalizeChildIds(child_ids);
+    this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE task_templates
+        SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?
+        WHERE id = ?
+      `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, schedule, schedule === 'weekly_times' ? target : null, id);
+      if (childIds !== undefined) this.setTemplateChildren(id, childIds);
+    })();
 
     return this.getTemplate(id);
   }
@@ -145,8 +193,10 @@ class TasksService {
 
     parseDate(date);
     const dayOfWeek = getDayOfWeek(date);
-    const matching = this.listTemplates().filter(t => t.schedule_type === 'weekly_times' || t.days_of_week.includes(dayOfWeek));
+    const matching = this.listTemplates().filter(t => (t.child_ids === null || t.child_ids.includes(childId)) &&
+      (t.schedule_type === 'weekly_times' || t.days_of_week.includes(dayOfWeek)));
     this.db.transaction(() => {
+      if (date === getTodayDate()) this.removeUnassignedTodayTasks();
       const exists = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND date = ? AND template_id = ?');
       const insert = this.db.prepare(`INSERT INTO daily_tasks
         (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times)
@@ -193,6 +243,7 @@ class TasksService {
     }
 
     if (task.date > getTodayDate()) throw { status: 400, message: '不能提前完成未来的任务' };
+    if (this.isUnassignedTodayTask(task)) throw { status: 409, message: '任务已取消分配，请刷新今日任务' };
     if (task.schedule_type === 'weekly_times' && this.weeklyCount(task.child_id, task.template_id, task.date) >= task.weekly_target_times) {
       throw { status: 409, message: '本周目标已完成' };
     }
@@ -266,6 +317,7 @@ class TasksService {
         DELETE FROM point_logs
         WHERE daily_task_id = ?
       `).run(taskId);
+      this.removeUnassignedTodayTasks(task.template_id);
     });
 
     tx();
@@ -278,7 +330,7 @@ class TasksService {
 
     return {
       success: true,
-      task: this.describeTask(updatedTask)
+      task: this.describeTask(updatedTask || { ...task, is_completed: 0, completed_at: null })
     };
   }
 }

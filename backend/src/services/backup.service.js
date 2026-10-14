@@ -5,7 +5,9 @@ const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
 const { initDb } = require('../db');
 
-const TABLES = ['children', 'task_templates', 'daily_tasks', 'point_logs', 'badge_definitions', 'child_badges', 'mistake_records', 'settings', 'characters'];
+// Only genuine older schemas may have their newer tables created by initDb.
+const REQUIRED_TABLES = ['children', 'task_templates', 'daily_tasks', 'point_logs', 'badge_definitions', 'child_badges', 'mistake_records', 'settings', 'characters'];
+const TABLES = [...REQUIRED_TABLES, 'template_children'];
 const MAX_SIZE = 256 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), { statusCode: 400 });
 const safeName = name => typeof name === 'string' && /^[\w-]+\.(?:jpg|jpeg|png|webp)$/i.test(name);
@@ -68,7 +70,12 @@ class BackupService {
       candidate = new Database(database);
       if (candidate.pragma('integrity_check', { simple: true }) !== 'ok' || candidate.pragma('foreign_key_check').length) throw fail('备份数据库完整性检查失败');
       const tables = candidate.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(r => r.name);
-      if (!TABLES.every(t => tables.includes(t)) || candidate.pragma('user_version', { simple: true }) > this.db.pragma('user_version', { simple: true })) throw fail('备份版本不兼容');
+      const schemaVersion = candidate.pragma('user_version', { simple: true });
+      if (!REQUIRED_TABLES.every(t => tables.includes(t)) || schemaVersion > this.db.pragma('user_version', { simple: true })) throw fail('备份版本不兼容');
+      if (schemaVersion >= 2 && (!tables.includes('template_children') ||
+        !candidate.pragma('table_info(task_templates)').some(column => column.name === 'assign_all'))) {
+        throw fail('备份缺少任务分配数据，无法恢复');
+      }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {

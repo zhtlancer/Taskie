@@ -95,6 +95,33 @@
                 </div>
               </div>
             </div>
+
+            <!-- Assigned Children -->
+            <div class="mb-4">
+              <span class="text-[11px] font-bold text-slate-400 block mb-1.5">适用孩子：</span>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-if="tmpl.child_ids === null || tmpl.child_ids === undefined"
+                  class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold"
+                >
+                  👨‍👩‍👧 全部孩子
+                </span>
+                <span
+                  v-else-if="assignedChildren(tmpl).length === 0"
+                  class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold"
+                >
+                  ⚠️ 未分配，不会生成任务
+                </span>
+                <span
+                  v-for="child in assignedChildren(tmpl)"
+                  v-else
+                  :key="child.id"
+                  class="px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 text-xs font-bold font-chinese"
+                >
+                  {{ child.avatar_emoji }} {{ child.name }}
+                </span>
+              </div>
+            </div>
           </div>
 
           <!-- Actions Footer -->
@@ -125,7 +152,7 @@
       class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
       @click.self="showModal = false"
     >
-      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100">
+      <div class="bg-white rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border-2 border-brand-100">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-xl font-black text-slate-800 flex items-center gap-2">
             <span>{{ isEditing ? '✏️ 编辑任务模板' : '➕ 新增任务模板' }}</span>
@@ -171,6 +198,41 @@
                 {{ sub }}
               </button>
             </div>
+          </div>
+
+          <!-- Assigned Children -->
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1.5">适用孩子</label>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                @click="form.child_ids = null"
+                class="px-3 py-2 rounded-xl text-xs font-bold border transition-all"
+                :class="[
+                  form.child_ids === null
+                    ? 'bg-brand-500 border-brand-500 text-white shadow-button'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                ]"
+              >
+                👨‍👩‍👧 全部孩子
+              </button>
+              <button
+                v-for="child in children"
+                :key="child.id"
+                type="button"
+                @click="toggleChild(child.id)"
+                class="px-3 py-2 rounded-xl text-xs font-bold border transition-all font-chinese"
+                :class="[
+                  form.child_ids?.includes(child.id)
+                    ? 'bg-brand-500 border-brand-500 text-white shadow-button'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                ]"
+              >
+                {{ child.avatar_emoji }} {{ child.name }}
+              </button>
+            </div>
+            <p v-if="form.child_ids?.length === 0" class="text-[11px] text-rose-500 font-bold mt-1.5">请至少选择一个孩子</p>
+            <p class="text-[11px] text-slate-500 mt-1.5">分配变更立即作用于未完成的今日任务，已完成任务和历史记录保留。</p>
           </div>
 
           <!-- Repeat Cycle Type (按固定星期重复 VS 每周完成特定次数) -->
@@ -325,7 +387,7 @@
             </button>
             <button
               type="submit"
-              :disabled="submitting || !form.title.trim() || (form.schedule_type === 'fixed_days' && form.days_of_week.length === 0)"
+              :disabled="submitting || !form.title.trim() || form.child_ids?.length === 0 || (form.schedule_type === 'fixed_days' && form.days_of_week.length === 0)"
               class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
             >
               {{ submitting ? '保存中...' : '确认保存' }}
@@ -343,6 +405,7 @@ import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 
 const templates = ref([]);
+const children = ref([]);
 const loading = ref(true);
 
 const showModal = ref(false);
@@ -366,7 +429,8 @@ const form = ref({
   schedule_type: 'fixed_days',
   weekly_target_times: 3,
   points: 10,
-  days_of_week: [1, 2, 3, 4, 5]
+  days_of_week: [1, 2, 3, 4, 5],
+  child_ids: null
 });
 
 onMounted(async () => {
@@ -376,7 +440,7 @@ onMounted(async () => {
 async function loadTemplates() {
   loading.value = true;
   try {
-    templates.value = await api.getTaskTemplates();
+    [templates.value, children.value] = await Promise.all([api.getTaskTemplates(), api.getChildren()]);
   } catch (err) {
     console.error('Failed to load templates:', err);
   } finally {
@@ -396,6 +460,15 @@ function subjectClass(sub) {
     case '英语': return 'bg-emerald-100 text-emerald-700';
     default: return 'bg-amber-100 text-amber-800';
   }
+}
+
+function assignedChildren(tmpl) {
+  return children.value.filter(child => tmpl.child_ids?.includes(child.id));
+}
+
+function toggleChild(id) {
+  const ids = form.value.child_ids || [];
+  form.value.child_ids = ids.includes(id) ? ids.filter(childId => childId !== id) : [...ids, id];
 }
 
 function toggleDay(day) {
@@ -426,7 +499,8 @@ function openAddModal() {
     schedule_type: 'fixed_days',
     weekly_target_times: 3,
     points: 10,
-    days_of_week: [1, 2, 3, 4, 5]
+    days_of_week: [1, 2, 3, 4, 5],
+    child_ids: null
   };
   showModal.value = true;
 }
@@ -440,7 +514,9 @@ function openEditModal(tmpl) {
     schedule_type: tmpl.schedule_type || 'fixed_days',
     weekly_target_times: tmpl.weekly_target_times || 3,
     points: tmpl.points,
-    days_of_week: Array.isArray(tmpl.days_of_week) ? [...tmpl.days_of_week] : [1, 2, 3, 4, 5]
+    days_of_week: Array.isArray(tmpl.days_of_week) ? [...tmpl.days_of_week] : [1, 2, 3, 4, 5],
+    // Drop children deleted since the template was assigned.
+    child_ids: Array.isArray(tmpl.child_ids) ? assignedChildren(tmpl).map(child => child.id) : null
   };
   showModal.value = true;
 }
@@ -455,7 +531,8 @@ async function submitTemplateForm() {
       schedule_type: form.value.schedule_type,
       weekly_target_times: form.value.schedule_type === 'weekly_times' ? (Number(form.value.weekly_target_times) || 3) : null,
       points: form.value.points,
-      days_of_week: form.value.schedule_type === 'fixed_days' ? form.value.days_of_week : [0, 1, 2, 3, 4, 5, 6]
+      days_of_week: form.value.schedule_type === 'fixed_days' ? form.value.days_of_week : [0, 1, 2, 3, 4, 5, 6],
+      child_ids: form.value.child_ids
     };
 
     if (isEditing.value) {

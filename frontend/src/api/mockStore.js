@@ -450,6 +450,9 @@ class MockStore {
     this.state.point_logs = this.state.point_logs.filter(p => p.child_id !== id);
     this.state.child_badges = this.state.child_badges.filter(b => b.child_id !== id);
     this.state.mistakes = this.state.mistakes.filter(m => m.child_id !== id);
+    for (const t of this.state.task_templates) {
+      if (Array.isArray(t.child_ids)) t.child_ids = t.child_ids.filter(childId => childId !== id);
+    }
     this.save();
     return { success: true, id };
   }
@@ -459,11 +462,12 @@ class MockStore {
     return this.state.task_templates.map(t => ({
       ...t,
       schedule_type: t.schedule_type || 'fixed_days',
-      weekly_target_times: t.weekly_target_times || null
+      weekly_target_times: t.weekly_target_times || null,
+      child_ids: t.child_ids ?? null
     }));
   }
 
-  createTemplate({ title, subject, schedule_type = 'fixed_days', days_of_week, weekly_target_times, points }) {
+  createTemplate({ title, subject, schedule_type = 'fixed_days', days_of_week, weekly_target_times, points, child_ids = null }) {
     const newTmpl = {
       id: 'tmpl-' + Date.now(),
       title: title.trim(),
@@ -472,6 +476,7 @@ class MockStore {
       days_of_week: days_of_week || [0, 1, 2, 3, 4, 5, 6],
       weekly_target_times: schedule_type === 'weekly_times' ? (Number(weekly_target_times) || 3) : null,
       points: Number(points) || 10,
+      child_ids,
       created_at: new Date().toISOString()
     };
     this.state.task_templates.push(newTmpl);
@@ -479,7 +484,7 @@ class MockStore {
     return newTmpl;
   }
 
-  updateTemplate(id, { title, subject, schedule_type, days_of_week, weekly_target_times, points }) {
+  updateTemplate(id, { title, subject, schedule_type, days_of_week, weekly_target_times, points, child_ids }) {
     const tmpl = this.state.task_templates.find(t => t.id === id);
     if (!tmpl) throw new Error('Template not found');
     if (title) tmpl.title = title.trim();
@@ -490,6 +495,10 @@ class MockStore {
       tmpl.weekly_target_times = tmpl.schedule_type === 'weekly_times' ? (Number(weekly_target_times) || 3) : null;
     }
     if (points !== undefined) tmpl.points = Number(points);
+    if (child_ids !== undefined) {
+      tmpl.child_ids = child_ids;
+      this.removeUnassignedTodayTasks();
+    }
     this.save();
     return tmpl;
   }
@@ -513,22 +522,35 @@ class MockStore {
   }
 
   // Daily Tasks
+  isUnassignedTodayTask(task) {
+    if (task.date !== getTodayString()) return false;
+    const template = this.state.task_templates.find(t => t.id === task.template_id);
+    return Array.isArray(template?.child_ids) && !template.child_ids.includes(task.child_id);
+  }
+
+  removeUnassignedTodayTasks() {
+    this.state.daily_tasks = this.state.daily_tasks.filter(t => t.is_completed || !this.isUnassignedTodayTask(t));
+  }
+
   getDailyTasks(childId, date) {
     const targetDate = date || getTodayString();
+    if (targetDate === getTodayString()) this.removeUnassignedTodayTasks();
     let tasks = this.state.daily_tasks.filter(t => t.child_id === childId && t.date === targetDate);
-    if (tasks.length === 0) {
+    {
       // Auto-generate from templates
       const d = new Date(targetDate);
       const dayOfWeek = d.getDay(); // 0 is Sunday
       const matchingTemplates = this.state.task_templates.filter(t => {
+        if (tasks.some(task => task.template_id === t.id)) return false;
+        if (Array.isArray(t.child_ids) && !t.child_ids.includes(childId)) return false;
         if (t.schedule_type === 'weekly_times') {
           return true; // Weekly frequency tasks appear every day until/during the week
         }
         return Array.isArray(t.days_of_week) && t.days_of_week.includes(dayOfWeek);
       });
 
-      tasks = matchingTemplates.map((t, idx) => ({
-        id: `dt-${childId}-${Date.now()}-${idx}`,
+      const generated = matchingTemplates.map(t => ({
+        id: `dt-${childId}-${targetDate}-${t.id}-${Date.now()}`,
         child_id: childId,
         template_id: t.id,
         title: t.title,
@@ -540,7 +562,8 @@ class MockStore {
         is_completed: false,
         completed_at: null
       }));
-      this.state.daily_tasks.push(...tasks);
+      this.state.daily_tasks.push(...generated);
+      tasks.push(...generated);
       this.save();
     }
 
@@ -566,6 +589,7 @@ class MockStore {
     const task = this.state.daily_tasks.find(t => t.id === taskId);
     if (!task) throw new Error('Task not found');
     if (task.is_completed) return { success: true, task, points_earned: 0, new_badges: [] };
+    if (this.isUnassignedTodayTask(task)) throw new Error('任务已取消分配，请刷新今日任务');
 
     task.is_completed = true;
     task.completed_at = new Date().toISOString();
@@ -607,6 +631,7 @@ class MockStore {
     task.is_completed = false;
     task.completed_at = null;
     this.state.point_logs = this.state.point_logs.filter(p => p.daily_task_id !== taskId);
+    this.removeUnassignedTodayTasks();
     this.save();
 
     const tmpl = this.state.task_templates.find(tpl => tpl.id === task.template_id);

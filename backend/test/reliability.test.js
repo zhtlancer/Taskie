@@ -149,6 +149,58 @@ test('backup restore preserves records and photos, keeps recovery snapshot and i
   assert.equal(ctx.db.pragma('foreign_keys', { simple: true }), 1);
 });
 
+test('backup restore keeps template assignments and accepts backups from before assignments existed', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  const template = (await ctx.app.inject({ method: 'POST', url: '/api/task-templates', payload: { title: '口算', subject: '数学', child_ids: [child.id] } })).json();
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  await ctx.app.inject({ method: 'PUT', url: `/api/task-templates/${template.id}`, payload: { child_ids: null } });
+  assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) })).statusCode, 200);
+  assert.deepEqual(ctx.app.services.tasksService.getTemplate(template.id).child_ids, [child.id]);
+
+  const Database = require('better-sqlite3');
+  const legacy = JSON.parse(gunzipSync(archive));
+  const db = new Database(Buffer.from(legacy.database, 'base64'));
+  db.exec('DROP TABLE template_children; ALTER TABLE task_templates DROP COLUMN assign_all');
+  db.pragma('user_version = 1');
+  legacy.database = db.serialize().toString('base64');
+  db.close();
+  const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
+  assert.equal(restored.statusCode, 200, restored.body);
+  assert.equal(ctx.app.services.tasksService.getTemplate(template.id).child_ids, null);
+});
+
+test('current-schema backups missing assignment data are rejected before changing live data or photos', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  const service = ctx.app.services.tasksService;
+  const template = service.createTemplate({ title: '阅读', subject: '语文', child_ids: [child.id] });
+  fs.writeFileSync(path.join(ctx.tempUploadDir, 'assignment.jpg'), 'snapshot');
+  ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '语文', description: 'snapshot', photo_path: '/uploads/assignment.jpg' });
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const second = await createChild(ctx);
+  service.updateTemplate(template.id, { child_ids: [second.id] });
+  fs.writeFileSync(path.join(ctx.tempUploadDir, 'assignment.jpg'), 'current');
+  const epoch = ctx.app.sessionEpoch();
+  const backups = ctx.app.backupService.list();
+  const Database = require('better-sqlite3');
+  for (const corruption of ['DROP TABLE template_children', 'ALTER TABLE task_templates DROP COLUMN assign_all']) {
+    const damaged = JSON.parse(gunzipSync(archive));
+    const db = new Database(Buffer.from(damaged.database, 'base64'));
+    db.exec(corruption);
+    assert.equal(db.pragma('user_version', { simple: true }), 2);
+    damaged.database = db.serialize().toString('base64');
+    db.close();
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.match(res.body, /备份缺少任务分配数据/);
+    assert.deepEqual(service.getTemplate(template.id).child_ids, [second.id]);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM children').get().n, 2);
+    assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'assignment.jpg'), 'utf8'), 'current');
+    assert.equal(ctx.app.sessionEpoch(), epoch);
+    assert.deepEqual(ctx.app.backupService.list(), backups);
+    assert.equal(ctx.db.pragma('foreign_keys', { simple: true }), 1);
+  }
+});
+
 test('corrupt backups, unsafe photo paths and wrong PIN do not alter current data', async t => {
   const ctx = await fixture(t), child = await createChild(ctx);
   const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
@@ -194,6 +246,7 @@ test('old schema migrates without losing existing children and fixed-day templat
     initDb(db); initDb(db);
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
-    assert.equal(db.pragma('user_version', { simple: true }), 1);
+    assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
+    assert.equal(db.pragma('user_version', { simple: true }), 2);
   } finally { db.close(); }
 });

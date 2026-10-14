@@ -102,6 +102,15 @@ function initDb(db) {
       db.pragma('user_version = 1');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 2) {
+    db.transaction(() => {
+      // Existing templates keep applying to every child.
+      if (!db.pragma('table_info(task_templates)').some(c => c.name === 'assign_all')) {
+        db.exec('ALTER TABLE task_templates ADD COLUMN assign_all INTEGER NOT NULL DEFAULT 1');
+      }
+      db.pragma('user_version = 2');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
