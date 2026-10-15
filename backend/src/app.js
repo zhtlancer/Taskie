@@ -104,7 +104,12 @@ function buildApp(opts = {}) {
       decorateReply: false,
       // Stroke data never changes between releases of the same data package.
       setHeaders: (reply, filePath) => {
-        if (filePath.includes(`${path.sep}hanzi-data${path.sep}`)) reply.header('cache-control', 'public, max-age=2592000');
+        if (filePath.includes(`${path.sep}hanzi-data${path.sep}`)) {
+          reply.header('cache-control', 'public, max-age=2592000');
+        } else if (filePath.endsWith('sw.js')) {
+          reply.header('cache-control', 'no-cache, no-store, must-revalidate');
+          reply.header('service-worker-allowed', '/');
+        }
       }
     });
 

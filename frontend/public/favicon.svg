@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#4F46E5" />
+    </linearGradient>
+    <linearGradient id="rocketBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E0E7FF" />
+    </linearGradient>
+    <linearGradient id="flameGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#EF4444" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#312E81" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Full-bleed background for maskable icon -->
+  <rect width="512" height="512" fill="url(#bgGrad)" />
+
+  <!-- Subtle background glow -->
+  <circle cx="256" cy="256" r="170" fill="#8B5CF6" opacity="0.3" />
+
+  <!-- Rocket Graphics (Centered in Safe Zone: within r < 190) -->
+  <g transform="translate(256, 256) rotate(-45) translate(-120, -125)" filter="url(#shadow)">
+    <!-- Exhaust Flame -->
+    <path d="M 95 190 Q 120 270 120 270 Q 120 270 145 190 Z" fill="url(#flameGrad)" />
+    <path d="M 105 190 Q 120 240 120 240 Q 120 240 135 190 Z" fill="#FEF08A" />
+
+    <!-- Left Wing -->
+    <path d="M 90 140 L 40 185 Q 40 200 65 195 L 90 180 Z" fill="#EC4899" />
+    <!-- Right Wing -->
+    <path d="M 150 140 L 200 185 Q 200 200 175 195 L 150 180 Z" fill="#EC4899" />
+
+    <!-- Rocket Main Fuselage -->
+    <path d="M 120 20 C 155 60 165 130 155 190 L 85 190 C 75 130 85 60 120 20 Z" fill="url(#rocketBody)" />
+
+    <!-- Rocket Nose Cone (Red/Coral) -->
+    <path d="M 120 20 C 135 40 145 65 149 80 L 91 80 C 95 65 105 40 120 20 Z" fill="#F43F5E" />
+
+    <!-- Porthole Outer Ring -->
+    <circle cx="120" cy="120" r="24" fill="#3B82F6" />
+    <!-- Porthole Glass -->
+    <circle cx="120" cy="120" r="18" fill="#67E8F9" />
+    <!-- Porthole Glare -->
+    <ellipse cx="115" cy="115" rx="7" ry="4" fill="#FFFFFF" opacity="0.8" transform="rotate(-30 115 115)" />
+
+    <!-- Rocket Fin Center Line -->
+    <rect x="117" y="155" width="6" height="35" rx="3" fill="#EC4899" />
+  </g>
+
+  <!-- Little Stars around -->
+  <path d="M 120 135 L 124 147 L 136 151 L 124 155 L 120 167 L 116 155 L 104 151 L 116 147 Z" fill="#FDE047" opacity="0.9" />
+  <path d="M 390 355 L 393 365 L 403 368 L 393 371 L 390 381 L 387 371 L 377 368 L 387 365 Z" fill="#FDE047" opacity="0.9" />
+  <circle cx="380" cy="135" r="6" fill="#FDE047" opacity="0.8" />
+  <circle cx="130" cy="375" r="5" fill="#FDE047" opacity="0.8" />
+</svg>

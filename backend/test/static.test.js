@@ -10,6 +10,7 @@ test('the built app serves stroke data with long caching and a real 404, and pag
   fs.mkdirSync(path.join(dist, 'hanzi-data'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>app</title>');
   fs.writeFileSync(path.join(dist, 'hanzi-data', '学.json'), '{"strokes":[]}');
+  fs.writeFileSync(path.join(dist, 'sw.js'), '// sw');
   const app = buildApp({ logger: false, db: getDb(':memory:'), uploadDir: path.join(dist, 'uploads'), clientDistDir: dist,
     jwtSecret: 'test', backupDir: path.join(dist, 'backups'), backupIntervalHours: 0, deviceAuth: false,
     authorizedTokensFile: path.join(dist, 'authorized_tokens') });
@@ -19,6 +20,10 @@ test('the built app serves stroke data with long caching and a real 404, and pag
   assert.equal(strokes.statusCode, 200);
   assert.deepEqual(strokes.json(), { strokes: [] });
   assert.equal(strokes.headers['cache-control'], 'public, max-age=2592000');
+  const sw = await app.inject({ method: 'GET', url: '/sw.js' });
+  assert.equal(sw.statusCode, 200);
+  assert.equal(sw.headers['service-worker-allowed'], '/');
+  assert.equal(sw.headers['cache-control'], 'no-cache, no-store, must-revalidate');
   const missing = await app.inject({ method: 'GET', url: `/hanzi-data/${encodeURIComponent('龘')}.json` });
   assert.equal(missing.statusCode, 404);
   assert.doesNotMatch(missing.body, /<title>/);
