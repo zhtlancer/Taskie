@@ -271,7 +271,11 @@ function clientInfo(request, registry) {
   return { source: 'web', ip, user_agent: userAgent, actor: request.deviceToken ? registry.labelFor(request.deviceToken) : null };
 }
 
-const isExempt = url => url === '/health' || url === '/api/health' || url.startsWith('/api/device/');
+// Browsers fetch the manifest without cookies, and installers fetch icons on their own, so the app's
+// name and icons stay public; they carry no family data.
+const PUBLIC_ASSETS = new Set(['/manifest.webmanifest', '/favicon.svg', '/favicon.png', '/icon-192.png', '/icon-512.png',
+  '/apple-touch-icon.png']);
+const isExempt = url => url === '/health' || url === '/api/health' || url.startsWith('/api/device/') || PUBLIC_ASSETS.has(url);
 const wantsPage = request => request.method === 'GET' && !request.url.startsWith('/api/') && !request.url.startsWith('/uploads/') &&
   String(request.headers.accept || '').includes('text/html');
 

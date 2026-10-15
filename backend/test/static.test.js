@@ -31,3 +31,23 @@ test('the built app serves stroke data with long caching and a real 404, and pag
   assert.match(page.body, /<title>app<\/title>/);
   assert.notEqual(page.headers['cache-control'], 'public, max-age=2592000');
 });
+
+test('the manifest and icons load without device authorization, while the app and its scripts stay locked', async t => {
+  const dist = fs.mkdtempSync(path.join(__dirname, '../uploads/dist-'));
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>app</title>');
+  const assets = ['manifest.webmanifest', 'favicon.svg', 'favicon.png', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+  for (const name of [...assets, 'sw.js']) fs.writeFileSync(path.join(dist, name), name);
+  const app = buildApp({ logger: false, db: getDb(':memory:'), uploadDir: path.join(dist, 'uploads'), clientDistDir: dist,
+    jwtSecret: 'test', backupDir: path.join(dist, 'backups'), backupIntervalHours: 0, deviceAuth: true,
+    authorizedTokensFile: path.join(dist, 'authorized_tokens') });
+  t.after(async () => { await app.close(); fs.rmSync(dist, { recursive: true, force: true }); });
+
+  for (const name of assets) {
+    const res = await app.inject({ method: 'GET', url: `/${name}` });
+    assert.equal(res.statusCode, 200, name);
+    assert.equal(res.body, name);
+  }
+  for (const url of ['/sw.js', '/', '/index.html', '/api/children', '/icon-192.png/../index.html']) {
+    assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401, url);
+  }
+});
