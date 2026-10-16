@@ -243,8 +243,8 @@
           </div>
         </div>
 
-        <!-- Bottom Motivation Banner (hidden on holiday days without daily tasks) -->
-        <div v-if="totalCount > 0 || !(activePeriod || activeGoals.length)" class="mt-3 shrink-0">
+        <!-- Keep the rest-day message visible when daily tasks were skipped, including goal logs. -->
+        <div v-if="totalCount > 0 || skippedCount > 0 || !(activePeriod || activeGoals.length)" class="mt-3 shrink-0">
           <!-- When all completed -->
           <div
             v-if="allDone"

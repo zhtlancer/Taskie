@@ -100,7 +100,8 @@ class BackupService {
         throw fail('备份缺少长期任务数据，无法恢复');
       }
       if (schemaVersion >= 9 && !hasColumn('characters', 'categories')) throw fail('备份缺少生字生词分类，无法恢复');
-      if (schemaVersion >= 10 && !(tables.includes('task_skip_requests') && hasColumn('daily_tasks', 'skipped_at'))) {
+      if (schemaVersion >= 10 && !(tables.includes('task_skip_requests') &&
+        ['skipped_at', 'skip_reason'].every(name => hasColumn('daily_tasks', name)))) {
         throw fail('备份缺少跳过申请数据，无法恢复');
       }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');

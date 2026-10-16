@@ -352,6 +352,25 @@ test('skipped tasks and their requests survive restore; v9 backups restore witho
 
   const Database = require('better-sqlite3');
   const legacy = JSON.parse(gunzipSync(archive));
+  for (const mutation of [
+    'DROP TABLE task_skip_requests',
+    'ALTER TABLE daily_tasks DROP COLUMN skipped_at',
+    'ALTER TABLE daily_tasks DROP COLUMN skip_reason'
+  ]) {
+    const damagedDb = new Database(Buffer.from(legacy.database, 'base64'));
+    let damaged;
+    try {
+      damagedDb.exec(mutation);
+      damaged = { ...legacy, database: damagedDb.serialize().toString('base64') };
+    } finally { damagedDb.close(); }
+    const backupsBefore = ctx.app.backupService.list();
+    const invalid = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
+    assert.equal(invalid.statusCode, 400, `${mutation}: ${invalid.body}`);
+    assert.match(invalid.body, /备份缺少跳过申请数据/);
+    assert.deepEqual(ctx.app.backupService.list(), backupsBefore);
+    assert.equal(tasksService.getDailyTasks(child.id)[0].skip_reason, '老师今天没布置');
+    assert.deepEqual(skipsService.listRequests().map(r => [r.status, r.reason]), [['approved', '老师今天没布置']]);
+  }
   const db = new Database(Buffer.from(legacy.database, 'base64'));
   db.exec('DROP TABLE task_skip_requests; ALTER TABLE daily_tasks DROP COLUMN skipped_at; ALTER TABLE daily_tasks DROP COLUMN skip_reason');
   const damaged = { ...legacy, database: db.serialize().toString('base64') };
