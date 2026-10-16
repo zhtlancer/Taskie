@@ -207,7 +207,10 @@
             :goals="activeGoals"
             :period="activePeriod"
             :today="todayString"
+            :daily-rows="goalRows"
+            :as-parent="asParent"
             @changed="refreshGoals"
+            v-on="skipHandlers"
           />
 
           <!-- Empty state -->
@@ -233,7 +236,9 @@
               v-for="task in filteredTasks"
               :key="task.id"
               :task="task"
+              :as-parent="asParent"
               @toggle="handleTaskToggle"
+              v-on="skipHandlers"
             />
           </div>
         </div>
@@ -265,6 +270,15 @@
             </button>
           </div>
 
+          <!-- Everything left today was skipped -->
+          <div
+            v-else-if="totalCount === 0 && skippedCount > 0"
+            class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-2.5"
+          >
+            <span class="text-xl">⏭️</span>
+            <span class="text-sm font-bold text-slate-600">今天的任务都跳过啦，好好休息～</span>
+          </div>
+
           <!-- When in progress -->
           <div
             v-else
@@ -285,6 +299,16 @@
     </div>
 
     <ChildTabBar :child-id="childId" />
+
+    <SkipTaskModal
+      v-if="skipTarget"
+      :task="skipTarget"
+      :as-parent="asParent"
+      :busy="skipBusy"
+      :error="skipError"
+      @close="skipTarget = null"
+      @submit="submitSkip"
+    />
 
     <!-- Stroke Lookup Modal -->
     <StrokeLookupModal
@@ -308,7 +332,9 @@ import SoundToggle from '../components/SoundToggle.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
 import GoalTasksPanel from '../components/GoalTasksPanel.vue';
 import ChildTabBar from '../components/ChildTabBar.vue';
+import SkipTaskModal from '../components/SkipTaskModal.vue';
 import { playAllDone, playBadgeUnlocked, playClick } from '../utils/sound';
+import { currentRole } from '../utils/session.js';
 
 const route = useRoute();
 const childStore = useChildStore();
@@ -322,6 +348,8 @@ function openStrokeLookup() {
 const childId = computed(() => route.params.id || childStore.childId);
 const childName = computed(() => childStore.childName);
 const childAvatar = computed(() => childStore.childAvatar);
+// A parent opening the board from the console acts as the parent: skips take effect at once.
+const asParent = currentRole() === 'parent';
 
 const tasks = ref([]);
 const loading = ref(true);
@@ -378,6 +406,7 @@ const formattedDate = computed(() => {
 // Daily items of long-term tasks are logged in their panel, so the card grid leaves them out
 // (they still count towards today's progress).
 const cardTasks = computed(() => tasks.value.filter(t => t.origin !== 'goal'));
+const goalRows = computed(() => Object.fromEntries(tasks.value.filter(t => t.origin === 'goal').map(t => [t.goal_id, t])));
 const filteredTasks = computed(() => {
   if (selectedSubject.value === '全部') {
     return cardTasks.value;
@@ -385,8 +414,10 @@ const filteredTasks = computed(() => {
   return cardTasks.value.filter(t => t.subject === selectedSubject.value);
 });
 
-// Flexible weekly tasks only count once done, so skipping one never blocks the all-done celebration.
-const countedTasks = computed(() => tasks.value.filter(t => !t.is_optional || t.is_completed));
+// Flexible weekly tasks only count once done and skipped tasks never count, so neither blocks
+// the all-done celebration.
+const countedTasks = computed(() => tasks.value.filter(t => !t.is_skipped && (!t.is_optional || t.is_completed)));
+const skippedCount = computed(() => tasks.value.filter(t => t.is_skipped).length);
 const totalCount = computed(() => countedTasks.value.length);
 const completedCount = computed(() => countedTasks.value.filter(t => t.is_completed).length);
 const allDone = computed(() => completedCount.value > 0 && completedCount.value === totalCount.value);
@@ -476,6 +507,57 @@ async function handleTaskToggle(task) {
     console.error('Failed to toggle task:', err);
   }
 }
+
+// --- Skipping a task: a child asks with a reason, a parent skips at once or settles the request ---
+const skipTarget = ref(null);
+const skipBusy = ref(false);
+const skipError = ref('');
+
+// Reloads after a skip change; an approved skip may finish the day or unlock a badge.
+async function afterSkipChange(result) {
+  const wasAllDone = allDone.value;
+  tasks.value = await api.getDailyTasks(childId.value);
+  await childStore.fetchStats();
+  if (!wasAllDone && allDone.value) fireCelebration(true);
+  else if (result?.new_badges?.length) {
+    playBadgeUnlocked();
+    fireCelebration(false);
+  }
+}
+
+async function runSkipAction(action) {
+  try {
+    await afterSkipChange(await action());
+  } catch (err) {
+    console.error('Failed to update the skip:', err);
+  }
+}
+
+async function submitSkip(reason) {
+  skipBusy.value = true;
+  skipError.value = '';
+  try {
+    const result = await api.skipDailyTask(skipTarget.value.id, reason);
+    skipTarget.value = null;
+    await afterSkipChange(result);
+  } catch (err) {
+    skipError.value = typeof err === 'string' ? err : '提交失败，请重试';
+  } finally {
+    skipBusy.value = false;
+  }
+}
+
+const skipHandlers = {
+  skip(task) {
+    playClick();
+    skipError.value = '';
+    skipTarget.value = task;
+  },
+  'cancel-skip': task => runSkipAction(() => api.cancelSkipRequest(task.skip_request.id)),
+  'approve-skip': task => runSkipAction(() => api.approveSkipRequest(task.skip_request.id)),
+  'reject-skip': task => runSkipAction(() => api.rejectSkipRequest(task.skip_request.id)),
+  unskip: task => runSkipAction(() => api.unskipDailyTask(task.id))
+};
 
 function handleRecelebrate() {
   playClick();

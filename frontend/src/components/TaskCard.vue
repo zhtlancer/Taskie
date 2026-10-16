@@ -4,7 +4,9 @@
     :class="[
       task.is_completed
         ? 'bg-emerald-50/90 border-emerald-400 shadow-emerald-100/50'
-        : 'bg-white border-slate-200 hover:border-brand-300 hover:shadow-card'
+        : task.is_skipped
+          ? 'bg-slate-50 border-dashed border-slate-300 cursor-default'
+          : 'bg-white border-slate-200 hover:border-brand-300 hover:shadow-card'
     ]"
     @click="handleClick"
   >
@@ -16,10 +18,13 @@
         :class="[
           task.is_completed
             ? 'bg-emerald-500 text-white shadow-md shadow-emerald-200 scale-105'
-            : 'border-2 border-slate-300 bg-slate-50 text-transparent hover:border-brand-400'
+            : task.is_skipped
+              ? 'bg-slate-200 text-slate-500'
+              : 'border-2 border-slate-300 bg-slate-50 text-transparent hover:border-brand-400'
         ]"
       >
         <span v-if="task.is_completed">✓</span>
+        <span v-else-if="task.is_skipped">⏭</span>
         <span v-else class="text-xs text-slate-300">○</span>
       </div>
 
@@ -40,7 +45,7 @@
           <!-- Task Title with child-friendly Chinese typography -->
           <h4
             class="text-lg font-bold text-slate-800 truncate max-w-full transition-colors font-chinese"
-            :class="{ 'line-through text-slate-400': task.is_completed }"
+            :class="{ 'line-through text-slate-400': task.is_completed || task.is_skipped }"
           >
             {{ task.title }}
           </h4>
@@ -66,11 +71,12 @@
             <span v-else>
               周目标 {{ task.weekly_target_times }}次 · 本周已完成 {{ task.weekly_completed_times || 0 }}/{{ task.weekly_target_times }}
             </span>
+            <span v-if="task.weekly_skipped_times">· 跳过 {{ task.weekly_skipped_times }} 次</span>
           </span>
 
           <!-- Flexible vs required today: times still needed against days left this week -->
           <span
-            v-if="!isWeeklyTargetMet && !task.is_completed && task.week_days_left"
+            v-if="!isWeeklyTargetMet && !task.is_completed && !task.is_skipped && task.week_days_left"
             class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold"
             :class="task.is_optional ? 'bg-sky-50 text-sky-700' : 'bg-rose-50 text-rose-600'"
           >
@@ -84,7 +90,7 @@
               v-for="n in Math.min(task.weekly_target_times || 3, 7)"
               :key="n"
               class="w-2 h-2 rounded-full transition-colors"
-              :class="n <= (task.weekly_completed_times || 0) ? 'bg-indigo-500' : 'bg-slate-200'"
+              :class="n <= (task.weekly_completed_times || 0) ? 'bg-indigo-500' : n <= weeklyUsed ? 'bg-slate-400' : 'bg-slate-200'"
             ></span>
           </div>
         </div>
@@ -93,14 +99,42 @@
         <div class="mt-1 flex items-center gap-2 text-sm">
           <span
             class="font-extrabold flex items-center gap-1"
-            :class="task.is_completed ? 'text-emerald-600' : 'text-amber-500'"
+            :class="task.is_completed ? 'text-emerald-600' : task.is_skipped ? 'text-slate-400' : 'text-amber-500'"
           >
             <span>★</span>
-            <span>{{ task.is_completed ? `已得 ${task.points}分` : `${task.points}分` }}</span>
+            <span>{{ task.is_completed ? `已得 ${task.points}分` : task.is_skipped ? '跳过不得分' : `${task.points}分` }}</span>
           </span>
           <span v-if="task.is_completed" class="text-xs text-emerald-500 font-medium font-chinese">
             (今天已完成)
           </span>
+          <!-- Skip: a child asks a parent; a parent skips at once -->
+          <button
+            v-if="canSkip"
+            type="button"
+            class="ml-auto px-2.5 py-1 min-h-[32px] rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold font-chinese active:scale-95"
+            @click.stop="emit('skip', task)"
+          >
+            {{ asParent ? '⏭️ 跳过' : '🙋 今天没有？' }}
+          </button>
+        </div>
+
+        <!-- Skip status: skipped, waiting for a parent, or turned down -->
+        <div v-if="task.is_skipped" class="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-bold font-chinese">
+          <span class="px-2 py-0.5 rounded-md bg-slate-200 text-slate-600">⏭️ 今天已跳过 · {{ task.skip_reason }}</span>
+          <button v-if="asParent" type="button" class="px-2.5 py-1 min-h-[32px] rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-rose-500" @click.stop="emit('unskip', task)">
+            撤销跳过
+          </button>
+        </div>
+        <div v-else-if="skipPending" class="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-bold font-chinese">
+          <span class="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200/70">⏳ 申请跳过：{{ task.skip_request.reason }} · 等家长确认</span>
+          <template v-if="asParent">
+            <button type="button" class="px-2.5 py-1 min-h-[32px] rounded-lg bg-emerald-500 text-white" @click.stop="emit('approve-skip', task)">同意跳过</button>
+            <button type="button" class="px-2.5 py-1 min-h-[32px] rounded-lg bg-white border border-slate-200 text-slate-600" @click.stop="emit('reject-skip', task)">不同意</button>
+          </template>
+          <button v-else type="button" class="px-2.5 py-1 min-h-[32px] rounded-lg bg-white border border-slate-200 text-slate-500" @click.stop="emit('cancel-skip', task)">撤回</button>
+        </div>
+        <div v-else-if="skipTurnedDown && !asParent" class="mt-1.5 text-xs font-bold text-rose-500 font-chinese">
+          家长没有同意跳过，今天还是要完成哦
         </div>
       </div>
     </div>
@@ -112,6 +146,12 @@
         class="inline-block px-3 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-bold font-chinese"
       >
         完成
+      </span>
+      <span
+        v-else-if="task.is_skipped"
+        class="inline-block px-3 py-1 rounded-xl bg-slate-200 text-slate-500 text-xs font-bold font-chinese"
+      >
+        已跳过
       </span>
       <span
         v-else
@@ -142,10 +182,15 @@ const props = defineProps({
   task: {
     type: Object,
     required: true
+  },
+  // The board is open with a parent session: skips take effect at once and requests can be settled here.
+  asParent: {
+    type: Boolean,
+    default: false
   }
 });
 
-const emit = defineEmits(['toggle']);
+const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip']);
 
 const activeParticles = ref([]);
 
@@ -153,12 +198,18 @@ const isWeeklyTask = computed(() => {
   return props.task.schedule_type === 'weekly_times' || Boolean(props.task.weekly_target_times);
 });
 
+// Skipped times use up the weekly target just like completed ones.
+const weeklyUsed = computed(() => (props.task.weekly_completed_times || 0) + (props.task.weekly_skipped_times || 0));
 const isWeeklyTargetMet = computed(() => {
   if (!isWeeklyTask.value) return false;
-  const target = props.task.weekly_target_times || 1;
-  const current = props.task.weekly_completed_times || 0;
-  return current >= target;
+  return weeklyUsed.value >= (props.task.weekly_target_times || 1);
 });
+
+const skipPending = computed(() => !props.task.is_completed && props.task.skip_request?.status === 'pending');
+const skipTurnedDown = computed(() => !props.task.is_completed && ['rejected', 'revoked'].includes(props.task.skip_request?.status));
+// Once a parent turned a request down, only the parent can still skip the task.
+const canSkip = computed(() => !props.task.is_completed && !props.task.is_skipped && !skipPending.value &&
+  (props.asParent || !skipTurnedDown.value));
 
 function subjectBadgeClass(subject) {
   switch (subject) {
@@ -174,6 +225,8 @@ function subjectBadgeClass(subject) {
 }
 
 function handleClick(event) {
+  // A skipped task cannot be checked off until a parent takes the skip back.
+  if (props.task.is_skipped) return;
   if (!props.task.is_completed) {
     // 播放任务打卡完成音
     playTaskComplete();

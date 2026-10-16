@@ -211,6 +211,24 @@ CREATE TABLE IF NOT EXISTS period_task_logs (
 
 CREATE INDEX IF NOT EXISTS idx_period_task_logs_task ON period_task_logs(period_task_id, date);
 
+-- Requests to skip a task on its day (e.g. the teacher set no homework). A child's request waits for
+-- a parent; a parent's own skip is approved at once. Approval marks daily_tasks.skipped_at.
+CREATE TABLE IF NOT EXISTS task_skip_requests (
+  id TEXT PRIMARY KEY,
+  daily_task_id TEXT NOT NULL,
+  child_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  requested_by TEXT NOT NULL,             -- child | parent
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected | cancelled | revoked
+  requested_at TEXT NOT NULL,
+  resolved_at TEXT,
+  FOREIGN KEY (daily_task_id) REFERENCES daily_tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_skip_requests_task ON task_skip_requests(daily_task_id);
+CREATE INDEX IF NOT EXISTS idx_task_skip_requests_status ON task_skip_requests(status, requested_at);
+
 -- Pending device pairings: a short code shown on an unauthorized device until a parent approves it.
 -- Authorized devices themselves live in the authorized_tokens file, by token hash.
 CREATE TABLE IF NOT EXISTS device_pairings (

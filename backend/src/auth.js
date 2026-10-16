@@ -45,7 +45,9 @@ function installAuthorization(app, db) {
       /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject)\/?$/.test(url) ||
       /^\/api\/children\/[^/]+\/(?:periods|goals)\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/periods/') || /^\/api\/period-tasks\/[^/]+\/?$/.test(url) ||
-      /^\/api\/children\/[^/]+\/adhoc-tasks\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/adhoc-tasks/');
+      /^\/api\/children\/[^/]+\/adhoc-tasks\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/adhoc-tasks/') ||
+      /^\/api\/daily-tasks\/[^/]+\/unskip\/?$/.test(url) ||
+      /^\/api\/skip-requests\/?$/.test(url) || /^\/api\/skip-requests\/[^/]+\/(?:approve|reject)\/?$/.test(url);
     if (parentOnly && request.user.role !== 'parent') return reply.code(403).send({ error: '需要家长权限' });
     if (url.startsWith('/uploads/')) {
       const photo = db.prepare('SELECT child_id FROM mistake_records WHERE photo_path = ?').get(`/uploads/${request.params['*']}`);
@@ -62,7 +64,7 @@ function installAuthorization(app, db) {
       const row = db.prepare('SELECT child_id FROM daily_tasks WHERE id = ?').get(request.params.id);
       if (row) app.requireChildAccess(request, row.child_id);
     }
-    for (const [prefix, table] of [['/api/mistakes/', 'mistake_records'], ['/api/characters/', 'characters'], ['/api/redemptions/', 'reward_redemptions']]) {
+    for (const [prefix, table] of [['/api/mistakes/', 'mistake_records'], ['/api/characters/', 'characters'], ['/api/redemptions/', 'reward_redemptions'], ['/api/skip-requests/', 'task_skip_requests']]) {
       if (url.startsWith(prefix)) {
         const row = db.prepare(`SELECT child_id FROM ${table} WHERE id = ?`).get(request.params.id);
         if (row) app.requireChildAccess(request, row.child_id);

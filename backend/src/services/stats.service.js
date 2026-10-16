@@ -57,6 +57,7 @@ class StatsService {
         date: d,
         total_tasks: summary.total,
         completed_tasks: summary.completed,
+        skipped_tasks: summary.skipped,
         completion_rate: completionRate,
         all_done: summary.all_done,
         points_earned: pointsEarned,
@@ -68,6 +69,8 @@ class StatsService {
           points: t.points,
           is_completed: t.is_completed,
           is_optional: t.is_optional,
+          is_skipped: t.is_skipped,
+          skip_reason: t.is_skipped ? t.skip_reason : null,
           completed_at: t.completed_at
         }))
       });
@@ -142,6 +145,7 @@ class StatsService {
   // and completions done ahead count too, never beyond N. Days the app was opened use the tasks
   // generated then; unopened days are projected from the templates that apply now, so they count
   // as missed instead of vanishing. Projection skips days before the child or template existed.
+  // Skipped tasks are not owed, and each skipped time of a weekly task takes one off its target.
   getWeeklyCompletion(childId, weekStart, weekEnd, asOf = getTodayDate()) {
     const cutoff = asOf < weekEnd ? asOf : weekEnd;
     if (cutoff < weekStart) return { as_of: cutoff, total_units: 0, completed_units: 0, completion_rate: null, items: [] };
@@ -150,6 +154,7 @@ class StatsService {
     const childSince = sinceDate(child.created_at);
     const schedule = this.tasksService.scheduleFor(childId);
     const goalsOn = this.tasksService.dailyGoalSchedule(childId);
+    const isSkipped = row => Boolean(row.skipped_at) && !row.is_completed;
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
       .filter(row => row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
@@ -167,7 +172,7 @@ class StatsService {
       if (!items.has(key)) {
         const id = sourceId(source);
         items.set(key, { key, template_id: id, title: source.title, subject: source.subject,
-          schedule_type: source.schedule_type || 'fixed_days', total: 0, completed: 0, target: 0, done: 0,
+          schedule_type: source.schedule_type || 'fixed_days', total: 0, completed: 0, target: 0, done: 0, skipped: 0,
           since: source.template_created_at ? sinceDate(source.template_created_at) : templatesById.get(id)?.since || weekStart,
           legacyOrphan: id === null });
       }
@@ -180,7 +185,7 @@ class StatsService {
     const openedDates = new Set(rows.filter(row => row.origin === 'template').map(row => row.date));
     for (const date of getDateRangeList(weekStart, cutoff)) {
       for (const row of rows) {
-        if (row.date !== date || row.origin === 'template') continue;
+        if (row.date !== date || row.origin === 'template' || isSkipped(row)) continue;
         const item = itemFor(keyFor(row), row);
         item.total++;
         if (row.is_completed) item.completed++;
@@ -190,7 +195,7 @@ class StatsService {
       }
       if (openedDates.has(date)) {
         for (const row of rows) {
-          if (row.date !== date || row.schedule_type === 'weekly_times' || row.origin !== 'template') continue;
+          if (row.date !== date || row.schedule_type === 'weekly_times' || row.origin !== 'template' || isSkipped(row)) continue;
           const item = itemFor(keyFor(row), row);
           item.total++;
           if (row.is_completed) item.completed++;
@@ -208,6 +213,7 @@ class StatsService {
       const item = itemFor(keyFor(row), row);
       item.target = item.legacyOrphan ? 1 : row.weekly_target_times || 1;
       if (row.is_completed) item.done++;
+      else if (isSkipped(row)) item.skipped++;
     }
     if (cutoff >= childSince) {
       for (const t of templates) {
@@ -215,14 +221,14 @@ class StatsService {
       }
     }
 
-    const list = [...items.values()].map(({ target, done, since, legacyOrphan, ...item }) => {
+    const list = [...items.values()].map(({ target, done, skipped, since, legacyOrphan, ...item }) => {
       if (item.schedule_type !== 'weekly_times') return item;
       const completed = Math.min(done, target);
       // The first week only owes as many occurrences as there are days after
       // creation. Real backfilled completions still count, even before creation.
       const start = [weekStart, childSince, since].sort().at(-1);
       // Weekly tasks limited to some weekdays only owe as many times as those days allow.
-      const effectiveTarget = Math.min(target, schedule.availableDays(item.template_id, start, weekEnd));
+      const effectiveTarget = Math.max(0, Math.min(target, schedule.availableDays(item.template_id, start, weekEnd)) - skipped);
       const daysAfterCutoff = schedule.availableDays(item.template_id, shiftDate(cutoff, 1), weekEnd);
       // Old deleted templates lost their identity before snapshots existed. Keep
       // each earned completion; do not invent shared quotas from matching titles.

@@ -56,6 +56,31 @@
         </div>
       </div>
 
+      <!-- Children's requests to skip a task, waiting for a parent -->
+      <section v-if="skipRequests.length" class="mb-8 bg-white rounded-3xl p-5 border-2 border-amber-200 shadow-card">
+        <h3 class="text-base font-bold text-slate-700 mb-3 flex items-center gap-2">
+          <span>🙋</span>
+          <span>跳过任务申请</span>
+          <span class="px-2 py-0.5 rounded-lg bg-rose-500 text-white text-xs">{{ skipRequests.length }}</span>
+        </h3>
+        <p v-if="skipError" class="mb-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ skipError }}</p>
+        <ul class="space-y-2">
+          <li v-for="r in skipRequests" :key="r.id" class="p-3 rounded-2xl bg-amber-50/60 border border-amber-100 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span class="text-2xl">{{ r.child_avatar_emoji }}</span>
+            <div class="flex-1 min-w-[180px]">
+              <div class="text-sm font-bold text-slate-800 font-chinese">
+                {{ r.child_name }} · {{ dayLabel(r.task_date) }} · {{ r.task_subject }} · {{ r.task_title }}
+              </div>
+              <div class="text-xs font-bold text-amber-700 font-chinese">理由：{{ r.reason }}</div>
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <button type="button" :disabled="skipBusy" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50" @click="resolveSkip(r, 'approve')">同意跳过</button>
+              <button type="button" :disabled="skipBusy" class="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-xs font-bold disabled:opacity-50" @click="resolveSkip(r, 'reject')">不同意</button>
+            </div>
+          </li>
+        </ul>
+      </section>
+
       <!-- Children Detail Progress Grid -->
       <h3 class="text-base font-bold text-slate-700 mb-3 px-1">
         各个小朋友实时看板
@@ -118,6 +143,7 @@
               <span class="text-slate-800">
                 完成 {{ item.stats.today_completed_tasks || 0 }} / {{ item.stats.today_total_tasks || 0 }} 项
                 ({{ Math.round((item.stats.today_completion_rate || 0) * 100) }}%)
+                <span v-if="item.stats.today_skipped_tasks" class="text-slate-400">· 跳过 {{ item.stats.today_skipped_tasks }} 项</span>
               </span>
             </div>
 
@@ -236,6 +262,9 @@ const loading = ref(true);
 const adhocForm = ref(null);
 const adhocSaving = ref(false);
 const adhocError = ref('');
+const skipRequests = ref([]);
+const skipBusy = ref(false);
+const skipError = ref('');
 
 const addDays = (date, days) => {
   const d = new Date(`${date}T00:00:00Z`);
@@ -292,6 +321,26 @@ async function removeAdhoc(item, task) {
   }
 }
 
+async function loadSkipRequests() {
+  skipRequests.value = await api.getSkipRequests('pending', { limit: 200 });
+}
+
+// Approving a skip changes that child's progress for the day, so their card is refreshed too.
+async function resolveSkip(request, action) {
+  skipBusy.value = true;
+  skipError.value = '';
+  try {
+    await (action === 'approve' ? api.approveSkipRequest(request.id) : api.rejectSkipRequest(request.id));
+    const item = childrenStats.value.find(entry => entry.child.id === request.child_id);
+    await Promise.all([loadSkipRequests(), item && refreshChild(item)]);
+  } catch (err) {
+    skipError.value = typeof err === 'string' ? err : '操作失败，请重试';
+    await loadSkipRequests().catch(() => {});
+  } finally {
+    skipBusy.value = false;
+  }
+}
+
 const overallCompletionRate = computed(() => {
   if (childrenStats.value.length === 0) return 0;
   let totalTasks = 0;
@@ -320,7 +369,7 @@ onMounted(async () => {
         api.getAdhocTasks(child.id), api.getChildGoals(child.id)]);
       return { child, stats, week, adhoc, goals: activeGoals(goals) };
     });
-    childrenStats.value = await Promise.all(statsPromises);
+    [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests()]);
   } catch (err) {
     console.error('Failed to load parent dashboard:', err);
   } finally {

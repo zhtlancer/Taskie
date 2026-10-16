@@ -235,6 +235,15 @@ function initDb(db) {
       db.pragma('user_version = 9');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 10) {
+    db.transaction(() => {
+      // A task a parent let the child skip that day; task_skip_requests (from schema.sql) keeps the requests.
+      const columns = new Set(db.pragma('table_info(daily_tasks)').map(c => c.name));
+      if (!columns.has('skipped_at')) db.exec('ALTER TABLE daily_tasks ADD COLUMN skipped_at TEXT');
+      if (!columns.has('skip_reason')) db.exec('ALTER TABLE daily_tasks ADD COLUMN skip_reason TEXT');
+      db.pragma('user_version = 10');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

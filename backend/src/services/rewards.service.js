@@ -131,6 +131,7 @@ class RewardsService {
       current_streak: currentStreak,
       today_total_tasks: todayTotal,
       today_completed_tasks: todayCompleted,
+      today_skipped_tasks: todayTasksRow?.skipped || 0,
       today_completion_rate: todayCompletionRate,
       today_points: todayPoints
     };

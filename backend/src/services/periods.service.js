@@ -1,6 +1,7 @@
 const { generateId } = require('../utils/crypto');
 const { getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
+const { cancelPendingSkips } = require('../utils/skips');
 
 const MODES = ['check', 'progress'];
 const INPUT_MODES = ['increment', 'position'];
@@ -385,6 +386,7 @@ class PeriodsService {
     const completedAt = logged ? new Date().toISOString() : null;
     if (row) this.db.prepare('UPDATE daily_tasks SET is_completed = ?, completed_at = ? WHERE id = ?').run(logged ? 1 : 0, completedAt, row.id);
     else if (logged) insertGoalDailyRow(this.db, task, date, true);
+    if (row && logged) cancelPendingSkips(this.db, row.id);
   }
 
   requireChild(childId) {

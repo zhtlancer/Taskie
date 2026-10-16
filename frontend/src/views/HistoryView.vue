@@ -183,7 +183,7 @@
                   {{ formatDate(item.date) }}
                 </div>
                 <div class="text-xs text-slate-400">
-                  {{ item.total_tasks === 0 ? '休息日' : `完成 ${item.completed_tasks} / ${item.total_tasks} 项` }}
+                  {{ item.total_tasks === 0 ? '休息日' : `完成 ${item.completed_tasks} / ${item.total_tasks} 项` }}{{ item.skipped_tasks ? ` · 跳过 ${item.skipped_tasks} 项` : '' }}
                 </div>
               </div>
 

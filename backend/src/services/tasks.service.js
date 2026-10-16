@@ -2,6 +2,7 @@ const { generateId } = require('../utils/crypto');
 const { insertGoalDailyRow } = require('./periods.service');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
+const { cancelPendingSkips } = require('../utils/skips');
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
@@ -37,17 +38,24 @@ function validateWeeklyDays(scheduleType, target, days) {
   }
 }
 
-// Weekly tasks whose target is already met are hidden unless completed that day.
+// A task a parent let the child skip that day. Completing it anyway wins over the skip.
+const isSkippedRow = row => Boolean(row.skipped_at) && !row.is_completed;
+
+// Weekly tasks whose target is already met (skipped times count towards it) are hidden unless
+// completed or skipped that day.
 function isActiveTask(task) {
-  return task.schedule_type !== 'weekly_times' || task.is_completed || task.weekly_completed_times < task.weekly_target_times;
+  return task.schedule_type !== 'weekly_times' || task.is_completed || task.is_skipped ||
+    task.weekly_completed_times + (task.weekly_skipped_times || 0) < task.weekly_target_times;
 }
 
-// Optional weekly tasks only count once completed, so skipping one never breaks a day,
-// and a day with nothing completed is never all done.
+// Optional weekly tasks only count once completed and skipped tasks never count, so neither
+// breaks a day, and a day with nothing completed is never all done.
 function summarizeDay(tasks) {
-  const counted = tasks.filter(task => isActiveTask(task) && (!task.is_optional || task.is_completed));
+  const active = tasks.filter(isActiveTask);
+  const counted = active.filter(task => !task.is_skipped && (!task.is_optional || task.is_completed));
   const completed = counted.filter(task => task.is_completed).length;
-  return { total: counted.length, completed, all_done: completed > 0 && completed === counted.length };
+  return { total: counted.length, completed, skipped: active.filter(task => task.is_skipped).length,
+    all_done: completed > 0 && completed === counted.length };
 }
 
 class TasksService {
@@ -243,12 +251,16 @@ class TasksService {
         if (!goalRow.get(goal.id, date)) insertGoalDailyRow(this.db, goal, date, Boolean(loggedOn.get(goal.id, date)));
       }
     })();
-    return this.describeTasksBetween(childId, date, date).filter(isActiveTask);
+    // The latest skip request tells the child whether one is waiting or was turned down.
+    const latestSkip = this.db.prepare('SELECT id, status, reason FROM task_skip_requests WHERE daily_task_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1');
+    return this.describeTasksBetween(childId, date, date).filter(isActiveTask)
+      .map(task => ({ ...task, skip_request: latestSkip.get(task.id) || null }));
   }
 
+  // Times a weekly task was done or skipped this week: both use up its weekly target.
   weeklyCount(childId, templateId, date) {
     const { startDate, endDate } = getWeekRange(date);
-    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND is_completed = 1")
+    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND (is_completed = 1 OR skipped_at IS NOT NULL)")
       .get(childId, templateId, startDate, endDate).n;
   }
 
@@ -259,7 +271,8 @@ class TasksService {
   // Describes a child's tasks between two dates with weekly progress, using one query over
   // the surrounding weeks. A weekly task is optional on a day while the times still needed
   // (counting only earlier days, so past days never change) are fewer than the days left
-  // in the week including that day; once there is no slack it is required that day.
+  // in the week including that day; once there is no slack it is required that day. A skipped
+  // time takes one off the target, so skipping on a day without slack still keeps the week whole.
   describeTasksBetween(childId, fromDate, toDate, { includePaused = false } = {}) {
     const weekStarts = new Map();
     const weekOf = date => {
@@ -278,26 +291,32 @@ class TasksService {
     const keyOf = row => `${weekOf(row.date)}|${sourceOf(row) ?? row.id}`;
     const schedule = this.scheduleFor(childId);
     const completions = new Map();
+    const skips = new Map();
     for (const row of rows) {
-      if (row.schedule_type !== 'weekly_times' || !row.is_completed) continue;
-      if (!completions.has(keyOf(row))) completions.set(keyOf(row), []);
-      completions.get(keyOf(row)).push(row.date);
+      if (row.schedule_type !== 'weekly_times') continue;
+      const dates = row.is_completed ? completions : isSkippedRow(row) ? skips : null;
+      if (!dates) continue;
+      if (!dates.has(keyOf(row))) dates.set(keyOf(row), []);
+      dates.get(keyOf(row)).push(row.date);
     }
 
     return rows.filter(row => row.date >= fromDate && row.date <= toDate &&
       (includePaused || row.is_completed || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
-      const task = { ...row, is_completed: Boolean(row.is_completed) };
+      const task = { ...row, is_completed: Boolean(row.is_completed), is_skipped: isSkippedRow(row) };
       if (row.schedule_type !== 'weekly_times') return { ...task, is_optional: false };
       const done = completions.get(keyOf(row)) || [];
+      const skipped = skips.get(keyOf(row)) || [];
       const target = row.weekly_target_times || 1;
+      const usedBefore = [...done, ...skipped].filter(date => date < row.date).length;
       // The task's own day plus the remaining days this week it may still be done.
       const daysLeft = 1 + schedule.availableDays(sourceOf(row), shiftDate(row.date, 1), getWeekRange(row.date).endDate);
       return {
         ...task,
         weekly_completed_times: done.length,
-        weekly_remaining_times: Math.max(0, target - done.length),
+        weekly_skipped_times: skipped.length,
+        weekly_remaining_times: Math.max(0, target - done.length - skipped.length),
         week_days_left: daysLeft,
-        is_optional: target - done.filter(date => date < row.date).length < daysLeft
+        is_optional: target - usedBefore < daysLeft
       };
     });
   }
@@ -343,14 +362,15 @@ class TasksService {
     for (const task of this.describeTasksBetween(childId, getWeekRange(fromDate).startDate, toDate).filter(isActiveTask)) {
       if (!byDate.has(task.date)) byDate.set(task.date, []);
       byDate.get(task.date).push(task);
-      if (task.schedule_type === 'weekly_times' && task.is_completed) {
+      if (task.schedule_type === 'weekly_times' && (task.is_completed || task.is_skipped)) {
         const key = weeklyKey(task.source_template_id ?? task.template_id, task.date);
         if (!weeklyDone.has(key)) weeklyDone.set(key, []);
         weeklyDone.get(key).push(task.date);
       }
     }
+    // Skipped tasks were not required that day, so a day with everything skipped is a rest day.
     return date => {
-      if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional);
+      if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional || task.is_skipped);
       if (!schedule.childSince || date < schedule.childSince) return true;
       if (goalsOn(date).length) return false;
       return !schedule.assigned.some(t => {
@@ -441,6 +461,7 @@ class TasksService {
     }
 
     if (task.date > getTodayDate()) throw { status: 400, message: '不能提前完成未来的任务' };
+    if (task.skipped_at) throw { status: 409, message: '这项任务今天已跳过，如需完成请家长先撤销跳过' };
     if (this.isUnassignedTodayTask(task)) throw { status: 409, message: '任务已取消分配，请刷新今日任务' };
     if (this.scheduleFor(task.child_id).isPaused(task.source_template_id ?? task.template_id, task.date)) {
       throw { status: 409, message: '假期中这项任务已暂停，请刷新今日任务' };
@@ -452,12 +473,13 @@ class TasksService {
     let newBadges = [];
 
     const tx = this.db.transaction(() => {
-      // 1. Update task to completed
+      // 1. Update task to completed; doing it withdraws a skip request still waiting for a parent
       this.db.prepare(`
         UPDATE daily_tasks
         SET is_completed = 1, completed_at = ?
         WHERE id = ?
       `).run(now, taskId);
+      cancelPendingSkips(this.db, taskId, now);
 
       // 2. Insert point log
       this.db.prepare(`

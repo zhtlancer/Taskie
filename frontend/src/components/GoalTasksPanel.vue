@@ -23,7 +23,7 @@
         v-for="goal in goals"
         :key="goal.id"
         class="bg-white rounded-2xl p-3 border"
-        :class="goal.is_completed ? 'border-emerald-200' : goal.daily_required && !goal.today_logged ? 'border-rose-200' : 'border-slate-200'"
+        :class="goal.is_completed ? 'border-emerald-200' : owesToday(goal) ? 'border-rose-200' : 'border-slate-200'"
       >
         <div class="flex items-center justify-between gap-2 mb-1">
           <span class="text-sm font-bold text-slate-800 font-chinese truncate">{{ goal.title }}</span>
@@ -31,10 +31,32 @@
         </div>
         <div class="flex flex-wrap gap-1 mb-1.5">
           <span v-if="goal.period_name && !period" class="px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-bold">{{ goal.period_name }}</span>
-          <span v-if="goal.daily_required" class="px-1.5 py-0.5 rounded-md text-[10px] font-black" :class="goal.today_logged ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'">
+          <span v-if="goal.daily_required && dailyRow(goal)?.is_skipped && !goal.today_logged" class="px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 text-slate-600">
+            ⏭️ 今天已跳过 · {{ dailyRow(goal).skip_reason }}
+          </span>
+          <span v-else-if="goal.daily_required" class="px-1.5 py-0.5 rounded-md text-[10px] font-black" :class="goal.today_logged ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-600'">
             {{ goal.today_logged ? '今天已记录 ✓' : '每天要记录 · 今天还没记' }}
           </span>
           <span v-if="goal.completion_bonus && !goal.is_completed" class="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-bold">完成再奖 {{ goal.completion_bonus }} 分</span>
+        </div>
+
+        <!-- Skipping today's required log: a child asks a parent; a parent skips at once -->
+        <div v-if="goal.daily_required && dailyRow(goal) && !goal.today_logged && !goal.is_completed" class="mb-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold font-chinese">
+          <template v-if="dailyRow(goal).is_skipped">
+            <button v-if="asParent" type="button" class="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-rose-500" @click="$emit('unskip', dailyRow(goal))">撤销跳过</button>
+          </template>
+          <template v-else-if="dailyRow(goal).skip_request?.status === 'pending'">
+            <span class="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">⏳ 申请跳过：{{ dailyRow(goal).skip_request.reason }} · 等家长确认</span>
+            <template v-if="asParent">
+              <button type="button" class="px-2 py-1 rounded-lg bg-emerald-500 text-white" @click="$emit('approve-skip', dailyRow(goal))">同意跳过</button>
+              <button type="button" class="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-600" @click="$emit('reject-skip', dailyRow(goal))">不同意</button>
+            </template>
+            <button v-else type="button" class="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-500" @click="$emit('cancel-skip', dailyRow(goal))">撤回</button>
+          </template>
+          <span v-else-if="!asParent && ['rejected', 'revoked'].includes(dailyRow(goal).skip_request?.status)" class="text-rose-500">家长没有同意跳过，今天还是要记录哦</span>
+          <button v-else type="button" class="px-2 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700" @click="$emit('skip', dailyRow(goal))">
+            {{ asParent ? '⏭️ 今天跳过' : '🙋 今天没法做？' }}
+          </button>
         </div>
 
         <template v-if="goal.mode === 'progress'">
@@ -102,9 +124,15 @@ import { playTaskComplete, playAllDone, playClick } from '../utils/sound';
 const props = defineProps({
   goals: { type: Array, required: true },
   period: { type: Object, default: null },
-  today: { type: String, required: true }
+  today: { type: String, required: true },
+  // Today's daily item of each daily-required goal, by goal id, carrying its skip state.
+  dailyRows: { type: Object, default: () => ({}) },
+  asParent: { type: Boolean, default: false }
 });
-const emit = defineEmits(['changed']);
+const emit = defineEmits(['changed', 'skip', 'cancel-skip', 'approve-skip', 'reject-skip', 'unskip']);
+
+const dailyRow = goal => props.dailyRows[goal.id] || null;
+const owesToday = goal => goal.daily_required && !goal.today_logged && !dailyRow(goal)?.is_skipped;
 
 const values = ref({});
 const busy = ref(false);
