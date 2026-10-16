@@ -603,7 +603,7 @@ const skipError = ref('');
 async function afterSkipChange(result) {
   const wasAllDone = allDone.value;
   tasks.value = await fetchTasks();
-  await childStore.fetchStats();
+  await Promise.all([loadGoals(), childStore.fetchStats()]);
   if (!wasAllDone && allDone.value) fireCelebration(true);
   else if (result?.new_badges?.length) {
     playBadgeUnlocked();

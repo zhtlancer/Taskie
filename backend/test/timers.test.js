@@ -185,3 +185,112 @@ test("children can only time their own tasks, and only today's", async t => {
   const yesterday = ctx.app.services.tasksService.getDailyTasks(child.id, shiftDate(today, -1))[0];
   assert.equal((await timer(yesterday.id, 'start')).statusCode, 409);
 });
+
+for (const approval of ['direct', 'approve', 'parent-settles-pending']) {
+  test(`skipping a running task pauses and preserves its timer (${approval})`, async t => {
+    const { ctx, asChild, asParent, template, todayTask, timer, runFor, near } = await fixture(t);
+    await template({ title: '口算', track_time: true });
+    const task = await todayTask('口算');
+    await timer(task.id, 'start');
+    ctx.db.prepare('UPDATE daily_tasks SET timer_elapsed_seconds = 600 WHERE id = ?').run(task.id);
+    runFor('daily_tasks', task.id, 120);
+    let request;
+    if (approval !== 'direct') {
+      request = (await asChild('POST', `/api/daily-tasks/${task.id}/skip`, { reason: '老师没布置' })).json().request;
+      assert.equal((await todayTask('口算')).timer_running, true, 'a pending request must not pause the timer');
+    }
+    const skipped = approval === 'approve'
+      ? await asParent('POST', `/api/skip-requests/${request.id}/approve`)
+      : await asParent('POST', `/api/daily-tasks/${task.id}/skip`, { reason: '老师没布置' });
+    assert.equal(skipped.statusCode, approval === 'approve' ? 200 : 201, skipped.body);
+    assert.deepEqual([skipped.json().task.is_skipped, skipped.json().task.timer_running], [true, false]);
+    const seconds = skipped.json().task.timer_seconds;
+    near(seconds, 720);
+    assert.equal((await timer(task.id, 'start')).statusCode, 409);
+
+    // An hour spent skipped must not become homework time after taking the skip back.
+    const later = Date.now() + 3600000;
+    t.mock.method(Date, 'now', () => later);
+    const restored = await asParent('POST', `/api/daily-tasks/${task.id}/unskip`);
+    assert.deepEqual([restored.json().task.timer_running, restored.json().task.timer_seconds], [false, seconds]);
+    const done = await asChild('POST', `/api/daily-tasks/${task.id}/complete`);
+    assert.deepEqual([done.json().task.duration_seconds, done.json().task.duration_source], [seconds, 'timer']);
+  });
+}
+
+test('backfilling progress leaves the current running or paused session alone', async t => {
+  const { ctx, child, asChild, asParent, timer, runFor, near, today } = await fixture(t);
+  const yesterday = shiftDate(today, -1);
+  for (const running of [true, false]) {
+    const goal = (await asParent('POST', `/api/children/${child.id}/goals`, {
+      title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 100,
+      start_date: yesterday, track_time: true
+    })).json();
+    if (running) {
+      await timer(goal.id, 'start', 'period-tasks');
+      runFor('period_tasks', goal.id, 600);
+    } else ctx.db.prepare('UPDATE period_tasks SET timer_elapsed_seconds = 600 WHERE id = ?').run(goal.id);
+    const session = () => ctx.db.prepare('SELECT timer_started_at, timer_elapsed_seconds FROM period_tasks WHERE id = ?').get(goal.id);
+    const before = session();
+    for (const entered of [undefined, 900, null]) {
+      const payload = { amount: 1, date: yesterday };
+      if (entered !== undefined) payload.duration_seconds = entered;
+      const result = await asParent('POST', `/api/period-tasks/${goal.id}/logs`, payload);
+      assert.equal(result.statusCode, 201, result.body);
+      const entry = result.json().task.logs.find(log => log.id === result.json().log_id);
+      assert.deepEqual([entry.date, entry.duration_seconds, entry.duration_source],
+        [yesterday, entered ?? null, entered === 900 ? 'manual' : null]);
+      assert.deepEqual(session(), before, 'historical entries must not consume the current session');
+    }
+    const invalid = await asParent('POST', `/api/period-tasks/${goal.id}/logs`, { amount: 1, date: yesterday, duration_seconds: 30 });
+    assert.equal(invalid.statusCode, 400);
+    assert.deepEqual(session(), before);
+
+    // The preserved session still belongs to today's next progress entry.
+    const current = (await asChild('POST', `/api/period-tasks/${goal.id}/logs`, { amount: 1 })).json();
+    const entry = current.task.logs.find(log => log.id === current.log_id);
+    near(entry.duration_seconds, 600);
+    assert.deepEqual([entry.date, entry.duration_source, current.task.timer_running, current.task.timer_seconds], [today, 'timer', false, 0]);
+  }
+});
+
+test("skipping a goal's daily log pauses its current session only for today", async t => {
+  const { ctx, child, asChild, asParent, timer, runFor, near, today } = await fixture(t);
+  const yesterday = shiftDate(today, -1);
+  const goal = (await asParent('POST', `/api/children/${child.id}/goals`, {
+    title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 100,
+    start_date: yesterday, track_time: true, daily_required: true
+  })).json();
+  const tasks = ctx.app.services.tasksService;
+  const pastRow = tasks.getDailyTasks(child.id, yesterday).find(row => row.goal_id === goal.id);
+  const todayRow = tasks.getDailyTasks(child.id, today).find(row => row.goal_id === goal.id);
+  await timer(goal.id, 'start', 'period-tasks');
+  runFor('period_tasks', goal.id, 600);
+  await asParent('POST', `/api/daily-tasks/${pastRow.id}/skip`, { reason: '补记昨天请假' });
+  assert.ok(ctx.db.prepare('SELECT timer_started_at FROM period_tasks WHERE id = ?').get(goal.id).timer_started_at);
+  const asked = (await asChild('POST', `/api/daily-tasks/${todayRow.id}/skip`, { reason: '今天请假' })).json().request;
+  const approved = await asParent('POST', `/api/skip-requests/${asked.id}/approve`);
+  assert.equal(approved.statusCode, 200, approved.body);
+  const book = (await asParent('GET', `/api/children/${child.id}/goals`)).json()[0];
+  assert.equal(book.timer_running, false);
+  near(book.timer_seconds, 600);
+  await asParent('POST', `/api/daily-tasks/${todayRow.id}/unskip`);
+  assert.equal(ctx.db.prepare('SELECT timer_started_at FROM period_tasks WHERE id = ?').get(goal.id).timer_started_at, null);
+});
+
+test('backfilling the final progress pauses the current session without assigning it to the past', async t => {
+  const { child, asParent, timer, runFor, near, today } = await fixture(t);
+  const yesterday = shiftDate(today, -1);
+  const goal = (await asParent('POST', `/api/children/${child.id}/goals`, {
+    title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 1,
+    start_date: yesterday, track_time: true
+  })).json();
+  await timer(goal.id, 'start', 'period-tasks');
+  runFor('period_tasks', goal.id, 600);
+  const result = (await asParent('POST', `/api/period-tasks/${goal.id}/logs`, { amount: 1, date: yesterday })).json();
+  assert.deepEqual([result.task.status, result.task.timer_running, result.task.logs[0].duration_seconds], ['completed', false, null]);
+  near(result.task.timer_seconds, 600);
+  const undone = (await asParent('DELETE', `/api/period-task-logs/${result.log_id}`)).json().task;
+  assert.deepEqual([undone.status, undone.timer_running], ['active', false]);
+  near(undone.timer_seconds, 600);
+});

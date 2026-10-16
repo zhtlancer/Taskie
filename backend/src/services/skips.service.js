@@ -1,6 +1,7 @@
 const { generateId } = require('../utils/crypto');
 const { getTodayDate } = require('../utils/date');
 const { isActiveTask } = require('./tasks.service');
+const { timerSeconds } = require('../utils/timer');
 
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled', 'revoked'];
 const MAX_REASON_LENGTH = 50;
@@ -69,7 +70,17 @@ class SkipsService {
   }
 
   markSkipped(row, reason, now) {
-    this.db.prepare('UPDATE daily_tasks SET skipped_at = ?, skip_reason = ? WHERE id = ?').run(now, reason, row.id);
+    // Freeze the timer when the skip takes effect; taking the skip back keeps only time already spent.
+    const stoppedAt = Date.parse(now);
+    this.db.prepare(`UPDATE daily_tasks SET skipped_at = ?, skip_reason = ?,
+      timer_elapsed_seconds = ?, timer_started_at = NULL WHERE id = ?`).run(now, reason, timerSeconds(row, stoppedAt), row.id);
+    // Daily-required goals keep their session timer on the goal, rather than the daily row.
+    // A skip recorded for a past day must not interrupt today's session.
+    if (row.goal_id && row.date === getTodayDate()) {
+      const goal = this.db.prepare('SELECT * FROM period_tasks WHERE id = ?').get(row.goal_id);
+      if (goal?.timer_started_at) this.db.prepare('UPDATE period_tasks SET timer_elapsed_seconds = ?, timer_started_at = NULL WHERE id = ?')
+        .run(timerSeconds(goal, stoppedAt), goal.id);
+    }
   }
 
   // A parent's skip takes effect at once and settles a request still waiting; a child's waits for

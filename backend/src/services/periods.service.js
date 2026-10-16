@@ -2,7 +2,7 @@ const { generateId } = require('../utils/crypto');
 const { getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
 const { cancelPendingSkips } = require('../utils/skips');
-const { describeTimer, resolveDuration, validateDuration, validateTiming } = require('../utils/timer');
+const { describeTimer, resolveDuration, timerSeconds, validateDuration, validateTiming } = require('../utils/timer');
 
 const MODES = ['check', 'progress'];
 const INPUT_MODES = ['increment', 'position'];
@@ -292,7 +292,8 @@ class PeriodsService {
   // Children log progress for today only; parents may also backfill earlier days of the task.
   // Position entries give the page reached; the amount logged is how far that is past the progress
   // so far. Reaching the total completes the task and awards its bonus with that entry. A timed task's
-  // entry keeps the session's duration (given, or what the timer counted), and the timer starts over.
+  // entry for today keeps the session's duration and starts the timer over. Historical entries only
+  // keep a duration entered by hand, leaving the current session alone unless the whole task finishes.
   logProgress(taskId, { amount, position, date, duration_seconds }, { role }) {
     const task = this.getTask(taskId);
     if (!task) throw { status: 404, message: '长期任务不存在' };
@@ -303,7 +304,10 @@ class PeriodsService {
     if (logDate < task.start_date || task.end_date && logDate > task.end_date) throw { status: 400, message: '不在任务日期内' };
     if (logDate > today) throw { status: 400, message: '不能记录未来的进度' };
     const byPosition = task.mode === 'progress' && task.input_mode === 'position';
-    const duration = task.track_time ? resolveDuration(task, duration_seconds) : { seconds: null, source: null };
+    const isToday = logDate === today;
+    const duration = task.track_time
+      ? resolveDuration(task, isToday ? duration_seconds : duration_seconds ?? null)
+      : { seconds: null, source: null };
 
     let logId, logAmount, bonus = 0, newBadges = [];
     this.db.transaction(() => {
@@ -324,7 +328,13 @@ class PeriodsService {
       const now = new Date().toISOString();
       this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at, duration_seconds, duration_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now, duration.seconds, duration.source);
-      if (task.track_time) this.db.prepare('UPDATE period_tasks SET timer_started_at = NULL, timer_elapsed_seconds = 0 WHERE id = ?').run(taskId);
+      if (task.track_time) {
+        if (isToday) this.db.prepare('UPDATE period_tasks SET timer_started_at = NULL, timer_elapsed_seconds = 0 WHERE id = ?').run(taskId);
+        else if (logAmount === remaining && task.timer_started_at) {
+          // A completed task cannot keep a hidden timer running. Preserve the session for a possible undo.
+          this.db.prepare('UPDATE period_tasks SET timer_started_at = NULL, timer_elapsed_seconds = ? WHERE id = ?').run(timerSeconds(task), taskId);
+        }
+      }
       const award = (points, title) => this.db.prepare(`INSERT INTO point_logs
         (id, child_id, daily_task_id, points, earned_at, period_log_id, activity_date, activity_title) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`)
         .run(generateId(), task.child_id, points, now, logId, logDate, title);
