@@ -67,6 +67,9 @@ test('the period before, of the same length, is compared with', async t => {
 });
 
 test('finish times are the day’s last completion in the evening, past midnight included, never later backfills', async t => {
+  // The current-day assertion needs a time after 04:00. Before then, completions belong to the
+  // evening before, so using the runner's real clock made this test fail in overnight CI runs.
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-17T12:00:00+08:00') });
   const { ctx, template, doneOn, stats, day } = await fixture(t);
   template({ title: '口算' });
   template({ title: '阅读', subject: '语文' });
@@ -85,8 +88,35 @@ test('finish times are the day’s last completion in the evening, past midnight
   const today = getTodayDate();
   at(doneOn(today, '口算'), new Date().toISOString());
   const withToday = stats(day(0), today);
-  assert.notEqual(withToday.days.at(-1).finished_at, null);
+  assert.equal(withToday.days.at(-1).finished_at, '12:00');
   assert.deepEqual([withToday.summary.finish_days, withToday.summary.finish_average], [2, '22:30']);
+});
+
+test('finish-time day attribution switches at 04:00, while today stays out of averages', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-17T00:12:17+08:00') });
+  const { ctx, template, doneOn, stats } = await fixture(t);
+  template({ title: '口算' });
+  const today = getTodayDate();
+  const yesterday = shiftDate(today, -1);
+  const previousTask = doneOn(yesterday, '口算');
+  const currentTask = doneOn(today, '口算');
+  const at = ctx.db.prepare('UPDATE daily_tasks SET completed_at = ? WHERE id = ?');
+  for (const [time, previousFinish, currentFinish] of [
+    ['00:00:00', '00:00', null],
+    ['00:12:17', '00:12', null], // The time of the original CI failure, in the family time zone.
+    ['03:59:59', '03:59', null],
+    ['04:00:00', null, '04:00'],
+    ['12:00:00', null, '12:00']
+  ]) {
+    const now = new Date(`${today}T${time}+08:00`);
+    t.mock.timers.setTime(now.getTime());
+    at.run(now.toISOString(), previousTask.id);
+    at.run(now.toISOString(), currentTask.id);
+    const result = stats(yesterday, today);
+    assert.deepEqual(result.days.map(day => day.finished_at), [previousFinish, currentFinish], time);
+    assert.deepEqual([result.summary.finish_days, result.summary.finish_average],
+      previousFinish === null ? [0, null] : [1, previousFinish], `${time}: today's completion must not enter the average`);
+  }
 });
 
 test('long-term tasks give time per page, ignoring entries from before timing was used', async t => {
