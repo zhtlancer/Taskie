@@ -35,7 +35,7 @@ async function dailyTasksRoutes(fastify, options) {
   fastify.post('/:id/complete', async (request, reply) => {
     try {
       ensureChildTodayTask(request, request.params.id);
-      const result = tasksService.completeDailyTask(request.params.id);
+      const result = tasksService.completeDailyTask(request.params.id, { duration_seconds: request.body?.duration_seconds });
       return reply.send(result);
     } catch (err) {
       return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });

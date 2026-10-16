@@ -209,6 +209,7 @@
             :today="todayString"
             :daily-rows="goalRows"
             :as-parent="asParent"
+            :now="now"
             @changed="refreshGoals"
             v-on="skipHandlers"
           />
@@ -237,7 +238,10 @@
               :key="task.id"
               :task="task"
               :as-parent="asParent"
+              :now="now"
               @toggle="handleTaskToggle"
+              @timer="handleTimer"
+              @edit-duration="openDurationEdit"
               v-on="skipHandlers"
             />
           </div>
@@ -310,6 +314,18 @@
       @submit="submitSkip"
     />
 
+    <DurationModal
+      v-if="durationAsk"
+      :title="durationAsk.task.title"
+      :initial-seconds="durationAsk.initialSeconds"
+      :editing="durationAsk.editing"
+      :note="durationAsk.note"
+      :busy="durationBusy"
+      :error="durationError"
+      @close="durationAsk = null"
+      @submit="submitDuration"
+    />
+
     <!-- Stroke Lookup Modal -->
     <StrokeLookupModal
       v-model="isLookupModalOpen"
@@ -320,7 +336,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import confetti from 'canvas-confetti';
 import api from '../api/client';
@@ -333,7 +349,9 @@ import StrokeLookupModal from '../components/StrokeLookupModal.vue';
 import GoalTasksPanel from '../components/GoalTasksPanel.vue';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import SkipTaskModal from '../components/SkipTaskModal.vue';
-import { playAllDone, playBadgeUnlocked, playClick } from '../utils/sound';
+import DurationModal from '../components/DurationModal.vue';
+import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
+import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
 import { currentRole } from '../utils/session.js';
 
 const route = useRoute();
@@ -363,9 +381,23 @@ const todayString = (() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 })();
 
+// Timers count on the server; the board keeps running ones ticking from when they were loaded.
+const now = ref(Date.now());
+const anyTimerRunning = computed(() => tasks.value.some(t => t.timer_running) || goals.value.some(g => g.timer_running));
+const clock = setInterval(() => { if (anyTimerRunning.value) now.value = Date.now(); }, 1000);
+onUnmounted(() => clearInterval(clock));
+async function fetchTasks() {
+  const list = (await api.getDailyTasks(childId.value)).map(task => withClock(task));
+  now.value = Date.now();
+  return list;
+}
+
 async function loadGoals() {
   try {
-    [periods.value, goals.value] = await Promise.all([api.getChildPeriods(childId.value), api.getChildGoals(childId.value)]);
+    const [periodList, goalList] = await Promise.all([api.getChildPeriods(childId.value), api.getChildGoals(childId.value)]);
+    periods.value = periodList;
+    goals.value = goalList.map(goal => withClock(goal));
+    now.value = Date.now();
   } catch (err) {
     console.error('Failed to load long-term tasks:', err);
   }
@@ -376,7 +408,7 @@ async function refreshGoals() {
   const wasAllDone = allDone.value;
   await loadGoals();
   try {
-    tasks.value = await api.getDailyTasks(childId.value);
+    tasks.value = await fetchTasks();
   } catch (err) {
     console.error('Failed to refresh daily tasks:', err);
   }
@@ -450,7 +482,7 @@ async function loadTasks() {
       const match = children.find(c => c.id === childId.value);
       if (match) childStore.setChild(match);
     }
-    tasks.value = await api.getDailyTasks(childId.value);
+    tasks.value = await fetchTasks();
     await childStore.fetchStats();
   } catch (err) {
     console.error('Failed to load daily tasks:', err);
@@ -459,11 +491,22 @@ async function loadTasks() {
   }
 }
 
-async function handleTaskToggle(task) {
+// A timed task whose timer barely ran (or ran far too long) asks how long it took before it is
+// checked off; durationBody carries the answer.
+async function handleTaskToggle(task, durationBody = null) {
   const willComplete = !task.is_completed;
+  if (willComplete && !durationBody && task.track_time && needsDurationPrompt(task, now.value)) {
+    playClick();
+    const seconds = liveSeconds(task, now.value);
+    durationError.value = '';
+    durationAsk.value = seconds > LONG_TIMER_SECONDS
+      ? { task, initialSeconds: seconds, note: `计时已经走了 ${formatDuration(seconds)}，是不是忘了暂停？请改成实际用了多久。` }
+      : { task, initialSeconds: task.expected_minutes ? task.expected_minutes * 60 : null };
+    return;
+  }
   try {
     if (willComplete) {
-      const res = await api.completeDailyTask(task.id);
+      const res = await api.completeDailyTask(task.id, durationBody || undefined);
       task.is_completed = true;
       task.completed_at = new Date().toISOString();
 
@@ -484,7 +527,7 @@ async function handleTaskToggle(task) {
       }
 
       // Refresh child stats & trigger streak shake
-      tasks.value = await api.getDailyTasks(childId.value);
+      tasks.value = await fetchTasks();
       await childStore.fetchStats();
       if (streakRef.value) {
         streakRef.value.wiggle();
@@ -500,11 +543,54 @@ async function handleTaskToggle(task) {
         task.weekly_completed_times = Math.max(0, (task.weekly_completed_times || 0) - 1);
       }
 
-      tasks.value = await api.getDailyTasks(childId.value);
+      tasks.value = await fetchTasks();
       await childStore.fetchStats();
     }
   } catch (err) {
     console.error('Failed to toggle task:', err);
+  }
+}
+
+// --- Timing: timer actions, and the time a task took ---
+const durationAsk = ref(null);
+const durationBusy = ref(false);
+const durationError = ref('');
+
+// Starting one timer pauses any other of the child's, long-term tasks included, so both reload.
+async function handleTimer(task, action) {
+  playClick();
+  try {
+    await api.taskTimer(task.id, action);
+    await refreshGoals();
+  } catch (err) {
+    console.error('Failed to update the timer:', err);
+  }
+}
+
+function openDurationEdit(task) {
+  playClick();
+  durationError.value = '';
+  durationAsk.value = { task, initialSeconds: task.duration_seconds, editing: true };
+}
+
+async function submitDuration(seconds) {
+  const { task, editing } = durationAsk.value;
+  if (!editing) {
+    durationAsk.value = null;
+    playTaskComplete();
+    await handleTaskToggle(task, { duration_seconds: seconds });
+    return;
+  }
+  durationBusy.value = true;
+  durationError.value = '';
+  try {
+    await api.setTaskDuration(task.id, seconds);
+    durationAsk.value = null;
+    tasks.value = await fetchTasks();
+  } catch (err) {
+    durationError.value = typeof err === 'string' ? err : '保存失败，请重试';
+  } finally {
+    durationBusy.value = false;
   }
 }
 
@@ -516,7 +602,7 @@ const skipError = ref('');
 // Reloads after a skip change; an approved skip may finish the day or unlock a badge.
 async function afterSkipChange(result) {
   const wasAllDone = allDone.value;
-  tasks.value = await api.getDailyTasks(childId.value);
+  tasks.value = await fetchTasks();
   await childStore.fetchStats();
   if (!wasAllDone && allDone.value) fireCelebration(true);
   else if (result?.new_badges?.length) {

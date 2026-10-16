@@ -71,7 +71,8 @@ class StatsService {
           is_optional: t.is_optional,
           is_skipped: t.is_skipped,
           skip_reason: t.is_skipped ? t.skip_reason : null,
-          completed_at: t.completed_at
+          completed_at: t.completed_at,
+          duration_seconds: t.duration_seconds
         }))
       });
     }

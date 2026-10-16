@@ -80,6 +80,23 @@ const defaultBadges = [
   }
 ];
 
+// Task timing (schema v11): templates and long-term tasks say whether time is recorded and how long
+// a session should take; daily tasks snapshot that, keep their timer and the final duration; progress
+// entries keep the duration of their session.
+const TIMING_COLUMNS = {
+  task_templates: { track_time: 'INTEGER NOT NULL DEFAULT 0', expected_minutes: 'INTEGER' },
+  daily_tasks: {
+    track_time: 'INTEGER NOT NULL DEFAULT 0', expected_minutes: 'INTEGER',
+    duration_seconds: 'INTEGER', duration_source: 'TEXT', // source: timer | manual
+    timer_started_at: 'TEXT', timer_elapsed_seconds: 'INTEGER NOT NULL DEFAULT 0'
+  },
+  period_tasks: {
+    track_time: 'INTEGER NOT NULL DEFAULT 0', expected_minutes: 'INTEGER',
+    timer_started_at: 'TEXT', timer_elapsed_seconds: 'INTEGER NOT NULL DEFAULT 0'
+  },
+  period_task_logs: { duration_seconds: 'INTEGER', duration_source: 'TEXT' }
+};
+
 let globalDb = null;
 
 function initDb(db) {
@@ -244,6 +261,17 @@ function initDb(db) {
       db.pragma('user_version = 10');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 11) {
+    db.transaction(() => {
+      for (const [table, columns] of Object.entries(TIMING_COLUMNS)) {
+        const existing = new Set(db.pragma(`table_info(${table})`).map(c => c.name));
+        for (const [name, definition] of Object.entries(columns)) {
+          if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+        }
+      }
+      db.pragma('user_version = 11');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
@@ -325,5 +353,6 @@ function getDb(customPath) {
 module.exports = {
   getDb,
   initDb,
-  defaultBadges
+  defaultBadges,
+  TIMING_COLUMNS
 };

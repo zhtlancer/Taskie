@@ -59,6 +59,17 @@
           </button>
         </div>
 
+        <!-- A timed task's session timer; logging progress records it and starts it over -->
+        <TaskTimer
+          v-if="goal.track_time && goal.status === 'active'"
+          class="mb-1.5"
+          :item="goal"
+          :now="now"
+          @start="timer(goal, 'start')"
+          @pause="timer(goal, 'pause')"
+          @reset="timer(goal, 'reset')"
+        />
+
         <template v-if="goal.mode === 'progress'">
           <div class="flex flex-wrap items-center justify-between gap-x-2 text-[11px] font-bold text-slate-500 mb-1">
             <span>{{ goal.input_mode === 'position' ? `读到第 ${goal.done_amount} / ${goal.total_amount} ${goal.unit}` : `已完成 ${goal.done_amount} / ${goal.total_amount} ${goal.unit}` }}</span>
@@ -97,22 +108,43 @@
         </template>
         <div v-if="goal.is_completed" class="mt-1 text-xs font-black text-emerald-600">全部完成 🎉{{ goal.completion_bonus ? ` 完成奖励 +${goal.completion_bonus} 分` : '' }}</div>
 
-        <!-- Today's entries can be undone -->
+        <!-- Today's entries can be undone, and a timed task's durations corrected -->
         <div v-if="todayLogs(goal).length" class="mt-2 flex flex-wrap gap-1.5">
-          <button
-            v-for="entry in todayLogs(goal)"
-            :key="entry.id"
-            type="button"
-            :disabled="busy || !entry.can_undo"
-            :title="entry.can_undo ? '撤销这条进度' : '请先撤销后续进度'"
-            class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-bold text-slate-500 hover:text-rose-500"
-            @click="undo(entry)"
-          >
-            今天 {{ entryLabel(goal, entry) }} · 撤销
-          </button>
+          <span v-for="entry in todayLogs(goal)" :key="entry.id" class="inline-flex items-stretch rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-500 overflow-hidden">
+            <button
+              type="button"
+              :disabled="busy || !entry.can_undo"
+              :title="entry.can_undo ? '撤销这条进度' : '请先撤销后续进度'"
+              class="px-2 py-1 hover:text-rose-500"
+              @click="undo(entry)"
+            >
+              今天 {{ entryLabel(goal, entry) }} · 撤销
+            </button>
+            <button
+              v-if="goal.track_time"
+              type="button"
+              :disabled="busy"
+              class="px-2 py-1 border-l border-slate-200 text-violet-600 hover:bg-violet-50"
+              @click="editDuration(goal, entry)"
+            >
+              ⏱ {{ entry.duration_seconds ? formatDuration(entry.duration_seconds) : '补填用时' }}
+            </button>
+          </span>
         </div>
       </div>
     </div>
+
+    <DurationModal
+      v-if="durationAsk"
+      :title="durationAsk.goal.title"
+      :initial-seconds="durationAsk.initialSeconds"
+      :editing="Boolean(durationAsk.entry)"
+      :note="durationAsk.note"
+      :busy="busy"
+      :error="error"
+      @close="durationAsk = null"
+      @submit="submitDuration"
+    />
   </section>
 </template>
 
@@ -120,6 +152,9 @@
 import { ref } from 'vue';
 import api from '../api/client';
 import { playTaskComplete, playAllDone, playClick } from '../utils/sound';
+import TaskTimer from './TaskTimer.vue';
+import DurationModal from './DurationModal.vue';
+import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt } from '../utils/taskTimer.js';
 
 const props = defineProps({
   goals: { type: Array, required: true },
@@ -127,7 +162,9 @@ const props = defineProps({
   today: { type: String, required: true },
   // Today's daily item of each daily-required goal, by goal id, carrying its skip state.
   dailyRows: { type: Object, default: () => ({}) },
-  asParent: { type: Boolean, default: false }
+  asParent: { type: Boolean, default: false },
+  // The board's clock, ticking while a timer runs.
+  now: { type: Number, default: () => Date.now() }
 });
 const emit = defineEmits(['changed', 'skip', 'cancel-skip', 'approve-skip', 'reject-skip', 'unskip']);
 
@@ -186,12 +223,13 @@ function entryLabel(goal, entry) {
   return entry.position ? `读到第 ${entry.position} ${goal.unit}` : `+${entry.amount}${goal.unit}`;
 }
 
-async function run(action) {
+// keepValues leaves the amounts being entered alone, e.g. when only a timer changed.
+async function run(action, { keepValues = false } = {}) {
   busy.value = true;
   error.value = '';
   try {
     await action();
-    values.value = {};
+    if (!keepValues) values.value = {};
     emit('changed');
   } catch (err) {
     error.value = typeof err === 'string' ? err : '操作失败，请重试';
@@ -200,13 +238,49 @@ async function run(action) {
   }
 }
 
+// A timed task whose timer barely ran (or ran far too long) asks how long the session took first;
+// otherwise the server records what the timer counted.
 function record(goal) {
   const payload = goal.mode === 'check' ? {} : goal.input_mode === 'position' ? { position: valueFor(goal) } : { amount: valueFor(goal) };
+  if (goal.track_time && needsDurationPrompt(goal, props.now)) {
+    playClick();
+    const seconds = liveSeconds(goal, props.now);
+    error.value = '';
+    durationAsk.value = seconds > LONG_TIMER_SECONDS
+      ? { goal, payload, initialSeconds: seconds, note: `计时已经走了 ${formatDuration(seconds)}，是不是忘了暂停？请改成实际用了多久。` }
+      : { goal, payload, initialSeconds: goal.expected_minutes ? goal.expected_minutes * 60 : null };
+    return;
+  }
+  return run(() => logProgress(goal, payload));
+}
+
+async function logProgress(goal, payload) {
+  const result = await api.logPeriodProgress(goal.id, payload);
+  if (result.task?.is_completed) playAllDone();
+  else playTaskComplete();
+}
+
+// Starting one timer pauses any other of the child's, so the board reloads everything.
+function timer(goal, action) {
+  playClick();
+  return run(() => api.goalTimer(goal.id, action), { keepValues: true });
+}
+
+const durationAsk = ref(null);
+
+function editDuration(goal, entry) {
+  playClick();
+  error.value = '';
+  durationAsk.value = { goal, entry, initialSeconds: entry.duration_seconds };
+}
+
+function submitDuration(seconds) {
+  const { goal, entry, payload } = durationAsk.value;
   return run(async () => {
-    const result = await api.logPeriodProgress(goal.id, payload);
-    if (result.task?.is_completed) playAllDone();
-    else playTaskComplete();
-  });
+    if (entry) await api.setGoalLogDuration(entry.id, seconds);
+    else await logProgress(goal, { ...payload, duration_seconds: seconds });
+    durationAsk.value = null;
+  }, { keepValues: Boolean(entry) });
 }
 
 function undo(entry) {

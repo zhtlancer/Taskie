@@ -69,6 +69,9 @@
             <h3 class="text-lg font-bold text-slate-800 mb-3 font-chinese">
               {{ tmpl.title }}
             </h3>
+            <div v-if="tmpl.track_time" class="-mt-2 mb-3 text-[11px] font-bold text-violet-600">
+              ⏱ 记录用时{{ tmpl.expected_minutes ? ` · 预计 ${tmpl.expected_minutes} 分钟` : '' }}
+            </div>
 
             <!-- Schedule Type / Cycle Display -->
             <div class="mb-4">
@@ -387,6 +390,8 @@
             </div>
           </div>
 
+          <TimingFields v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
+
           <!-- Actions -->
           <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
             <button
@@ -414,6 +419,7 @@
 import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import TimingFields from '../components/TimingFields.vue';
 
 const templates = ref([]);
 const children = ref([]);
@@ -441,7 +447,9 @@ const form = ref({
   weekly_target_times: 3,
   points: 10,
   days_of_week: [1, 2, 3, 4, 5],
-  child_ids: null
+  child_ids: null,
+  track_time: false,
+  expected_minutes: null
 });
 
 onMounted(async () => {
@@ -517,7 +525,9 @@ function openAddModal() {
     weekly_target_times: 3,
     points: 10,
     days_of_week: [1, 2, 3, 4, 5],
-    child_ids: null
+    child_ids: null,
+    track_time: false,
+    expected_minutes: null
   };
   showModal.value = true;
 }
@@ -533,7 +543,9 @@ function openEditModal(tmpl) {
     points: tmpl.points,
     days_of_week: Array.isArray(tmpl.days_of_week) ? [...tmpl.days_of_week] : [1, 2, 3, 4, 5],
     // Drop children deleted since the template was assigned.
-    child_ids: Array.isArray(tmpl.child_ids) ? assignedChildren(tmpl).map(child => child.id) : null
+    child_ids: Array.isArray(tmpl.child_ids) ? assignedChildren(tmpl).map(child => child.id) : null,
+    track_time: Boolean(tmpl.track_time),
+    expected_minutes: tmpl.expected_minutes ?? null
   };
   showModal.value = true;
 }
@@ -549,7 +561,9 @@ async function submitTemplateForm() {
       weekly_target_times: form.value.schedule_type === 'weekly_times' ? (Number(form.value.weekly_target_times) || 3) : null,
       points: form.value.points,
       days_of_week: form.value.days_of_week,
-      child_ids: form.value.child_ids
+      child_ids: form.value.child_ids,
+      track_time: form.value.track_time,
+      expected_minutes: form.value.track_time ? form.value.expected_minutes : null
     };
 
     if (isEditing.value) {

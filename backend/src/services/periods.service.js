@@ -2,6 +2,7 @@ const { generateId } = require('../utils/crypto');
 const { getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
 const { cancelPendingSkips } = require('../utils/skips');
+const { describeTimer, resolveDuration, validateDuration, validateTiming } = require('../utils/timer');
 
 const MODES = ['check', 'progress'];
 const INPUT_MODES = ['increment', 'position'];
@@ -136,7 +137,7 @@ class PeriodsService {
   // Progress so far and pacing. With a deadline, what is left is spread over the days remaining
   // (today included); without one, the finish date is estimated from the last 7 days' pace.
   describeTask(task, today = getTodayDate()) {
-    const logs = this.db.prepare('SELECT id, amount, position, date, created_at FROM period_task_logs WHERE period_task_id = ? ORDER BY date DESC, created_at DESC, rowid DESC')
+    const logs = this.db.prepare('SELECT id, amount, position, date, created_at, duration_seconds, duration_source FROM period_task_logs WHERE period_task_id = ? ORDER BY date DESC, created_at DESC, rowid DESC')
       .all(task.id);
     const latest = this.db.prepare('SELECT id FROM period_task_logs WHERE period_task_id = ? ORDER BY rowid DESC LIMIT 1').get(task.id);
     const undoInOrder = Boolean(task.completed_at) || logs.some(log => log.position !== null);
@@ -165,6 +166,7 @@ class PeriodsService {
     }
     return {
       ...task,
+      ...describeTimer(task),
       daily_required: Boolean(task.daily_required),
       status,
       done_amount: done,
@@ -198,10 +200,11 @@ class PeriodsService {
     const id = generateId();
     return this.db.transaction(() => {
       this.db.prepare(`INSERT INTO period_tasks (id, period_id, child_id, title, subject, mode, input_mode, total_amount, unit, points,
-          completion_bonus, start_date, end_date, daily_required, completed_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`)
+          completion_bonus, start_date, end_date, daily_required, completed_at, created_at, track_time, expected_minutes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
         .run(id, fields.period_id, fields.child_id, fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit,
-          fields.points, fields.completion_bonus, fields.start_date, fields.end_date, fields.daily_required ? 1 : 0, new Date().toISOString());
+          fields.points, fields.completion_bonus, fields.start_date, fields.end_date, fields.daily_required ? 1 : 0, new Date().toISOString(),
+          fields.track_time ? 1 : 0, fields.expected_minutes);
       return this.describeTask(this.getTask(id));
     })();
   }
@@ -209,7 +212,7 @@ class PeriodsService {
   updateTask(id, body) {
     const existing = this.getTask(id);
     if (!existing) throw { status: 404, message: '长期任务不存在' };
-    const fields = this.validateTask({ ...existing, daily_required: Boolean(existing.daily_required), ...body });
+    const fields = this.validateTask({ ...existing, daily_required: Boolean(existing.daily_required), track_time: Boolean(existing.track_time), ...body });
     const done = this.db.prepare('SELECT COALESCE(SUM(amount), 0) AS done FROM period_task_logs WHERE period_task_id = ?').get(id).done;
     if (fields.mode !== existing.mode && done > 0) throw { status: 409, message: '已有进度记录，不能更改完成方式' };
     // Changing the total of a finished task could award its completion bonus twice.
@@ -221,10 +224,14 @@ class PeriodsService {
     // Holiday tasks keep their period's dates.
     const dates = existing.period_id ? existing : this.validateGoalDates({ start_date: existing.start_date, end_date: existing.end_date, ...body });
     return this.db.transaction(() => {
+      // Turning timing off drops the timer.
       this.db.prepare(`UPDATE period_tasks SET title = ?, subject = ?, mode = ?, input_mode = ?, total_amount = ?, unit = ?, points = ?,
-          completion_bonus = ?, start_date = ?, end_date = ?, daily_required = ? WHERE id = ?`)
+          completion_bonus = ?, start_date = ?, end_date = ?, daily_required = ?, track_time = ?, expected_minutes = ?,
+          timer_started_at = CASE WHEN ? THEN timer_started_at END, timer_elapsed_seconds = CASE WHEN ? THEN timer_elapsed_seconds ELSE 0 END
+        WHERE id = ?`)
         .run(fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit, fields.points,
-          fields.completion_bonus, dates.start_date, dates.end_date, fields.daily_required ? 1 : 0, id);
+          fields.completion_bonus, dates.start_date, dates.end_date, fields.daily_required ? 1 : 0,
+          fields.track_time ? 1 : 0, fields.expected_minutes, fields.track_time ? 1 : 0, fields.track_time ? 1 : 0, id);
       this.prunePendingDailyRows(this.getTask(id));
       return this.describeTask(this.getTask(id));
     })();
@@ -254,7 +261,7 @@ class PeriodsService {
       .run(task.id, task.start_date, task.end_date, task.end_date, finishedOn, finishedOn);
   }
 
-  validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false }) {
+  validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false, track_time, expected_minutes }) {
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
     if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
     if (!MODES.includes(mode)) throw { status: 400, message: '完成方式无效' };
@@ -262,7 +269,7 @@ class PeriodsService {
     if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
     if (!Number.isSafeInteger(completion_bonus) || completion_bonus < 0 || completion_bonus > 100000) throw { status: 400, message: '完成奖励必须为 0 至 100000 的整数' };
     if (typeof daily_required !== 'boolean') throw { status: 400, message: '“每天要记录”设置无效' };
-    const common = { title: title.trim(), subject: subject.trim(), mode, points, completion_bonus, daily_required };
+    const common = { title: title.trim(), subject: subject.trim(), mode, points, completion_bonus, daily_required, ...validateTiming({ track_time, expected_minutes }) };
     if (mode === 'check') return { ...common, input_mode: 'increment', total_amount: 1, unit: null };
     if (!Number.isSafeInteger(total_amount) || total_amount < 1 || total_amount > 100000) throw { status: 400, message: '总量必须为 1 至 100000 的整数' };
     if (typeof unit !== 'string' || !unit.trim() || unit.trim().length > 10) throw { status: 400, message: '请填写单位，如 页、篇、次' };
@@ -284,8 +291,9 @@ class PeriodsService {
 
   // Children log progress for today only; parents may also backfill earlier days of the task.
   // Position entries give the page reached; the amount logged is how far that is past the progress
-  // so far. Reaching the total completes the task and awards its bonus with that entry.
-  logProgress(taskId, { amount, position, date }, { role }) {
+  // so far. Reaching the total completes the task and awards its bonus with that entry. A timed task's
+  // entry keeps the session's duration (given, or what the timer counted), and the timer starts over.
+  logProgress(taskId, { amount, position, date, duration_seconds }, { role }) {
     const task = this.getTask(taskId);
     if (!task) throw { status: 404, message: '长期任务不存在' };
     const today = getTodayDate();
@@ -295,6 +303,7 @@ class PeriodsService {
     if (logDate < task.start_date || task.end_date && logDate > task.end_date) throw { status: 400, message: '不在任务日期内' };
     if (logDate > today) throw { status: 400, message: '不能记录未来的进度' };
     const byPosition = task.mode === 'progress' && task.input_mode === 'position';
+    const duration = task.track_time ? resolveDuration(task, duration_seconds) : { seconds: null, source: null };
 
     let logId, logAmount, bonus = 0, newBadges = [];
     this.db.transaction(() => {
@@ -313,8 +322,9 @@ class PeriodsService {
       }
       logId = generateId();
       const now = new Date().toISOString();
-      this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now);
+      this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at, duration_seconds, duration_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now, duration.seconds, duration.source);
+      if (task.track_time) this.db.prepare('UPDATE period_tasks SET timer_started_at = NULL, timer_elapsed_seconds = 0 WHERE id = ?').run(taskId);
       const award = (points, title) => this.db.prepare(`INSERT INTO point_logs
         (id, child_id, daily_task_id, points, earned_at, period_log_id, activity_date, activity_title) VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`)
         .run(generateId(), task.child_id, points, now, logId, logDate, title);
@@ -375,6 +385,19 @@ class PeriodsService {
       this.markDailyRow(task, log.date);
       this.prunePendingDailyRows(this.getTask(task.id));
     })();
+    return { success: true, task: this.describeTask(this.getTask(log.period_task_id)) };
+  }
+
+  // Correcting or clearing an entry's duration; children only for today's entries.
+  setLogDuration(logId, durationSeconds, { role }) {
+    const log = this.db.prepare(`
+      SELECT l.*, t.track_time FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id WHERE l.id = ?
+    `).get(logId);
+    if (!log) throw { status: 404, message: '进度记录不存在' };
+    if (!log.track_time) throw { status: 409, message: '这项任务不记录用时' };
+    if (role !== 'parent' && log.date !== getTodayDate()) throw { status: 403, message: '只能修改今天的用时' };
+    const seconds = validateDuration(durationSeconds);
+    this.db.prepare('UPDATE period_task_logs SET duration_seconds = ?, duration_source = ? WHERE id = ?').run(seconds, seconds === null ? null : 'manual', logId);
     return { success: true, task: this.describeTask(this.getTask(log.period_task_id)) };
   }
 

@@ -243,6 +243,7 @@
             <input v-model.number="adhocForm.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:border-brand-500" />
           </div>
         </div>
+        <TimingFields v-model:track-time="adhocForm.track_time" v-model:expected-minutes="adhocForm.expected_minutes" />
         <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
           <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100" @click="adhocForm = null">取消</button>
           <button type="submit" :disabled="adhocSaving || !adhocForm.title.trim()" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ adhocSaving ? '保存中...' : '确认添加' }}</button>
@@ -256,6 +257,7 @@
 import { ref, computed, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import TimingFields from '../components/TimingFields.vue';
 
 const childrenStats = ref([]);
 const loading = ref(true);
@@ -284,7 +286,7 @@ function dayLabel(date) {
 
 function openAdhoc(child) {
   adhocError.value = '';
-  adhocForm.value = { child, title: '', subject: '语文', date: today, points: 10 };
+  adhocForm.value = { child, title: '', subject: '语文', date: today, points: 10, track_time: false, expected_minutes: null };
 }
 
 const activeGoals = goals => goals.filter(goal => goal.status === 'active');
@@ -299,8 +301,8 @@ async function saveAdhoc() {
   adhocSaving.value = true;
   adhocError.value = '';
   try {
-    const { child, title, subject, date, points } = adhocForm.value;
-    await api.createAdhocTask(child.id, { title, subject, date, points: points || 0 });
+    const { child, title, subject, date, points, track_time, expected_minutes } = adhocForm.value;
+    await api.createAdhocTask(child.id, { title, subject, date, points: points || 0, track_time, expected_minutes: track_time ? expected_minutes : null });
     await refreshChild(childrenStats.value.find(item => item.child.id === child.id));
     adhocForm.value = null;
   } catch (err) {

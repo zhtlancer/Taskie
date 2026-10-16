@@ -12,6 +12,7 @@
         {{ task.start_date.slice(5) }} 起{{ task.end_date ? ` · ${task.end_date.slice(5)} 截止` : ' · 不设截止' }}
       </span>
       <span v-if="task.daily_required" class="px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600">每天要记录</span>
+      <span v-if="task.track_time" class="px-1.5 py-0.5 rounded-md bg-violet-50 text-violet-600">⏱ 记录用时{{ task.expected_minutes ? ` · 预计 ${task.expected_minutes} 分钟` : '' }}</span>
       <span v-if="task.mode === 'progress'" class="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600">{{ task.input_mode === 'position' ? `记录读到第几${task.unit}` : '记录完成数量' }}</span>
     </div>
     <div class="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1">

@@ -215,7 +215,7 @@ test('current-schema backups missing assignment data are rejected before changin
     const damaged = JSON.parse(gunzipSync(archive));
     const db = new Database(Buffer.from(damaged.database, 'base64'));
     db.exec(corruption);
-    assert.equal(db.pragma('user_version', { simple: true }), 10);
+    assert.equal(db.pragma('user_version', { simple: true }), 11);
     damaged.database = db.serialize().toString('base64');
     db.close();
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
@@ -255,7 +255,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 10);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 11);
   const rows = ctx.db.prepare('SELECT source_template_id, template_created_at FROM daily_tasks').all();
   assert.ok(rows.every(row => row.source_template_id === template.id && row.template_created_at === template.created_at));
   tasks.deleteTemplate(template.id);
@@ -311,7 +311,7 @@ test('old schema migrates without losing existing children and fixed-day templat
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
     assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
-    assert.equal(db.pragma('user_version', { simple: true }), 10);
+    assert.equal(db.pragma('user_version', { simple: true }), 11);
   } finally { db.close(); }
 });
 
@@ -333,7 +333,7 @@ test('v8 character books restore with empty categories; a v9 backup without them
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 10);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 11);
   assert.deepEqual(ctx.app.services.charactersService.listCharacters({ child_id: child.id }).map(c => [c.char, c.categories]), [['春', []]]);
 });
 
@@ -382,6 +382,45 @@ test('skipped tasks and their requests survive restore; v9 backups restore witho
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 10);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 11);
   assert.deepEqual([skipsService.listRequests().length, tasksService.getDailyTasks(child.id)[0].is_skipped], [0, false]);
+});
+
+test('task durations survive restore; v10 backups restore without timing and a v11 backup missing it is rejected', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  const { tasksService } = ctx.app.services;
+  tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], track_time: true, expected_minutes: 20 });
+  const task = tasksService.getDailyTasks(child.id)[0];
+  tasksService.completeDailyTask(task.id, { duration_seconds: 1200 });
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  tasksService.setDuration(task.id, null);
+  const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
+  assert.equal(restored.statusCode, 200, restored.body);
+  const back = tasksService.getDailyTasks(child.id)[0];
+  assert.deepEqual([back.track_time, back.expected_minutes, back.duration_seconds, back.duration_source], [true, 20, 1200, 'manual']);
+
+  const Database = require('better-sqlite3');
+  const { TIMING_COLUMNS } = require('../src/db');
+  const legacy = JSON.parse(gunzipSync(archive));
+  const dropAll = Object.entries(TIMING_COLUMNS).flatMap(([table, columns]) => Object.keys(columns).map(name => `ALTER TABLE ${table} DROP COLUMN ${name}`));
+  for (const mutation of dropAll) {
+    const db = new Database(Buffer.from(legacy.database, 'base64'));
+    db.exec(mutation);
+    const damaged = { ...legacy, database: db.serialize().toString('base64') };
+    db.close();
+    const invalid = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
+    assert.equal(invalid.statusCode, 400, `${mutation}: ${invalid.body}`);
+    assert.match(invalid.body, /备份缺少任务用时数据/);
+  }
+  const db = new Database(Buffer.from(legacy.database, 'base64'));
+  db.exec(dropAll.join(';'));
+  db.pragma('user_version = 10');
+  legacy.database = db.serialize().toString('base64');
+  db.close();
+  const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
+  assert.equal(older.statusCode, 200, older.body);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 11);
+  const legacyTask = tasksService.getDailyTasks(child.id)[0];
+  assert.deepEqual([legacyTask.track_time, legacyTask.duration_seconds, legacyTask.timer_seconds], [false, null, 0]);
+  assert.equal(tasksService.listTemplates()[0].track_time, false);
 });

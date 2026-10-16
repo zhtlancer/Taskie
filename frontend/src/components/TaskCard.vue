@@ -95,6 +95,23 @@
           </div>
         </div>
 
+        <!-- Timer of a timed task still to do; the time it took once done -->
+        <TaskTimer
+          v-if="task.track_time && !task.is_completed && !task.is_skipped"
+          class="mt-1.5"
+          :item="task"
+          :now="now"
+          @start="emit('timer', task, 'start')"
+          @pause="emit('timer', task, 'pause')"
+          @reset="emit('timer', task, 'reset')"
+        />
+        <div v-else-if="task.track_time && task.is_completed" class="mt-1 flex items-center gap-1.5 text-xs font-bold text-violet-600 font-chinese">
+          <span>⏱ {{ task.duration_seconds ? `用时 ${formatDuration(task.duration_seconds)}` : '没有记录用时' }}</span>
+          <button type="button" class="px-2 py-0.5 min-h-[28px] rounded-lg bg-violet-50 hover:bg-violet-100" @click.stop="emit('edit-duration', task)">
+            {{ task.duration_seconds ? '改' : '补填' }}
+          </button>
+        </div>
+
         <!-- Sub information / points -->
         <div class="mt-1 flex items-center gap-2 text-sm">
           <span
@@ -177,6 +194,8 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { playTaskComplete, playTaskUncomplete } from '../utils/sound';
+import TaskTimer from './TaskTimer.vue';
+import { formatDuration, needsDurationPrompt } from '../utils/taskTimer.js';
 
 const props = defineProps({
   task: {
@@ -187,10 +206,15 @@ const props = defineProps({
   asParent: {
     type: Boolean,
     default: false
+  },
+  // The board's clock, ticking while a timer runs.
+  now: {
+    type: Number,
+    default: () => Date.now()
   }
 });
 
-const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip']);
+const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration']);
 
 const activeParticles = ref([]);
 
@@ -227,6 +251,11 @@ function subjectBadgeClass(subject) {
 function handleClick(event) {
   // A skipped task cannot be checked off until a parent takes the skip back.
   if (props.task.is_skipped) return;
+  // A timed task that still needs its time asks first; the celebration waits for the answer.
+  if (!props.task.is_completed && props.task.track_time && needsDurationPrompt(props.task, props.now)) {
+    emit('toggle', props.task);
+    return;
+  }
   if (!props.task.is_completed) {
     // 播放任务打卡完成音
     playTaskComplete();

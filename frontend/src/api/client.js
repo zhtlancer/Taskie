@@ -52,7 +52,12 @@ export const api = {
   updateTaskTemplate: (id, data) => put(`/task-templates/${id}`, data),
   deleteTaskTemplate: id => remove(`/task-templates/${id}`),
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
-  completeDailyTask: id => post(`/daily-tasks/${id}/complete`),
+  // data.duration_seconds: the time a timed task took (null for none); left out, the timer's time counts.
+  completeDailyTask: (id, data) => post(`/daily-tasks/${id}/complete`, data),
+  taskTimer: (id, action) => post(`/daily-tasks/${id}/timer/${action}`),
+  setTaskDuration: (id, seconds) => put(`/daily-tasks/${id}/duration`, { duration_seconds: seconds }),
+  goalTimer: (id, action) => post(`/period-tasks/${id}/timer/${action}`),
+  setGoalLogDuration: (id, seconds) => put(`/period-task-logs/${id}/duration`, { duration_seconds: seconds }),
   uncompleteDailyTask: id => post(`/daily-tasks/${id}/uncomplete`),
   skipDailyTask: (id, reason) => post(`/daily-tasks/${id}/skip`, { reason }),
   unskipDailyTask: id => post(`/daily-tasks/${id}/unskip`),

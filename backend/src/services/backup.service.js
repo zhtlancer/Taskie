@@ -3,7 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { initDb } = require('../db');
+const { initDb, TIMING_COLUMNS } = require('../db');
 
 // Only genuine older schemas may have their newer tables created by initDb.
 const REQUIRED_TABLES = ['children', 'task_templates', 'daily_tasks', 'point_logs', 'badge_definitions', 'child_badges', 'mistake_records', 'settings', 'characters'];
@@ -103,6 +103,10 @@ class BackupService {
       if (schemaVersion >= 10 && !(tables.includes('task_skip_requests') &&
         ['skipped_at', 'skip_reason'].every(name => hasColumn('daily_tasks', name)))) {
         throw fail('备份缺少跳过申请数据，无法恢复');
+      }
+      if (schemaVersion >= 11 && !Object.entries(TIMING_COLUMNS).every(([table, columns]) =>
+        Object.keys(columns).every(name => hasColumn(table, name)))) {
+        throw fail('备份缺少任务用时数据，无法恢复');
       }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
