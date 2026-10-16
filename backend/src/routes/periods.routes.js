@@ -27,6 +27,11 @@ async function periodsRoutes(fastify, options) {
   fastify.post('/period-tasks/:id/logs', handle(async (request, reply) =>
     reply.code(201).send(periodsService.logProgress(request.params.id, request.body || {}, actor(request)))));
   fastify.delete('/period-task-logs/:id', handle(async request => periodsService.deleteLog(request.params.id, actor(request))));
+
+  fastify.get('/children/:id/makeup-days', handle(async request => periodsService.listMakeupDays(request.params.id)));
+  fastify.post('/children/:id/makeup-days', handle(async (request, reply) =>
+    reply.code(201).send(periodsService.createMakeupDay(request.params.id, request.body || {}))));
+  fastify.delete('/makeup-days/:id', handle(async request => periodsService.deleteMakeupDay(request.params.id)));
 }
 
 module.exports = periodsRoutes;

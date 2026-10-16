@@ -295,7 +295,7 @@
                   太棒啦！今日作业任务已全部完成！
                 </h4>
                 <p class="text-xs text-emerald-100 font-medium">
-                  {{ optionalPendingCount > 0 ? `还有 ${optionalPendingCount} 项本周弹性任务，可以多做多得分哦！` : '已获得全部任务积分，保持连续打卡哦！' }}
+                  {{ optionalPendingCount > 0 ? `还有 ${optionalPendingCount} 项可以晚点做的任务，做了也能得分哦！` : '已获得全部任务积分，保持连续打卡哦！' }}
                 </p>
               </div>
             </div>

@@ -10,10 +10,11 @@ async function dailyTasksRoutes(fastify, options) {
       throw { status: 403, message: '只能查看和打卡今天的任务' };
     }
   };
+  // A task carried over a break (or due later) stays open to the child until its deadline.
   const ensureChildTodayTask = (request, taskId) => {
     if (request.user.role !== 'child') return;
-    const task = fastify.db.prepare('SELECT date FROM daily_tasks WHERE id = ?').get(taskId);
-    if (task) ensureChildToday(request, task.date);
+    const task = fastify.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
+    if (task && !tasksService.childMayActOn(task)) throw { status: 403, message: '只能打卡今天的任务，或还没到截止日期的任务' };
   };
 
   fastify.get('/', async (request, reply) => {

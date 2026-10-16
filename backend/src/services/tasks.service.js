@@ -1,10 +1,11 @@
 const { generateId } = require('../utils/crypto');
 const { insertGoalDailyRow } = require('./periods.service');
-const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
+const { formatDate, getTodayDate, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
 const { cancelPendingSkips } = require('../utils/skips');
 const { classLessonKey } = require('../utils/schedule');
 const { describeTimer, resolveDuration, timerSeconds, validateDuration, validateTiming } = require('../utils/timer');
+const { schoolCalendar, dueDateOf, MAX_CARRY_DAYS } = require('./calendar');
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
@@ -43,6 +44,15 @@ function validateWeeklyDays(scheduleType, target, days) {
 // A task a parent let the child skip that day. Completing it anyway wins over the skip.
 const isSkippedRow = row => Boolean(row.skipped_at) && !row.is_completed;
 
+// The fields every described task carries, before weekly and deadline details.
+const describeRow = row => ({ ...row, is_completed: Boolean(row.is_completed), is_skipped: isSkippedRow(row), ...describeTimer(row) });
+
+// Only tasks on fixed weekdays may wait out a break; weekly tasks are flexible already.
+function validateCarryOver(carryOver, scheduleType) {
+  if (typeof carryOver !== 'boolean' && carryOver !== 0 && carryOver !== 1) throw { status: 400, message: '“放假前的作业可以在假期里补完”设置无效' };
+  return Boolean(carryOver) && scheduleType !== 'weekly_times';
+}
+
 // Weekly tasks whose target is already met (skipped times count towards it) are hidden unless
 // completed or skipped that day.
 function isActiveTask(task) {
@@ -70,7 +80,7 @@ class TasksService {
 
   listTemplates() {
     const rows = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes, carry_over
       FROM task_templates
       ORDER BY created_at ASC
     `).all();
@@ -88,6 +98,7 @@ class TasksService {
       ...row,
       days_of_week: normalizeDaysOfWeek(row.days_of_week),
       track_time: Boolean(row.track_time),
+      carry_over: Boolean(row.carry_over),
       child_ids: assign_all ? null : childIds
     };
   }
@@ -124,7 +135,7 @@ class TasksService {
 
   getTemplate(id) {
     const row = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes, carry_over
       FROM task_templates
       WHERE id = ?
     `).get(id);
@@ -134,7 +145,7 @@ class TasksService {
     return this.describeTemplate(row, childIds);
   }
 
-  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null, child_ids = null, track_time, expected_minutes }) {
+  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null, child_ids = null, track_time, expected_minutes, carry_over = false }) {
     if (!title || typeof title !== 'string' || title.trim() === '') {
       throw { status: 400, message: 'Template title is required' };
     }
@@ -151,6 +162,7 @@ class TasksService {
     }
     const childIds = normalizeChildIds(child_ids);
     const timing = validateTiming({ track_time, expected_minutes });
+    const carry = validateCarryOver(carry_over, schedule_type);
     const id = generateId();
     const daysArr = normalizeDaysOfWeek(days_of_week);
     validateWeeklyDays(schedule_type, weekly_target_times, daysArr);
@@ -159,17 +171,17 @@ class TasksService {
 
     this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, track_time, expected_minutes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, track_time, expected_minutes, carry_over)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, title.trim(), subject.trim(), JSON.stringify(daysArr), pts, createdAt, schedule_type, schedule_type === 'weekly_times' ? weekly_target_times : null,
-        timing.track_time ? 1 : 0, timing.expected_minutes);
+        timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0);
       this.setTemplateChildren(id, childIds);
     })();
 
     return this.getTemplate(id);
   }
 
-  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times, child_ids, track_time, expected_minutes }) {
+  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times, child_ids, track_time, expected_minutes, carry_over }) {
     const existing = this.getTemplate(id);
     if (!existing) {
       throw { status: 404, message: 'Template not found' };
@@ -196,13 +208,18 @@ class TasksService {
       track_time: track_time ?? existing.track_time,
       expected_minutes: expected_minutes === undefined ? existing.expected_minutes : expected_minutes
     });
+    // A weekly task is already flexible, so switching to one turns carrying over off.
+    const carry = validateCarryOver(carry_over ?? (schedule === 'weekly_times' ? false : existing.carry_over), schedule);
     this.db.transaction(() => {
       this.db.prepare(`
         UPDATE task_templates
-        SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?, track_time = ?, expected_minutes = ?
+        SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?, track_time = ?, expected_minutes = ?, carry_over = ?
         WHERE id = ?
       `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, schedule, schedule === 'weekly_times' ? target : null,
-        timing.track_time ? 1 : 0, timing.expected_minutes, id);
+        timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0, id);
+      // Tasks still to do follow the carry-over setting, so a break that has begun is covered too.
+      this.db.prepare('UPDATE daily_tasks SET carry_over = ? WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0')
+        .run(carry ? 1 : 0, id);
       if (childIds !== undefined) this.setTemplateChildren(id, childIds);
       // Today's unfinished tasks follow the timing settings at once; turning timing off drops their timer.
       this.db.prepare(`UPDATE daily_tasks SET track_time = ?, expected_minutes = ?,
@@ -255,12 +272,12 @@ class TasksService {
       const exists = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND date = ? AND template_id = ?');
       const insert = this.db.prepare(`INSERT INTO daily_tasks
         (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, source_template_id, template_created_at,
-          track_time, expected_minutes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?)`);
+          track_time, expected_minutes, carry_over)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?)`);
       for (const t of matching) {
         if (!exists.get(childId, date, t.id) && (t.schedule_type !== 'weekly_times' || this.weeklyCount(childId, t.id, date) < t.weekly_target_times)) {
           insert.run(generateId(), childId, t.id, t.title, t.subject, t.points, date, t.schedule_type, t.weekly_target_times, t.id, t.created_at,
-            t.track_time ? 1 : 0, t.expected_minutes);
+            t.track_time ? 1 : 0, t.expected_minutes, t.carry_over ? 1 : 0);
         }
       }
       const goalRow = this.db.prepare('SELECT id FROM daily_tasks WHERE goal_id = ? AND date = ?');
@@ -284,12 +301,48 @@ class TasksService {
     // A class check-in carries its lesson's time and place for the card.
     const lessonOf = new Map(this.scheduleService ? this.scheduleService.outsideLessons(childId)(date)
       .filter(l => ['scheduled', 'moved_in'].includes(l.status)).map(l => [classLessonKey(l), l]) : []);
-    return this.describeTasksBetween(childId, date, date).filter(isActiveTask)
+    // Tasks of earlier days whose deadline has not passed come along, as do ones done (or skipped)
+    // on this day, so the child sees what is done; they stay optional until their last day.
+    const doneOn = iso => iso && formatDate(new Date(iso)) === date;
+    const carried = this.carriedBetween(childId, date, date, schedule.calendar)
+      .filter(({ row }) => row.is_completed ? doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
+      .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, is_optional: due > date }));
+    return [...this.describeTasksBetween(childId, date, date).filter(isActiveTask), ...carried]
       .map(task => {
         const lesson = task.class_id && lessonOf.get(classLessonKey(task));
         return { ...task, skip_request: latestSkip.get(task.id) || null,
           class_lesson: lesson ? { start_time: lesson.start_time, end_time: lesson.end_time, location: lesson.location, institution: lesson.institution } : null };
       });
+  }
+
+  calendarFor(childId) {
+    return schoolCalendar(this.db, childId);
+  }
+
+  // Tasks of earlier days that may still be done on some day between two dates (their deadline is
+  // on or after `from`): carried over a break, or one-off tasks with a later due date.
+  carriedBetween(childId, from, to, calendar = this.calendarFor(childId)) {
+    return this.db.prepare(`SELECT * FROM daily_tasks WHERE child_id = ? AND date < ? AND date >= ?
+        AND (carry_over = 1 OR due_date IS NOT NULL) ORDER BY date, rowid`)
+      .all(childId, to, shiftDate(from, -MAX_CARRY_DAYS))
+      .map(row => ({ row, due: dueDateOf(row, calendar) }))
+      .filter(({ row, due }) => due >= from && due > row.date);
+  }
+
+  // Each day's tasks for summaries (history, all-done, rest days): its own tasks, plus tasks of
+  // earlier days left undone by their deadline that day, which count as missed there. A carried
+  // task done in time counts on its own day only.
+  summaryTasksBetween(childId, fromDate, toDate, { schedule = this.scheduleFor(childId), ...options } = {}) {
+    const missed = this.carriedBetween(childId, fromDate, toDate, schedule.calendar)
+      .filter(({ row, due }) => due <= toDate && !row.is_completed && !row.skipped_at)
+      .map(({ row, due }) => ({ ...describeRow(row), date: due, carried_from: row.date, due_date: due, is_optional: false }));
+    return [...this.describeTasksBetween(childId, fromDate, toDate, { ...options, schedule }), ...missed];
+  }
+
+  // Children may act on a task from its own day until its deadline.
+  childMayActOn(row) {
+    const today = getTodayDate();
+    return row.date <= today && today <= dueDateOf(row, this.calendarFor(row.child_id));
   }
 
   // Outside-class lessons that are check-in tasks, per date (none without the schedule service).
@@ -313,7 +366,7 @@ class TasksService {
   // (counting only earlier days, so past days never change) are fewer than the days left
   // in the week including that day; once there is no slack it is required that day. A skipped
   // time takes one off the target, so skipping on a day without slack still keeps the week whole.
-  describeTasksBetween(childId, fromDate, toDate, { includePaused = false } = {}) {
+  describeTasksBetween(childId, fromDate, toDate, { includePaused = false, schedule = this.scheduleFor(childId) } = {}) {
     const weekStarts = new Map();
     const weekOf = date => {
       if (!weekStarts.has(date)) weekStarts.set(date, getWeekRange(date).startDate);
@@ -329,7 +382,6 @@ class TasksService {
       .all(childId, weekOf(fromDate), getWeekRange(toDate).endDate);
     const sourceOf = row => row.source_template_id ?? row.template_id;
     const keyOf = row => `${weekOf(row.date)}|${sourceOf(row) ?? row.id}`;
-    const schedule = this.scheduleFor(childId);
     const completions = new Map();
     const skips = new Map();
     for (const row of rows) {
@@ -342,8 +394,12 @@ class TasksService {
 
     return rows.filter(row => row.date >= fromDate && row.date <= toDate &&
       (includePaused || row.is_completed || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
-      const task = { ...row, is_completed: Boolean(row.is_completed), is_skipped: isSkippedRow(row), ...describeTimer(row) };
-      if (row.schedule_type !== 'weekly_times') return { ...task, is_optional: false };
+      const task = describeRow(row);
+      // A task that may wait out a break (or a one-off task due later) is optional until its deadline.
+      if (row.schedule_type !== 'weekly_times') {
+        const due = dueDateOf(row, schedule.calendar);
+        return { ...task, due_date: due > row.date ? due : null, is_optional: due > row.date };
+      }
       const done = completions.get(keyOf(row)) || [];
       const skipped = skips.get(keyOf(row)) || [];
       const target = row.weekly_target_times || 1;
@@ -373,14 +429,18 @@ class TasksService {
       JOIN period_paused_templates pt ON pt.period_id = p.id
       WHERE p.child_id = ?
     `).all(childId);
-    const isPaused = (templateId, date) => pausedRanges.some(range =>
+    const calendar = this.calendarFor(childId);
+    // A make-up school day inside a holiday is a school day: nothing is paused on it.
+    const isPaused = (templateId, date) => !calendar.makeupOn(date) && pausedRanges.some(range =>
       range.template_id === templateId && range.start_date <= date && range.end_date >= date);
-    // Deleted templates are unknown and treated as available every day.
+    // Deleted templates are unknown and treated as available every day. A make-up day follows the
+    // weekday it stands in for.
     const allowedOn = (templateId, date) => {
       const template = byId.get(templateId);
-      return !isPaused(templateId, date) && (!template || template.days_of_week.includes(getDayOfWeek(date)));
+      return !isPaused(templateId, date) && (!template || template.days_of_week.includes(calendar.weekdayOf(date)));
     };
     return {
+      calendar,
       childSince: child ? sinceDate(child.created_at) : null,
       byId,
       assigned: templates.filter(t => t.child_ids === null || t.child_ids.includes(childId)),
@@ -400,7 +460,7 @@ class TasksService {
     const byDate = new Map();
     const weeklyDone = new Map();
     const weeklyKey = (templateId, date) => `${getWeekRange(date).startDate}|${templateId}`;
-    for (const task of this.describeTasksBetween(childId, getWeekRange(fromDate).startDate, toDate).filter(isActiveTask)) {
+    for (const task of this.summaryTasksBetween(childId, getWeekRange(fromDate).startDate, toDate, { schedule }).filter(isActiveTask)) {
       if (!byDate.has(task.date)) byDate.set(task.date, []);
       byDate.get(task.date).push(task);
       if (task.schedule_type === 'weekly_times' && (task.is_completed || task.is_skipped)) {
@@ -416,7 +476,8 @@ class TasksService {
       if (goalsOn(date).length || classTasksOn(date).length) return false;
       return !schedule.assigned.some(t => {
         if (t.since > date || !schedule.allowedOn(t.id, date)) return false;
-        if (t.schedule_type !== 'weekly_times') return true;
+        // A task that may wait out the break that follows was optional that day.
+        if (t.schedule_type !== 'weekly_times') return !(t.carry_over && schedule.calendar.carryUntil(date) > date);
         const { startDate, endDate } = getWeekRange(date);
         const start = [startDate, schedule.childSince, t.since].sort().at(-1);
         const target = Math.min(t.weekly_target_times, schedule.availableDays(t.id, start, endDate));
@@ -446,7 +507,7 @@ class TasksService {
   // A one-off task a parent adds for one child on one day (e.g. homework assigned that day).
   // It is an ordinary daily task for that day: required, counted in all-done, history, weekly
   // completion and the streak, and checked off like any other.
-  createAdhocTask(childId, { title, subject, points = 10, date, track_time, expected_minutes }) {
+  createAdhocTask(childId, { title, subject, points = 10, date, due_date = null, track_time, expected_minutes }) {
     if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: 'Child not found' };
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
     if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
@@ -458,17 +519,30 @@ class TasksService {
     } catch {
       throw { status: 400, message: '日期必须为 YYYY-MM-DD' };
     }
+    // A due date lets the task be done until then (e.g. a poster due on Friday); it may not be
+    // earlier than the task's day, and the same day means no extra time.
+    if (due_date !== null) {
+      try {
+        parseDate(due_date);
+      } catch {
+        throw { status: 400, message: '截止日期必须为 YYYY-MM-DD' };
+      }
+      if (due_date < taskDate) throw { status: 400, message: '截止日期不能早于布置的日期' };
+      if (due_date > shiftDate(taskDate, MAX_CARRY_DAYS)) throw { status: 400, message: `截止日期最多在 ${MAX_CARRY_DAYS} 天后` };
+    }
     const id = generateId();
     this.db.prepare(`INSERT INTO daily_tasks
-      (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, track_time, expected_minutes)
-      VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'adhoc', ?, ?)`)
-      .run(id, childId, title.trim(), subject.trim(), points, taskDate, timing.track_time ? 1 : 0, timing.expected_minutes);
+      (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, track_time, expected_minutes, due_date)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'adhoc', ?, ?, ?)`)
+      .run(id, childId, title.trim(), subject.trim(), points, taskDate, timing.track_time ? 1 : 0, timing.expected_minutes,
+        due_date && due_date > taskDate ? due_date : null);
     return this.describeTask(this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id));
   }
 
+  // One-off tasks from a date on, including earlier ones whose due date has not passed.
   listAdhocTasks(childId, fromDate = getTodayDate()) {
-    return this.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND origin = 'adhoc' AND date >= ? ORDER BY date, rowid")
-      .all(childId, fromDate).map(row => ({ ...row, is_completed: Boolean(row.is_completed) }));
+    return this.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND origin = 'adhoc' AND (date >= ? OR due_date >= ?) ORDER BY date, rowid")
+      .all(childId, fromDate, fromDate).map(row => ({ ...row, is_completed: Boolean(row.is_completed) }));
   }
 
   // Removing a one-off task also removes the points it earned (its point log goes with it).

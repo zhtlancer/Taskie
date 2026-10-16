@@ -1,6 +1,7 @@
 const { generateId } = require('../utils/crypto');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate } = require('../utils/date');
 const { classLessonKey } = require('../utils/schedule');
+const { schoolCalendar } = require('./calendar');
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WEEKS = ['all', 'A', 'B'];
@@ -409,18 +410,21 @@ class ScheduleService {
     if (getDateRangeList(from, to).length > MAX_SCHEDULE_DAYS) throw fail(400, `最多查看 ${MAX_SCHEDULE_DAYS} 天`);
     const timetables = this.db.prepare('SELECT * FROM timetables WHERE child_id = ? AND start_date <= ? AND end_date >= ?').all(childId, to, from)
       .map(row => this.describeTimetable(row));
-    const periods = this.db.prepare('SELECT name, start_date, end_date FROM periods WHERE child_id = ? AND start_date <= ? AND end_date >= ?').all(childId, to, from);
+    const calendar = schoolCalendar(this.db, childId);
     const lessonsOn = this.outsideLessons(childId);
     return getDateRangeList(from, to).map(date => {
       const weekday = getDayOfWeek(date);
-      const holiday = periods.find(p => p.start_date <= date && p.end_date >= date)?.name ?? null;
+      // A make-up school day has school (even inside a holiday) with another weekday's lessons.
+      const makeup = calendar.makeupOn(date);
+      const lessonWeekday = calendar.weekdayOf(date);
+      const holiday = calendar.holidayOn(date)?.name ?? null;
       const timetable = timetables.find(t => t.start_date <= date && t.end_date >= date) ?? null;
       const week = timetable ? weekLabel(timetable, date) : null;
       let school = [];
       if (timetable && !holiday) {
         school = timetable.slots.map(slot => {
           if (slot.kind === 'break') return { ...slot };
-          const lesson = timetable.lessons.find(l => l.slot_id === slot.id && l.weekday === weekday && (l.week === 'all' || l.week === week));
+          const lesson = timetable.lessons.find(l => l.slot_id === slot.id && l.weekday === lessonWeekday && (l.week === 'all' || l.week === week));
           return lesson ? { ...slot, subject: lesson.subject, teacher: lesson.teacher, room: lesson.room, bring: lesson.bring, week: lesson.week } : null;
         }).filter(Boolean);
         const first = school.findIndex(item => item.kind === 'class');
@@ -433,7 +437,7 @@ class ScheduleService {
         ...outside.filter(l => ['scheduled', 'moved_in'].includes(l.status)).map(l => ({ for: l.title, items: l.bring }))]) {
         if (item.items && !bring.some(b => b.for === item.for && b.items === item.items)) bring.push(item);
       }
-      return { date, weekday, timetable_name: timetable?.name ?? null, week, holiday, school, outside, bring };
+      return { date, weekday, makeup: makeup && { acts_as: makeup.acts_as, note: makeup.note }, timetable_name: timetable?.name ?? null, week, holiday, school, outside, bring };
     });
   }
 }

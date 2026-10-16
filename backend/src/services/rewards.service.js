@@ -70,7 +70,8 @@ class RewardsService {
       const range = this.db.prepare('SELECT MIN(date) AS first, MAX(date) AS last FROM daily_tasks WHERE child_id = ?').get(childId);
       if (!range.first) return 0;
       const days = new Map();
-      for (const task of this.tasksService.describeTasksBetween(childId, range.first, range.last)) {
+      // Tasks carried past their deadline count as missed on their last day, which may come later.
+      for (const task of this.tasksService.summaryTasksBetween(childId, range.first, [range.last, getTodayDate()].sort().at(-1))) {
         if (!days.has(task.date)) days.set(task.date, []);
         days.get(task.date).push(task);
       }

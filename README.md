@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-195%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-206%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -41,6 +41,9 @@
   - **模式一（固定星期）**：如周一到周五每日生成“数学口算打卡”；勾选每天则周末也包括；
   - **模式二（每周特定次数）**：如“每周完成 3 次课外阅读 20 页”，卡片动态跟踪周完成进度（`🎯 周目标 3次 · 本周已完成 2/3`）；还可以限定可完成的日子，例如“周末作业，每周 1 次，限周六、周日”。
 - **弹性与必做**：每周任务在本周还有余量时显示“🌤️ 今天可选”，不做也不影响当天全勤；当剩余次数等于剩余可做天数时变为“⏰ 今天要做”。
+- **放假前的作业可以在假期里补完**：任务模板可勾选此项（如口算、阅读；“学校记事”这类当天要交的不勾）。放假前最后一个上学日的这项任务，截止日期顺延到假期最后一天：周五的到周日，节假日前的到假期结束。截止前每天都出现在看板上，标着“周五的作业 · 周日前完成”，不做不影响当天全勤；到了最后一天变为必做，还没完成就算那天漏做（影响当天全勤和连续打卡）。补完的积分、用时和完成记录都算在原本那一天。上学日为周一到周五、不在孩子假期内的日子，加上家长设置的调休上学日。
+- **临时任务的截止日期**：添加临时任务时可选截止日期（如周三布置、周五交的手抄报），截止前每天都可以做，规则同上。
+- **调休上学日**：家长在「假期与长期任务」里为孩子设置调休要上学的日子（可一次加给所有孩子），并选择按周几上课：这天按那天的日常任务和课程表来，即使在假期里也照常上学。
 - **申请跳过**：某天没有这项任务（如老师没布置），孩子点卡片上的“🙋 今天没有？”并写下理由（必填），家长在总览中同意或拒绝；家长打开孩子看板也可以直接跳过或撤销跳过。跳过的任务不得分，不计入完成度，也不打断全勤和连续打卡（当天任务全部跳过就算休息日）；每周任务跳过一次算用掉一次周目标，长期任务的“每天要记录”也可以跳过当天。申请被拒绝或跳过被撤销后，孩子当天不能再为这项任务申请；孩子直接完成任务会自动撤回申请。
 - **任务计时与用时**：家长在任务模板、临时任务或长期任务上勾选“⏱ 记录用时”，可选填预计用时。孩子可以在卡片上开始、暂停、继续或清零计时（同一时间只计一项，开始新的会自动暂停其他），完成时自动记下计时；没有计时（不到 1 分钟）或计时超过 3 小时时，会请孩子选一下用了多久，也可以不填。有预计用时时显示“还剩 X 分钟 / 超时 X 分钟”。孩子当天可以修改或补填用时，家长可以修改任意一天。计时保存在服务器上，锁屏、刷新或换设备都不会中断。长期任务每次记录进度时保存这一段的用时，然后重新计时。
 
@@ -131,7 +134,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (156 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (166 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -143,7 +146,7 @@ Taskie/
 │   │   ├── stores/            # Pinia 状态管理 (child, character, sound)
 │   │   ├── utils/             # Web Audio 合成器、Canvas 滤镜、拼音解析
 │   │   └── views/             # 页面视图 (看板、生字生词本、错题本、激励墙、家长端)
-│   └── test/                  # 前端工具测试套件 (39 项测试)
+│   └── test/                  # 前端工具测试套件 (40 项测试)
 │
 ├── Dockerfile                 # 多阶段容器构建定义 (前端编译 + 后端运行时)
 ├── docker-entrypoint.sh       # 容器入口：接管数据目录后以普通用户运行
@@ -310,13 +313,13 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **195 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **206 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (156 tests)
+# 运行后端全量测试 (166 tests)
 npm run test:backend
 
-# 运行前端工具测试 (39 tests)
+# 运行前端工具测试 (40 tests)
 npm --prefix frontend test
 ```
 

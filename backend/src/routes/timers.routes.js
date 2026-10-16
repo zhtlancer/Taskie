@@ -1,5 +1,3 @@
-const { getTodayDate } = require('../utils/date');
-
 async function timersRoutes(fastify, options) {
   const { timersService, tasksService, periodsService } = options;
   const handle = fn => async (request, reply) => {
@@ -15,11 +13,11 @@ async function timersRoutes(fastify, options) {
   fastify.post('/period-tasks/:id/timer/:action', handle(async request =>
     timersService.apply('goal', request.params.id, request.params.action)));
 
-  // Children may only correct today's durations.
+  // Children may only correct durations of tasks still open to them.
   fastify.put('/daily-tasks/:id/duration', handle(async request => {
     if (request.user.role === 'child') {
-      const task = fastify.db.prepare('SELECT date FROM daily_tasks WHERE id = ?').get(request.params.id);
-      if (task && task.date !== getTodayDate()) throw { status: 403, message: '只能修改今天的用时' };
+      const task = fastify.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(request.params.id);
+      if (task && !tasksService.childMayActOn(task)) throw { status: 403, message: '只能修改今天的用时' };
     }
     return tasksService.setDuration(request.params.id, request.body?.duration_seconds);
   }));

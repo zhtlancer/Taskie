@@ -49,7 +49,8 @@ function installAuthorization(app, db) {
       /^\/api\/daily-tasks\/[^/]+\/unskip\/?$/.test(url) ||
       /^\/api\/skip-requests\/?$/.test(url) || /^\/api\/skip-requests\/[^/]+\/(?:approve|reject)\/?$/.test(url) ||
       /^\/api\/children\/[^/]+\/timetables\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/timetables/') ||
-      url.startsWith('/api/outside-classes') || url.startsWith('/api/outside-class-exceptions/');
+      url.startsWith('/api/outside-classes') || url.startsWith('/api/outside-class-exceptions/') ||
+      /^\/api\/children\/[^/]+\/makeup-days\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/makeup-days/');
     if (parentOnly && request.user.role !== 'parent') return reply.code(403).send({ error: '需要家长权限' });
     if (url.startsWith('/uploads/')) {
       const photo = db.prepare('SELECT child_id FROM mistake_records WHERE photo_path = ?').get(`/uploads/${request.params['*']}`);

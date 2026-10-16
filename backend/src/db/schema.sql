@@ -322,6 +322,19 @@ CREATE TABLE IF NOT EXISTS outside_class_exceptions (
   FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
 );
 
+-- Make-up school days (调休上学日): a day a child goes to school following another weekday's tasks
+-- and timetable, even on a weekend or inside a holiday period.
+CREATE TABLE IF NOT EXISTS makeup_days (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL,
+  date TEXT NOT NULL,      -- YYYY-MM-DD
+  acts_as INTEGER NOT NULL, -- the weekday followed, 0 Sunday .. 6 Saturday
+  note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (child_id, date),
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
 -- Pending device pairings: a short code shown on an unauthorized device until a parent approves it.
 -- Authorized devices themselves live in the authorized_tokens file, by token hash.
 CREATE TABLE IF NOT EXISTS device_pairings (

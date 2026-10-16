@@ -127,6 +127,40 @@
           </div>
         </section>
       </div>
+
+      <!-- Make-up school days (调休上学日): school on a weekend or holiday, following another weekday -->
+      <section v-if="!loading && selectedChild" class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-card mt-5">
+        <h3 class="text-lg font-black text-slate-800 mb-1">🔁 调休上学日</h3>
+        <p class="text-xs font-bold text-slate-400 mb-3">比如国庆调休的周六要上学：这天按所选星期几生成日常任务、显示课程表，假期里暂停的任务这天也照常；“放假前可以补完”的任务也按它来算假期从哪天结束</p>
+        <form class="flex flex-wrap items-end gap-2 mb-3" @submit.prevent="addMakeupDay">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-500 mb-1">日期</label>
+            <input v-model="makeupForm.date" type="date" required class="px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-500 mb-1">按周几上课</label>
+            <select v-model.number="makeupForm.acts_as" class="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white outline-none focus:border-brand-500">
+              <option v-for="day in [1, 2, 3, 4, 5, 6, 0]" :key="day" :value="day">{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][day] }}</option>
+            </select>
+          </div>
+          <div class="flex-1 min-w-[140px]">
+            <label class="block text-[11px] font-bold text-slate-500 mb-1">备注（可不填）</label>
+            <input v-model="makeupForm.note" type="text" maxlength="30" placeholder="例如：国庆调休" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500 font-chinese" />
+          </div>
+          <label v-if="children.length > 1" class="flex items-center gap-1.5 py-2 text-xs font-bold text-slate-600">
+            <input v-model="makeupForm.allChildren" type="checkbox" class="w-4 h-4 accent-brand-500" /> 所有孩子都加
+          </label>
+          <button type="submit" :disabled="saving || !makeupForm.date" class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold disabled:opacity-50">➕ 添加</button>
+        </form>
+        <p v-if="!makeupDays.length" class="text-xs font-bold text-slate-400">还没有调休上学日</p>
+        <ul v-else class="flex flex-wrap gap-2">
+          <li v-for="item in makeupDays" :key="item.id" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 font-chinese">
+            <span>{{ item.date }}（{{ weekdayName(item.date) }}）按{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][item.acts_as] }}上课</span>
+            <span v-if="item.note" class="text-slate-400">{{ item.note }}</span>
+            <button type="button" class="text-slate-300 hover:text-rose-500" title="删除" @click="removeMakeupDay(item)">✕</button>
+          </li>
+        </ul>
+      </section>
     </main>
 
     <!-- Period Modal -->
@@ -294,6 +328,9 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref('');
 const periodModal = ref(null);
+const makeupDays = ref([]);
+const makeupForm = ref({ date: '', acts_as: 1, note: '', allChildren: true });
+const weekdayName = date => ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${date}T00:00:00Z`).getUTCDay()];
 const taskModal = ref(null);
 const backfill = ref(null);
 
@@ -334,10 +371,33 @@ async function selectChild(child) {
 async function loadPeriods() {
   if (!selectedChild.value) return;
   try {
-    [periods.value, goals.value] = await Promise.all([api.getChildPeriods(selectedChild.value.id), api.getChildGoals(selectedChild.value.id)]);
+    [periods.value, goals.value, makeupDays.value] = await Promise.all([api.getChildPeriods(selectedChild.value.id), api.getChildGoals(selectedChild.value.id),
+      api.getMakeupDays(selectedChild.value.id)]);
   } catch (err) {
     showError(err);
   }
+}
+
+// Make-up days are per child; siblings at the same school usually share them, so they can be
+// added for everyone at once (a child who already has that day keeps it).
+async function addMakeupDay() {
+  const { date, acts_as, note, allChildren } = makeupForm.value;
+  const targets = allChildren && children.value.length > 1 ? children.value : [selectedChild.value];
+  const ok = await run(async () => {
+    for (const child of targets) {
+      try {
+        await api.createMakeupDay(child.id, { date, acts_as, note: note || null });
+      } catch (err) {
+        if (child.id === selectedChild.value.id || !String(err).includes('已经设为')) throw err;
+      }
+    }
+  });
+  if (ok) makeupForm.value = { ...makeupForm.value, date: '', note: '' };
+}
+
+function removeMakeupDay(item) {
+  if (!confirm(`确定删除 ${item.date} 这个调休上学日吗？`)) return;
+  run(() => api.deleteMakeupDay(item.id));
 }
 
 function templateTitle(id) {

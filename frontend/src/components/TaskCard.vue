@@ -98,6 +98,13 @@
           </div>
         </div>
 
+        <!-- The deadline of a task carried from an earlier day or allowed to wait: its own line, so the title keeps its room -->
+        <div v-if="deadlineLabel" class="mt-1">
+          <span class="inline-flex px-2 py-0.5 rounded-md text-[11px] font-black font-chinese" :class="deadlineToday ? 'bg-rose-50 text-rose-600' : 'bg-sky-50 text-sky-700'">
+            📌 {{ deadlineLabel }}
+          </span>
+        </div>
+
         <!-- A class check-in: when and where the lesson is -->
         <div v-if="task.class_lesson" class="mt-1 text-xs font-bold text-violet-600 font-chinese truncate">
           🕓 {{ task.class_lesson.start_time }}–{{ task.class_lesson.end_time }}{{ task.class_lesson.location ? ` · 📍 ${task.class_lesson.location}` : '' }}
@@ -204,6 +211,7 @@ import { ref, computed } from 'vue';
 import { playTaskComplete, playTaskUncomplete } from '../utils/sound';
 import TaskTimer from './TaskTimer.vue';
 import { formatDuration, needsDurationPrompt } from '../utils/taskTimer.js';
+import { deadlineText } from '../utils/schedule.js';
 
 const props = defineProps({
   task: {
@@ -236,6 +244,10 @@ const isWeeklyTargetMet = computed(() => {
   if (!isWeeklyTask.value) return false;
   return weeklyUsed.value >= (props.task.weekly_target_times || 1);
 });
+
+// Carried from an earlier day ("周五的作业 · 周日前完成"), or allowed to wait until a later deadline.
+const deadlineLabel = computed(() => props.task.is_completed && !props.task.carried_from ? '' : deadlineText(props.task));
+const deadlineToday = computed(() => !props.task.is_completed && props.task.carried_from && !props.task.is_optional);
 
 const skipPending = computed(() => !props.task.is_completed && props.task.skip_request?.status === 'pending');
 const skipTurnedDown = computed(() => !props.task.is_completed && ['rejected', 'revoked'].includes(props.task.skip_request?.status));

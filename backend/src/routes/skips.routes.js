@@ -1,5 +1,3 @@
-const { getTodayDate } = require('../utils/date');
-
 async function skipsRoutes(fastify, options) {
   const { skipsService } = options;
   const handle = fn => async (request, reply) => {
@@ -10,11 +8,12 @@ async function skipsRoutes(fastify, options) {
     }
   };
 
-  // Children may only ask to skip today's tasks; parents may also skip earlier days.
+  // Children may only ask to skip tasks still open to them (today's, or carried until a later
+  // deadline); parents may also skip earlier days.
   fastify.post('/daily-tasks/:id/skip', handle(async (request, reply) => {
     if (request.user.role === 'child') {
-      const task = fastify.db.prepare('SELECT date FROM daily_tasks WHERE id = ?').get(request.params.id);
-      if (task && task.date !== getTodayDate()) throw { status: 403, message: '只能申请跳过今天的任务' };
+      const task = fastify.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(request.params.id);
+      if (task && !skipsService.tasksService.childMayActOn(task)) throw { status: 403, message: '只能申请跳过今天的任务，或还没到截止日期的任务' };
     }
     return reply.code(201).send(skipsService.requestSkip(request.params.id, request.body?.reason, { role: request.user.role }));
   }));

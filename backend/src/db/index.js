@@ -302,6 +302,22 @@ function initDb(db) {
       db.pragma('user_version = 13');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 14) {
+    db.transaction(() => {
+      // Tasks of the last school day before a break may wait until the break ends (carry_over), and
+      // one-off tasks may have their own due date. makeup_days comes from schema.sql.
+      for (const [table, columns] of Object.entries({
+        task_templates: { carry_over: 'INTEGER NOT NULL DEFAULT 0' },
+        daily_tasks: { carry_over: 'INTEGER NOT NULL DEFAULT 0', due_date: 'TEXT' }
+      })) {
+        const existing = new Set(db.pragma(`table_info(${table})`).map(c => c.name));
+        for (const [name, definition] of Object.entries(columns)) {
+          if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+        }
+      }
+      db.pragma('user_version = 14');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

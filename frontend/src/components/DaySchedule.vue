@@ -2,6 +2,7 @@
   <!-- One day: school lessons with the breaks between them, then outside classes with time and place -->
   <div class="space-y-1.5 font-chinese">
     <p v-if="day.holiday" class="px-3 py-2 rounded-xl bg-sky-50 text-sky-700 text-xs font-bold">🏖️ {{ day.holiday }}，不上学</p>
+    <p v-if="day.makeup" class="px-3 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold">🔁 调休上学 · 按{{ WEEKDAY_NAMES[day.makeup.acts_as] }}课表{{ day.makeup.note ? `（${day.makeup.note}）` : '' }}</p>
 
     <template v-for="item in day.school" :key="item.id">
       <div v-if="item.kind === 'break'" class="flex items-center gap-2 px-2 text-[11px] font-bold text-slate-400">
@@ -54,7 +55,7 @@
 </template>
 
 <script setup>
-import { lessonHappens, lessonNote, timeRange } from '../utils/schedule.js';
+import { WEEKDAY_NAMES, lessonHappens, lessonNote, timeRange } from '../utils/schedule.js';
 
 defineProps({
   day: { type: Object, required: true },

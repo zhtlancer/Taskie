@@ -69,8 +69,9 @@
             <h3 class="text-lg font-bold text-slate-800 mb-3 font-chinese">
               {{ tmpl.title }}
             </h3>
-            <div v-if="tmpl.track_time" class="-mt-2 mb-3 text-[11px] font-bold text-violet-600">
-              ⏱ 记录用时{{ tmpl.expected_minutes ? ` · 预计 ${tmpl.expected_minutes} 分钟` : '' }}
+            <div v-if="tmpl.track_time || tmpl.carry_over" class="-mt-2 mb-3 flex flex-wrap gap-x-3 text-[11px] font-bold">
+              <span v-if="tmpl.track_time" class="text-violet-600">⏱ 记录用时{{ tmpl.expected_minutes ? ` · 预计 ${tmpl.expected_minutes} 分钟` : '' }}</span>
+              <span v-if="tmpl.carry_over" class="text-sky-600">🏖️ 放假前的可在假期补完</span>
             </div>
 
             <!-- Schedule Type / Cycle Display -->
@@ -390,6 +391,15 @@
             </div>
           </div>
 
+          <!-- Tasks of the last school day before a weekend or holiday may wait until it ends -->
+          <label v-if="form.schedule_type === 'fixed_days'" class="flex items-start gap-2 px-3 py-2.5 rounded-2xl border border-sky-100 bg-sky-50/40 cursor-pointer">
+            <input v-model="form.carry_over" type="checkbox" class="mt-0.5 w-4 h-4 accent-sky-500" />
+            <span>
+              <span class="block text-xs font-bold text-slate-700">🏖️ 放假前一天的可以在假期里补完</span>
+              <span class="block text-[11px] font-bold text-slate-400">周五的可以周末补，节假日前的可以在假期里补，假期最后一天前完成就行；像“学校记事”这样当天要交的不要勾</span>
+            </span>
+          </label>
+
           <TimingFields v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
 
           <!-- Actions -->
@@ -449,7 +459,8 @@ const form = ref({
   days_of_week: [1, 2, 3, 4, 5],
   child_ids: null,
   track_time: false,
-  expected_minutes: null
+  expected_minutes: null,
+  carry_over: false
 });
 
 onMounted(async () => {
@@ -527,7 +538,8 @@ function openAddModal() {
     days_of_week: [1, 2, 3, 4, 5],
     child_ids: null,
     track_time: false,
-    expected_minutes: null
+    expected_minutes: null,
+    carry_over: false
   };
   showModal.value = true;
 }
@@ -545,7 +557,8 @@ function openEditModal(tmpl) {
     // Drop children deleted since the template was assigned.
     child_ids: Array.isArray(tmpl.child_ids) ? assignedChildren(tmpl).map(child => child.id) : null,
     track_time: Boolean(tmpl.track_time),
-    expected_minutes: tmpl.expected_minutes ?? null
+    expected_minutes: tmpl.expected_minutes ?? null,
+    carry_over: Boolean(tmpl.carry_over)
   };
   showModal.value = true;
 }
@@ -563,7 +576,8 @@ async function submitTemplateForm() {
       days_of_week: form.value.days_of_week,
       child_ids: form.value.child_ids,
       track_time: form.value.track_time,
-      expected_minutes: form.value.track_time ? form.value.expected_minutes : null
+      expected_minutes: form.value.track_time ? form.value.expected_minutes : null,
+      carry_over: form.value.schedule_type === 'fixed_days' && form.value.carry_over
     };
 
     if (isEditing.value) {

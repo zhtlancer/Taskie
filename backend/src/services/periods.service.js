@@ -119,6 +119,34 @@ class PeriodsService {
     }
   }
 
+  // --- Make-up school days (调休上学日) ---
+
+  listMakeupDays(childId) {
+    this.requireChild(childId);
+    return this.db.prepare('SELECT * FROM makeup_days WHERE child_id = ? ORDER BY date DESC').all(childId);
+  }
+
+  // A day the child goes to school following another weekday's tasks and timetable.
+  createMakeupDay(childId, { date, acts_as, note = null }) {
+    this.requireChild(childId);
+    validateDate(date, '日期');
+    if (!Number.isInteger(acts_as) || acts_as < 0 || acts_as > 6) throw { status: 400, message: '请选择按周几上课' };
+    if (note !== null && (typeof note !== 'string' || note.trim().length > 30)) throw { status: 400, message: '备注不超过 30 个字' };
+    if (this.db.prepare('SELECT 1 FROM makeup_days WHERE child_id = ? AND date = ?').get(childId, date)) {
+      throw { status: 409, message: '这天已经设为调休上学日' };
+    }
+    const id = generateId();
+    this.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(id, childId, date, acts_as, note?.trim() || null, new Date().toISOString());
+    return this.db.prepare('SELECT * FROM makeup_days WHERE id = ?').get(id);
+  }
+
+  deleteMakeupDay(id) {
+    if (!this.db.prepare('SELECT 1 FROM makeup_days WHERE id = ?').get(id)) throw { status: 404, message: '调休上学日不存在' };
+    this.db.prepare('DELETE FROM makeup_days WHERE id = ?').run(id);
+    return { success: true, id };
+  }
+
   // --- Long-term tasks ---
 
   getTask(id) {

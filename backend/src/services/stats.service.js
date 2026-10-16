@@ -1,6 +1,7 @@
 const { formatDate, getTodayDate, shiftDate, getWeekRange, getLastWeekRange, getDateRangeList, getDayOfWeek } = require('../utils/date');
 const { isActiveTask, summarizeDay } = require('./tasks.service');
 const { classLessonKey } = require('../utils/schedule');
+const { dueDateOf } = require('./calendar');
 
 class StatsService {
   constructor(db, tasksService) {
@@ -11,7 +12,7 @@ class StatsService {
   // Active tasks grouped by date, described with the same weekly rules as the today view.
   tasksByDate(childId, fromDate, toDate) {
     const byDate = new Map();
-    for (const task of this.tasksService.describeTasksBetween(childId, fromDate, toDate).filter(isActiveTask)) {
+    for (const task of this.tasksService.summaryTasksBetween(childId, fromDate, toDate).filter(isActiveTask)) {
       if (!byDate.has(task.date)) byDate.set(task.date, []);
       byDate.get(task.date).push(task);
     }
@@ -73,7 +74,10 @@ class StatsService {
           is_skipped: t.is_skipped,
           skip_reason: t.is_skipped ? t.skip_reason : null,
           completed_at: t.completed_at,
-          duration_seconds: t.duration_seconds
+          duration_seconds: t.duration_seconds,
+          // Carried from an earlier day and missed by this, its last day.
+          carried_from: t.carried_from ?? null,
+          due_date: t.due_date ?? null
         }))
       });
     }
@@ -148,6 +152,8 @@ class StatsService {
   // generated then; unopened days are projected from the templates that apply now, so they count
   // as missed instead of vanishing. Projection skips days before the child or template existed.
   // Skipped tasks are not owed, and each skipped time of a weekly task takes one off its target.
+  // A task that may wait out a break (or a one-off task due later) stays in its own day's week but
+  // is only owed once its deadline has passed as of `asOf`; done earlier, it counts at once.
   getWeeklyCompletion(childId, weekStart, weekEnd, asOf = getTodayDate()) {
     const cutoff = asOf < weekEnd ? asOf : weekEnd;
     if (cutoff < weekStart) return { as_of: cutoff, total_units: 0, completed_units: 0, completion_rate: null, items: [] };
@@ -158,6 +164,7 @@ class StatsService {
     const goalsOn = this.tasksService.dailyGoalSchedule(childId);
     const classTasksOn = this.tasksService.classTasksOn(childId);
     const isSkipped = row => Boolean(row.skipped_at) && !row.is_completed;
+    const notYetDue = row => !row.is_completed && dueDateOf(row, schedule.calendar) > asOf;
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
       .filter(row => row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
@@ -188,7 +195,7 @@ class StatsService {
     const openedDates = new Set(rows.filter(row => row.origin === 'template').map(row => row.date));
     for (const date of getDateRangeList(weekStart, cutoff)) {
       for (const row of rows) {
-        if (row.date !== date || row.origin === 'template' || isSkipped(row)) continue;
+        if (row.date !== date || row.origin === 'template' || isSkipped(row) || notYetDue(row)) continue;
         const item = itemFor(keyFor(row), row);
         item.total++;
         if (row.is_completed) item.completed++;
@@ -202,14 +209,15 @@ class StatsService {
       }
       if (openedDates.has(date)) {
         for (const row of rows) {
-          if (row.date !== date || row.schedule_type === 'weekly_times' || row.origin !== 'template' || isSkipped(row)) continue;
+          if (row.date !== date || row.schedule_type === 'weekly_times' || row.origin !== 'template' || isSkipped(row) || notYetDue(row)) continue;
           const item = itemFor(keyFor(row), row);
           item.total++;
           if (row.is_completed) item.completed++;
         }
       } else if (date >= childSince) {
         for (const t of templates) {
-          if (t.schedule_type !== 'weekly_times' && schedule.allowedOn(t.id, date) && t.since <= date) itemFor(keyFor(t), t).total++;
+          if (t.schedule_type !== 'weekly_times' && schedule.allowedOn(t.id, date) && t.since <= date &&
+            !(t.carry_over && schedule.calendar.carryUntil(date) > asOf)) itemFor(keyFor(t), t).total++;
         }
       }
     }

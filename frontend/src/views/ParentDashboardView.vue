@@ -227,6 +227,7 @@
               <li v-for="task in item.adhoc" :key="task.id" class="flex items-center gap-2 text-xs">
                 <span class="w-12 shrink-0 font-bold" :class="task.date === today ? 'text-orange-600' : 'text-slate-400'">{{ dayLabel(task.date) }}</span>
                 <span class="flex-1 truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700'">{{ task.subject }} · {{ task.title }}</span>
+                <span v-if="task.due_date" class="shrink-0 text-[11px] font-bold text-sky-600">截止 {{ dayLabel(task.due_date) }}</span>
                 <span class="text-amber-500 font-black shrink-0">★{{ task.points }}</span>
                 <button type="button" class="text-slate-300 hover:text-rose-500 shrink-0" title="删除" @click="removeAdhoc(item, task)">✕</button>
               </li>
@@ -264,6 +265,11 @@
             <label class="block text-xs font-bold text-slate-600 mb-1.5">奖励积分</label>
             <input v-model.number="adhocForm.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:border-brand-500" />
           </div>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1.5">截止日期（可不填）</label>
+          <input v-model="adhocForm.due_date" type="date" :min="adhocForm.date" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
+          <p class="mt-1 text-[11px] font-bold text-slate-400">填了的话，截止前每天都可以做，比如周三布置、周五交的手抄报</p>
         </div>
         <TimingFields v-model:track-time="adhocForm.track_time" v-model:expected-minutes="adhocForm.expected_minutes" />
         <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
@@ -309,7 +315,7 @@ function dayLabel(date) {
 
 function openAdhoc(child) {
   adhocError.value = '';
-  adhocForm.value = { child, title: '', subject: '语文', date: today, points: 10, track_time: false, expected_minutes: null };
+  adhocForm.value = { child, title: '', subject: '语文', date: today, due_date: '', points: 10, track_time: false, expected_minutes: null };
 }
 
 const activeGoals = goals => goals.filter(goal => goal.status === 'active');
@@ -327,8 +333,9 @@ async function saveAdhoc() {
   adhocSaving.value = true;
   adhocError.value = '';
   try {
-    const { child, title, subject, date, points, track_time, expected_minutes } = adhocForm.value;
-    await api.createAdhocTask(child.id, { title, subject, date, points: points || 0, track_time, expected_minutes: track_time ? expected_minutes : null });
+    const { child, title, subject, date, due_date, points, track_time, expected_minutes } = adhocForm.value;
+    await api.createAdhocTask(child.id, { title, subject, date, due_date: due_date && due_date > date ? due_date : null, points: points || 0,
+      track_time, expected_minutes: track_time ? expected_minutes : null });
     await refreshChild(childrenStats.value.find(item => item.child.id === child.id));
     adhocForm.value = null;
   } catch (err) {

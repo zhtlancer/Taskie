@@ -1,4 +1,3 @@
-const { getTodayDate } = require('../utils/date');
 const { timerSeconds } = require('../utils/timer');
 
 // Timers for timed tasks: today's daily tasks and running long-term tasks. Homework is done one
@@ -28,7 +27,7 @@ class TimersService {
     if (!row.track_time) throw { status: 409, message: '这项任务不记录用时' };
     if (row.is_completed) throw { status: 409, message: '这项任务已经完成了' };
     if (row.skipped_at) throw { status: 409, message: '这项任务今天已跳过' };
-    if (row.date !== getTodayDate()) throw { status: 409, message: '只能给今天的任务计时' };
+    if (!this.tasksService.childMayActOn(row)) throw { status: 409, message: '只能给今天的任务（或还没到截止日期的任务）计时' };
     return row;
   }
 

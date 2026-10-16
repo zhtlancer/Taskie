@@ -25,3 +25,14 @@ test('lessons on leave or moved away say so', () => {
   assert.equal(lessonNote({ status: 'moved_out', moved_to: { date: '2026-10-17', start_time: '09:00', end_time: '10:00' } }), '调到 10/17 09:00–10:00');
   assert.equal(lessonNote({ status: 'moved_in', moved_from: '2026-10-14' }), '从 10/14 调来');
 });
+
+test('deadlines read as the day carried from and the last day to finish', async () => {
+  const { deadlineText } = await import('../src/utils/schedule.js');
+  const today = '2026-10-17'; // a Saturday
+  assert.equal(deadlineText({ date: '2026-10-16', carried_from: '2026-10-16', due_date: '2026-10-18' }, today), '周五的作业 · 周日前完成');
+  assert.equal(deadlineText({ date: '2026-10-16', carried_from: '2026-10-16', due_date: '2026-10-17' }, today), '周五的作业 · 今天要完成');
+  assert.equal(deadlineText({ date: '2026-10-17', due_date: '2026-10-18' }, today), '周日前完成即可');
+  assert.equal(deadlineText({ date: '2026-09-30', carried_from: '2026-09-30', due_date: '2026-10-07' }, '2026-10-01'), '周三的作业 · 周三前完成');
+  assert.equal(deadlineText({ date: '2026-09-30', carried_from: '2026-09-30', due_date: '2026-10-08' }, '2026-10-01'), '周三的作业 · 周四 10/8前完成');
+  assert.equal(deadlineText({ date: today, due_date: null }, today), '');
+});

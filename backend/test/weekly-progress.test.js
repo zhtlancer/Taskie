@@ -119,7 +119,8 @@ test('counting all-done days uses a constant number of queries however much hist
 
   const queries = countQueries();
   assert.equal(queries, queriesWithShortHistory, '120 days of history must not need more queries than 20');
-  assert.ok(queries <= 6, `expected a handful of queries, got ${queries}`);
+  // The school calendar (holidays and make-up days) and tasks carried over a break add one query each.
+  assert.ok(queries <= 8, `expected a handful of queries, got ${queries}`);
 });
 
 function pick(task) {

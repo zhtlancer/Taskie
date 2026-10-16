@@ -20,6 +20,16 @@ export function mondayOf(date) {
 }
 
 export const shortDate = date => `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+const weekdayName = date => WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()];
+
+// The deadline of a task that may wait: carried in from an earlier day ("周五的作业 · 周日前完成",
+// "… · 今天要完成" on its last day), or its own day's task due later ("周日前完成即可").
+export function deadlineText(task, today = localDate()) {
+  if (!task.due_date) return '';
+  const due = task.due_date === today ? '今天要完成' : `${weekdayName(task.due_date)}${task.due_date > addDays(today, 6) ? ` ${shortDate(task.due_date)}` : ''}前完成`;
+  if (task.carried_from) return `${weekdayName(task.carried_from)}的作业 · ${due}`;
+  return task.due_date > (task.date || today) ? `${due === '今天要完成' ? due : `${due}即可`}` : '';
+}
 export const timeRange = (start, end) => `${start}–${end}`;
 
 // Whether an outside-class lesson takes place that day, and how to say otherwise.
