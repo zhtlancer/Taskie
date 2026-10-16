@@ -204,3 +204,114 @@ test('make-up days are managed by parents only', async t => {
   assert.equal((await ctx.rawInject({ method: 'DELETE', url: `/api/makeup-days/${created.json().id}`, headers })).statusCode, 403);
   assert.equal((await ctx.app.inject({ method: 'DELETE', url: `/api/makeup-days/${created.json().id}` })).statusCode, 200);
 });
+
+test('an unopened Friday task appears on the weekend once, with a real actionable task id', async t => {
+  const { ctx, child, tasksService, day, template, board, history } = await fixture(t);
+  template({ title: '周五口算', days_of_week: [5], carry_over: true, track_time: true });
+  const [saturday] = board(day(5));
+  assert.ok(saturday, 'Friday need not have been opened');
+  assert.deepEqual([saturday.date, saturday.carried_from, saturday.due_date, saturday.is_optional], [day(4), day(4), day(6), true]);
+  assert.equal(ctx.db.prepare('SELECT id FROM daily_tasks WHERE id = ?').get(saturday.id).id, saturday.id);
+  assert.equal(board(day(5))[0].id, saturday.id);
+  assert.equal(board(day(6))[0].id, saturday.id);
+  assert.equal(board(day(6))[0].is_optional, false);
+  tasksService.completeDailyTask(saturday.id, { duration_seconds: 600 });
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ?').get(child.id).n, 1);
+  assert.deepEqual([history(day(4))[0].completed_tasks, history(day(4))[0].points_earned], [1, 10]);
+  assert.equal(history(day(6))[0].total_tasks, 0);
+});
+
+test('unopened carried tasks are missed at the deadline and break the streak without history writes', async t => {
+  const { ctx, child, tasksService, rewardsService, statsService, day, template, find, history } = await fixture(t);
+  template({ title: '周五口算', days_of_week: [5], carry_over: true });
+  template({ title: '学校记事', days_of_week: [1, 4] });
+  tasksService.completeDailyTask(find(day(3), '学校记事').id);
+  tasksService.completeDailyTask(find(day(7), '学校记事').id);
+  const before = ctx.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks').get().n;
+  const [sunday] = history(day(6));
+  assert.deepEqual([sunday.total_tasks, sunday.completed_tasks, sunday.all_done], [1, 0, false]);
+  assert.deepEqual(sunday.tasks.map(task => [task.title, task.carried_from, task.due_date]), [['周五口算', day(4), day(6)]]);
+  assert.equal(rewardsService.getCurrentStreak(child.id, day(7)), 1);
+  assert.equal(statsService.getWeeklyCompletion(child.id, day(0), day(6), day(7)).items.find(i => i.title === '周五口算').total, 1);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks').get().n, before, 'summary reads do not materialize projected tasks');
+});
+
+test('a child can discover, time and complete an unopened task from before the current holiday', async t => {
+  const { ctx, child, periodsService, template } = await fixture(t);
+  const today = getTodayDate();
+  const yesterday = shiftDate(today, -1);
+  periodsService.createMakeupDay(child.id, { date: yesterday, acts_as: 3 });
+  periodsService.createMakeupDay(child.id, { date: shiftDate(today, 2), acts_as: 3 });
+  periodsService.createPeriod(child.id, { name: '小长假', start_date: today, end_date: shiftDate(today, 1) });
+  template({ title: '假前口算', days_of_week: [3], carry_over: true, track_time: true });
+  const login = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json();
+  const request = (method, url, payload) => ctx.rawInject({ method, url, payload, headers: { authorization: `Bearer ${login.token}` } });
+  const board = await request('GET', `/api/daily-tasks?child_id=${child.id}`);
+  assert.equal(board.statusCode, 200);
+  const task = board.json().find(row => row.carried_from === yesterday);
+  assert.ok(task);
+  assert.equal((await request('POST', `/api/daily-tasks/${task.id}/timer/start`)).statusCode, 200);
+  const done = await request('POST', `/api/daily-tasks/${task.id}/complete`, { duration_seconds: 600 });
+  assert.deepEqual([done.statusCode, done.json().points_earned], [200, 10]);
+  assert.equal(ctx.db.prepare('SELECT activity_date FROM point_logs WHERE daily_task_id = ?').get(task.id).activity_date, yesterday);
+  assert.equal((await request('GET', `/api/daily-tasks?child_id=${child.id}`)).json().find(row => row.id === task.id).is_completed, true);
+});
+
+test('opening a weekend preserves weekly obligations for the unopened source day without creating newer templates', async t => {
+  const { ctx, child, statsService, day, template, board } = await fixture(t);
+  template({ title: '可延后', days_of_week: [5], carry_over: true });
+  template({ title: '当天要交', days_of_week: [5] });
+  const later = template({ title: '周六才布置', days_of_week: [5] });
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(5)}T04:00:00Z`, later.id);
+  const obligations = () => statsService.getWeeklyCompletion(child.id, day(0), day(6), day(6)).items.map(i => [i.title, i.total]).sort();
+  const before = obligations();
+  assert.deepEqual(before, [['可延后', 1], ['当天要交', 1]].sort());
+  assert.deepEqual(board(day(5)).map(t => t.title), ['可延后']);
+  assert.deepEqual(obligations(), before);
+  assert.deepEqual(ctx.db.prepare('SELECT title FROM daily_tasks WHERE date = ? ORDER BY title').all(day(4)).map(t => t.title), ['可延后', '当天要交'].sort());
+});
+
+test('unopened holiday carries respect template creation, child assignment and holiday pauses', async t => {
+  const { ctx, child, tasksService, periodsService, day, template, board, holiday, history } = await fixture(t);
+  const oral = template({ title: '周五口算', days_of_week: [5], carry_over: true });
+  const paused = template({ title: '已暂停', days_of_week: [5], carry_over: true });
+  const tooNew = template({ title: '后来才布置', days_of_week: [5], carry_over: true });
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(5)}T04:00:00Z`, tooNew.id);
+  const sibling = ctx.app.services.childrenService.createChild({ name: '妹妹' });
+  template({ title: '妹妹的作业', days_of_week: [5], carry_over: true, child_ids: [sibling.id] });
+  holiday(day(4), day(4), { paused_template_ids: [paused.id] });
+  periodsService.createMakeupDay(child.id, { date: day(4), acts_as: 5 });
+  // A school day inside a holiday is not paused; the following week extends its break.
+  holiday(day(7), day(11));
+  assert.deepEqual(board(day(8)).map(task => task.title).sort(), ['周五口算', '已暂停']);
+  assert.equal(board(day(8)).find(task => task.template_id === oral.id).due_date, day(13));
+  assert.equal(history(day(13))[0].total_tasks, 2);
+});
+
+test('adding and deleting a make-up day reconciles pending tasks but preserves completed and still-applicable tasks', async t => {
+  const { ctx, child, tasksService, periodsService, template, board } = await fixture(t);
+  const today = getTodayDate();
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const actsAs = weekday === 1 ? 2 : 1;
+  template({ title: '原星期未完成', days_of_week: [weekday] });
+  template({ title: '原星期已完成', days_of_week: [weekday], track_time: true });
+  template({ title: '调休任务', days_of_week: [actsAs] });
+  template({ title: '每天都做', days_of_week: [0, 1, 2, 3, 4, 5, 6], track_time: true });
+  const original = board(today);
+  const removed = original.find(task => task.title === '原星期未完成');
+  const completed = original.find(task => task.title === '原星期已完成');
+  const unchanged = original.find(task => task.title === '每天都做');
+  tasksService.completeDailyTask(completed.id, { duration_seconds: 600 });
+  ctx.app.services.timersService.apply('task', unchanged.id, 'start');
+  const makeup = periodsService.createMakeupDay(child.id, { date: today, acts_as: actsAs });
+  assert.equal(ctx.db.prepare('SELECT id FROM daily_tasks WHERE id = ?').get(removed.id), undefined, 'the obsolete task is revoked immediately');
+  const changed = board(today);
+  assert.deepEqual(changed.map(task => task.title).sort(), ['原星期已完成', '每天都做', '调休任务']);
+  assert.equal(changed.find(task => task.id === completed.id).duration_seconds, 600);
+  assert.equal(changed.find(task => task.id === unchanged.id).timer_running, true);
+  const makeupTask = changed.find(task => task.title === '调休任务');
+  periodsService.deleteMakeupDay(makeup.id);
+  assert.equal(ctx.db.prepare('SELECT id FROM daily_tasks WHERE id = ?').get(makeupTask.id), undefined);
+  assert.deepEqual(board(today).map(task => task.title).sort(), ['原星期已完成', '原星期未完成', '每天都做']);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM point_logs WHERE daily_task_id = ?').get(completed.id).n, 1);
+});

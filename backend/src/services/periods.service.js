@@ -25,9 +25,10 @@ function validateDate(value, label) {
 // day. A task either stands alone with its own dates (no end date means no deadline) or belongs to
 // a holiday period, whose dates it follows.
 class PeriodsService {
-  constructor(db, rewardsService) {
+  constructor(db, rewardsService, tasksService) {
     this.db = db;
     this.rewardsService = rewardsService;
+    this.tasksService = tasksService;
   }
 
   // --- Periods ---
@@ -136,14 +137,21 @@ class PeriodsService {
       throw { status: 409, message: '这天已经设为调休上学日' };
     }
     const id = generateId();
-    this.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, childId, date, acts_as, note?.trim() || null, new Date().toISOString());
+    this.db.transaction(() => {
+      this.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, childId, date, acts_as, note?.trim() || null, new Date().toISOString());
+      this.tasksService?.reconcileCalendarDay(childId, date);
+    })();
     return this.db.prepare('SELECT * FROM makeup_days WHERE id = ?').get(id);
   }
 
   deleteMakeupDay(id) {
-    if (!this.db.prepare('SELECT 1 FROM makeup_days WHERE id = ?').get(id)) throw { status: 404, message: '调休上学日不存在' };
-    this.db.prepare('DELETE FROM makeup_days WHERE id = ?').run(id);
+    const existing = this.db.prepare('SELECT * FROM makeup_days WHERE id = ?').get(id);
+    if (!existing) throw { status: 404, message: '调休上学日不存在' };
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM makeup_days WHERE id = ?').run(id);
+      this.tasksService?.reconcileCalendarDay(existing.child_id, existing.date);
+    })();
     return { success: true, id };
   }
 

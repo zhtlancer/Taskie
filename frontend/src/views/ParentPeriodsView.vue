@@ -382,14 +382,12 @@ async function loadPeriods() {
 // added for everyone at once (a child who already has that day keeps it).
 async function addMakeupDay() {
   const { date, acts_as, note, allChildren } = makeupForm.value;
-  const targets = allChildren && children.value.length > 1 ? children.value : [selectedChild.value];
+  const applyAll = allChildren && children.value.length > 1;
+  const targets = applyAll ? children.value : [selectedChild.value];
   const ok = await run(async () => {
     for (const child of targets) {
-      try {
-        await api.createMakeupDay(child.id, { date, acts_as, note: note || null });
-      } catch (err) {
-        if (child.id === selectedChild.value.id || !String(err).includes('已经设为')) throw err;
-      }
+      if (applyAll && (await api.getMakeupDays(child.id)).some(day => day.date === date)) continue;
+      await api.createMakeupDay(child.id, { date, acts_as, note: note || null });
     }
   });
   if (ok) makeupForm.value = { ...makeupForm.value, date: '', note: '' };

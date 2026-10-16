@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-206%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-212%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -134,7 +134,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (166 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (172 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -313,10 +313,10 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **206 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **212 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (166 tests)
+# 运行后端全量测试 (172 tests)
 npm run test:backend
 
 # 运行前端工具测试 (40 tests)
@@ -342,6 +342,12 @@ npm run test:browser:time-stats
 ```
 
 该回归直接启动临时本地服务，使用内存数据库，结束后自动清理；支持 `PLAYWRIGHT_MODULE_PATH` 和 `CHROMIUM_PATH`，无需 Docker。
+
+假期延后任务与调休设置的页面回归也使用相同环境，覆盖模板保存、所有孩子批量添加、已有日期跳过与重试、保留原设置，以及手机布局：
+
+```bash
+npm run test:browser:carry-over
+```
 
 ---
 
