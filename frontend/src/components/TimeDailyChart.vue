@@ -113,10 +113,14 @@ const chartOptions = computed(() => ({
       cornerRadius: 10,
       filter: item => item.raw > 0,
       callbacks: {
-        title: items => dayLabel(props.days[items[0].dataIndex].date),
+        title: items => {
+          const day = props.days[items[0]?.dataIndex];
+          return day ? dayLabel(day.date) : '';
+        },
         label: item => ` ${item.dataset.label}：${formatMinutes(item.raw * 60)}`,
         footer: items => {
-          const day = props.days[items[0].dataIndex];
+          const day = props.days[items[0]?.dataIndex];
+          if (!day) return [];
           return [
             `记录合计 ${formatMinutes(day.recorded_seconds)}`,
             ...(props.showEstimate && estimateOf(day) ? [`含估算约 ${formatMinutes(day.estimated_seconds)}`] : []),

@@ -194,7 +194,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
@@ -212,6 +212,11 @@ const rangeKey = ref('7');
 const stats = ref(null);
 const loading = ref(true);
 const error = ref('');
+let statsRequest = 0;
+let childRequest = 0;
+let disposed = false;
+let statsController;
+let timetableController;
 
 const ranges = computed(() => rangePresets(timetables.value));
 const range = computed(() => ranges.value.find(r => r.key === rangeKey.value) || ranges.value[0]);
@@ -235,24 +240,46 @@ function trendText(task) {
 const trendClass = task => trendText(task).startsWith('↓') ? 'text-emerald-700' : 'text-slate-500';
 
 async function load() {
+  if (!selectedChild.value || disposed) return;
+  const request = ++statsRequest;
+  statsController?.abort();
+  const controller = new AbortController();
+  statsController = controller;
+  const childId = selectedChild.value.id;
+  const { from, to } = range.value;
   loading.value = true;
   error.value = '';
   try {
-    stats.value = await api.getTimeStats(selectedChild.value.id, range.value.from, range.value.to);
+    const result = await api.getTimeStats(childId, from, to, controller.signal);
+    if (request === statsRequest) stats.value = result;
   } catch (err) {
-    error.value = typeof err === 'string' ? err : '加载失败，请重试';
+    if (request === statsRequest) error.value = typeof err === 'string' ? err : '加载失败，请重试';
   } finally {
-    loading.value = false;
+    if (request === statsRequest) loading.value = false;
   }
 }
 
 async function selectChild(child) {
+  const request = ++childRequest;
+  // Invalidate the old child's stats before waiting for the new child's timetable.
+  ++statsRequest;
+  statsController?.abort();
+  timetableController?.abort();
+  const controller = new AbortController();
+  timetableController = controller;
   selectedChild.value = child;
+  timetables.value = [];
+  stats.value = null;
+  loading.value = true;
+  error.value = '';
+  let result;
   try {
-    timetables.value = await api.getTimetables(child.id);
+    result = await api.getTimetables(child.id, controller.signal);
   } catch {
-    timetables.value = [];
+    result = [];
   }
+  if (request !== childRequest) return;
+  timetables.value = result;
   if (!ranges.value.some(r => r.key === rangeKey.value)) rangeKey.value = '7';
   await load();
 }
@@ -264,13 +291,24 @@ function selectRange(key) {
 
 onMounted(async () => {
   try {
-    children.value = await api.getChildren();
+    const result = await api.getChildren();
+    if (disposed) return;
+    children.value = result;
     const wanted = children.value.find(child => child.id === route.query.child) || children.value[0];
     if (wanted) await selectChild(wanted);
     else loading.value = false;
   } catch (err) {
+    if (disposed) return;
     error.value = typeof err === 'string' ? err : '加载失败，请重试';
     loading.value = false;
   }
+});
+
+onUnmounted(() => {
+  disposed = true;
+  ++statsRequest;
+  ++childRequest;
+  statsController?.abort();
+  timetableController?.abort();
 });
 </script>

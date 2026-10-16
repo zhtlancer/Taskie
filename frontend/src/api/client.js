@@ -8,6 +8,7 @@ client.interceptors.request.use(config => {
   return config;
 });
 client.interceptors.response.use(response => response, error => {
+  if (axios.isCancel(error)) return Promise.reject(error);
   // This browser lost or never had device authorization: show the pairing page.
   if (error.response?.data?.code === 'DEVICE_NOT_AUTHORIZED' && typeof window !== 'undefined') {
     window.location.href = '/api/device/page';
@@ -21,9 +22,9 @@ client.interceptors.response.use(response => response, error => {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   return Promise.reject(message);
 });
-const request = async (method, url, data, params) =>
-  (await client.request({ method, url, data, params, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
-const get = (url, params) => request('get', url, undefined, params);
+const request = async (method, url, data, params, signal) =>
+  (await client.request({ method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
+const get = (url, params, signal) => request('get', url, undefined, params, signal);
 const post = (url, data) => request('post', url, data);
 const put = (url, data) => request('put', url, data);
 const remove = url => request('delete', url);
@@ -119,8 +120,8 @@ export const api = {
   logPeriodProgress: (taskId, data) => post(`/period-tasks/${taskId}/logs`, data),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
   getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
-  getTimeStats: (id, from, to) => get(`/children/${id}/time-stats`, { from, to }),
-  getTimetables: childId => get(`/children/${childId}/timetables`),
+  getTimeStats: (id, from, to, signal) => get(`/children/${id}/time-stats`, { from, to }, signal),
+  getTimetables: (childId, signal) => get(`/children/${childId}/timetables`, undefined, signal),
   createTimetable: (childId, data) => post(`/children/${childId}/timetables`, data),
   updateTimetable: (id, data) => put(`/timetables/${id}`, data),
   deleteTimetable: id => remove(`/timetables/${id}`),

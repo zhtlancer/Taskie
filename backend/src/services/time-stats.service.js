@@ -41,7 +41,8 @@ class TimeStatsService {
 
   // Done timed tasks and timed long-term progress entries between two dates, with their duration
   // (null when not recorded). A long-term task's entries from before its first recorded duration
-  // were made before timing was in use and are left out.
+  // were made before timing was in use and are left out. Recorded durations remain visible even
+  // after the task's timer is disabled; new untimed progress is not treated as missing time.
   sessions(childId, from, to) {
     const tasks = this.db.prepare(`SELECT date, title, subject, COALESCE(source_template_id, template_id) AS template, duration_seconds, expected_minutes
       FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND track_time = 1 ORDER BY date, rowid`).all(childId, from, to)
@@ -53,7 +54,8 @@ class TimeStatsService {
     const logs = this.db.prepare(`SELECT l.date, l.amount, l.duration_seconds, l.created_at, t.id, t.title, t.subject, t.unit, t.mode, t.expected_minutes,
         (SELECT MIN(created_at) FROM period_task_logs WHERE period_task_id = t.id AND duration_seconds IS NOT NULL) AS timed_since
       FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id
-      WHERE t.child_id = ? AND t.track_time = 1 AND l.date BETWEEN ? AND ? ORDER BY l.date, l.rowid`).all(childId, from, to)
+      WHERE t.child_id = ? AND (t.track_time = 1 OR l.duration_seconds IS NOT NULL)
+        AND l.date BETWEEN ? AND ? ORDER BY l.date, l.rowid`).all(childId, from, to)
       .filter(log => log.duration_seconds !== null || (log.timed_since && log.created_at >= log.timed_since))
       .map(log => ({
         key: `goal:${log.id}`, kind: 'goal', goal_id: log.id, unit: log.mode === 'progress' ? log.unit : null, amount: log.amount,
@@ -92,7 +94,7 @@ class TimeStatsService {
     // The period just before, as long as this one, to compare with.
     const previousTo = shiftDate(from, -1);
     const previousFrom = shiftDate(from, -dates.length);
-    const windowFrom = [from, shiftDate(to, 1 - ESTIMATE_WINDOW_DAYS)].sort()[0];
+    const windowFrom = shiftDate(to, 1 - ESTIMATE_WINDOW_DAYS);
     const all = this.sessions(childId, [previousFrom, windowFrom].sort()[0], to);
     const between = (a, b) => all.filter(s => s.date >= a && s.date <= b);
     const current = between(from, to);

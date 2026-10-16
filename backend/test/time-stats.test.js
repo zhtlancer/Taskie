@@ -108,6 +108,50 @@ test('long-term tasks give time per page, ignoring entries from before timing wa
   assert.deepEqual([result.summary.recorded_seconds, result.summary.missing], [1500, 1]);
 });
 
+test('turning off long-term timing preserves recorded history without counting untimed progress as missing', async t => {
+  const { child, periodsService, stats, day } = await fixture(t);
+  const book = periodsService.createGoal(child.id, { title: '阅读', subject: '语文', mode: 'progress', unit: '页', total_amount: 200, start_date: day(-30), track_time: true });
+  periodsService.logProgress(book.id, { amount: 10, date: day(0), duration_seconds: 600 }, { role: 'parent' });
+  periodsService.logProgress(book.id, { amount: 20, date: day(1), duration_seconds: 900 }, { role: 'parent' });
+  const before = stats();
+  periodsService.updateTask(book.id, { track_time: false });
+  periodsService.logProgress(book.id, { amount: 5, date: day(2) }, { role: 'parent' });
+  const untimed = periodsService.createGoal(child.id, { title: '未计时阅读', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, start_date: day(-30) });
+  periodsService.logProgress(untimed.id, { amount: 5, date: day(2) }, { role: 'parent' });
+
+  const after = stats();
+  assert.deepEqual(after.summary, before.summary);
+  assert.deepEqual(after.days.map(d => [d.recorded_seconds, d.sessions, d.missing]), before.days.map(d => [d.recorded_seconds, d.sessions, d.missing]));
+  assert.deepEqual(after.subjects, before.subjects);
+  assert.deepEqual(after.goals, before.goals);
+  assert.deepEqual([after.tasks.length, after.tasks[0].recorded, after.tasks[0].average_seconds], [1, 2, 750]);
+});
+
+test('estimates always use the latest 90 days, independent of the displayed range', async t => {
+  const { ctx, template, doneOn, stats, day } = await fixture(t);
+  const oral = template({ title: '口算', track_time: true });
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-180)}T04:00:00.000Z`);
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(-180)}T04:00:00.000Z`, oral.id);
+  for (const n of [-150, -149, -148]) doneOn(day(n), '口算', 1800);
+  doneOn(day(6), '口算', null);
+  const short = () => stats(day(0), day(6));
+  const term = () => stats(day(-155), day(6));
+  assert.equal(short().days.at(-1).estimated_seconds, 0);
+  assert.equal(term().days.at(-1).estimated_seconds, 0, 'old samples must not become estimates in a long range');
+  assert.equal(term().summary.recorded_seconds, 5400, 'old recordings still belong in the displayed totals');
+
+  doneOn(day(-84), '口算', 1800); // 90 days before the end: excluded
+  doneOn(day(-83), '口算', 600);  // 89 days before the end: included
+  doneOn(day(-82), '口算', 900);
+  assert.equal(term().days.at(-1).estimated_seconds, 0, 'only two recordings are within the 90-day window');
+  doneOn(day(-81), '口算', 1200);
+  for (const result of [short(), term()]) {
+    assert.equal(result.days.at(-1).estimated_seconds, 900);
+    assert.equal(result.summary.estimated_missing, 1);
+  }
+  assert.equal(term().summary.recorded_seconds, 9900);
+});
+
 test('children read their own time stats only, over at most 366 days', async t => {
   const { ctx, child } = await fixture(t);
   const login = async who => ({ authorization: `Bearer ${(await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: who.id } })).json().token}` });

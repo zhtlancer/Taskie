@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-193%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-195%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -131,7 +131,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (154 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (156 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -310,10 +310,10 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **193 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **195 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (154 tests)
+# 运行后端全量测试 (156 tests)
 npm run test:backend
 
 # 运行前端工具测试 (39 tests)
@@ -330,6 +330,15 @@ npm run test:browser
 ```
 
 该脚本使用临时容器和临时数据库，完成后自动删除容器。已有系统 Chromium 时可设置 `CHROMIUM_PATH`。
+
+用时统计还提供独立浏览器回归，覆盖日期与孩子切换时的响应乱序、旧请求失败及加载状态、零用时图表悬停、手机布局和孩子数据隔离。安装上述 Playwright 后运行：
+
+```bash
+npm run build
+npm run test:browser:time-stats
+```
+
+该回归直接启动临时本地服务，使用内存数据库，结束后自动清理；支持 `PLAYWRIGHT_MODULE_PATH` 和 `CHROMIUM_PATH`，无需 Docker。
 
 ---
 
