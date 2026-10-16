@@ -13,6 +13,7 @@ import ParentTasksView from '../views/ParentTasksView.vue';
 import ParentRewardsView from '../views/ParentRewardsView.vue';
 import ParentPeriodsView from '../views/ParentPeriodsView.vue';
 import ParentScheduleView from '../views/ParentScheduleView.vue';
+import ParentTimeStatsView from '../views/ParentTimeStatsView.vue';
 import ParentPinSetupView from '../views/ParentPinSetupView.vue';
 import ParentSettingsView from '../views/ParentSettingsView.vue';
 import { hasSession, mustChangePin } from '../utils/session.js';
@@ -85,6 +86,11 @@ const routes = [
     path: '/parent/periods',
     name: 'ParentPeriods',
     component: ParentPeriodsView
+  },
+  {
+    path: '/parent/time-stats',
+    name: 'ParentTimeStats',
+    component: ParentTimeStatsView
   },
   {
     path: '/parent/schedule',

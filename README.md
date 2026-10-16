@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-185%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-193%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -98,6 +98,10 @@
 - **近 7 天趋势**：每日完成率柱状图，休息日单独标出；
 - **长期任务进度曲线**：显示每天累计读到的页数，有截止日期时叠加计划进度参考线。
 
+- **⏱ 用时统计**：家长在「数据总览 → 用时统计」按孩子查看近 7 天、近 30 天或本学期（按课程表的学期日期）：每天按学科分色的作业用时（可切换表格）、各学科占比、每项任务的平均 / 最快 / 最慢用时和与之前的对比、与预计用时相比的超时次数、长期任务的速度（如每页几分钟），以及每天几点写完作业；数据总览的孩子卡片显示今天的作业用时，全部完成后显示几点写完；
+  - 只统计打开了“记录用时”的任务，平均值只用有记录的次数；没记录的次数按这项任务自己近 90 天的平均用时估算（至少有 3 次记录才估算），并单独标为“估算”；
+  - 孩子的历史统计页只显示自己记录的用时、学科分布和进步（如“口算平均比之前快了 2 分钟”），不显示估算和超时，也不和兄弟姐妹比较。
+
 ### 9. 📱 手机适配与 PWA 独立全屏模式
 - **手机与竖屏 iPad**：宽度小于 1024px 时切换为单列布局；孩子端底部有“今日 / 积分 / 错题 / 字词 / 历史”标签栏，科目改为横向滑动，家长端导航改为两行；iPad 横屏保持原有布局；
 - 内置 Web App Manifest 与 Apple 移动设备独立运行标签（`apple-mobile-web-app-capable: yes`），横竖屏均可使用；
@@ -127,7 +131,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (149 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (154 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -139,7 +143,7 @@ Taskie/
 │   │   ├── stores/            # Pinia 状态管理 (child, character, sound)
 │   │   ├── utils/             # Web Audio 合成器、Canvas 滤镜、拼音解析
 │   │   └── views/             # 页面视图 (看板、生字生词本、错题本、激励墙、家长端)
-│   └── test/                  # 前端工具测试套件 (36 项测试)
+│   └── test/                  # 前端工具测试套件 (39 项测试)
 │
 ├── Dockerfile                 # 多阶段容器构建定义 (前端编译 + 后端运行时)
 ├── docker-entrypoint.sh       # 容器入口：接管数据目录后以普通用户运行
@@ -306,13 +310,13 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **185 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **193 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (149 tests)
+# 运行后端全量测试 (154 tests)
 npm run test:backend
 
-# 运行前端工具测试 (36 tests)
+# 运行前端工具测试 (39 tests)
 npm --prefix frontend test
 ```
 

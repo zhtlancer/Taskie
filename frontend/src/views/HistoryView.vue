@@ -78,6 +78,18 @@
         </div>
       </div>
 
+      <!-- My homework time: recorded time only, by subject, and where I got faster -->
+      <section v-if="timeStats && timeStats.summary.recorded_seconds" class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card mb-6">
+        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+          <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2"><span>⏱</span><span>我的作业用时（近 7 天）</span></h2>
+          <span class="text-xs font-bold text-slate-400">一共记录了 {{ formatMinutes(timeStats.summary.recorded_seconds) }}</span>
+        </div>
+        <ul v-if="childImprovements.length" class="mb-4 space-y-1.5">
+          <li v-for="item in childImprovements" :key="item.key" class="px-3 py-2 rounded-xl bg-emerald-50 text-emerald-800 text-sm font-bold font-chinese">👍 {{ item.text }}</li>
+        </ul>
+        <TimeDailyChart :days="timeStats.days" />
+      </section>
+
       <!-- This Week's Completion by Task -->
       <section
         v-if="thisWeek && thisWeek.items.length"
@@ -222,6 +234,8 @@ import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import WeeklyChart from '../components/WeeklyChart.vue';
 import GoalProgressChart from '../components/GoalProgressChart.vue';
+import TimeDailyChart from '../components/TimeDailyChart.vue';
+import { formatMinutes, improvements } from '../utils/timeStats.js';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
 
@@ -233,6 +247,8 @@ const historyList = ref([]);
 const thisWeek = ref(null);
 const lastWeek = ref(null);
 const goals = ref([]);
+const timeStats = ref(null);
+const childImprovements = computed(() => timeStats.value ? improvements(timeStats.value) : []);
 const today = (() => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -260,7 +276,9 @@ const totalPointsEarned = computed(() => {
 
 onMounted(async () => {
   try {
-    const [data, summary, goalList] = await Promise.all([api.getHistory(childId.value, 7), api.getWeeklySummary(childId.value), api.getChildGoals(childId.value)]);
+    const [data, summary, goalList, time] = await Promise.all([api.getHistory(childId.value, 7), api.getWeeklySummary(childId.value), api.getChildGoals(childId.value),
+      api.getTimeStats(childId.value).catch(() => null)]);
+    timeStats.value = time;
     goals.value = goalList || [];
     historyList.value = data || [];
     thisWeek.value = summary?.current_week?.completion || null;

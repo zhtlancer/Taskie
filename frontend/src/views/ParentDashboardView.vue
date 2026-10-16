@@ -15,12 +15,20 @@
           </p>
         </div>
 
-        <router-link
-          to="/parent/tasks"
-          class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button active:scale-95 transition-all"
-        >
-          📝 管理任务模板
-        </router-link>
+        <div class="flex flex-wrap gap-2">
+          <router-link
+            to="/parent/time-stats"
+            class="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold active:scale-95 transition-all"
+          >
+            ⏱ 用时统计
+          </router-link>
+          <router-link
+            to="/parent/tasks"
+            class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button active:scale-95 transition-all"
+          >
+            📝 管理任务模板
+          </router-link>
+        </div>
       </div>
 
       <!-- Quick Summary Cards -->
@@ -156,6 +164,20 @@
             </div>
           </div>
 
+          <!-- Today's homework time and when it was finished -->
+          <router-link
+            v-if="item.time && (item.time.summary.sessions || todayFinishedAt(item))"
+            :to="`/parent/time-stats?child=${item.child.id}`"
+            class="mb-4 -mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2 rounded-xl bg-violet-50/70 border border-violet-100 text-xs font-bold text-violet-800 hover:bg-violet-50"
+          >
+            <template v-if="item.time.summary.sessions">
+              <span>⏱ 今天作业用时 {{ formatMinutes(item.time.summary.recorded_seconds) }}</span>
+              <span v-if="item.time.summary.estimated_seconds > item.time.summary.recorded_seconds" class="text-violet-600">（含估算约 {{ formatMinutes(item.time.summary.estimated_seconds) }}）</span>
+            </template>
+            <span v-if="todayFinishedAt(item)">{{ item.time.summary.sessions ? '·' : '⏱ 今天' }} {{ todayFinishedAt(item) }} 写完</span>
+            <span class="ml-auto text-violet-500">查看用时统计 →</span>
+          </router-link>
+
           <!-- Quick Stats Summary -->
           <div class="grid grid-cols-3 gap-3 text-center text-xs">
             <div class="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-100">
@@ -257,6 +279,7 @@
 import { ref, computed, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import { formatMinutes } from '../utils/timeStats.js';
 import TimingFields from '../components/TimingFields.vue';
 
 const childrenStats = ref([]);
@@ -290,6 +313,9 @@ function openAdhoc(child) {
 }
 
 const activeGoals = goals => goals.filter(goal => goal.status === 'active');
+// When today's homework was finished: only once every task counted today is done.
+const todayFinishedAt = item => item.stats.today_total_tasks && item.stats.today_completed_tasks === item.stats.today_total_tasks
+  ? item.time?.days[0].finished_at ?? null : null;
 
 async function refreshChild(item) {
   const [stats, adhoc] = await Promise.all([api.getChildStats(item.child.id), api.getAdhocTasks(item.child.id)]);
@@ -367,9 +393,9 @@ onMounted(async () => {
   try {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
-      const [stats, week, adhoc, goals] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
-        api.getAdhocTasks(child.id), api.getChildGoals(child.id)]);
-      return { child, stats, week, adhoc, goals: activeGoals(goals) };
+      const [stats, week, adhoc, goals, time] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null)]);
+      return { child, stats, week, adhoc, goals: activeGoals(goals), time };
     });
     [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests()]);
   } catch (err) {

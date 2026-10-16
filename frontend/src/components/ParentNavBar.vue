@@ -58,7 +58,7 @@ const parent = useParentStore(), router = useRouter();
 function exitParent() { parent.logout(); router.push('/'); }
 
 const tabs = [
-  { to: '/parent/dashboard', label: '📊 数据总览', paths: ['/parent/dashboard'] },
+  { to: '/parent/dashboard', label: '📊 数据总览', paths: ['/parent/dashboard', '/parent/time-stats'] },
   { to: '/parent/children', label: '👶 孩子账号', paths: ['/parent/children'] },
   { to: '/parent/tasks', label: '📝 任务模板', paths: ['/parent/tasks', '/parent/periods'] },
   { to: '/parent/schedule', label: '📅 课程表', paths: ['/parent/schedule'] },

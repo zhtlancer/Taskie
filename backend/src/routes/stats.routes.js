@@ -1,7 +1,18 @@
 const { getTodayDate, shiftDate } = require('../utils/date');
+const { defaultRange } = require('../services/time-stats.service');
 
 async function statsRoutes(fastify, options) {
-  const { statsService } = options;
+  const { statsService, timeStatsService } = options;
+
+  // How long homework takes and when it is finished; the last 7 days unless given.
+  fastify.get('/children/:id/time-stats', async (request, reply) => {
+    try {
+      const range = defaultRange(request.query.to || undefined);
+      return reply.send(timeStatsService.stats(request.params.id, request.query.from || range.from, request.query.to || range.to));
+    } catch (err) {
+      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+    }
+  });
 
   fastify.get('/children/:id/history', async (request, reply) => {
     const { from, to, days } = request.query || {};

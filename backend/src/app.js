@@ -20,6 +20,7 @@ const PeriodsService = require('./services/periods.service');
 const SkipsService = require('./services/skips.service');
 const TimersService = require('./services/timers.service');
 const ScheduleService = require('./services/schedule.service');
+const TimeStatsService = require('./services/time-stats.service');
 const { installAuthorization, getSetting } = require('./auth');
 const { DeviceRegistry, installDeviceGate, deviceRoutes } = require('./device-auth');
 const BackupService = require('./services/backup.service');
@@ -73,6 +74,7 @@ function buildApp(opts = {}) {
   const timersService = new TimersService(db, tasksService, periodsService);
   const scheduleService = new ScheduleService(db);
   tasksService.scheduleService = scheduleService;
+  const timeStatsService = new TimeStatsService(db);
 
   // Decorate fastify with services and db for easy access
   fastify.decorate('db', db);
@@ -88,7 +90,8 @@ function buildApp(opts = {}) {
     periodsService,
     skipsService,
     timersService,
-    scheduleService
+    scheduleService,
+    timeStatsService
   });
 
   console.log('  4/4 正在挂载路由与静态资源中间件...');
@@ -180,7 +183,7 @@ function buildApp(opts = {}) {
   fastify.register(templatesRoutes, { prefix: '/api/task-templates', tasksService });
   fastify.register(dailyTasksRoutes, { prefix: '/api/daily-tasks', tasksService });
   fastify.register(rewardsRoutes, { prefix: '/api', rewardsService });
-  fastify.register(statsRoutes, { prefix: '/api', statsService });
+  fastify.register(statsRoutes, { prefix: '/api', statsService, timeStatsService });
   fastify.register(mistakesRoutes, { prefix: '/api/mistakes', mistakesService, uploadDir: uploadDirectory });
   fastify.register(charactersRoutes, { prefix: '/api/characters', charactersService });
   fastify.register(redemptionsRoutes, { prefix: '/api', redemptionsService });

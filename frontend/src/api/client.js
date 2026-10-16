@@ -119,6 +119,7 @@ export const api = {
   logPeriodProgress: (taskId, data) => post(`/period-tasks/${taskId}/logs`, data),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
   getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
+  getTimeStats: (id, from, to) => get(`/children/${id}/time-stats`, { from, to }),
   getTimetables: childId => get(`/children/${childId}/timetables`),
   createTimetable: (childId, data) => post(`/children/${childId}/timetables`, data),
   updateTimetable: (id, data) => put(`/timetables/${id}`, data),
