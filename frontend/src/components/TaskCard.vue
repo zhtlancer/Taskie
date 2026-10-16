@@ -41,6 +41,9 @@
           <span v-if="task.origin === 'adhoc'" class="px-2 py-0.5 rounded-lg text-xs font-black shrink-0 bg-orange-100 text-orange-700">
             临时
           </span>
+          <span v-if="task.origin === 'class'" class="px-2 py-0.5 rounded-lg text-xs font-black shrink-0 bg-violet-100 text-violet-700">
+            课外班
+          </span>
 
           <!-- Task Title with child-friendly Chinese typography -->
           <h4
@@ -93,6 +96,11 @@
               :class="n <= (task.weekly_completed_times || 0) ? 'bg-indigo-500' : n <= weeklyUsed ? 'bg-slate-400' : 'bg-slate-200'"
             ></span>
           </div>
+        </div>
+
+        <!-- A class check-in: when and where the lesson is -->
+        <div v-if="task.class_lesson" class="mt-1 text-xs font-bold text-violet-600 font-chinese truncate">
+          🕓 {{ task.class_lesson.start_time }}–{{ task.class_lesson.end_time }}{{ task.class_lesson.location ? ` · 📍 ${task.class_lesson.location}` : '' }}
         </div>
 
         <!-- Timer of a timed task still to do; the time it took once done -->

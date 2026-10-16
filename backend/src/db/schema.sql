@@ -229,6 +229,99 @@ CREATE TABLE IF NOT EXISTS task_skip_requests (
 CREATE INDEX IF NOT EXISTS idx_task_skip_requests_task ON task_skip_requests(daily_task_id);
 CREATE INDEX IF NOT EXISTS idx_task_skip_requests_status ON task_skip_requests(status, requested_at);
 
+-- School timetables, one per child and term. With ab_weeks, some lessons alternate weekly: the
+-- week (Monday to Sunday) containing ab_anchor_date is an A week, the next a B week, and so on.
+CREATE TABLE IF NOT EXISTS timetables (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  start_date TEXT NOT NULL, -- YYYY-MM-DD, inclusive
+  end_date TEXT NOT NULL,   -- YYYY-MM-DD, inclusive
+  ab_weeks INTEGER NOT NULL DEFAULT 0,
+  ab_anchor_date TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_timetables_child ON timetables(child_id, start_date);
+
+-- A timetable's day: lessons and breaks such as 课间操 or 午休, in time order.
+CREATE TABLE IF NOT EXISTS timetable_slots (
+  id TEXT PRIMARY KEY,
+  timetable_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'class', -- class | break
+  label TEXT NOT NULL,                -- e.g. 第1节, 课间操
+  start_time TEXT NOT NULL,           -- HH:MM
+  end_time TEXT NOT NULL,
+  FOREIGN KEY (timetable_id) REFERENCES timetables(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_timetable_slots_timetable ON timetable_slots(timetable_id);
+
+-- What is taught in a lesson slot on a weekday: every week, or only in A or B weeks.
+CREATE TABLE IF NOT EXISTS timetable_lessons (
+  id TEXT PRIMARY KEY,
+  timetable_id TEXT NOT NULL,
+  slot_id TEXT NOT NULL,
+  weekday INTEGER NOT NULL,         -- 0 Sunday .. 6 Saturday
+  week TEXT NOT NULL DEFAULT 'all', -- all | A | B
+  subject TEXT NOT NULL,
+  teacher TEXT,
+  room TEXT,
+  bring TEXT,                       -- what to bring, e.g. 水彩笔、调色盘
+  FOREIGN KEY (timetable_id) REFERENCES timetables(id) ON DELETE CASCADE,
+  FOREIGN KEY (slot_id) REFERENCES timetable_slots(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_timetable_lessons_timetable ON timetable_lessons(timetable_id);
+
+-- Classes outside school (课外班) on fixed weekdays; one class may be shared by several children.
+-- With create_task, each lesson is also a check-in task that day.
+CREATE TABLE IF NOT EXISTS outside_classes (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  institution TEXT,
+  location TEXT,
+  teacher TEXT,
+  days_of_week TEXT NOT NULL, -- JSON array, 0 Sunday .. 6 Saturday
+  start_time TEXT NOT NULL,   -- HH:MM
+  end_time TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT,              -- null: no end date
+  bring TEXT,
+  note TEXT,
+  create_task INTEGER NOT NULL DEFAULT 0,
+  points INTEGER NOT NULL DEFAULT 0,
+  assign_all INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+-- Children a class is limited to (used only when outside_classes.assign_all = 0)
+CREATE TABLE IF NOT EXISTS outside_class_children (
+  class_id TEXT NOT NULL,
+  child_id TEXT NOT NULL,
+  PRIMARY KEY (class_id, child_id),
+  FOREIGN KEY (class_id) REFERENCES outside_classes(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+-- One child's change to one lesson of a class: on leave, or moved to another date and time.
+CREATE TABLE IF NOT EXISTS outside_class_exceptions (
+  id TEXT PRIMARY KEY,
+  class_id TEXT NOT NULL,
+  child_id TEXT NOT NULL,
+  date TEXT NOT NULL,   -- the lesson's usual date
+  kind TEXT NOT NULL,   -- leave | moved
+  new_date TEXT,
+  new_start_time TEXT,
+  new_end_time TEXT,
+  note TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (class_id, child_id, date),
+  FOREIGN KEY (class_id) REFERENCES outside_classes(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
 -- Pending device pairings: a short code shown on an unauthorized device until a parent approves it.
 -- Authorized devices themselves live in the authorized_tokens file, by token hash.
 CREATE TABLE IF NOT EXISTS device_pairings (

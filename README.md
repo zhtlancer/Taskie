@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-172%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-181%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -87,19 +87,24 @@
 - **选择假期中继续的任务**：家长勾选哪些日常/每周任务在假期中继续，其余暂停；暂停的任务不生成、不计入完成度、不打断连续打卡；
 - **假期任务**：如“寒假作业 共 40 页，每页 2 分”，即日期跟随假期的长期任务；家长可补记或更正进度记录。
 
-### 7. 📈 周完成度与学习历史
+### 7. 📅 课程表与课外班
+- **学校课程表**：家长在「家长后台 → 课程表」为每个孩子按学期建课程表，自带常见的小学作息（7 节课、课间操、午休），可自行调整时段；点格子填写科目、老师、教室和要带的东西；支持单双周（A/B 周）不同的课；同一孩子的课程表日期不能重叠，新学期可以复制上学期的课程表；假期中不显示学校的课；
+- **课外班**：每周固定时间的课，带机构、地点、老师、要带的东西和备注，可以分给一个或几个孩子；家长可以单独给某个孩子的某一次课请假或调到别的时间；可选“上课那天生成打卡任务”，计入全勤和积分，请假或调走的那天不出现，调到的那天出现；
+- **孩子端**：今日看板顶部显示下一节课外班的时间，点开可看今天的课外班（时间、地点）、学校的课和明天要带的东西；有要带的东西时看板上方会提醒；「课程表」页按周查看，手机上按天切换。
+
+### 8. 📈 周完成度与学习历史
 - **本周完成度（截至今天）**：固定星期任务按已到期的日子计算，每周任务只计算本周已无法再补的次数，提前完成的照样计入；没打开 App 的日子也算在内；
 - **本周与上周对比**：孩子的历史统计页显示每项任务的本周进度，家长总览显示每个孩子的本周与上周完成度；
 - **近 7 天趋势**：每日完成率柱状图，休息日单独标出；
 - **长期任务进度曲线**：显示每天累计读到的页数，有截止日期时叠加计划进度参考线。
 
-### 8. 📱 手机适配与 PWA 独立全屏模式
+### 9. 📱 手机适配与 PWA 独立全屏模式
 - **手机与竖屏 iPad**：宽度小于 1024px 时切换为单列布局；孩子端底部有“今日 / 积分 / 错题 / 字词 / 历史”标签栏，科目改为横向滑动，家长端导航改为两行；iPad 横屏保持原有布局；
 - 内置 Web App Manifest 与 Apple 移动设备独立运行标签（`apple-mobile-web-app-capable: yes`），横竖屏均可使用；
 - 在 iPad 或手机的 Safari 中点击 **分享 ➡️ 添加到主屏幕**，即可在桌面上生成独立 App 图标；
 - 点开后**100% 独立全屏运行**，彻底去除顶栏网址输入框与底栏标签页，专注防误触。
 
-### 9. 👨‍👩‍👧 家长后台管理
+### 10. 👨‍👩‍👧 家长后台管理
 - PIN 码保护，孩子无法误入修改；首次使用默认 PIN 登录后必须先设置新 PIN；
 - 孩子账号管理（姓名、头像 Emoji、PIN 码）；
 - 任务模板管理（分值权重、学科分类、星期与周频次、适用孩子）、临时任务、长期任务与假期安排；
@@ -122,7 +127,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (139 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (145 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -134,7 +139,7 @@ Taskie/
 │   │   ├── stores/            # Pinia 状态管理 (child, character, sound)
 │   │   ├── utils/             # Web Audio 合成器、Canvas 滤镜、拼音解析
 │   │   └── views/             # 页面视图 (看板、生字生词本、错题本、激励墙、家长端)
-│   └── test/                  # 前端工具测试套件 (33 项测试)
+│   └── test/                  # 前端工具测试套件 (36 项测试)
 │
 ├── Dockerfile                 # 多阶段容器构建定义 (前端编译 + 后端运行时)
 ├── docker-entrypoint.sh       # 容器入口：接管数据目录后以普通用户运行
@@ -301,13 +306,13 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **172 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **181 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (139 tests)
+# 运行后端全量测试 (145 tests)
 npm run test:backend
 
-# 运行前端工具测试 (33 tests)
+# 运行前端工具测试 (36 tests)
 npm --prefix frontend test
 ```
 

@@ -5,12 +5,14 @@ import RewardsView from '../views/RewardsView.vue';
 import HistoryView from '../views/HistoryView.vue';
 import MistakesView from '../views/MistakesView.vue';
 import CharactersView from '../views/CharactersView.vue';
+import ScheduleView from '../views/ScheduleView.vue';
 import ParentLoginView from '../views/ParentLoginView.vue';
 import ParentDashboardView from '../views/ParentDashboardView.vue';
 import ParentChildrenView from '../views/ParentChildrenView.vue';
 import ParentTasksView from '../views/ParentTasksView.vue';
 import ParentRewardsView from '../views/ParentRewardsView.vue';
 import ParentPeriodsView from '../views/ParentPeriodsView.vue';
+import ParentScheduleView from '../views/ParentScheduleView.vue';
 import ParentPinSetupView from '../views/ParentPinSetupView.vue';
 import ParentSettingsView from '../views/ParentSettingsView.vue';
 import { hasSession, mustChangePin } from '../utils/session.js';
@@ -47,6 +49,11 @@ const routes = [
     name: 'Characters',
     component: CharactersView
   },
+  {
+    path: '/child/:id/schedule',
+    name: 'Schedule',
+    component: ScheduleView
+  },
 
   // Parent Routes
   {
@@ -78,6 +85,11 @@ const routes = [
     path: '/parent/periods',
     name: 'ParentPeriods',
     component: ParentPeriodsView
+  },
+  {
+    path: '/parent/schedule',
+    name: 'ParentSchedule',
+    component: ParentScheduleView
   },
   {
     path: '/parent/rewards',

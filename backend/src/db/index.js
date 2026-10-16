@@ -272,6 +272,15 @@ function initDb(db) {
       db.pragma('user_version = 11');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 12) {
+    db.transaction(() => {
+      // Timetables and outside classes come from schema.sql; a class's check-in task links its class.
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'class_id')) {
+        db.exec('ALTER TABLE daily_tasks ADD COLUMN class_id TEXT REFERENCES outside_classes(id) ON DELETE SET NULL');
+      }
+      db.pragma('user_version = 12');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

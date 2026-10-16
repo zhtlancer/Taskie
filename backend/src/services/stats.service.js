@@ -155,6 +155,7 @@ class StatsService {
     const childSince = sinceDate(child.created_at);
     const schedule = this.tasksService.scheduleFor(childId);
     const goalsOn = this.tasksService.dailyGoalSchedule(childId);
+    const classTasksOn = this.tasksService.classTasksOn(childId);
     const isSkipped = row => Boolean(row.skipped_at) && !row.is_completed;
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
@@ -166,8 +167,8 @@ class StatsService {
 
     const items = new Map();
     const sourceId = source => source.source_template_id ?? source.template_id ?? (source.date ? null : source.id);
-    const keyFor = source => source.goal_id
-      ? JSON.stringify([`goal:${source.goal_id}`])
+    const keyFor = source => source.goal_id ? JSON.stringify([`goal:${source.goal_id}`])
+      : source.class_id ? JSON.stringify([`class:${source.class_id}`])
       : JSON.stringify([sourceId(source) ?? `row:${source.id}`, source.schedule_type || 'fixed_days']);
     const itemFor = (key, source) => {
       if (!items.has(key)) {
@@ -193,6 +194,10 @@ class StatsService {
       }
       for (const goal of goalsOn(date)) {
         if (!rows.some(row => row.goal_id === goal.id && row.date === date)) itemFor(keyFor({ goal_id: goal.id }), goal).total++;
+      }
+      // Class check-ins count on every day their lesson took place, projected where no row exists.
+      for (const lesson of classTasksOn(date)) {
+        if (!rows.some(row => row.class_id === lesson.class_id && row.date === date)) itemFor(keyFor(lesson), lesson).total++;
       }
       if (openedDates.has(date)) {
         for (const row of rows) {

@@ -40,8 +40,23 @@
         />
       </div>
 
-      <!-- Right: Sound toggle & Parent entrance button -->
+      <!-- Right: today's classes, stroke lookup, sound toggle & parent entrance -->
       <div class="flex items-center gap-2.5">
+        <!-- Today's lessons and outside classes (time and place); the next outside class shows here -->
+        <button
+          v-if="todaySchedule"
+          type="button"
+          @click="openSchedule"
+          class="relative flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 shadow-xs"
+          :class="todayClasses.length ? 'bg-violet-500 hover:bg-violet-600 text-white' : 'bg-violet-50 hover:bg-violet-100 text-violet-700'"
+          title="今天的课"
+        >
+          <span>{{ todayClasses.length ? '🎨' : '📅' }}</span>
+          <!-- Phones keep the next class's time; wider screens add its name -->
+          <span v-if="nextClass" class="tabular-nums">{{ nextClass.start_time }}</span>
+          <span class="hidden sm:inline font-chinese">{{ nextClass ? nextClass.title : '今天的课' }}</span>
+          <span v-if="todayClasses.length > 1" class="px-1.5 rounded-md bg-white/25 text-[10px]">{{ todayClasses.length }}</span>
+        </button>
         <button
           type="button"
           @click="openStrokeLookup"
@@ -182,6 +197,15 @@
           </router-link>
 
           <router-link
+            :to="`/child/${childId}/schedule`"
+            @click="playClick"
+            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
+          >
+            <span>📅</span>
+            <span>课程表</span>
+          </router-link>
+
+          <router-link
             to="/"
             @click="playClick"
             class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
@@ -200,6 +224,16 @@
           <div v-if="loading" class="flex justify-center items-center h-48 text-brand-500 font-bold">
             <span class="animate-spin mr-2">⏳</span> 正在加载今日任务...
           </div>
+
+          <!-- What to bring tomorrow, from tomorrow's lessons and outside classes -->
+          <button
+            v-if="!loading && tomorrowSchedule?.bring.length"
+            type="button"
+            class="w-full mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-left text-xs font-bold text-amber-800 font-chinese truncate"
+            @click="openSchedule"
+          >
+            🎒 明天要带：{{ tomorrowSchedule.bring.map(item => `${item.for}·${item.items}`).join('；') }}
+          </button>
 
           <!-- Long-term tasks (reading a book, holiday homework), with the holiday banner during a period -->
           <GoalTasksPanel
@@ -326,6 +360,14 @@
       @submit="submitDuration"
     />
 
+    <TodayScheduleModal
+      v-if="scheduleOpen && todaySchedule"
+      :child-id="childId"
+      :today="todaySchedule"
+      :tomorrow="tomorrowSchedule"
+      @close="scheduleOpen = false"
+    />
+
     <!-- Stroke Lookup Modal -->
     <StrokeLookupModal
       v-model="isLookupModalOpen"
@@ -350,6 +392,8 @@ import GoalTasksPanel from '../components/GoalTasksPanel.vue';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import SkipTaskModal from '../components/SkipTaskModal.vue';
 import DurationModal from '../components/DurationModal.vue';
+import TodayScheduleModal from '../components/TodayScheduleModal.vue';
+import { addDays, lessonHappens } from '../utils/schedule.js';
 import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
 import { currentRole } from '../utils/session.js';
@@ -469,8 +513,32 @@ function getSubjectTaskCount(subjName) {
   return cardTasks.value.filter(t => t.subject === subjName).length;
 }
 
+// --- Today's classes: the header entry, tomorrow's things to bring ---
+const todaySchedule = ref(null);
+const tomorrowSchedule = ref(null);
+const scheduleOpen = ref(false);
+const todayClasses = computed(() => (todaySchedule.value?.outside || []).filter(lessonHappens));
+// The outside class still to come today (or the last one once all have started).
+const nextClass = computed(() => {
+  const nowTime = new Date(now.value).toTimeString().slice(0, 5);
+  return todayClasses.value.find(lesson => lesson.end_time > nowTime) || todayClasses.value.at(-1) || null;
+});
+
+async function loadSchedule() {
+  try {
+    [todaySchedule.value, tomorrowSchedule.value] = await api.getChildSchedule(childId.value, todayString, addDays(todayString, 1));
+  } catch (err) {
+    console.error('Failed to load the timetable:', err);
+  }
+}
+
+function openSchedule() {
+  playClick();
+  scheduleOpen.value = true;
+}
+
 onMounted(async () => {
-  await Promise.all([loadTasks(), loadGoals()]);
+  await Promise.all([loadTasks(), loadGoals(), loadSchedule()]);
 });
 
 async function loadTasks() {

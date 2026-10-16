@@ -241,6 +241,7 @@ class TasksService {
     parseDate(date);
     const schedule = this.scheduleFor(childId);
     const matching = schedule.assigned.filter(t => schedule.allowedOn(t.id, date));
+    const classLessons = this.classTasksOn(childId)(date);
     this.db.transaction(() => {
       if (date === getTodayDate()) {
         this.removeUnassignedTodayTasks();
@@ -266,11 +267,30 @@ class TasksService {
       for (const goal of this.dailyGoalsOn(childId, date)) {
         if (!goalRow.get(goal.id, date)) insertGoalDailyRow(this.db, goal, date, Boolean(loggedOn.get(goal.id, date)));
       }
+      // An outside class that makes check-ins is a task on each day its lesson takes place.
+      const classRow = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND class_id = ? AND date = ?');
+      const insertClass = this.db.prepare(`INSERT INTO daily_tasks
+        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, class_id)
+        VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'class', ?)`);
+      for (const lesson of classLessons) {
+        if (!classRow.get(childId, lesson.class_id, date)) insertClass.run(generateId(), childId, lesson.title, lesson.subject, lesson.points, date, lesson.class_id);
+      }
     })();
     // The latest skip request tells the child whether one is waiting or was turned down.
     const latestSkip = this.db.prepare('SELECT id, status, reason FROM task_skip_requests WHERE daily_task_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1');
+    // A class check-in carries its lesson's time and place for the card.
+    const lessonOf = new Map(this.scheduleService ? this.scheduleService.outsideLessons(childId)(date).map(l => [l.class_id, l]) : []);
     return this.describeTasksBetween(childId, date, date).filter(isActiveTask)
-      .map(task => ({ ...task, skip_request: latestSkip.get(task.id) || null }));
+      .map(task => {
+        const lesson = task.class_id && lessonOf.get(task.class_id);
+        return { ...task, skip_request: latestSkip.get(task.id) || null,
+          class_lesson: lesson ? { start_time: lesson.start_time, end_time: lesson.end_time, location: lesson.location, institution: lesson.institution } : null };
+      });
+  }
+
+  // Outside-class lessons that are check-in tasks, per date (none without the schedule service).
+  classTasksOn(childId) {
+    return this.scheduleService ? this.scheduleService.classTaskSchedule(childId) : () => [];
   }
 
   // Times a weekly task was done or skipped this week: both use up its weekly target.
@@ -368,10 +388,11 @@ class TasksService {
 
   // Tells whether a date was a rest day for a child: nothing required was scheduled. Opened days
   // use their generated tasks (only flexible weekly ones means rest); unopened days are rest days
-  // unless a fixed-day template or a weekly deadline applied.
+  // unless a fixed-day template, a weekly deadline, a daily long-term log or a class check-in applied.
   restDayChecker(childId, fromDate, toDate) {
     const schedule = this.scheduleFor(childId);
     const goalsOn = this.dailyGoalSchedule(childId);
+    const classTasksOn = this.classTasksOn(childId);
     const byDate = new Map();
     const weeklyDone = new Map();
     const weeklyKey = (templateId, date) => `${getWeekRange(date).startDate}|${templateId}`;
@@ -388,7 +409,7 @@ class TasksService {
     return date => {
       if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional || task.is_skipped);
       if (!schedule.childSince || date < schedule.childSince) return true;
-      if (goalsOn(date).length) return false;
+      if (goalsOn(date).length || classTasksOn(date).length) return false;
       return !schedule.assigned.some(t => {
         if (t.since > date || !schedule.allowedOn(t.id, date)) return false;
         if (t.schedule_type !== 'weekly_times') return true;

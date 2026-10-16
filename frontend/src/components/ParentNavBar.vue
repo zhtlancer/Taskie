@@ -61,6 +61,7 @@ const tabs = [
   { to: '/parent/dashboard', label: '📊 数据总览', paths: ['/parent/dashboard'] },
   { to: '/parent/children', label: '👶 孩子账号', paths: ['/parent/children'] },
   { to: '/parent/tasks', label: '📝 任务模板', paths: ['/parent/tasks', '/parent/periods'] },
+  { to: '/parent/schedule', label: '📅 课程表', paths: ['/parent/schedule'] },
   { to: '/parent/rewards', label: '🎁 奖励兑换', paths: ['/parent/rewards'] }
 ];
 </script>
