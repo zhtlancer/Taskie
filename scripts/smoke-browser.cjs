@@ -104,6 +104,31 @@ async function main() {
   await page.getByText('浏览器读绘本').waitFor();
   pass('browser parent adds a one-off task and sees the long-term task on the dashboard');
 
+  // --- The next-class reminder advances even when no task timer runs.
+  const reminderDate = await page.evaluate(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const reminderClasses = [];
+  for (const [title, start_time, end_time] of [['提醒午间课', '12:00', '13:00'], ['提醒下午课', '16:30', '17:30']]) {
+    reminderClasses.push(await api('POST', '/outside-classes', {
+      title, days_of_week: [0, 1, 2, 3, 4, 5, 6], start_date: reminderDate, start_time, end_time
+    }));
+  }
+  const reminderContext = await browser.newContext({ viewport: { width: 1180, height: 820 }, timezoneId: 'Asia/Shanghai' });
+  await reminderContext.addCookies(await context.cookies());
+  await reminderContext.addInitScript(token => sessionStorage.setItem('taskie_parent_token', token), login.token);
+  const reminderPage = await reminderContext.newPage();
+  await reminderPage.route(/fonts\.(?:googleapis|gstatic)\.com/, route => route.abort());
+  await reminderPage.clock.install({ time: new Date(`${reminderDate}T10:00:00+08:00`) });
+  await reminderPage.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
+  await reminderPage.getByTitle('今天的课', { exact: true }).getByText('12:00', { exact: true }).waitFor();
+  await reminderPage.clock.fastForward(4 * 3600 * 1000);
+  await reminderPage.getByTitle('今天的课', { exact: true }).getByText('16:30', { exact: true }).waitFor();
+  await reminderContext.close();
+  for (const cls of reminderClasses) await api('DELETE', `/outside-classes/${cls.id}`);
+  pass('browser next-class reminder advances without running a task timer');
+
   // --- Backup round trip; restoring ends every session.
   await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '立即创建备份', exact: true }).click();

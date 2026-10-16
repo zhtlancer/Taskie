@@ -29,7 +29,7 @@
 
     <div
       v-for="lesson in day.outside"
-      :key="`${lesson.class_id}-${lesson.status}`"
+      :key="`${lesson.class_id}-${lesson.class_lesson_date}-${lesson.status}`"
       class="px-3 py-2 rounded-xl border"
       :class="lessonHappens(lesson) ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-200 opacity-70'"
     >

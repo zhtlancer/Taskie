@@ -112,6 +112,9 @@ class BackupService {
       if (schemaVersion >= 12 && !(SCHEDULE_TABLES.every(t => tables.includes(t)) && hasColumn('daily_tasks', 'class_id'))) {
         throw fail('备份缺少课程表数据，无法恢复');
       }
+      if (schemaVersion >= 13 && !hasColumn('daily_tasks', 'class_lesson_date')) {
+        throw fail('备份缺少课次数据，无法恢复');
+      }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {

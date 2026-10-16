@@ -189,3 +189,73 @@ test('check-in tasks of outside classes are owed on days the board was never ope
   assert.equal(rewardsService.getCurrentStreak(child.id, day(2)), 2);
   assert.deepEqual(statsService.getWeeklyCompletion(child.id, day(0), day(6), day(6)).items.map(i => i.title), ['口算']);
 });
+
+test('each lesson gets its own check-in and weekly credit when a move creates two lessons on one day', async t => {
+  const { ctx, child, asChild, asParent, today } = await fixture(t);
+  const tomorrow = shiftDate(today, 1);
+  const cls = (await asParent('POST', '/api/outside-classes', {
+    title: '钢琴', days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00', start_date: today, create_task: true, points: 8
+  })).json();
+  await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, {
+    child_id: child.id, date: tomorrow, kind: 'moved', new_date: today, new_start_time: '09:00', new_end_time: '10:00'
+  });
+  const week = getWeekRange(today);
+  const completion = () => ctx.app.services.statsService.getWeeklyCompletion(child.id, week.startDate, week.endDate, today);
+  const tasks = () => ctx.app.services.tasksService.getDailyTasks(child.id);
+  assert.deepEqual([completion().total_units, completion().completed_units], [2, 0]);
+  const rows = tasks();
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map(row => [row.class_lesson_date, row.class_lesson.start_time]).sort(), [[today, '16:00'], [tomorrow, '09:00']]);
+  assert.deepEqual(tasks().map(row => row.id), rows.map(row => row.id), 'reloading cannot duplicate either lesson');
+  assert.deepEqual([completion().total_units, completion().completed_units], [2, 0]);
+  const first = await asChild('POST', `/api/daily-tasks/${rows[0].id}/complete`);
+  assert.equal(first.json().new_badges.some(b => b.key === 'all_done_once'), false);
+  assert.deepEqual([completion().total_units, completion().completed_units], [2, 1]);
+  await asChild('POST', `/api/daily-tasks/${rows[1].id}/complete`);
+  const stats = (await asParent('GET', `/api/children/${child.id}/stats`)).json();
+  assert.deepEqual([stats.today_total_tasks, stats.today_completed_tasks, stats.today_points], [2, 2, 16]);
+  assert.deepEqual([completion().total_units, completion().completed_units], [2, 2]);
+});
+
+test('same-day time changes show the effective lesson time and keep the same check-in', async t => {
+  const { ctx, child, asParent, today } = await fixture(t);
+  const cls = (await asParent('POST', '/api/outside-classes', {
+    title: '钢琴', days_of_week: [getDayOfWeek(today)], start_time: '16:00', end_time: '17:00', start_date: today, create_task: true
+  })).json();
+  const tasks = () => ctx.app.services.tasksService.getDailyTasks(child.id);
+  const id = tasks()[0].id;
+  let changed;
+  for (const start of ['09:00', '18:00']) {
+    changed = (await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, {
+      child_id: child.id, date: today, kind: 'moved', new_date: today, new_start_time: start, new_end_time: start === '09:00' ? '10:00' : '19:00'
+    })).json();
+    const rows = tasks();
+    assert.equal(rows.length, 1);
+    assert.deepEqual([rows[0].id, rows[0].class_lesson_date, rows[0].class_lesson.start_time], [id, today, start]);
+  }
+  await asParent('DELETE', `/api/outside-class-exceptions/${changed.exceptions[0].id}`);
+  assert.deepEqual([tasks()[0].id, tasks()[0].class_lesson.start_time], [id, '16:00']);
+});
+
+test('cancelling one of multiple same-day lessons removes only its unfinished check-in', async t => {
+  const { ctx, child, asChild, asParent, today } = await fixture(t);
+  const sources = [shiftDate(today, 1), shiftDate(today, 2)];
+  const cls = (await asParent('POST', '/api/outside-classes', {
+    title: '钢琴', days_of_week: sources.map(getDayOfWeek), start_time: '16:00', end_time: '17:00', start_date: today, create_task: true
+  })).json();
+  for (let i = 0; i < sources.length; i++) {
+    await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, {
+      child_id: child.id, date: sources[i], kind: 'moved', new_date: today, new_start_time: i ? '11:00' : '09:00', new_end_time: i ? '12:00' : '10:00'
+    });
+  }
+  const tasks = () => ctx.app.services.tasksService.getDailyTasks(child.id);
+  const initial = tasks();
+  assert.equal(initial.length, 2);
+  assert.deepEqual(initial.map(row => row.class_lesson.start_time).sort(), ['09:00', '11:00']);
+  const kept = initial.find(row => row.class_lesson_date === sources[1]);
+  await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: sources[0], kind: 'leave' });
+  assert.deepEqual(tasks().map(row => row.id), [kept.id]);
+  await asChild('POST', `/api/daily-tasks/${kept.id}/complete`);
+  await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: sources[1], kind: 'leave' });
+  assert.deepEqual(tasks().map(row => [row.id, row.is_completed]), [[kept.id, true]], 'completed history is retained');
+});

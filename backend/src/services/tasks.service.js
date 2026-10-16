@@ -3,6 +3,7 @@ const { insertGoalDailyRow } = require('./periods.service');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
 const { cancelPendingSkips } = require('../utils/skips');
+const { classLessonKey } = require('../utils/schedule');
 const { describeTimer, resolveDuration, timerSeconds, validateDuration, validateTiming } = require('../utils/timer');
 
 function normalizeDaysOfWeek(days) {
@@ -268,21 +269,24 @@ class TasksService {
         if (!goalRow.get(goal.id, date)) insertGoalDailyRow(this.db, goal, date, Boolean(loggedOn.get(goal.id, date)));
       }
       // An outside class that makes check-ins is a task on each day its lesson takes place.
-      const classRow = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND class_id = ? AND date = ?');
+      const classRow = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND class_id = ? AND date = ? AND COALESCE(class_lesson_date, date) = ?');
       const insertClass = this.db.prepare(`INSERT INTO daily_tasks
-        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, class_id)
-        VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'class', ?)`);
+        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, class_id, class_lesson_date)
+        VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'class', ?, ?)`);
       for (const lesson of classLessons) {
-        if (!classRow.get(childId, lesson.class_id, date)) insertClass.run(generateId(), childId, lesson.title, lesson.subject, lesson.points, date, lesson.class_id);
+        if (!classRow.get(childId, lesson.class_id, date, lesson.class_lesson_date)) {
+          insertClass.run(generateId(), childId, lesson.title, lesson.subject, lesson.points, date, lesson.class_id, lesson.class_lesson_date);
+        }
       }
     })();
     // The latest skip request tells the child whether one is waiting or was turned down.
     const latestSkip = this.db.prepare('SELECT id, status, reason FROM task_skip_requests WHERE daily_task_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1');
     // A class check-in carries its lesson's time and place for the card.
-    const lessonOf = new Map(this.scheduleService ? this.scheduleService.outsideLessons(childId)(date).map(l => [l.class_id, l]) : []);
+    const lessonOf = new Map(this.scheduleService ? this.scheduleService.outsideLessons(childId)(date)
+      .filter(l => ['scheduled', 'moved_in'].includes(l.status)).map(l => [classLessonKey(l), l]) : []);
     return this.describeTasksBetween(childId, date, date).filter(isActiveTask)
       .map(task => {
-        const lesson = task.class_id && lessonOf.get(task.class_id);
+        const lesson = task.class_id && lessonOf.get(classLessonKey(task));
         return { ...task, skip_request: latestSkip.get(task.id) || null,
           class_lesson: lesson ? { start_time: lesson.start_time, end_time: lesson.end_time, location: lesson.location, institution: lesson.institution } : null };
       });

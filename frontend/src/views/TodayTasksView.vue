@@ -425,10 +425,9 @@ const todayString = (() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 })();
 
-// Timers count on the server; the board keeps running ones ticking from when they were loaded.
+// Keep task timers and the next-class reminder current even when no task timer is running.
 const now = ref(Date.now());
-const anyTimerRunning = computed(() => tasks.value.some(t => t.timer_running) || goals.value.some(g => g.timer_running));
-const clock = setInterval(() => { if (anyTimerRunning.value) now.value = Date.now(); }, 1000);
+const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 onUnmounted(() => clearInterval(clock));
 async function fetchTasks() {
   const list = (await api.getDailyTasks(childId.value)).map(task => withClock(task));

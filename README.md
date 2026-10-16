@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-181%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-185%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -127,7 +127,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (145 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件 (149 项测试)
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -306,10 +306,10 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **181 项自动化测试** 全部绿灯通过：
+项目拥有严密的测试覆盖，共 **185 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (145 tests)
+# 运行后端全量测试 (149 tests)
 npm run test:backend
 
 # 运行前端工具测试 (36 tests)

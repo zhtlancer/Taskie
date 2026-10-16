@@ -215,7 +215,7 @@ test('current-schema backups missing assignment data are rejected before changin
     const damaged = JSON.parse(gunzipSync(archive));
     const db = new Database(Buffer.from(damaged.database, 'base64'));
     db.exec(corruption);
-    assert.equal(db.pragma('user_version', { simple: true }), 12);
+    assert.equal(db.pragma('user_version', { simple: true }), 13);
     damaged.database = db.serialize().toString('base64');
     db.close();
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
@@ -255,7 +255,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 12);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 13);
   const rows = ctx.db.prepare('SELECT source_template_id, template_created_at FROM daily_tasks').all();
   assert.ok(rows.every(row => row.source_template_id === template.id && row.template_created_at === template.created_at));
   tasks.deleteTemplate(template.id);
@@ -311,7 +311,7 @@ test('old schema migrates without losing existing children and fixed-day templat
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
     assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
-    assert.equal(db.pragma('user_version', { simple: true }), 12);
+    assert.equal(db.pragma('user_version', { simple: true }), 13);
   } finally { db.close(); }
 });
 
@@ -333,7 +333,7 @@ test('v8 character books restore with empty categories; a v9 backup without them
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 12);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 13);
   assert.deepEqual(ctx.app.services.charactersService.listCharacters({ child_id: child.id }).map(c => [c.char, c.categories]), [['春', []]]);
 });
 
@@ -382,7 +382,7 @@ test('skipped tasks and their requests survive restore; v9 backups restore witho
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 12);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 13);
   assert.deepEqual([skipsService.listRequests().length, tasksService.getDailyTasks(child.id)[0].is_skipped], [0, false]);
 });
 
@@ -419,7 +419,7 @@ test('task durations survive restore; v10 backups restore without timing and a v
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 12);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 13);
   const legacyTask = tasksService.getDailyTasks(child.id)[0];
   assert.deepEqual([legacyTask.track_time, legacyTask.duration_seconds, legacyTask.timer_seconds], [false, null, 0]);
   assert.equal(tasksService.listTemplates()[0].track_time, false);
@@ -458,6 +458,55 @@ test('timetables and outside classes survive restore; v11 backups restore withou
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 12);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 13);
   assert.deepEqual([scheduleService.listClasses(), scheduleService.listTimetables(child.id)], [[], []]);
+});
+
+test('lesson identities migrate from v12 without losing check-ins; v13 backups require and preserve them', async t => {
+  const ctx = await fixture(t), child = await createChild(ctx);
+  const { scheduleService, tasksService, skipsService } = ctx.app.services;
+  const today = getTodayDate(), tomorrow = shiftDate(today, 1);
+  const cls = scheduleService.createClass({ title: '钢琴', days_of_week: [0, 1, 2, 3, 4, 5, 6],
+    start_time: '16:00', end_time: '17:00', start_date: today, create_task: true, points: 8 });
+  const regular = tasksService.getDailyTasks(child.id)[0];
+  tasksService.completeDailyTask(regular.id);
+  scheduleService.setException(cls.id, { child_id: child.id, date: tomorrow, kind: 'moved', new_date: today, new_start_time: '09:00', new_end_time: '10:00' });
+  const movedOnly = scheduleService.createClass({ title: '绘画', days_of_week: [new Date(`${tomorrow}T00:00:00Z`).getUTCDay()],
+    start_time: '16:00', end_time: '17:00', start_date: today, create_task: true });
+  scheduleService.setException(movedOnly.id, { child_id: child.id, date: tomorrow, kind: 'moved', new_date: today, new_start_time: '11:00', new_end_time: '12:00' });
+  const generated = tasksService.getDailyTasks(child.id);
+  const moved = generated.find(row => row.class_id === movedOnly.id);
+  skipsService.requestSkip(moved.id, '今天请假', { role: 'parent' });
+  // v12 only generated one row per class/day, even when two piano lessons happened that day.
+  ctx.db.prepare('DELETE FROM daily_tasks WHERE class_id = ? AND id != ?').run(cls.id, regular.id);
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const data = JSON.parse(gunzipSync(archive));
+  const Database = require('better-sqlite3');
+  const candidate = new Database(Buffer.from(data.database, 'base64'));
+  let damaged, older;
+  try {
+    candidate.exec('ALTER TABLE daily_tasks DROP COLUMN class_lesson_date');
+    damaged = gzipSync(JSON.stringify({ ...data, database: candidate.serialize().toString('base64') }));
+    candidate.pragma('user_version = 12');
+    older = gzipSync(JSON.stringify({ ...data, database: candidate.serialize().toString('base64') }));
+  } finally { candidate.close(); }
+  const invalid = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(damaged) });
+  assert.equal(invalid.statusCode, 400, invalid.body);
+  assert.match(invalid.body, /备份缺少课次数据/);
+  assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 8);
+
+  const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(older) });
+  assert.equal(restored.statusCode, 200, restored.body);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 13);
+  const rows = tasksService.getDailyTasks(child.id);
+  assert.equal(rows.length, 3);
+  assert.deepEqual([rows.find(row => row.id === regular.id).class_lesson_date, rows.find(row => row.id === regular.id).is_completed], [today, true]);
+  assert.deepEqual([rows.find(row => row.id === moved.id).class_lesson_date, rows.find(row => row.id === moved.id).is_skipped], [tomorrow, true]);
+  assert.equal(rows.find(row => row.class_id === cls.id && row.class_lesson_date === tomorrow).class_lesson.start_time, '09:00');
+  assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 8, 'migration cannot award duplicate points');
+
+  const current = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const roundTrip = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(current) });
+  assert.equal(roundTrip.statusCode, 200, roundTrip.body);
+  assert.deepEqual(tasksService.getDailyTasks(child.id).map(row => [row.id, row.class_lesson_date]), rows.map(row => [row.id, row.class_lesson_date]));
 });

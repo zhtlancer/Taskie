@@ -1,5 +1,6 @@
 const { generateId } = require('../utils/crypto');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate } = require('../utils/date');
+const { classLessonKey } = require('../utils/schedule');
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WEEKS = ['all', 'A', 'B'];
@@ -340,12 +341,12 @@ class ScheduleService {
   // Check-ins still to do whose lesson no longer happens that day (leave, moved away, schedule or
   // children changed, check-ins turned off) are dropped; done ones stay.
   pruneClassTasks(classId) {
-    const rows = this.db.prepare('SELECT id, child_id, date FROM daily_tasks WHERE class_id = ? AND is_completed = 0').all(classId);
+    const rows = this.db.prepare('SELECT id, child_id, date, class_id, class_lesson_date FROM daily_tasks WHERE class_id = ? AND is_completed = 0').all(classId);
     const remove = this.db.prepare('DELETE FROM daily_tasks WHERE id = ?');
     const schedules = new Map();
     for (const row of rows) {
       if (!schedules.has(row.child_id)) schedules.set(row.child_id, this.classTaskSchedule(row.child_id));
-      if (!schedules.get(row.child_id)(row.date).some(lesson => lesson.class_id === classId)) remove.run(row.id);
+      if (!schedules.get(row.child_id)(row.date).some(lesson => classLessonKey(lesson) === classLessonKey(row))) remove.run(row.id);
     }
   }
 
@@ -366,7 +367,7 @@ class ScheduleService {
       movedInto.get(e.new_date).push(e);
     }
     const lesson = (row, date, startTime, endTime, status, e = null) => ({
-      class_id: row.id, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
+      class_id: row.id, class_lesson_date: e?.date ?? date, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
       bring: row.bring, note: row.note, start_time: startTime, end_time: endTime, status,
       exception_id: e?.id ?? null, exception_note: e?.note ?? null,
       moved_to: status === 'moved_out' ? { date: e.new_date, start_time: e.new_start_time, end_time: e.new_end_time } : null,

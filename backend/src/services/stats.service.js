@@ -1,5 +1,6 @@
 const { formatDate, getTodayDate, shiftDate, getWeekRange, getLastWeekRange, getDateRangeList, getDayOfWeek } = require('../utils/date');
 const { isActiveTask, summarizeDay } = require('./tasks.service');
+const { classLessonKey } = require('../utils/schedule');
 
 class StatsService {
   constructor(db, tasksService) {
@@ -197,7 +198,7 @@ class StatsService {
       }
       // Class check-ins count on every day their lesson took place, projected where no row exists.
       for (const lesson of classTasksOn(date)) {
-        if (!rows.some(row => row.class_id === lesson.class_id && row.date === date)) itemFor(keyFor(lesson), lesson).total++;
+        if (!rows.some(row => row.date === date && classLessonKey(row) === classLessonKey(lesson))) itemFor(keyFor(lesson), lesson).total++;
       }
       if (openedDates.has(date)) {
         for (const row of rows) {

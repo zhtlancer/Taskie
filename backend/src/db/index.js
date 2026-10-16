@@ -281,6 +281,27 @@ function initDb(db) {
       db.pragma('user_version = 12');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 13) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'class_lesson_date')) {
+        // The original lesson date distinguishes a regular lesson from lessons moved onto its day.
+        db.exec('ALTER TABLE daily_tasks ADD COLUMN class_lesson_date TEXT');
+      }
+      const ScheduleService = require('../services/schedule.service');
+      const scheduleService = new ScheduleService(db);
+      const schedules = new Map();
+      const update = db.prepare('UPDATE daily_tasks SET class_lesson_date = ? WHERE id = ?');
+      for (const row of db.prepare('SELECT id, child_id, class_id, date FROM daily_tasks WHERE class_id IS NOT NULL AND class_lesson_date IS NULL').all()) {
+        if (!schedules.has(row.child_id)) schedules.set(row.child_id, scheduleService.outsideLessons(row.child_id));
+        const lessons = schedules.get(row.child_id)(row.date).filter(l => l.class_id === row.class_id);
+        // v12 could only keep one check-in per class/day. Keep it on the regular lesson if present,
+        // otherwise the first moved-in lesson; retained history without a current lesson keeps its date.
+        const lesson = lessons.find(l => l.status === 'scheduled') || lessons.find(l => l.status === 'moved_in');
+        update.run(lesson?.class_lesson_date ?? row.date, row.id);
+      }
+      db.pragma('user_version = 13');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
