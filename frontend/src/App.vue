@@ -1,7 +1,7 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col text-slate-800 antialiased">
+  <div class="app-shell bg-[#F4F6FB] flex flex-col text-slate-800 antialiased">
     <router-view />
-    <div v-if="error" role="alert" class="fixed top-3 left-1/2 -translate-x-1/2 z-[100] w-max max-w-[calc(100vw-2rem)] sm:max-w-xl bg-rose-50 border border-rose-200 rounded-xl p-4 shadow-lg flex gap-4 items-center">
+    <div v-if="error" role="alert" class="fixed top-[calc(env(safe-area-inset-top,0px)+0.75rem)] left-1/2 -translate-x-1/2 z-[100] w-max max-w-[calc(100vw-2rem)] sm:max-w-xl bg-rose-50 border border-rose-200 rounded-xl p-4 shadow-lg flex gap-4 items-center">
       <span>{{ error }}</span>
       <button @click="reload" class="text-brand-600 whitespace-nowrap">刷新重试</button>
       <button @click="error = ''" aria-label="关闭错误提示">✕</button>

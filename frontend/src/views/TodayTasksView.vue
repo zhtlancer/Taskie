@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen lg:h-screen lg:max-h-[820px] w-full max-w-[1180px] mx-auto flex flex-col lg:justify-between p-3 pb-24 lg:p-4 select-none lg:overflow-hidden">
+  <div class="min-h-[var(--app-content-height)] lg:h-[var(--app-content-height)] lg:max-h-[820px] w-full max-w-[1180px] mx-auto flex flex-col lg:justify-between p-3 pb-24 lg:p-4 select-none lg:overflow-hidden">
     <!-- Top Header Bar (wraps into two rows on phones) -->
     <header class="lg:h-16 shrink-0 bg-white rounded-2xl px-4 py-3 lg:px-5 lg:py-0 border border-slate-200 shadow-sm flex flex-wrap lg:flex-nowrap items-center justify-between gap-y-3">
       <!-- Left: Child Info & Date -->
