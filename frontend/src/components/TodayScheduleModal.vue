@@ -20,14 +20,33 @@
         <DaySchedule :day="{ ...today, outside: [] }" />
       </section>
 
-      <section v-if="tomorrow" class="rounded-2xl bg-amber-50 border border-amber-200 p-3">
-        <h4 class="text-xs font-black text-amber-700 mb-1">🎒 明天（{{ WEEKDAY_NAMES[tomorrow.weekday] }}）要带</h4>
-        <ul v-if="tomorrow.bring.length" class="space-y-0.5">
-          <li v-for="item in tomorrow.bring" :key="item.for + item.items" class="text-sm font-bold text-slate-700 font-chinese">
-            <span class="text-amber-600">{{ item.for }}：</span>{{ item.items }}
-          </li>
-        </ul>
-        <p v-else class="text-xs font-bold text-slate-400">没有特别要带的东西</p>
+      <section v-if="tomorrow" class="border-t border-slate-200 pt-4 space-y-3">
+        <h3 class="text-base font-black text-slate-800 font-chinese">
+          📅 明天的课
+          <span class="text-xs font-bold text-slate-500">{{ shortDate(tomorrow.date) }} · {{ WEEKDAY_NAMES[tomorrow.weekday] }}</span>
+          <span v-if="tomorrow.week" class="ml-1 px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 text-xs">{{ tomorrow.week }}周</span>
+        </h3>
+
+        <section>
+          <h4 class="text-xs font-black text-violet-600 mb-1.5">🎨 明天的课外班</h4>
+          <DaySchedule v-if="tomorrow.outside.length" :day="{ ...tomorrow, holiday: null, makeup: null, school: [] }" />
+          <p v-else class="px-2 py-2 text-xs font-bold text-slate-400">明天没有课外班</p>
+        </section>
+
+        <section>
+          <h4 class="text-xs font-black text-slate-500 mb-1.5">🏫 明天学校的课</h4>
+          <DaySchedule :day="{ ...tomorrow, outside: [] }" />
+        </section>
+
+        <div class="rounded-2xl bg-amber-50 border border-amber-200 p-3">
+          <h4 class="text-xs font-black text-amber-700 mb-1">🎒 明天要带</h4>
+          <ul v-if="tomorrow.bring.length" class="space-y-0.5">
+            <li v-for="item in tomorrow.bring" :key="item.for + item.items" class="text-sm font-bold text-slate-700 font-chinese">
+              <span class="text-amber-600">{{ item.for }}：</span>{{ item.items }}
+            </li>
+          </ul>
+          <p v-else class="text-xs font-bold text-slate-400">没有特别要带的东西</p>
+        </div>
       </section>
 
       <router-link :to="`/child/${childId}/schedule`" class="block text-center py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-600" @click="$emit('close')">
@@ -39,7 +58,7 @@
 
 <script setup>
 import DaySchedule from './DaySchedule.vue';
-import { WEEKDAY_NAMES } from '../utils/schedule.js';
+import { shortDate, WEEKDAY_NAMES } from '../utils/schedule.js';
 
 defineProps({
   childId: { type: String, required: true },
