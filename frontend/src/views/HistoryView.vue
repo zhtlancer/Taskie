@@ -111,15 +111,17 @@
                 {{ item.title }}
                 <span v-if="item.schedule_type === 'weekly_times'" class="text-[11px] text-indigo-500 font-bold">每周{{ item.weekly_target }}次</span>
               </span>
-              <span class="text-xs font-black shrink-0" :class="item.completed >= item.total ? 'text-emerald-600' : 'text-slate-500'">
+              <span class="text-xs font-black shrink-0" :class="item.total > 0 && item.completed >= item.total ? 'text-emerald-600' : 'text-slate-500'">
                 {{ item.completed }} / {{ item.total }}
+                <span v-if="item.extra_completed" class="block text-[10px] text-violet-600">实际完成 {{ item.actual_completed }} 次（额外 {{ item.extra_completed }} 次）</span>
+                <span v-if="item.extra_completed" class="block text-[10px] text-violet-600">目标内 +{{ item.target_points_earned }} 分 · 额外 +{{ item.extra_points_earned }} 分</span>
               </span>
             </div>
             <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
               <div
                 class="h-full rounded-full transition-all duration-500"
-                :class="item.completed >= item.total ? 'bg-emerald-500' : 'bg-brand-500'"
-                :style="{ width: `${Math.round((item.completed / item.total) * 100)}%` }"
+                :class="item.total > 0 && item.completed >= item.total ? 'bg-emerald-500' : 'bg-brand-500'"
+                :style="{ width: `${item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0}%` }"
               ></div>
             </div>
           </div>

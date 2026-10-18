@@ -36,7 +36,7 @@ class RewardsService {
     const today = referenceDate || getTodayDate();
     // Logging holiday-task progress counts as doing something that day.
     const completedDates = new Set(this.db.prepare(`
-      SELECT date FROM daily_tasks WHERE child_id = ? AND is_completed = 1 AND date <= ?
+      SELECT date FROM daily_tasks WHERE child_id = ? AND is_completed = 1 AND is_extra_completion = 0 AND date <= ?
       UNION
       SELECT l.date FROM period_task_logs l
       JOIN period_tasks t ON t.id = l.period_task_id

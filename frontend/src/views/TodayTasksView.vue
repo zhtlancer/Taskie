@@ -250,7 +250,7 @@
 
           <!-- Empty state -->
           <div
-            v-if="!loading && filteredTasks.length === 0 && !activePeriod && !activeGoals.length"
+            v-if="!loading && filteredTasks.length === 0 && extraTasks.length === 0 && !activePeriod && !activeGoals.length"
             class="flex flex-col items-center justify-center h-64 text-slate-400"
           >
             <span class="text-5xl mb-3">🏖️</span>
@@ -259,7 +259,7 @@
           </div>
 
           <div
-            v-if="!loading && (activePeriod || activeGoals.length) && filteredTasks.length === 0"
+            v-if="!loading && (activePeriod || activeGoals.length) && filteredTasks.length === 0 && extraTasks.length === 0"
             class="text-center py-6 text-sm font-bold text-slate-400"
           >
             {{ activePeriod ? '假期中，今天没有日常任务～' : '今天没有日常任务～' }}
@@ -279,6 +279,16 @@
               v-on="skipHandlers"
             />
           </div>
+          <section v-if="!loading && extraTasks.length" class="mt-5 space-y-3">
+            <div>
+              <h3 class="text-sm font-black text-violet-700">✨ 额外挑战</h3>
+              <p class="text-xs font-bold text-slate-400">自愿完成，不增加应做次数，不影响完成率、全勤和连续打卡。</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <TaskCard v-for="task in extraTasks" :key="task.id" :task="task" :as-parent="asParent" :now="now"
+                @toggle="handleTaskToggle" @timer="handleTimer" @edit-duration="openDurationEdit" />
+            </div>
+          </section>
         </div>
 
         <!-- Keep the rest-day message visible when daily tasks were skipped, including goal logs. -->
@@ -484,19 +494,21 @@ const cardTasks = computed(() => tasks.value.filter(t => t.origin !== 'goal'));
 const goalRows = computed(() => Object.fromEntries(tasks.value.filter(t => t.origin === 'goal').map(t => [t.goal_id, t])));
 const filteredTasks = computed(() => {
   if (selectedSubject.value === '全部') {
-    return cardTasks.value;
+    return cardTasks.value.filter(t => !t.is_extra);
   }
-  return cardTasks.value.filter(t => t.subject === selectedSubject.value);
+  return cardTasks.value.filter(t => !t.is_extra && t.subject === selectedSubject.value);
 });
+
+const extraTasks = computed(() => cardTasks.value.filter(t => t.is_extra && (selectedSubject.value === '全部' || t.subject === selectedSubject.value)));
 
 // Flexible weekly tasks only count once done and skipped tasks never count, so neither blocks
 // the all-done celebration.
-const countedTasks = computed(() => tasks.value.filter(t => !t.is_skipped && (!t.is_optional || t.is_completed)));
+const countedTasks = computed(() => tasks.value.filter(t => !t.is_extra && !t.is_skipped && (!t.is_optional || t.is_completed)));
 const skippedCount = computed(() => tasks.value.filter(t => t.is_skipped).length);
 const totalCount = computed(() => countedTasks.value.length);
 const completedCount = computed(() => countedTasks.value.filter(t => t.is_completed).length);
 const allDone = computed(() => completedCount.value > 0 && completedCount.value === totalCount.value);
-const optionalPendingCount = computed(() => tasks.value.filter(t => t.is_optional && !t.is_completed).length);
+const optionalPendingCount = computed(() => tasks.value.filter(t => !t.is_extra && t.is_optional && !t.is_completed).length);
 const completionRate = computed(() => {
   if (totalCount.value === 0) return 0;
   return Math.round((completedCount.value / totalCount.value) * 100);
@@ -562,6 +574,7 @@ async function loadTasks() {
 // checked off; durationBody carries the answer.
 async function handleTaskToggle(task, durationBody = null) {
   const willComplete = !task.is_completed;
+  const wasAllDone = allDone.value;
   if (willComplete && !durationBody && task.track_time && needsDurationPrompt(task, now.value)) {
     playClick();
     const seconds = liveSeconds(task, now.value);
@@ -574,8 +587,7 @@ async function handleTaskToggle(task, durationBody = null) {
   try {
     if (willComplete) {
       const res = await api.completeDailyTask(task.id, durationBody || undefined);
-      task.is_completed = true;
-      task.completed_at = new Date().toISOString();
+      Object.assign(task, res.task);
 
       if (res && res.task && res.task.weekly_completed_times !== undefined) {
         task.weekly_completed_times = res.task.weekly_completed_times;
@@ -585,7 +597,7 @@ async function handleTaskToggle(task, durationBody = null) {
       }
 
       // Check if this was the last remaining task completed
-      if (allDone.value) {
+      if (!wasAllDone && allDone.value) {
         fireCelebration(true);
       } else if (res && res.new_badges && res.new_badges.length > 0) {
         // Unlocked badge alert

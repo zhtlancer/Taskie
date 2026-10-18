@@ -41,11 +41,20 @@ function validateWeeklyDays(scheduleType, target, days) {
   }
 }
 
+function validateExtraPolicy(schedule, { allow_extra = false, extra_points = 0, extra_reward_limit = 0 }) {
+  if (typeof allow_extra !== 'boolean' || !Number.isSafeInteger(extra_points) || extra_points < 0 || extra_points > 10000 ||
+    !Number.isSafeInteger(extra_reward_limit) || extra_reward_limit < 0 || extra_reward_limit > 7) {
+    throw { status: 400, message: '额外完成设置无效：积分须为 0 至 10000，奖励次数须为 0 至 7' };
+  }
+  const enabled = schedule === 'weekly_times' && allow_extra;
+  return { allow_extra: enabled ? 1 : 0, extra_points: enabled ? extra_points : 0, extra_reward_limit: enabled ? extra_reward_limit : 0 };
+}
+
 // A task a parent let the child skip that day. Completing it anyway wins over the skip.
 const isSkippedRow = row => Boolean(row.skipped_at) && !row.is_completed;
 
 // The fields every described task carries, before weekly and deadline details.
-const describeRow = row => ({ ...row, is_completed: Boolean(row.is_completed), is_skipped: isSkippedRow(row), ...describeTimer(row) });
+const describeRow = row => ({ ...row, is_completed: Boolean(row.is_completed), is_skipped: isSkippedRow(row), allow_extra: Boolean(row.allow_extra), is_extra_completion: Boolean(row.is_extra_completion), ...describeTimer(row) });
 
 // Only tasks on fixed weekdays may wait out a break; weekly tasks are flexible already.
 function validateCarryOver(carryOver, scheduleType) {
@@ -53,18 +62,18 @@ function validateCarryOver(carryOver, scheduleType) {
   return Boolean(carryOver) && scheduleType !== 'weekly_times';
 }
 
-// Weekly tasks whose target is already met (skipped times count towards it) are hidden unless
-// completed or skipped that day.
+// Weekly tasks whose target is met stay visible only when extra completions are enabled,
+// or when already completed or skipped that day.
 function isActiveTask(task) {
-  return task.schedule_type !== 'weekly_times' || task.is_completed || task.is_skipped ||
-    task.weekly_completed_times + (task.weekly_skipped_times || 0) < task.weekly_target_times;
+  return task.schedule_type !== 'weekly_times' || task.allow_extra || task.is_completed || task.is_skipped ||
+    (task.weekly_target_completed_times ?? task.weekly_completed_times) + (task.weekly_skipped_times || 0) < task.weekly_target_times;
 }
 
 // Optional weekly tasks only count once completed and skipped tasks never count, so neither
 // breaks a day, and a day with nothing completed is never all done.
 function summarizeDay(tasks) {
   const active = tasks.filter(isActiveTask);
-  const counted = active.filter(task => !task.is_skipped && (!task.is_optional || task.is_completed));
+  const counted = active.filter(task => !task.is_extra && !task.is_skipped && (!task.is_optional || task.is_completed));
   const completed = counted.filter(task => task.is_completed).length;
   return { total: counted.length, completed, skipped: active.filter(task => task.is_skipped).length,
     all_done: completed > 0 && completed === counted.length };
@@ -80,7 +89,7 @@ class TasksService {
 
   listTemplates() {
     const rows = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes, carry_over
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit
       FROM task_templates
       ORDER BY created_at ASC
     `).all();
@@ -99,6 +108,7 @@ class TasksService {
       days_of_week: normalizeDaysOfWeek(row.days_of_week),
       track_time: Boolean(row.track_time),
       carry_over: Boolean(row.carry_over),
+      allow_extra: Boolean(row.allow_extra),
       child_ids: assign_all ? null : childIds
     };
   }
@@ -135,7 +145,7 @@ class TasksService {
 
   getTemplate(id) {
     const row = this.db.prepare(`
-      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes, carry_over
+      SELECT id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, assign_all, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit
       FROM task_templates
       WHERE id = ?
     `).get(id);
@@ -145,7 +155,7 @@ class TasksService {
     return this.describeTemplate(row, childIds);
   }
 
-  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null, child_ids = null, track_time, expected_minutes, carry_over = false }) {
+  createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null, child_ids = null, track_time, expected_minutes, carry_over = false, allow_extra = false, extra_points = 0, extra_reward_limit = 0 }) {
     if (!title || typeof title !== 'string' || title.trim() === '') {
       throw { status: 400, message: 'Template title is required' };
     }
@@ -163,6 +173,7 @@ class TasksService {
     const childIds = normalizeChildIds(child_ids);
     const timing = validateTiming({ track_time, expected_minutes });
     const carry = validateCarryOver(carry_over, schedule_type);
+    const extra = validateExtraPolicy(schedule_type, { allow_extra, extra_points, extra_reward_limit });
     const id = generateId();
     const daysArr = normalizeDaysOfWeek(days_of_week);
     validateWeeklyDays(schedule_type, weekly_target_times, daysArr);
@@ -171,17 +182,17 @@ class TasksService {
 
     this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, track_time, expected_minutes, carry_over)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO task_templates (id, title, subject, days_of_week, points, created_at, schedule_type, weekly_target_times, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, title.trim(), subject.trim(), JSON.stringify(daysArr), pts, createdAt, schedule_type, schedule_type === 'weekly_times' ? weekly_target_times : null,
-        timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0);
+        timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0, extra.allow_extra, extra.extra_points, extra.extra_reward_limit);
       this.setTemplateChildren(id, childIds);
     })();
 
     return this.getTemplate(id);
   }
 
-  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times, child_ids, track_time, expected_minutes, carry_over }) {
+  updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times, child_ids, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit }) {
     const existing = this.getTemplate(id);
     if (!existing) {
       throw { status: 404, message: 'Template not found' };
@@ -210,13 +221,22 @@ class TasksService {
     });
     // A weekly task is already flexible, so switching to one turns carrying over off.
     const carry = validateCarryOver(carry_over ?? (schedule === 'weekly_times' ? false : existing.carry_over), schedule);
+    const extra = validateExtraPolicy(schedule, {
+      allow_extra: allow_extra === undefined ? existing.allow_extra : allow_extra,
+      extra_points: extra_points === undefined ? existing.extra_points : extra_points,
+      extra_reward_limit: extra_reward_limit === undefined ? existing.extra_reward_limit : extra_reward_limit
+    });
     this.db.transaction(() => {
       this.db.prepare(`
         UPDATE task_templates
-        SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?, track_time = ?, expected_minutes = ?, carry_over = ?
+        SET title = ?, subject = ?, days_of_week = ?, points = ?, schedule_type = ?, weekly_target_times = ?, track_time = ?, expected_minutes = ?, carry_over = ?, allow_extra = ?, extra_points = ?, extra_reward_limit = ?
         WHERE id = ?
       `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, schedule, schedule === 'weekly_times' ? target : null,
-        timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0, id);
+        timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0, extra.allow_extra, extra.extra_points, extra.extra_reward_limit, id);
+      // New policy affects only pending tasks from today onwards, never past snapshots or awards.
+      this.db.prepare(`UPDATE daily_tasks SET allow_extra = ?, extra_points = ?, extra_reward_limit = ?
+        WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0 AND schedule_type = 'weekly_times'`)
+        .run(extra.allow_extra, extra.extra_points, extra.extra_reward_limit, id, getTodayDate());
       // Tasks still to do follow the carry-over setting, so a break that has begun is covered too.
       this.db.prepare('UPDATE daily_tasks SET carry_over = ? WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0')
         .run(carry ? 1 : 0, id);
@@ -258,13 +278,14 @@ class TasksService {
       .all(childId, date).map(row => [row.template_id, row]));
     const insert = this.db.prepare(`INSERT INTO daily_tasks
       (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type,
-        weekly_target_times, source_template_id, template_created_at, track_time, expected_minutes, carry_over)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?) RETURNING *`);
+        weekly_target_times, source_template_id, template_created_at, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`);
     for (const template of templates) {
-      if (rows.has(template.id) || (template.schedule_type === 'weekly_times' && this.weeklyCount(childId, template.id, date) >= template.weekly_target_times)) continue;
+      if (rows.has(template.id) || (template.schedule_type === 'weekly_times' && !template.allow_extra && this.weeklyCount(childId, template.id, date) >= template.weekly_target_times)) continue;
       rows.set(template.id, insert.get(generateId(), childId, template.id, template.title, template.subject, template.points,
         date, template.schedule_type, template.weekly_target_times, template.id, template.created_at,
-        template.track_time ? 1 : 0, template.expected_minutes, template.carry_over ? 1 : 0));
+        template.track_time ? 1 : 0, template.expected_minutes, template.carry_over ? 1 : 0,
+        template.allow_extra ? 1 : 0, template.extra_points, template.extra_reward_limit));
     }
     return rows;
   }
@@ -405,8 +426,16 @@ class TasksService {
   // Times a weekly task was done or skipped this week: both use up its weekly target.
   weeklyCount(childId, templateId, date) {
     const { startDate, endDate } = getWeekRange(date);
-    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND (is_completed = 1 OR skipped_at IS NOT NULL)")
+    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND is_extra_completion = 0 AND (is_completed = 1 OR skipped_at IS NOT NULL)")
       .get(childId, templateId, startDate, endDate).n;
+  }
+
+  weeklyExtraRewardCount(task) {
+    const { startDate, endDate } = getWeekRange(task.date);
+    return this.db.prepare(`SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ?
+      AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times'
+      AND date BETWEEN ? AND ? AND is_completed = 1 AND is_extra_completion = 1 AND earned_points > 0`)
+      .get(task.child_id, task.source_template_id ?? task.template_id, startDate, endDate).n;
   }
 
   describeTask(t) {
@@ -436,9 +465,12 @@ class TasksService {
     const keyOf = row => `${weekOf(row.date)}|${sourceOf(row) ?? row.id}`;
     const completions = new Map();
     const skips = new Map();
+    const extras = new Map();
+    const paidExtras = new Map();
     for (const row of rows) {
       if (row.schedule_type !== 'weekly_times') continue;
-      const dates = row.is_completed ? completions : isSkippedRow(row) ? skips : null;
+      if (row.is_completed && row.is_extra_completion && row.earned_points > 0) paidExtras.set(keyOf(row), (paidExtras.get(keyOf(row)) || 0) + 1);
+      const dates = row.is_completed ? (row.is_extra_completion ? extras : completions) : isSkippedRow(row) ? skips : null;
       if (!dates) continue;
       if (!dates.has(keyOf(row))) dates.set(keyOf(row), []);
       dates.get(keyOf(row)).push(row.date);
@@ -454,17 +486,26 @@ class TasksService {
       }
       const done = completions.get(keyOf(row)) || [];
       const skipped = skips.get(keyOf(row)) || [];
+      const extraDone = extras.get(keyOf(row)) || [];
+      const rewardedExtras = paidExtras.get(keyOf(row)) || 0;
       const target = row.weekly_target_times || 1;
+      const isExtra = row.is_completed ? Boolean(row.is_extra_completion) : !row.skipped_at && done.length + skipped.length >= target;
+      const award = isExtra ? (rewardedExtras < row.extra_reward_limit ? row.extra_points : 0) : row.points;
       const usedBefore = [...done, ...skipped].filter(date => date < row.date).length;
       // The task's own day plus the remaining days this week it may still be done.
       const daysLeft = 1 + schedule.availableDays(sourceOf(row), shiftDate(row.date, 1), getWeekRange(row.date).endDate);
       return {
         ...task,
-        weekly_completed_times: done.length,
+        is_extra: isExtra,
+        award_points: row.is_completed ? row.earned_points : award,
+        weekly_completed_times: done.length + extraDone.length,
+        weekly_target_completed_times: done.length,
+        weekly_extra_completed_times: extraDone.length,
+        weekly_extra_rewarded_times: rewardedExtras,
         weekly_skipped_times: skipped.length,
         weekly_remaining_times: Math.max(0, target - done.length - skipped.length),
         week_days_left: daysLeft,
-        is_optional: target - usedBefore < daysLeft
+        is_optional: isExtra || target - usedBefore < daysLeft
       };
     });
   }
@@ -513,6 +554,7 @@ class TasksService {
     const weeklyDone = new Map();
     const weeklyKey = (templateId, date) => `${getWeekRange(date).startDate}|${templateId}`;
     for (const task of this.summaryTasksBetween(childId, getWeekRange(fromDate).startDate, toDate, { schedule }).filter(isActiveTask)) {
+      if (task.is_extra) continue;
       if (!byDate.has(task.date)) byDate.set(task.date, []);
       byDate.get(task.date).push(task);
       if (task.schedule_type === 'weekly_times' && (task.is_completed || task.is_skipped)) {
@@ -614,8 +656,7 @@ class TasksService {
       throw { status: 404, message: '孩子不存在' };
     }
     return {
-      tasks: this.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND date = ? AND origin != 'goal' ORDER BY subject, title, id")
-        .all(childId, date).map(describeRow),
+      tasks: this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => task.origin !== 'goal'),
       events: this.db.prepare('SELECT * FROM task_backfill_events WHERE child_id = ? AND task_date = ? ORDER BY created_at DESC, rowid DESC')
         .all(childId, date)
     };
@@ -641,7 +682,7 @@ class TasksService {
       (id, child_id, daily_task_id, task_title, task_date, action, points, duration_seconds, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(generateId(), task.child_id, task.id, task.title, task.date, action,
-        action === 'complete' ? task.points : -task.points, duration, now);
+        action === 'complete' ? task.earned_points : -(task.earned_points ?? task.points), duration, now);
   }
 
   // A timed task records its duration: the one given (null for none), else what its timer counted.
@@ -674,9 +715,16 @@ class TasksService {
     if (this.scheduleFor(task.child_id).isPaused(task.source_template_id ?? task.template_id, task.date)) {
       throw { status: 409, message: '假期中这项任务已暂停，请刷新今日任务' };
     }
-    if (task.schedule_type === 'weekly_times' && this.weeklyCount(task.child_id, task.source_template_id ?? task.template_id, task.date) >= task.weekly_target_times) {
-      throw { status: 409, message: '本周目标已完成' };
+    let isExtra = false;
+    if (task.schedule_type === 'weekly_times') {
+      const source = task.source_template_id ?? task.template_id;
+      const another = this.db.prepare(`SELECT id FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ?
+        AND date = ? AND id != ? AND (is_completed = 1 OR skipped_at IS NOT NULL)`).get(task.child_id, source, task.date, task.id);
+      if (another) throw { status: 409, message: '同一任务每天最多完成一次' };
+      isExtra = this.weeklyCount(task.child_id, source, task.date) >= task.weekly_target_times;
+      if (isExtra && !task.allow_extra) throw { status: 409, message: '本周目标已完成' };
     }
+    const earned = isExtra ? (this.weeklyExtraRewardCount(task) < task.extra_reward_limit ? task.extra_points : 0) : task.points;
     const duration = task.track_time ? resolveDuration(task, duration_seconds) : { seconds: null, source: null };
     const now = new Date().toISOString();
     let newBadges = [];
@@ -686,17 +734,17 @@ class TasksService {
       this.db.prepare(`
         UPDATE daily_tasks
         SET is_completed = 1, completed_at = ?, duration_seconds = ?, duration_source = ?,
-          timer_elapsed_seconds = ?, timer_started_at = NULL, completion_source = ?
+          timer_elapsed_seconds = ?, timer_started_at = NULL, completion_source = ?, is_extra_completion = ?, earned_points = ?
         WHERE id = ?
-      `).run(now, duration.seconds, duration.source, timerSeconds(task), completionSource, taskId);
-      if (completionSource === 'parent_backfill') this.recordBackfillEvent(task, 'complete', duration.seconds, now);
+      `).run(now, duration.seconds, duration.source, timerSeconds(task), completionSource, isExtra ? 1 : 0, earned, taskId);
+      if (completionSource === 'parent_backfill') this.recordBackfillEvent({ ...task, earned_points: earned }, 'complete', duration.seconds, now);
       cancelPendingSkips(this.db, taskId, now);
 
       // 2. Insert point log
       this.db.prepare(`
         INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at, activity_date, activity_title)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(generateId(), task.child_id, task.id, task.points, now, task.date, task.title);
+      `).run(generateId(), task.child_id, task.id, earned, now, task.date, task.title);
 
       // 3. Trigger badge unlocks
       if (this.rewardsService) {
@@ -715,7 +763,7 @@ class TasksService {
     return {
       success: true,
       task: this.describeTask(updatedTask),
-      points_earned: task.points,
+      points_earned: earned,
       new_badges: newBadges
     };
   }
@@ -742,7 +790,7 @@ class TasksService {
     // Undoing a task must not refund points that were already spent on rewards.
     if (!allowNegativeBalance && this.rewardsService) {
       const earned = this.db.prepare('SELECT COALESCE(SUM(points), 0) AS points FROM point_logs WHERE daily_task_id = ?').get(taskId).points;
-      if (this.rewardsService.getAvailablePoints(task.child_id) < earned) {
+      if (earned > 0 && this.rewardsService.getAvailablePoints(task.child_id) < earned) {
         throw { status: 409, message: '这项任务的积分已用于兑换奖励，不能取消打卡' };
       }
     }
@@ -752,7 +800,7 @@ class TasksService {
       // The timer keeps its time for when the task is done again; the recorded duration goes.
       this.db.prepare(`
         UPDATE daily_tasks
-        SET is_completed = 0, completed_at = NULL, duration_seconds = NULL, duration_source = NULL, completion_source = NULL
+        SET is_completed = 0, completed_at = NULL, duration_seconds = NULL, duration_source = NULL, completion_source = NULL, is_extra_completion = 0, earned_points = NULL
         WHERE id = ?
       `).run(taskId);
 

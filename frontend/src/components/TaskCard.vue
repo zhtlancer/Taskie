@@ -87,13 +87,16 @@
             <span v-else>⏰ 今天要做 · 本周只剩 {{ task.week_days_left }} 天，还差 {{ task.weekly_remaining_times }} 次</span>
           </span>
 
+          <span v-if="task.is_extra" class="text-[11px] font-bold text-violet-600">✨ 额外挑战 · 自愿完成，不影响考核{{ task.is_completed ? '' : ` · 本次 +${displayPoints} 分` }}</span>
+          <span v-if="task.allow_extra && task.extra_points && task.extra_reward_limit" class="text-[11px] font-bold text-slate-400">额外奖励已用 {{ task.weekly_extra_rewarded_times || 0 }}/{{ task.extra_reward_limit }} 次</span>
+
           <!-- Mini progress dots -->
           <div class="flex items-center gap-0.5 ml-1">
             <span
               v-for="n in Math.min(task.weekly_target_times || 3, 7)"
               :key="n"
               class="w-2 h-2 rounded-full transition-colors"
-              :class="n <= (task.weekly_completed_times || 0) ? 'bg-indigo-500' : n <= weeklyUsed ? 'bg-slate-400' : 'bg-slate-200'"
+              :class="n <= (task.weekly_target_completed_times ?? task.weekly_completed_times ?? 0) ? 'bg-indigo-500' : n <= weeklyUsed ? 'bg-slate-400' : 'bg-slate-200'"
             ></span>
           </div>
         </div>
@@ -134,7 +137,7 @@
             :class="task.is_completed ? 'text-emerald-600' : task.is_skipped ? 'text-slate-400' : 'text-amber-500'"
           >
             <span>★</span>
-            <span>{{ task.is_completed ? `已得 ${task.points}分` : task.is_skipped ? '跳过不得分' : `${task.points}分` }}</span>
+            <span>{{ task.is_completed ? `已得 ${displayPoints}分` : task.is_skipped ? '跳过不得分' : displayPoints ? `${displayPoints}分` : '记录完成 · 不加分' }}</span>
           </span>
           <span v-if="task.completion_source === 'parent_backfill'" class="text-xs font-bold text-sky-600">家长补记</span>
           <span v-if="task.is_completed" class="text-xs text-emerald-500 font-medium font-chinese">
@@ -202,7 +205,7 @@
       :style="{ left: particle.x + 'px', top: particle.y + 'px' }"
     >
       <span class="text-xl">💰</span>
-      <span class="text-lg font-extrabold">+{{ task.points }}分</span>
+      <span class="text-lg font-extrabold">+{{ displayPoints }}分</span>
     </div>
   </div>
 </template>
@@ -234,13 +237,16 @@ const props = defineProps({
 const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration']);
 
 const activeParticles = ref([]);
+const displayPoints = computed(() => props.task.is_completed
+  ? props.task.earned_points ?? props.task.points
+  : props.task.award_points ?? props.task.points);
 
 const isWeeklyTask = computed(() => {
   return props.task.schedule_type === 'weekly_times' || Boolean(props.task.weekly_target_times);
 });
 
 // Skipped times use up the weekly target just like completed ones.
-const weeklyUsed = computed(() => (props.task.weekly_completed_times || 0) + (props.task.weekly_skipped_times || 0));
+const weeklyUsed = computed(() => (props.task.weekly_target_completed_times ?? props.task.weekly_completed_times ?? 0) + (props.task.weekly_skipped_times || 0));
 const isWeeklyTargetMet = computed(() => {
   if (!isWeeklyTask.value) return false;
   return weeklyUsed.value >= (props.task.weekly_target_times || 1);
@@ -253,7 +259,7 @@ const deadlineToday = computed(() => !props.task.is_completed && props.task.carr
 const skipPending = computed(() => !props.task.is_completed && props.task.skip_request?.status === 'pending');
 const skipTurnedDown = computed(() => !props.task.is_completed && ['rejected', 'revoked'].includes(props.task.skip_request?.status));
 // Once a parent turned a request down, only the parent can still skip the task.
-const canSkip = computed(() => !props.task.is_completed && !props.task.is_skipped && !skipPending.value &&
+const canSkip = computed(() => !props.task.is_extra && !props.task.is_completed && !props.task.is_skipped && !skipPending.value &&
   (props.asParent || !skipTurnedDown.value));
 
 function subjectBadgeClass(subject) {
@@ -287,7 +293,7 @@ function handleClick(event) {
     const y = Math.max(event.clientY - rect.top - 20, 10);
 
     const particleId = Date.now() + Math.random();
-    activeParticles.value.push({ id: particleId, x, y });
+    if (displayPoints.value > 0) activeParticles.value.push({ id: particleId, x, y });
 
     setTimeout(() => {
       activeParticles.value = activeParticles.value.filter(p => p.id !== particleId);

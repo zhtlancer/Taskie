@@ -3,7 +3,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { initDb, TIMING_COLUMNS } = require('../db');
+const { initDb, TIMING_COLUMNS, WEEKLY_EXTRA_COLUMNS } = require('../db');
 
 // Only genuine older schemas may have their newer tables created by initDb.
 const REQUIRED_TABLES = ['children', 'task_templates', 'daily_tasks', 'point_logs', 'badge_definitions', 'child_badges', 'mistake_records', 'settings', 'characters'];
@@ -121,6 +121,10 @@ class BackupService {
       }
       if (schemaVersion >= 15 && (!tables.includes('task_backfill_events') || !hasColumn('daily_tasks', 'completion_source'))) {
         throw fail('备份缺少家长补卡记录，无法恢复');
+      }
+      if (schemaVersion >= 16 && !Object.entries(WEEKLY_EXTRA_COLUMNS).every(([table, columns]) =>
+        Object.keys(columns).every(name => hasColumn(table, name)))) {
+        throw fail('备份缺少每周额外完成和奖励数据，无法恢复');
       }
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);

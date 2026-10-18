@@ -215,7 +215,7 @@ test('current-schema backups missing assignment data are rejected before changin
     const damaged = JSON.parse(gunzipSync(archive));
     const db = new Database(Buffer.from(damaged.database, 'base64'));
     db.exec(corruption);
-    assert.equal(db.pragma('user_version', { simple: true }), 15);
+    assert.equal(db.pragma('user_version', { simple: true }), 16);
     damaged.database = db.serialize().toString('base64');
     db.close();
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
@@ -255,7 +255,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   const rows = ctx.db.prepare('SELECT source_template_id, template_created_at FROM daily_tasks').all();
   assert.ok(rows.every(row => row.source_template_id === template.id && row.template_created_at === template.created_at));
   tasks.deleteTemplate(template.id);
@@ -306,12 +306,16 @@ test('old schema migrates without losing existing children and fixed-day templat
   try {
     db.exec(fs.readFileSync(path.join(__dirname, '../src/db/schema.sql'), 'utf8'));
     db.prepare('INSERT INTO children VALUES (?, ?, ?, ?, ?)').run('legacy', '保留账号', '🐱', null, '2026-10-01');
+    // Recreate the pre-migration schema now that schema.sql also includes v16 columns.
+    for (const [table, columns] of Object.entries(require('../src/db').WEEKLY_EXTRA_COLUMNS)) {
+      for (const name of Object.keys(columns)) db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
+    }
     db.prepare('INSERT INTO task_templates VALUES (?, ?, ?, ?, ?, ?)').run('legacy-task', '旧任务', '数学', '[1]', 10, '2026-10-01');
     initDb(db); initDb(db);
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
     assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
-    assert.equal(db.pragma('user_version', { simple: true }), 15);
+    assert.equal(db.pragma('user_version', { simple: true }), 16);
   } finally { db.close(); }
 });
 
@@ -333,7 +337,7 @@ test('v8 character books restore with empty categories; a v9 backup without them
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   assert.deepEqual(ctx.app.services.charactersService.listCharacters({ child_id: child.id }).map(c => [c.char, c.categories]), [['春', []]]);
 });
 
@@ -382,7 +386,7 @@ test('skipped tasks and their requests survive restore; v9 backups restore witho
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   assert.deepEqual([skipsService.listRequests().length, tasksService.getDailyTasks(child.id)[0].is_skipped], [0, false]);
 });
 
@@ -419,7 +423,7 @@ test('task durations survive restore; v10 backups restore without timing and a v
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   const legacyTask = tasksService.getDailyTasks(child.id)[0];
   assert.deepEqual([legacyTask.track_time, legacyTask.duration_seconds, legacyTask.timer_seconds], [false, null, 0]);
   assert.equal(tasksService.listTemplates()[0].track_time, false);
@@ -458,7 +462,7 @@ test('timetables and outside classes survive restore; v11 backups restore withou
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   assert.deepEqual([scheduleService.listClasses(), scheduleService.listTimetables(child.id)], [[], []]);
 });
 
@@ -497,7 +501,7 @@ test('lesson identities migrate from v12 without losing check-ins; v13 backups r
 
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(older) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   const rows = tasksService.getDailyTasks(child.id);
   assert.equal(rows.length, 3);
   assert.deepEqual([rows.find(row => row.id === regular.id).class_lesson_date, rows.find(row => row.id === regular.id).is_completed], [today, true]);
@@ -545,6 +549,6 @@ test('carry-over, due dates and make-up days survive restore; v13 backups restor
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 15);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 16);
   assert.deepEqual([tasksService.listTemplates()[0].carry_over, tasksService.listAdhocTasks(child.id)[0].due_date, periodsService.listMakeupDays(child.id)], [false, null, []]);
 });

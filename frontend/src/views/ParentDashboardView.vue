@@ -198,6 +198,14 @@
             </div>
           </div>
 
+          <section v-if="item.week?.current_week?.completion?.items.some(entry => entry.schedule_type === 'weekly_times')" class="mt-4 pt-3 border-t border-slate-100">
+            <h4 class="text-xs font-bold text-slate-500 mb-2">🎯 本周次数任务</h4>
+            <div v-for="entry in item.week.current_week.completion.items.filter(entry => entry.schedule_type === 'weekly_times')" :key="entry.key" class="text-xs mb-2">
+              <span class="font-bold text-slate-700">{{ entry.title }} · 目标 {{ entry.weekly_target }} 次，已完成 {{ entry.actual_completed ?? entry.completed }} 次</span>
+              <span v-if="entry.extra_completed" class="block text-violet-600">额外 {{ entry.extra_completed }} 次 · 目标内 +{{ entry.target_points_earned }} 分，额外 +{{ entry.extra_points_earned }} 分</span>
+            </div>
+          </section>
+
           <!-- Active long-term tasks -->
           <div v-if="item.goals.length" class="mt-4 pt-3 border-t border-slate-100">
             <span class="block text-xs font-bold text-slate-500 mb-2">📚 长期任务</span>

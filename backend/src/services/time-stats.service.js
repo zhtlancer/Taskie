@@ -68,7 +68,7 @@ class TimeStatsService {
   // progress entry made on its own day (later corrections and backfills are left out).
   finishTimes(childId, from, to) {
     const rows = [
-      ...this.db.prepare("SELECT date, completed_at AS at FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill'")
+      ...this.db.prepare("SELECT date, completed_at AS at FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill' AND is_extra_completion = 0")
         .all(childId, from, to),
       ...this.db.prepare(`SELECT l.date, l.created_at AS at FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id
         WHERE t.child_id = ? AND l.date BETWEEN ? AND ?`).all(childId, from, to)

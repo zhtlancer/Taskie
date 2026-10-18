@@ -82,6 +82,7 @@
                 <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-xs font-black">
                   <span>🎯</span>
                   <span>每周完成特定次数：每周 {{ tmpl.weekly_target_times || 3 }} 次</span>
+                  <span v-if="tmpl.allow_extra" class="block text-violet-600 text-[11px]">可额外完成 · {{ tmpl.extra_points && tmpl.extra_reward_limit ? `额外每次 +${tmpl.extra_points} 分，每周奖励最多 ${tmpl.extra_reward_limit} 次` : '额外不加分' }}</span>
                 </div>
                 <div v-if="Array.isArray(tmpl.days_of_week) && tmpl.days_of_week.length < 7" class="mt-1.5 text-[11px] font-bold text-slate-500">
                   仅限 {{ [1, 2, 3, 4, 5, 6, 0].filter(day => tmpl.days_of_week.includes(day)).map(day => dayNames[day]).join('、') }} 完成
@@ -313,6 +314,20 @@
             </div>
           </div>
 
+          <div v-if="form.schedule_type === 'weekly_times'" class="p-3 rounded-2xl border border-violet-100 space-y-3">
+            <label class="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <input v-model="form.allow_extra" type="checkbox" class="w-4 h-4 accent-violet-500" /> 达标后允许额外完成
+            </label>
+            <template v-if="form.allow_extra">
+              <p class="text-[11px] text-slate-500">每天最多一次。达标后进入自愿的“额外挑战”，不影响完成率、全勤和连续打卡。</p>
+              <div class="flex flex-wrap gap-3 text-xs font-bold text-slate-600">
+                <label>额外每次奖励 <input v-model.number="form.extra_points" type="number" min="0" max="10000" required class="w-20 border rounded-lg p-2" /> 分</label>
+                <label>每周最多奖励 <input v-model.number="form.extra_reward_limit" type="number" min="0" max="7" required class="w-16 border rounded-lg p-2" /> 次</label>
+              </div>
+              <p class="text-[11px] text-slate-500">任一项为 0 则额外完成不加分；超过奖励次数仍可记录。修改后作用于今天起未完成的任务，历史记录和已得积分保留。</p>
+            </template>
+          </div>
+
           <!-- Days of Week: when a fixed task repeats, or which days a weekly task may be done -->
           <div>
             <div class="flex items-center justify-between mb-1.5">
@@ -455,6 +470,9 @@ const form = ref({
   subject: '语文',
   schedule_type: 'fixed_days',
   weekly_target_times: 3,
+  allow_extra: false,
+  extra_points: 0,
+  extra_reward_limit: 0,
   points: 10,
   days_of_week: [1, 2, 3, 4, 5],
   child_ids: null,
@@ -534,6 +552,9 @@ function openAddModal() {
     subject: '语文',
     schedule_type: 'fixed_days',
     weekly_target_times: 3,
+    allow_extra: false,
+    extra_points: 0,
+    extra_reward_limit: 0,
     points: 10,
     days_of_week: [1, 2, 3, 4, 5],
     child_ids: null,
@@ -552,6 +573,9 @@ function openEditModal(tmpl) {
     subject: tmpl.subject,
     schedule_type: tmpl.schedule_type || 'fixed_days',
     weekly_target_times: tmpl.weekly_target_times || 3,
+    allow_extra: Boolean(tmpl.allow_extra),
+    extra_points: tmpl.extra_points ?? 0,
+    extra_reward_limit: tmpl.extra_reward_limit ?? 0,
     points: tmpl.points,
     days_of_week: Array.isArray(tmpl.days_of_week) ? [...tmpl.days_of_week] : [1, 2, 3, 4, 5],
     // Drop children deleted since the template was assigned.
@@ -572,6 +596,9 @@ async function submitTemplateForm() {
       subject: form.value.subject,
       schedule_type: form.value.schedule_type,
       weekly_target_times: form.value.schedule_type === 'weekly_times' ? (Number(form.value.weekly_target_times) || 3) : null,
+      allow_extra: form.value.schedule_type === 'weekly_times' && form.value.allow_extra,
+      extra_points: form.value.extra_points,
+      extra_reward_limit: form.value.extra_reward_limit,
       points: form.value.points,
       days_of_week: form.value.days_of_week,
       child_ids: form.value.child_ids,

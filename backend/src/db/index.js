@@ -97,6 +97,16 @@ const TIMING_COLUMNS = {
   period_task_logs: { duration_seconds: 'INTEGER', duration_source: 'TEXT' }
 };
 
+const WEEKLY_EXTRA_POLICY = {
+  allow_extra: 'INTEGER NOT NULL DEFAULT 0',
+  extra_points: 'INTEGER NOT NULL DEFAULT 0',
+  extra_reward_limit: 'INTEGER NOT NULL DEFAULT 0'
+};
+const WEEKLY_EXTRA_COLUMNS = {
+  task_templates: WEEKLY_EXTRA_POLICY,
+  daily_tasks: { ...WEEKLY_EXTRA_POLICY, is_extra_completion: 'INTEGER NOT NULL DEFAULT 0', earned_points: 'INTEGER' }
+};
+
 let globalDb = null;
 
 function initDb(db) {
@@ -339,6 +349,20 @@ function initDb(db) {
       db.pragma('user_version = 15');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 16) {
+    db.transaction(() => {
+      for (const [table, columns] of Object.entries(WEEKLY_EXTRA_COLUMNS)) {
+        const existing = new Set(db.pragma(`table_info(${table})`).map(c => c.name));
+        for (const [name, definition] of Object.entries(columns)) {
+          if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+        }
+      }
+      // Freeze actual historic awards; completed goal rows may have no daily-task point log.
+      db.exec(`UPDATE daily_tasks SET earned_points = (SELECT COALESCE(SUM(points), 0) FROM point_logs WHERE daily_task_id = daily_tasks.id)
+        WHERE is_completed = 1 AND earned_points IS NULL`);
+      db.pragma('user_version = 16');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
@@ -421,5 +445,6 @@ module.exports = {
   getDb,
   initDb,
   defaultBadges,
-  TIMING_COLUMNS
+  TIMING_COLUMNS,
+  WEEKLY_EXTRA_COLUMNS
 };

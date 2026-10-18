@@ -71,6 +71,9 @@ class StatsService {
           points: t.points,
           is_completed: t.is_completed,
           is_optional: t.is_optional,
+          is_extra: Boolean(t.is_extra),
+          earned_points: t.earned_points,
+          award_points: t.award_points ?? t.earned_points ?? t.points,
           is_skipped: t.is_skipped,
           skip_reason: t.is_skipped ? t.skip_reason : null,
           completed_at: t.completed_at,
@@ -183,7 +186,7 @@ class StatsService {
       if (!items.has(key)) {
         const id = sourceId(source);
         items.set(key, { key, template_id: id, title: source.title, subject: source.subject,
-          schedule_type: source.schedule_type || 'fixed_days', total: 0, completed: 0, target: 0, done: 0, skipped: 0,
+          schedule_type: source.schedule_type || 'fixed_days', total: 0, completed: 0, target: 0, done: 0, skipped: 0, extra_completed: 0, extra_points_earned: 0, target_points_earned: 0,
           since: source.template_created_at ? sinceDate(source.template_created_at) : templatesById.get(id)?.since || weekStart,
           legacyOrphan: id === null });
       }
@@ -228,8 +231,13 @@ class StatsService {
       if (row.schedule_type !== 'weekly_times') continue;
       const item = itemFor(keyFor(row), row);
       item.target = item.legacyOrphan ? 1 : row.weekly_target_times || 1;
-      if (row.is_completed) item.done++;
-      else if (isSkipped(row)) item.skipped++;
+      if (row.is_completed && row.is_extra_completion) {
+        item.extra_completed++;
+        item.extra_points_earned += row.earned_points ?? 0;
+      } else if (row.is_completed) {
+        item.done++;
+        item.target_points_earned += row.earned_points ?? row.points;
+      } else if (isSkipped(row)) item.skipped++;
     }
     if (cutoff >= childSince) {
       for (const t of templates) {
@@ -249,8 +257,8 @@ class StatsService {
       // Old deleted templates lost their identity before snapshots existed. Keep
       // each earned completion; do not invent shared quotas from matching titles.
       const due = legacyOrphan ? completed : Math.max(completed, effectiveTarget - daysAfterCutoff, 0);
-      return { ...item, total: due, completed, weekly_target: target };
-    }).filter(item => item.total > 0);
+      return { ...item, total: due, completed, weekly_target: target, actual_completed: done + item.extra_completed };
+    }).filter(item => item.total > 0 || item.extra_completed > 0);
     const total = list.reduce((sum, item) => sum + item.total, 0);
     const completed = list.reduce((sum, item) => sum + item.completed, 0);
     return {

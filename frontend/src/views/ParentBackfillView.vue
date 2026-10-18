@@ -19,7 +19,8 @@
               <h3 class="font-bold text-slate-800">{{ task.subject }} · {{ task.title }}</h3>
               <p class="text-xs text-slate-500 mt-1">
                 {{ task.is_completed ? (task.completion_source === 'parent_backfill' ? '已完成 · 家长补记' : '已完成') : task.is_skipped ? '已跳过，请先撤销跳过再补卡' : '未完成' }}
-                · {{ task.points }} 积分
+                · {{ task.is_completed ? task.earned_points ?? task.points : task.award_points ?? task.points }} 积分
+                <span v-if="task.is_extra" class="text-violet-600"> · 额外挑战（不影响考核）</span>
                 <template v-if="task.schedule_type === 'weekly_times'"> · 每周目标 {{ task.weekly_target_times }} 次</template>
                 <template v-if="task.duration_seconds"> · 用时 {{ Math.round(task.duration_seconds / 60) }} 分钟</template>
               </p>
@@ -27,7 +28,8 @@
             <button v-if="task.is_completed && task.completion_source === 'parent_backfill'" :disabled="busy || loading" class="text-sm font-bold text-rose-600 disabled:opacity-50" @click="act(task, 'undo')">撤销补卡</button>
             <button v-else-if="task.is_skipped" :disabled="busy || loading" class="text-sm font-bold text-slate-600 disabled:opacity-50" @click="act(task, 'unskip')">撤销跳过</button>
           </div>
-          <form v-if="!task.is_completed && !task.is_skipped" class="flex flex-wrap items-center gap-3" @submit.prevent="act(task, 'complete')">
+          <p v-if="!task.is_completed && task.is_extra && !task.allow_extra" class="text-xs text-slate-400">本周目标已完成，该任务未开启额外完成。</p>
+          <form v-if="!task.is_completed && !task.is_skipped && (!task.is_extra || task.allow_extra)" class="flex flex-wrap items-center gap-3" @submit.prevent="act(task, 'complete')">
             <label v-if="task.track_time" class="text-xs text-slate-600">
               实际用时（可不填）
               <input v-model="minutes[task.id]" type="number" min="1" max="720" step="1" :disabled="busy" class="w-20 p-2 border rounded-lg ml-1" /> 分钟
@@ -84,9 +86,9 @@ async function load() {
 async function act(task, action) {
   if (busy.value || loading.value) return;
   const message = action === 'complete'
-    ? `为${childName.value}补记 ${task.date} 的「${task.title}」完成？将增加 ${task.points} 积分。`
+    ? `为${childName.value}补记 ${task.date} 的「${task.title}」完成？${task.is_extra ? '额外完成，' : ''}将增加 ${task.award_points ?? task.points} 积分。`
     : action === 'undo'
-      ? `撤销${childName.value} ${task.date} 的「${task.title}」补卡？将扣回 ${task.points} 积分，已兑换时余额可能为负。`
+      ? `撤销${childName.value} ${task.date} 的「${task.title}」补卡？将扣回 ${task.earned_points ?? task.points} 积分，已兑换时余额可能为负。`
       : `撤销 ${task.date} 的「${task.title}」跳过状态？`;
   if (!confirm(message)) return;
   busy.value = true;

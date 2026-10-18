@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS task_templates (
   subject TEXT NOT NULL,
   days_of_week TEXT NOT NULL, -- JSON array string, e.g. '[1,2,3,4,5]'
   points INTEGER NOT NULL DEFAULT 10,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  allow_extra INTEGER NOT NULL DEFAULT 0,
+  extra_points INTEGER NOT NULL DEFAULT 0,
+  extra_reward_limit INTEGER NOT NULL DEFAULT 0
 );
 
 -- Children a template is limited to (used only when task_templates.assign_all = 0)
@@ -39,6 +42,11 @@ CREATE TABLE IF NOT EXISTS daily_tasks (
   date TEXT NOT NULL, -- YYYY-MM-DD
   is_completed INTEGER NOT NULL DEFAULT 0, -- 0: false, 1: true
   completed_at TEXT,
+  allow_extra INTEGER NOT NULL DEFAULT 0,
+  extra_points INTEGER NOT NULL DEFAULT 0,
+  extra_reward_limit INTEGER NOT NULL DEFAULT 0,
+  is_extra_completion INTEGER NOT NULL DEFAULT 0,
+  earned_points INTEGER,
   FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE,
   FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE SET NULL
 );
@@ -58,6 +66,7 @@ CREATE TABLE IF NOT EXISTS point_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_point_logs_child ON point_logs(child_id);
+CREATE INDEX IF NOT EXISTS idx_point_logs_daily_task ON point_logs(daily_task_id);
 
 -- Badge definitions
 CREATE TABLE IF NOT EXISTS badge_definitions (

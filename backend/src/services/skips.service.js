@@ -65,6 +65,7 @@ class SkipsService {
     }
     const task = this.tasksService.describeTask(row);
     if (!task) throw { status: 409, message: '这项任务今天已不需要完成' };
+    if (task.is_extra) throw { status: 409, message: '额外挑战是自愿的，不需要申请跳过' };
     if (!isActiveTask(task)) throw { status: 409, message: '本周目标已完成，不需要跳过' };
     return row;
   }
