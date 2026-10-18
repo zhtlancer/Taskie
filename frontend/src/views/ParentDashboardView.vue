@@ -136,12 +136,15 @@
               </div>
             </div>
 
-            <router-link
-              :to="`/child/${item.child.id}/today`"
-              class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-xs font-bold transition-all"
-            >
-              进入看板 →
-            </router-link>
+            <div class="flex flex-wrap gap-2">
+              <router-link :to="`/parent/children/${item.child.id}/backfill`" class="px-3 py-1.5 rounded-xl bg-sky-50 text-sky-700 text-xs font-bold">补卡</router-link>
+              <router-link
+                :to="`/child/${item.child.id}/today`"
+                class="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-brand-50 hover:text-brand-600 text-slate-600 text-xs font-bold transition-all"
+              >
+                进入看板 →
+              </router-link>
+            </div>
           </div>
 
           <!-- Progress Bar & Count -->

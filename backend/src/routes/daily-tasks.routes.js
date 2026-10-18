@@ -14,6 +14,7 @@ async function dailyTasksRoutes(fastify, options) {
   const ensureChildTodayTask = (request, taskId) => {
     if (request.user.role !== 'child') return;
     const task = fastify.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
+    if (task?.completion_source === 'parent_backfill') throw { status: 403, message: '家长补卡记录请由家长修改' };
     if (task && !tasksService.childMayActOn(task)) throw { status: 403, message: '只能打卡今天的任务，或还没到截止日期的任务' };
   };
 
@@ -33,10 +34,30 @@ async function dailyTasksRoutes(fastify, options) {
     }
   });
 
+  fastify.get('/backfill', async (request, reply) => {
+    try {
+      return tasksService.getBackfillTasks(request.query.child_id, request.query.date);
+    } catch (err) {
+      return reply.code(err.status || 500).send({ error: err.message || '操作失败' });
+    }
+  });
+  for (const [path, method] of [['backfill', 'backfillDailyTask'], ['undo-backfill', 'undoBackfillDailyTask']]) {
+    fastify.post(`/:id/${path}`, async (request, reply) => {
+      try {
+        return tasksService[method](request.params.id, { duration_seconds: request.body?.duration_seconds });
+      } catch (err) {
+        return reply.code(err.status || 500).send({ error: err.message || '操作失败' });
+      }
+    });
+  }
+
   fastify.post('/:id/complete', async (request, reply) => {
     try {
       ensureChildTodayTask(request, request.params.id);
-      const result = tasksService.completeDailyTask(request.params.id, { duration_seconds: request.body?.duration_seconds });
+      const task = fastify.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(request.params.id);
+      const method = request.user.role === 'parent' && task && task.date < getTodayDate() && !tasksService.childMayActOn(task)
+        ? 'backfillDailyTask' : 'completeDailyTask';
+      const result = tasksService[method](request.params.id, { duration_seconds: request.body?.duration_seconds });
       return reply.send(result);
     } catch (err) {
       return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });

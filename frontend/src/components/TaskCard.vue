@@ -136,6 +136,7 @@
             <span>★</span>
             <span>{{ task.is_completed ? `已得 ${task.points}分` : task.is_skipped ? '跳过不得分' : `${task.points}分` }}</span>
           </span>
+          <span v-if="task.completion_source === 'parent_backfill'" class="text-xs font-bold text-sky-600">家长补记</span>
           <span v-if="task.is_completed" class="text-xs text-emerald-500 font-medium font-chinese">
             (今天已完成)
           </span>

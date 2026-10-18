@@ -74,6 +74,7 @@ class StatsService {
           is_skipped: t.is_skipped,
           skip_reason: t.is_skipped ? t.skip_reason : null,
           completed_at: t.completed_at,
+          completion_source: t.completion_source ?? null,
           duration_seconds: t.duration_seconds,
           // Carried from an earlier day and missed by this, its last day.
           carried_from: t.carried_from ?? null,

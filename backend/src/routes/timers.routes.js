@@ -17,6 +17,7 @@ async function timersRoutes(fastify, options) {
   fastify.put('/daily-tasks/:id/duration', handle(async request => {
     if (request.user.role === 'child') {
       const task = fastify.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(request.params.id);
+      if (task?.completion_source === 'parent_backfill') throw { status: 403, message: '家长补卡记录请由家长修改' };
       if (task && !tasksService.childMayActOn(task)) throw { status: 403, message: '只能修改今天的用时' };
     }
     return tasksService.setDuration(request.params.id, request.body?.duration_seconds);

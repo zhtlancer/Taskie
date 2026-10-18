@@ -7,6 +7,7 @@ import MistakesView from '../views/MistakesView.vue';
 import CharactersView from '../views/CharactersView.vue';
 import ScheduleView from '../views/ScheduleView.vue';
 import ParentLoginView from '../views/ParentLoginView.vue';
+import ParentBackfillView from '../views/ParentBackfillView.vue';
 import ParentDashboardView from '../views/ParentDashboardView.vue';
 import ParentChildrenView from '../views/ParentChildrenView.vue';
 import ParentTasksView from '../views/ParentTasksView.vue';
@@ -57,6 +58,7 @@ const routes = [
   },
 
   // Parent Routes
+  { path: "/parent/children/:id/backfill", component: ParentBackfillView },
   {
     path: '/parent/login',
     name: 'ParentLogin',

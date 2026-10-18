@@ -54,6 +54,9 @@ export const api = {
   deleteTaskTemplate: id => remove(`/task-templates/${id}`),
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
   // data.duration_seconds: the time a timed task took (null for none); left out, the timer's time counts.
+  getBackfillTasks: (id, date) => get('/daily-tasks/backfill', { child_id: id, date }),
+  backfillDailyTask: (id, data) => post(`/daily-tasks/${id}/backfill`, data),
+  undoBackfillDailyTask: id => post(`/daily-tasks/${id}/undo-backfill`),
   completeDailyTask: (id, data) => post(`/daily-tasks/${id}/complete`, data),
   taskTimer: (id, action) => post(`/daily-tasks/${id}/timer/${action}`),
   setTaskDuration: (id, seconds) => put(`/daily-tasks/${id}/duration`, { duration_seconds: seconds }),

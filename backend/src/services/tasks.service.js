@@ -336,7 +336,7 @@ class TasksService {
       })();
     }
     const carried = carriedRows
-      .filter(({ row }) => row.is_completed ? doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
+      .filter(({ row }) => row.is_completed ? row.completion_source !== 'parent_backfill' && doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
       .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, is_optional: due > date }));
     return [...this.describeTasksBetween(childId, date, date).filter(isActiveTask), ...carried]
       .map(task => {
@@ -605,8 +605,47 @@ class TasksService {
     return { success: true, id };
   }
 
+  // Reading this list must never generate or reconcile historical rows.
+  getBackfillTasks(childId, date) {
+    if (typeof childId !== 'string' || !childId) throw { status: 400, message: '请选择孩子' };
+    parseDate(date);
+    if (date >= getTodayDate()) throw { status: 400, message: '补卡日期必须早于今天' };
+    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) {
+      throw { status: 404, message: '孩子不存在' };
+    }
+    return {
+      tasks: this.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND date = ? AND origin != 'goal' ORDER BY subject, title, id")
+        .all(childId, date).map(describeRow),
+      events: this.db.prepare('SELECT * FROM task_backfill_events WHERE child_id = ? AND task_date = ? ORDER BY created_at DESC, rowid DESC')
+        .all(childId, date)
+    };
+  }
+
+  backfillDailyTask(taskId, { duration_seconds = null } = {}) {
+    const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
+    if (!task) throw { status: 404, message: '任务不存在' };
+    if (task.date >= getTodayDate()) throw { status: 400, message: '只能补记过去日期的任务' };
+    return this.completeDailyTask(taskId, { duration_seconds, completionSource: 'parent_backfill' });
+  }
+
+  undoBackfillDailyTask(taskId) {
+    const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
+    if (!task) throw { status: 404, message: '任务不存在' };
+    if (!task.is_completed) return { success: true, task: this.describeTask(task) };
+    if (task.completion_source !== 'parent_backfill') throw { status: 409, message: '只能撤销家长补卡记录' };
+    return this.uncompleteDailyTask(taskId, { allowNegativeBalance: true });
+  }
+
+  recordBackfillEvent(task, action, duration, now) {
+    this.db.prepare(`INSERT INTO task_backfill_events
+      (id, child_id, daily_task_id, task_title, task_date, action, points, duration_seconds, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(generateId(), task.child_id, task.id, task.title, task.date, action,
+        action === 'complete' ? task.points : -task.points, duration, now);
+  }
+
   // A timed task records its duration: the one given (null for none), else what its timer counted.
-  completeDailyTask(taskId, { duration_seconds } = {}) {
+  completeDailyTask(taskId, { duration_seconds, completionSource = null } = {}) {
     const task = this.db.prepare(`
       SELECT *
       FROM daily_tasks
@@ -647,9 +686,10 @@ class TasksService {
       this.db.prepare(`
         UPDATE daily_tasks
         SET is_completed = 1, completed_at = ?, duration_seconds = ?, duration_source = ?,
-          timer_elapsed_seconds = ?, timer_started_at = NULL
+          timer_elapsed_seconds = ?, timer_started_at = NULL, completion_source = ?
         WHERE id = ?
-      `).run(now, duration.seconds, duration.source, timerSeconds(task), taskId);
+      `).run(now, duration.seconds, duration.source, timerSeconds(task), completionSource, taskId);
+      if (completionSource === 'parent_backfill') this.recordBackfillEvent(task, 'complete', duration.seconds, now);
       cancelPendingSkips(this.db, taskId, now);
 
       // 2. Insert point log
@@ -712,9 +752,11 @@ class TasksService {
       // The timer keeps its time for when the task is done again; the recorded duration goes.
       this.db.prepare(`
         UPDATE daily_tasks
-        SET is_completed = 0, completed_at = NULL, duration_seconds = NULL, duration_source = NULL
+        SET is_completed = 0, completed_at = NULL, duration_seconds = NULL, duration_source = NULL, completion_source = NULL
         WHERE id = ?
       `).run(taskId);
+
+      if (task.completion_source === 'parent_backfill') this.recordBackfillEvent(task, 'undo', task.duration_seconds, new Date().toISOString());
 
       // 2. Remove point log for this daily task
       this.db.prepare(`
