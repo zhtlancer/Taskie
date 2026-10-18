@@ -54,6 +54,7 @@
 
         <!-- Right: Actions -->
         <div class="flex items-center gap-2.5">
+          <router-link :to="`/child/${childId}/word-study`" class="px-3 py-2.5 rounded-xl bg-indigo-500 text-white text-xs font-bold">📚 字词学习</router-link>
           <SoundToggle />
           <router-link
             to="/parent/login"

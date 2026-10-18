@@ -20,6 +20,7 @@ class StatsService {
   }
 
   getHistory(childId, fromDate, toDate) {
+    this.wordStudyService?.ensureScheduled(childId);
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
       throw { status: 404, message: 'Child not found' };
@@ -66,6 +67,8 @@ class StatsService {
         tasks: dayTasks.map(t => ({
           id: t.id,
           template_id: t.template_id,
+          origin: t.origin,
+          study_day_id: t.study_day_id,
           title: t.title,
           subject: t.subject,
           points: t.points,
@@ -90,6 +93,7 @@ class StatsService {
   }
 
   getWeeklySummary(childId, referenceDate) {
+    this.wordStudyService?.ensureScheduled(childId);
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
       throw { status: 404, message: 'Child not found' };
@@ -169,17 +173,17 @@ class StatsService {
     const classTasksOn = this.tasksService.classTasksOn(childId);
     const isSkipped = row => Boolean(row.skipped_at) && !row.is_completed;
     const notYetDue = row => !row.is_completed && dueDateOf(row, schedule.calendar) > asOf;
-    const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
+    const rows = this.db.prepare('SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required, (SELECT plan_id FROM word_study_days WHERE id = d.study_day_id) AS study_plan_id FROM daily_tasks d WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
-      .filter(row => row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
-        !schedule.isPaused(row.source_template_id ?? row.template_id, row.date)));
+      .filter(row => (row.origin !== 'study' || row.study_required || row.is_completed) && (row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
+        !schedule.isPaused(row.source_template_id ?? row.template_id, row.date))));
     const allTemplates = this.tasksService.listTemplates().map(t => ({ ...t, since: sinceDate(t.created_at) }));
     const templatesById = new Map(allTemplates.map(t => [t.id, t]));
     const templates = allTemplates.filter(t => t.child_ids === null || t.child_ids.includes(childId));
 
     const items = new Map();
     const sourceId = source => source.source_template_id ?? source.template_id ?? (source.date ? null : source.id);
-    const keyFor = source => source.goal_id ? JSON.stringify([`goal:${source.goal_id}`])
+    const keyFor = source => source.study_plan_id ? JSON.stringify([`study:${source.study_plan_id}`]) : source.goal_id ? JSON.stringify([`goal:${source.goal_id}`])
       : source.class_id ? JSON.stringify([`class:${source.class_id}`])
       : JSON.stringify([sourceId(source) ?? `row:${source.id}`, source.schedule_type || 'fixed_days']);
     const itemFor = (key, source) => {

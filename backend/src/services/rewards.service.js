@@ -33,6 +33,7 @@ class RewardsService {
   // weekend without tasks) are skipped rather than breaking the streak, and today only counts once
   // something is done, so an unfinished today never breaks it either.
   getCurrentStreak(childId, referenceDate) {
+    this.wordStudyService?.ensureScheduled(childId);
     const today = referenceDate || getTodayDate();
     // Logging holiday-task progress counts as doing something that day.
     const completedDates = new Set(this.db.prepare(`

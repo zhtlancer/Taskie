@@ -304,6 +304,7 @@ class TasksService {
     const date = targetDate || getTodayDate();
 
     parseDate(date);
+    this.wordStudyService?.ensureScheduled(childId);
     const schedule = this.scheduleFor(childId);
     const matching = schedule.assigned.filter(t => schedule.allowedOn(t.id, date));
     const classLessons = this.classTasksOn(childId)(date);
@@ -454,7 +455,7 @@ class TasksService {
       return weekStarts.get(date);
     };
     // Filter obsolete pending goal rows in this query, keeping history reads at a constant cost.
-    const rows = this.db.prepare(`SELECT d.* FROM daily_tasks d WHERE d.child_id = ? AND d.date BETWEEN ? AND ?
+    const rows = this.db.prepare(`SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required FROM daily_tasks d WHERE d.child_id = ? AND d.date BETWEEN ? AND ?
       AND (d.is_completed = 1 OR d.goal_id IS NULL OR EXISTS (
         SELECT 1 FROM period_tasks g WHERE g.id = d.goal_id AND g.daily_required = 1
         AND g.start_date <= d.date AND (g.end_date IS NULL OR g.end_date >= d.date)
@@ -481,6 +482,7 @@ class TasksService {
       const task = describeRow(row);
       // A task that may wait out a break (or a one-off task due later) is optional until its deadline.
       if (row.schedule_type !== 'weekly_times') {
+        if (row.origin === 'study') return { ...task, is_optional: !row.study_required };
         const due = dueDateOf(row, schedule.calendar);
         return { ...task, due_date: due > row.date ? due : null, is_optional: due > row.date };
       }
@@ -656,7 +658,7 @@ class TasksService {
       throw { status: 404, message: '孩子不存在' };
     }
     return {
-      tasks: this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => task.origin !== 'goal'),
+      tasks: this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => !['goal', 'study'].includes(task.origin)),
       events: this.db.prepare('SELECT * FROM task_backfill_events WHERE child_id = ? AND task_date = ? ORDER BY created_at DESC, rowid DESC')
         .all(childId, date)
     };
@@ -698,6 +700,7 @@ class TasksService {
     }
 
     // A long-term task's daily row is completed by logging progress, never directly.
+    if (task.origin === 'study') throw { status: 409, message: '请在字词学习中逐项练习，不能直接打卡或撤销' };
     if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里记录今天的进度' };
 
     if (task.is_completed === 1) {
@@ -778,6 +781,7 @@ class TasksService {
     if (!task) {
       throw { status: 404, message: 'Daily task not found' };
     }
+    if (task.origin === 'study') throw { status: 409, message: '请在字词学习中逐项练习，不能直接打卡或撤销' };
     if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里撤销今天的进度' };
 
     if (task.is_completed === 0) {

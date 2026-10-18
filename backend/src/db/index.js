@@ -363,6 +363,19 @@ function initDb(db) {
       db.pragma('user_version = 16');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 17) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'study_day_id')) {
+        db.exec('ALTER TABLE daily_tasks ADD COLUMN study_day_id TEXT REFERENCES word_study_days(id) ON DELETE SET NULL');
+      }
+      if (!db.pragma('table_info(point_logs)').some(c => c.name === 'study_batch_id')) {
+        db.exec('ALTER TABLE point_logs ADD COLUMN study_batch_id TEXT REFERENCES word_study_batches(id) ON DELETE SET NULL');
+      }
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_tasks_study_day ON daily_tasks(study_day_id)');
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_point_logs_study_batch ON point_logs(study_batch_id)');
+      db.pragma('user_version = 17');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

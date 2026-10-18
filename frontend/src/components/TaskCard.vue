@@ -177,8 +177,9 @@
 
     <!-- Right: Animated Check status icon or quick toggle hint -->
     <div class="shrink-0 text-right">
+      <span v-if="task.origin === 'study'" class="inline-block px-3 py-1 rounded-xl bg-indigo-50 text-indigo-600 text-xs font-bold">{{ task.is_completed ? '继续学习 →' : '开始学习 →' }}</span>
       <span
-        v-if="task.is_completed"
+        v-else-if="task.is_completed"
         class="inline-block px-3 py-1 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-bold font-chinese"
       >
         完成
@@ -279,6 +280,7 @@ function handleClick(event) {
   // A skipped task cannot be checked off until a parent takes the skip back.
   if (props.task.is_skipped) return;
   // A timed task that still needs its time asks first; the celebration waits for the answer.
+  if (props.task.origin === 'study') { emit('toggle', props.task); return; }
   if (!props.task.is_completed && props.task.track_time && needsDurationPrompt(props.task, props.now)) {
     emit('toggle', props.task);
     return;

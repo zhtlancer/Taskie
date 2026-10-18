@@ -389,3 +389,82 @@ CREATE TABLE IF NOT EXISTS device_events (
   ip TEXT,              -- X-Forwarded-For chain and connecting address, for reference only
   user_agent TEXT
 );
+
+-- Automatic word-book study: stable daily lists, independent reading/writing memory states.
+CREATE TABLE IF NOT EXISTS word_study_plans (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  skill TEXT NOT NULL CHECK(skill IN ('recognize', 'write')),
+  enabled INTEGER NOT NULL DEFAULT 1,
+  start_date TEXT NOT NULL,
+  days_of_week TEXT NOT NULL,
+  categories TEXT NOT NULL DEFAULT '[]',
+  include_mastered INTEGER NOT NULL DEFAULT 0,
+  new_target INTEGER NOT NULL DEFAULT 3,
+  review_target INTEGER NOT NULL DEFAULT 10,
+  required INTEGER NOT NULL DEFAULT 1,
+  points INTEGER NOT NULL DEFAULT 10,
+  extra_points INTEGER NOT NULL DEFAULT 0,
+  extra_reward_limit INTEGER NOT NULL DEFAULT 0,
+  last_scheduled_date TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(child_id, skill)
+);
+CREATE TABLE IF NOT EXISTS word_study_states (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  character_id TEXT REFERENCES characters(id) ON DELETE SET NULL,
+  skill TEXT NOT NULL,
+  stage INTEGER NOT NULL DEFAULT 0,
+  next_due_date TEXT NOT NULL,
+  last_review_date TEXT NOT NULL,
+  failures INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(character_id, skill)
+);
+CREATE INDEX IF NOT EXISTS idx_word_study_due ON word_study_states(child_id, skill, next_due_date);
+CREATE TABLE IF NOT EXISTS word_study_days (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES word_study_plans(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  skill TEXT NOT NULL,
+  categories TEXT NOT NULL,
+  include_mastered INTEGER NOT NULL,
+  required INTEGER NOT NULL,
+  points INTEGER NOT NULL,
+  extra_points INTEGER NOT NULL,
+  extra_reward_limit INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(plan_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_word_study_days_child_date ON word_study_days(child_id, date);
+CREATE TABLE IF NOT EXISTS word_study_batches (
+  id TEXT PRIMARY KEY,
+  day_id TEXT NOT NULL REFERENCES word_study_days(id) ON DELETE CASCADE,
+  is_extra INTEGER NOT NULL DEFAULT 0,
+  points INTEGER NOT NULL DEFAULT 0,
+  completed_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_word_study_batches_day ON word_study_batches(day_id);
+CREATE TABLE IF NOT EXISTS word_study_items (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL REFERENCES word_study_batches(id) ON DELETE CASCADE,
+  character_id TEXT REFERENCES characters(id) ON DELETE SET NULL,
+  text TEXT NOT NULL,
+  pinyin TEXT,
+  kind TEXT NOT NULL CHECK(kind IN ('new', 'review')),
+  is_early INTEGER NOT NULL DEFAULT 0,
+  position INTEGER NOT NULL,
+  result TEXT CHECK(result IN ('good', 'hinted', 'again')),
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_word_study_items_batch ON word_study_items(batch_id, position);
+CREATE TABLE IF NOT EXISTS word_study_attempts (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES word_study_items(id) ON DELETE CASCADE,
+  result TEXT NOT NULL CHECK(result IN ('good', 'hinted', 'again')),
+  actor TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_word_study_attempts_item ON word_study_attempts(item_id);

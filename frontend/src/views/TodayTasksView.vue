@@ -389,7 +389,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import confetti from 'canvas-confetti';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
@@ -409,6 +409,7 @@ import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, w
 import { currentRole } from '../utils/session.js';
 
 const route = useRoute();
+const router = useRouter();
 const childStore = useChildStore();
 const isLookupModalOpen = ref(false);
 
@@ -573,6 +574,7 @@ async function loadTasks() {
 // A timed task whose timer barely ran (or ran far too long) asks how long it took before it is
 // checked off; durationBody carries the answer.
 async function handleTaskToggle(task, durationBody = null) {
+  if (task.origin === 'study') { router.push(`/child/${childId.value}/word-study`); return; }
   const willComplete = !task.is_completed;
   const wasAllDone = allDone.value;
   if (willComplete && !durationBody && task.track_time && needsDurationPrompt(task, now.value)) {

@@ -4,6 +4,7 @@ import TodayTasksView from '../views/TodayTasksView.vue';
 import RewardsView from '../views/RewardsView.vue';
 import HistoryView from '../views/HistoryView.vue';
 import MistakesView from '../views/MistakesView.vue';
+import WordStudyView from '../views/WordStudyView.vue';
 import CharactersView from '../views/CharactersView.vue';
 import ScheduleView from '../views/ScheduleView.vue';
 import ParentLoginView from '../views/ParentLoginView.vue';
@@ -21,6 +22,7 @@ import { hasSession, mustChangePin } from '../utils/session.js';
 
 const routes = [
   // Child Routes
+  { path: "/child/:id/word-study", component: WordStudyView },
   {
     path: '/',
     name: 'ChildSelect',

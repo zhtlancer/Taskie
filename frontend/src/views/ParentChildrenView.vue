@@ -82,6 +82,7 @@
               >
                 📖 字词本
               </router-link>
+              <router-link :to="`/child/${child.id}/word-study`" class="px-3.5 py-1.5 rounded-xl bg-indigo-50 text-indigo-600 font-bold text-xs">📚 学习计划</router-link>
             </div>
 
             <button
