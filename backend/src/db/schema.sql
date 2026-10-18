@@ -335,6 +335,23 @@ CREATE TABLE IF NOT EXISTS makeup_days (
   FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
 );
 
+-- Parent backfill operation audit log: records when a parent completes or undos a past daily task.
+CREATE TABLE IF NOT EXISTS task_backfill_events (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL,
+  daily_task_id TEXT NOT NULL,
+  task_title TEXT NOT NULL,
+  task_date TEXT NOT NULL,
+  action TEXT NOT NULL CHECK(action IN ('complete', 'undo')),
+  actor TEXT NOT NULL DEFAULT 'parent',
+  points INTEGER NOT NULL,
+  duration_seconds INTEGER,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_backfill_child_date ON task_backfill_events(child_id, task_date);
+
 -- Pending device pairings: a short code shown on an unauthorized device until a parent approves it.
 -- Authorized devices themselves live in the authorized_tokens file, by token hash.
 CREATE TABLE IF NOT EXISTS device_pairings (
