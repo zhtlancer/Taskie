@@ -1,27 +1,31 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-6 select-none">
-    <!-- Top Bar -->
-    <header class="max-w-5xl w-full mx-auto flex items-center justify-between py-4">
-      <div class="flex items-center gap-3">
-        <span class="text-4xl">🎒</span>
-        <div>
-          <h1 class="text-2xl font-black text-slate-800 tracking-tight">
+  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-4 max-[359px]:px-3 sm:p-6 select-none">
+    <!-- Top Bar: one row at every width; on phones the title shrinks, the tagline hides and the
+         parent entrance reads 家长, so nothing is squeezed into a column -->
+    <header class="max-w-5xl w-full mx-auto flex items-center justify-between gap-2 sm:gap-3 py-2 sm:py-4">
+      <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+        <span class="text-3xl sm:text-4xl shrink-0">🎒</span>
+        <div class="min-w-0">
+          <h1 class="text-lg sm:text-2xl font-black text-slate-800 tracking-tight truncate">
             小学霸日常作业站
           </h1>
-          <p class="text-xs font-bold text-slate-400">每天进步一点点，收获满满成就感 ✨</p>
+          <p class="hidden sm:block text-xs font-bold text-slate-400">每天进步一点点，收获满满成就感 ✨</p>
         </div>
       </div>
 
-      <!-- Right: Sound Toggle & Parent Entrance -->
-      <div class="flex items-center gap-3">
+      <!-- Right: Sound Toggle & Parent Entrance, both 48px tall -->
+      <div class="flex items-center gap-2 sm:gap-3 shrink-0">
         <SoundToggle />
         <router-link
           to="/parent/login"
+          aria-label="家长入口"
+          title="家长入口"
           @click="playClick"
-          class="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-brand-300 text-slate-700 font-bold text-sm transition-all active:scale-95 hover:shadow-card"
+          class="flex items-center gap-1 sm:gap-2 h-12 px-3 sm:px-5 rounded-2xl bg-white border border-slate-200 shadow-sm hover:border-brand-300 text-slate-700 font-bold text-sm whitespace-nowrap transition-all active:scale-95 hover:shadow-card"
         >
           <span>⚙️</span>
-          <span>家长入口</span>
+          <!-- Below 360px only the icon fits beside the full title -->
+          <span class="max-[359px]:hidden">家长<span class="hidden sm:inline">入口</span></span>
         </router-link>
       </div>
     </header>
@@ -32,7 +36,7 @@
         <h2 class="text-3xl font-black text-slate-800 tracking-tight mb-2">
           你是哪位小朋友？
         </h2>
-        <p class="text-slate-500 font-medium text-base">
+        <p class="text-slate-500 font-medium text-base max-[359px]:text-sm">
           点击你的头像卡片，开启今天的学习挑战吧！
         </p>
       </div>
