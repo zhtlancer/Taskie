@@ -127,10 +127,12 @@ class PeriodsService {
     return this.db.prepare('SELECT * FROM makeup_days WHERE child_id = ? ORDER BY date DESC').all(childId);
   }
 
-  // A day the child goes to school following another weekday's tasks and timetable.
+  // A day the child goes to school following another weekday's tasks and timetable. Past days
+  // are recorded history, so make-up days are set and removed from today on only.
   createMakeupDay(childId, { date, acts_as, note = null }) {
     this.requireChild(childId);
     validateDate(date, '日期');
+    if (date < getTodayDate()) throw { status: 400, message: '只能设置今天及以后的调休上学日' };
     if (!Number.isInteger(acts_as) || acts_as < 0 || acts_as > 6) throw { status: 400, message: '请选择按周几上课' };
     if (note !== null && (typeof note !== 'string' || note.trim().length > 30)) throw { status: 400, message: '备注不超过 30 个字' };
     if (this.db.prepare('SELECT 1 FROM makeup_days WHERE child_id = ? AND date = ?').get(childId, date)) {
@@ -148,6 +150,7 @@ class PeriodsService {
   deleteMakeupDay(id) {
     const existing = this.db.prepare('SELECT * FROM makeup_days WHERE id = ?').get(id);
     if (!existing) throw { status: 404, message: '调休上学日不存在' };
+    if (existing.date < getTodayDate()) throw { status: 400, message: '过去的调休上学日不能删除' };
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM makeup_days WHERE id = ?').run(id);
       this.tasksService?.reconcileCalendarDay(existing.child_id, existing.date);

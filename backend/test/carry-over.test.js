@@ -1,5 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { randomUUID } = require('node:crypto');
 const { createTestApp, cleanupTestApp } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
@@ -23,11 +24,14 @@ async function fixture(t) {
   const find = (date, title) => board(date).find(task => task.title === title);
   const history = (from, to = from) => statsService.getHistory(child.id, from, to);
   const holiday = (start_date, end_date, extra = {}) => periodsService.createPeriod(child.id, { name: '假期', start_date, end_date, ...extra });
-  return { ctx, child, tasksService, periodsService, statsService, rewardsService, scheduleService, day, template, board, find, history, holiday };
+  // A make-up day the parent set before it came; the service only accepts today or later.
+  const makeup = (date, acts_as, note = null) => ctx.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(randomUUID(), child.id, date, acts_as, note, new Date().toISOString());
+  return { ctx, child, tasksService, periodsService, statsService, rewardsService, scheduleService, day, template, board, find, history, holiday, makeup };
 }
 
 test('school days are weekdays outside holidays plus make-up days; a break carries a task to its last day', async t => {
-  const { child, tasksService, periodsService, day, holiday } = await fixture(t);
+  const { child, tasksService, day, holiday, makeup } = await fixture(t);
   let calendar = tasksService.calendarFor(child.id);
   assert.deepEqual([calendar.carryUntil(day(4)), calendar.carryUntil(day(3)), calendar.carryUntil(day(5))], [day(6), day(3), day(5)]);
 
@@ -38,8 +42,8 @@ test('school days are weekdays outside holidays plus make-up days; a break carri
 
   // A make-up Saturday ends the break early and follows Monday's schedule; one inside a holiday
   // is a school day too.
-  periodsService.createMakeupDay(child.id, { date: day(12), acts_as: 1, note: '国庆调休' });
-  periodsService.createMakeupDay(child.id, { date: day(9), acts_as: 3 });
+  makeup(day(12), 1, '国庆调休');
+  makeup(day(9), 3);
   calendar = tasksService.calendarFor(child.id);
   assert.deepEqual([calendar.isSchoolDay(day(12)), calendar.weekdayOf(day(12)), calendar.isSchoolDay(day(9)), calendar.holidayOn(day(9))], [true, 1, true, null]);
   assert.deepEqual([calendar.carryUntil(day(4)), calendar.carryUntil(day(9)), calendar.carryUntil(day(12))], [day(8), day(11), day(13)]);
@@ -106,11 +110,11 @@ test('weekly completion owes a carried task only once its deadline has passed', 
 });
 
 test('a holiday carries a task across weeks; a make-up day follows its weekday even inside a paused holiday', async t => {
-  const { child, tasksService, periodsService, scheduleService, statsService, day, template, find, board, holiday } = await fixture(t);
+  const { child, tasksService, scheduleService, statsService, day, template, find, board, holiday, makeup } = await fixture(t);
   const oral = template({ title: '口算', carry_over: true });
   template({ title: '周一晨读', subject: '语文', days_of_week: [1] });
   holiday(day(7), day(13), { paused_template_ids: [oral.id] });
-  periodsService.createMakeupDay(child.id, { date: day(12), acts_as: 1 });
+  makeup(day(12), 1);
   scheduleService.createTimetable(child.id, { name: '本学期', start_date: day(-7), end_date: day(30),
     slots: [{ id: 's1', kind: 'class', label: '第1节', start_time: '08:00', end_time: '08:40' }],
     lessons: [{ slot_id: 's1', weekday: 1, subject: '语文' }, { slot_id: 's1', weekday: 6, subject: '周六兴趣' }] });
@@ -141,11 +145,11 @@ test('one-off tasks may have a due date; they stay open until then', async t => 
 });
 
 test('children may act on a carried task until its deadline, and only then', async t => {
-  const { ctx, child, tasksService, periodsService, day, template } = await fixture(t);
+  const { ctx, child, tasksService, periodsService, day, template, makeup } = await fixture(t);
   const today = getTodayDate(), yesterday = shiftDate(today, -1);
   // Yesterday and the day after tomorrow (make-up) school days, today and tomorrow a holiday:
   // yesterday's task waits until tomorrow, whatever weekday today is.
-  periodsService.createMakeupDay(child.id, { date: yesterday, acts_as: 3 });
+  makeup(yesterday, 3);
   periodsService.createMakeupDay(child.id, { date: shiftDate(today, 2), acts_as: 3 });
   periodsService.createPeriod(child.id, { name: '小长假', start_date: today, end_date: shiftDate(today, 1) });
   template({ title: '口算', days_of_week: [0, 1, 2, 3, 4, 5, 6], carry_over: true, track_time: true, points: 10 });
@@ -188,8 +192,9 @@ test('carry-over is a fixed-day template setting, applied to tasks still to do w
   assert.equal(child.name, '伊伊');
 });
 
-test('make-up days are managed by parents only', async t => {
-  const { ctx, child, day } = await fixture(t);
+test('make-up days are managed by parents only, from today on', async t => {
+  const { ctx, child, makeup } = await fixture(t);
+  const day = n => shiftDate(getTodayDate(), n - 2); // day(5) is three days ahead
   const login = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json();
   const headers = { authorization: `Bearer ${login.token}` };
   const url = `/api/children/${child.id}/makeup-days`;
@@ -203,6 +208,19 @@ test('make-up days are managed by parents only', async t => {
   assert.deepEqual((await ctx.rawInject({ method: 'GET', url, headers })).json().map(m => [m.date, m.acts_as]), [[day(5), 5]]);
   assert.equal((await ctx.rawInject({ method: 'DELETE', url: `/api/makeup-days/${created.json().id}`, headers })).statusCode, 403);
   assert.equal((await ctx.app.inject({ method: 'DELETE', url: `/api/makeup-days/${created.json().id}` })).statusCode, 200);
+
+  // Past days are recorded history: no new make-up day there, and an old one stays.
+  const yesterday = shiftDate(getTodayDate(), -1);
+  const past = await ctx.app.inject({ method: 'POST', url, payload: { date: yesterday, acts_as: 1 } });
+  assert.equal(past.statusCode, 400);
+  assert.match(past.body, /今天及以后/);
+  assert.equal((await ctx.app.inject({ method: 'POST', url, payload: { date: getTodayDate(), acts_as: 1 } })).statusCode, 201);
+  makeup(yesterday, 1);
+  const old = (await ctx.app.inject({ method: 'GET', url })).json().find(m => m.date === yesterday);
+  const removal = await ctx.app.inject({ method: 'DELETE', url: `/api/makeup-days/${old.id}` });
+  assert.equal(removal.statusCode, 400);
+  assert.match(removal.body, /不能删除/);
+  assert.ok((await ctx.app.inject({ method: 'GET', url })).json().some(m => m.id === old.id));
 });
 
 test('an unopened Friday task appears on the weekend once, with a real actionable task id', async t => {
@@ -237,10 +255,10 @@ test('unopened carried tasks are missed at the deadline and break the streak wit
 });
 
 test('a child can discover, time and complete an unopened task from before the current holiday', async t => {
-  const { ctx, child, periodsService, template } = await fixture(t);
+  const { ctx, child, periodsService, template, makeup } = await fixture(t);
   const today = getTodayDate();
   const yesterday = shiftDate(today, -1);
-  periodsService.createMakeupDay(child.id, { date: yesterday, acts_as: 3 });
+  makeup(yesterday, 3);
   periodsService.createMakeupDay(child.id, { date: shiftDate(today, 2), acts_as: 3 });
   periodsService.createPeriod(child.id, { name: '小长假', start_date: today, end_date: shiftDate(today, 1) });
   template({ title: '假前口算', days_of_week: [3], carry_over: true, track_time: true });
@@ -272,7 +290,7 @@ test('opening a weekend preserves weekly obligations for the unopened source day
 });
 
 test('unopened holiday carries respect template creation, child assignment and holiday pauses', async t => {
-  const { ctx, child, tasksService, periodsService, day, template, board, holiday, history } = await fixture(t);
+  const { ctx, child, tasksService, day, template, board, holiday, history, makeup } = await fixture(t);
   const oral = template({ title: '周五口算', days_of_week: [5], carry_over: true });
   const paused = template({ title: '已暂停', days_of_week: [5], carry_over: true });
   const tooNew = template({ title: '后来才布置', days_of_week: [5], carry_over: true });
@@ -280,7 +298,7 @@ test('unopened holiday carries respect template creation, child assignment and h
   const sibling = ctx.app.services.childrenService.createChild({ name: '妹妹' });
   template({ title: '妹妹的作业', days_of_week: [5], carry_over: true, child_ids: [sibling.id] });
   holiday(day(4), day(4), { paused_template_ids: [paused.id] });
-  periodsService.createMakeupDay(child.id, { date: day(4), acts_as: 5 });
+  makeup(day(4), 5);
   // A school day inside a holiday is not paused; the following week extends its break.
   holiday(day(7), day(11));
   assert.deepEqual(board(day(8)).map(task => task.title).sort(), ['周五口算', '已暂停']);

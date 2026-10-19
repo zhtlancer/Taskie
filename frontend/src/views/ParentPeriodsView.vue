@@ -131,11 +131,11 @@
       <!-- Make-up school days (调休上学日): school on a weekend or holiday, following another weekday -->
       <section v-if="!loading && selectedChild" class="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-card mt-5">
         <h3 class="text-lg font-black text-slate-800 mb-1">🔁 调休上学日</h3>
-        <p class="text-xs font-bold text-slate-400 mb-3">比如国庆调休的周六要上学：这天按所选星期几生成日常任务、显示课程表，假期里暂停的任务这天也照常；“放假前可以补完”的任务也按它来算假期从哪天结束</p>
+        <p class="text-xs font-bold text-slate-400 mb-3">比如国庆调休的周六要上学：这天按所选星期几生成日常任务、显示课程表，假期里暂停的任务这天也照常；“放假前可以补完”的任务也按它来算假期从哪天结束。只能设置今天及以后的日期，过去的不能删除</p>
         <form class="flex flex-wrap items-end gap-2 mb-3" @submit.prevent="addMakeupDay">
           <div>
             <label class="block text-[11px] font-bold text-slate-500 mb-1">日期</label>
-            <input v-model="makeupForm.date" type="date" required class="px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
+            <input v-model="makeupForm.date" type="date" required :min="localToday()" class="px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
           </div>
           <div>
             <label class="block text-[11px] font-bold text-slate-500 mb-1">按周几上课</label>
@@ -157,7 +157,7 @@
           <li v-for="item in makeupDays" :key="item.id" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 font-chinese">
             <span>{{ item.date }}（{{ weekdayName(item.date) }}）按{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][item.acts_as] }}上课</span>
             <span v-if="item.note" class="text-slate-400">{{ item.note }}</span>
-            <button type="button" class="text-slate-300 hover:text-rose-500" title="删除" @click="removeMakeupDay(item)">✕</button>
+            <button v-if="item.date >= localToday()" type="button" class="text-slate-300 hover:text-rose-500" title="删除" @click="removeMakeupDay(item)">✕</button>
           </li>
         </ul>
       </section>
