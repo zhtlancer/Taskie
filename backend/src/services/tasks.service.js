@@ -305,20 +305,9 @@ class TasksService {
     }
   }
 
-  getDailyTasks(childId, targetDate) {
-    if (!childId) {
-      throw { status: 400, message: 'child_id is required' };
-    }
-
-    // Verify child exists
-    const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
-    if (!child) {
-      throw { status: 404, message: 'Child not found' };
-    }
-
-    const date = targetDate || getTodayDate();
-
-    parseDate(date);
+  // Saves a date's tasks as its board shows them and returns the schedule used. Today follows the
+  // current configuration; a past date already recorded keeps the tasks it had.
+  generateDay(childId, date) {
     this.wordStudyService?.ensureScheduled(childId);
     const schedule = this.scheduleFor(childId);
     const matching = schedule.assigned.filter(t => schedule.allowedOn(t.id, date));
@@ -338,6 +327,31 @@ class TasksService {
       if (!frozen) this.generateClassTasks(childId, date, classLessons);
       this.recordDaySnapshot(childId, date);
     })();
+    return schedule;
+  }
+
+  // The server calls this every minute, so each child's day is recorded with that day's
+  // configuration even when nobody opens the app. Days the server was down are not filled in.
+  generateToday() {
+    const today = getTodayDate();
+    for (const { id } of this.db.prepare('SELECT id FROM children').all()) this.generateDay(id, today);
+  }
+
+  getDailyTasks(childId, targetDate) {
+    if (!childId) {
+      throw { status: 400, message: 'child_id is required' };
+    }
+
+    // Verify child exists
+    const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
+    if (!child) {
+      throw { status: 404, message: 'Child not found' };
+    }
+
+    const date = targetDate || getTodayDate();
+
+    parseDate(date);
+    const schedule = this.generateDay(childId, date);
     // The latest skip request tells the child whether one is waiting or was turned down.
     const latestSkip = this.db.prepare('SELECT id, status, reason FROM task_skip_requests WHERE daily_task_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1');
     // A class check-in carries its lesson's time and place for the card.

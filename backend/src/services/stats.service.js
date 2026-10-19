@@ -31,6 +31,10 @@ class StatsService {
 
     getDateRangeList(from, to);
     const tasksByDate = this.tasksByDate(childId, from, to);
+    // A past day with nothing saved still had tasks if its configuration required any: the child
+    // never opened the app that day (before automatic generation, or while the server was down).
+    const isRestDay = this.tasksService.restDayChecker(childId, from, to);
+    const today = getTodayDate();
 
     // Query points by date from point_logs
     const pointLogs = this.db.prepare(`
@@ -63,6 +67,7 @@ class StatsService {
         skipped_tasks: summary.skipped,
         completion_rate: completionRate,
         all_done: summary.all_done,
+        not_opened: d < today && summary.total === 0 && !isRestDay(d),
         points_earned: pointsEarned,
         tasks: dayTasks.map(t => ({
           id: t.id,

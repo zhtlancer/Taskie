@@ -84,6 +84,7 @@ const { seedDemoData } = require('./db/seed');
 console.log('✅ 核心模块加载就绪');
 
 let app;
+let dailyTimer;
 
 async function start() {
   try {
@@ -109,6 +110,18 @@ async function start() {
     });
     console.log(`🎉 Taskie 服务成功启动并就绪: ${address}`);
     console.log(`📁 静态资源与上传服务已挂载完成`);
+
+    // Record each child's tasks for today even when nobody opens the app.
+    const generateToday = () => {
+      try {
+        app.services.tasksService.generateToday();
+      } catch (err) {
+        console.error('生成今日任务失败:', err.stack || err.message || err);
+      }
+    };
+    generateToday();
+    dailyTimer = setInterval(generateToday, 60 * 1000);
+    console.log('🗓️ 已启动每日任务自动生成（每分钟同步一次今天的任务）');
   } catch (err) {
     console.error('❌ [服务启动致命异常]:', err.stack || err.message || err);
     process.exit(1);
@@ -121,6 +134,7 @@ signals.forEach((signal) => {
   process.on(signal, async () => {
     console.log(`\n收到 ${signal} 信号，正在优雅关闭服务...`);
     try {
+      clearInterval(dailyTimer);
       if (app) {
         await app.close();
         if (app.db) {

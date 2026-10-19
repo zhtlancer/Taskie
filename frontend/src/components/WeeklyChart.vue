@@ -33,11 +33,13 @@ const chartData = computed(() => {
     if (!item.date) return '';
     const d = new Date(item.date);
     const dayName = weekdayNames[d.getDay()];
-    // Days with nothing scheduled are rest days, not failures.
+    // Days with nothing scheduled are rest days, not failures; a day never opened had tasks it missed.
+    if (item.not_opened) return `${d.getMonth() + 1}/${d.getDate()} (${dayName}·未打卡)`;
     return item.total_tasks === 0 ? `${d.getMonth() + 1}/${d.getDate()} (${dayName}·休息)` : `${d.getMonth() + 1}/${d.getDate()} (${dayName})`;
   });
 
   const completionRates = props.historyData.map(item => {
+    if (item.not_opened) return 0;
     return item.total_tasks === 0 ? null : Math.round((item.completion_rate || 0) * 100);
   });
 
@@ -70,7 +72,8 @@ const chartOptions = {
       padding: 10,
       cornerRadius: 10,
       callbacks: {
-        label: (context) => context.raw === null ? '休息日：没有安排任务' : `完成率: ${context.raw}%`
+        label: (context) => context.raw === null ? '休息日：没有安排任务'
+          : props.historyData[context.dataIndex]?.not_opened ? '未打卡：当天没有打开' : `完成率: ${context.raw}%`
       }
     }
   },
