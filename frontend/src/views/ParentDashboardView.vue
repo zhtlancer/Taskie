@@ -89,6 +89,31 @@
         </ul>
       </section>
 
+      <!-- Homework children recorded, waiting for a parent to create its task -->
+      <section v-if="homeworkRequests.length" class="mb-8 bg-white rounded-3xl p-5 border-2 border-orange-200 shadow-card">
+        <h3 class="text-base font-bold text-slate-700 mb-3 flex items-center gap-2">
+          <span>📒</span>
+          <span>孩子记的作业，等你确认生成任务</span>
+          <span class="px-2 py-0.5 rounded-lg bg-rose-500 text-white text-xs">{{ homeworkRequests.length }}</span>
+        </h3>
+        <p v-if="homeworkError" class="mb-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ homeworkError }}</p>
+        <ul class="space-y-2">
+          <li v-for="r in homeworkRequests" :key="r.id" class="p-3 rounded-2xl bg-orange-50/60 border border-orange-100 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span class="text-2xl">{{ r.child_avatar_emoji }}</span>
+            <div class="flex-1 min-w-[180px]">
+              <div class="text-sm font-bold text-slate-800 font-chinese">{{ r.child_name }} · {{ r.subject }} · {{ dayLabel(r.assigned_date) }}布置</div>
+              <div class="text-xs font-bold text-slate-600 font-chinese whitespace-pre-line line-clamp-2">{{ r.content }}</div>
+              <div class="text-[11px] font-bold text-orange-700">{{ r.due_date ? `截止 ${dayLabel(r.due_date)}` : '没有截止日期' }} · ★{{ r.points }}</div>
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <button type="button" :disabled="homeworkBusy || !r.can_create_task" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50" @click="resolveHomework(r, 'create')">生成任务</button>
+              <button type="button" :disabled="homeworkBusy" class="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-xs font-bold disabled:opacity-50" @click="resolveHomework(r, 'reject')">不需要</button>
+              <router-link :to="`/child/${r.child_id}/homework`" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100">改积分</router-link>
+            </div>
+          </li>
+        </ul>
+      </section>
+
       <!-- Children Detail Progress Grid -->
       <h3 class="text-base font-bold text-slate-700 mb-3 px-1">
         各个小朋友实时看板
@@ -137,6 +162,7 @@
             </div>
 
             <div class="flex flex-wrap gap-2">
+              <router-link :to="`/child/${item.child.id}/homework`" class="px-3 py-1.5 rounded-xl bg-orange-50 text-orange-700 text-xs font-bold">作业本</router-link>
               <router-link :to="`/parent/children/${item.child.id}/backfill`" class="px-3 py-1.5 rounded-xl bg-sky-50 text-sky-700 text-xs font-bold">补卡</router-link>
               <router-link
                 :to="`/child/${item.child.id}/today`"
@@ -307,6 +333,9 @@ const adhocError = ref('');
 const skipRequests = ref([]);
 const skipBusy = ref(false);
 const skipError = ref('');
+const homeworkRequests = ref([]);
+const homeworkBusy = ref(false);
+const homeworkError = ref('');
 
 const addDays = (date, days) => {
   const d = new Date(`${date}T00:00:00Z`);
@@ -387,6 +416,26 @@ async function resolveSkip(request, action) {
   }
 }
 
+async function loadHomeworkRequests() {
+  homeworkRequests.value = await api.getHomeworkRequests();
+}
+
+// Creating the task adds it to that child's board, so their card is refreshed too.
+async function resolveHomework(record, action) {
+  homeworkBusy.value = true;
+  homeworkError.value = '';
+  try {
+    await (action === 'create' ? api.createHomeworkTask(record.id) : api.rejectHomeworkTask(record.id));
+    const item = childrenStats.value.find(entry => entry.child.id === record.child_id);
+    await Promise.all([loadHomeworkRequests(), item && refreshChild(item)]);
+  } catch (err) {
+    homeworkError.value = typeof err === 'string' ? err : '操作失败，请重试';
+    await loadHomeworkRequests().catch(() => {});
+  } finally {
+    homeworkBusy.value = false;
+  }
+}
+
 const overallCompletionRate = computed(() => {
   if (childrenStats.value.length === 0) return 0;
   let totalTasks = 0;
@@ -415,7 +464,7 @@ onMounted(async () => {
         api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null)]);
       return { child, stats, week, adhoc, goals: activeGoals(goals), time };
     });
-    [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests()]);
+    [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests()]);
   } catch (err) {
     console.error('Failed to load parent dashboard:', err);
   } finally {

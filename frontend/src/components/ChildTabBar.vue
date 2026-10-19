@@ -1,7 +1,7 @@
 <template>
   <!-- Phone and portrait-tablet navigation for child pages; the iPad landscape layout keeps its own. -->
   <nav class="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
-    <div class="max-w-xl mx-auto grid grid-cols-6">
+    <div class="max-w-xl mx-auto grid grid-cols-7">
       <router-link
         v-for="tab in tabs"
         :key="tab.path"
@@ -24,6 +24,7 @@ defineProps({ childId: { type: String, required: true } });
 
 const tabs = [
   { path: 'today', icon: '📋', label: '今日' },
+  { path: 'homework', icon: '📒', label: '作业' },
   { path: 'rewards', icon: '🏆', label: '积分' },
   { path: 'mistakes', icon: '📝', label: '错题' },
   { path: 'characters', icon: '📖', label: '字词' },

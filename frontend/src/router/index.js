@@ -7,6 +7,7 @@ import MistakesView from '../views/MistakesView.vue';
 import WordStudyView from '../views/WordStudyView.vue';
 import CharactersView from '../views/CharactersView.vue';
 import ScheduleView from '../views/ScheduleView.vue';
+import HomeworkView from '../views/HomeworkView.vue';
 import ParentLoginView from '../views/ParentLoginView.vue';
 import ParentBackfillView from '../views/ParentBackfillView.vue';
 import ParentDashboardView from '../views/ParentDashboardView.vue';
@@ -57,6 +58,11 @@ const routes = [
     path: '/child/:id/schedule',
     name: 'Schedule',
     component: ScheduleView
+  },
+  {
+    path: '/child/:id/homework',
+    name: 'Homework',
+    component: HomeworkView
   },
 
   // Parent Routes

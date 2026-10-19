@@ -15,6 +15,7 @@
     "test:browser": "node scripts/smoke-browser.cjs",
     "test:browser:time-stats": "node scripts/smoke-time-stats.cjs",
     "test:browser:carry-over": "node scripts/smoke-carry-over.cjs",
+    "test:browser:homework": "node scripts/smoke-homework.cjs",
     "seed:backend": "npm --prefix backend run seed"
   }
 }

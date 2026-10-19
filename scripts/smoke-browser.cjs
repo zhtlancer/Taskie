@@ -313,7 +313,7 @@ async function main() {
   };
   await mobile.getByRole('button', { name: /浏览器测试孩子/ }).click();
   await mobile.waitForURL(`**/child/${child.id}/today`);
-  for (const tab of ['rewards', 'mistakes', 'characters', 'history', 'today']) await fitsWidth(`/child/${child.id}/${tab}`);
+  for (const tab of ['homework', 'rewards', 'mistakes', 'characters', 'history', 'today']) await fitsWidth(`/child/${child.id}/${tab}`);
   await mobile.getByRole('link', { name: /积分/ }).last().click();
   await mobile.waitForURL(`**/child/${child.id}/rewards`);
   await mobile.goto(`${base}/parent/login`, { waitUntil: 'domcontentloaded' });

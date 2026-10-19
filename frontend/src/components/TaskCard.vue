@@ -39,7 +39,7 @@
             {{ task.subject }}
           </span>
           <span v-if="task.origin === 'adhoc'" class="px-2 py-0.5 rounded-lg text-xs font-black shrink-0 bg-orange-100 text-orange-700">
-            临时
+            {{ task.homework ? '作业' : '临时' }}
           </span>
           <span v-if="task.origin === 'class'" class="px-2 py-0.5 rounded-lg text-xs font-black shrink-0 bg-violet-100 text-violet-700">
             课外班
@@ -53,6 +53,9 @@
             {{ task.title }}
           </h4>
         </div>
+
+        <!-- The full homework when the title only holds its first line -->
+        <p v-if="homeworkDetail" class="mt-1 text-xs font-bold text-slate-500 whitespace-pre-line line-clamp-3 font-chinese">📒 {{ homeworkDetail }}</p>
 
         <!-- Weekly target frequency pill (每周完成特定次数) -->
         <div
@@ -242,6 +245,10 @@ const displayPoints = computed(() => props.task.is_completed
   ? props.task.earned_points ?? props.task.points
   : props.task.award_points ?? props.task.points);
 
+const homeworkDetail = computed(() => {
+  const homework = props.task.homework;
+  return homework && props.task.title !== `${homework.subject}：${homework.content}` ? homework.content : '';
+});
 const isWeeklyTask = computed(() => {
   return props.task.schedule_type === 'weekly_times' || Boolean(props.task.weekly_target_times);
 });
