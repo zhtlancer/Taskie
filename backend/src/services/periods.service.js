@@ -127,6 +127,12 @@ class PeriodsService {
     return this.db.prepare('SELECT * FROM makeup_days WHERE child_id = ? ORDER BY date DESC').all(childId);
   }
 
+  // A make-up day moves the end of a break, so earlier tasks waiting it out must not have their
+  // deadline cross today (see TasksService.guardCarryDeadlines).
+  changeCalendar(childId, change) {
+    return this.tasksService ? this.tasksService.guardCarryDeadlines(childId, change) : change();
+  }
+
   // A day the child goes to school following another weekday's tasks and timetable. Past days
   // are recorded history, so make-up days are set and removed from today on only.
   createMakeupDay(childId, { date, acts_as, note = null }) {
@@ -139,11 +145,11 @@ class PeriodsService {
       throw { status: 409, message: '这天已经设为调休上学日' };
     }
     const id = generateId();
-    this.db.transaction(() => {
+    this.db.transaction(() => this.changeCalendar(childId, () => {
       this.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(id, childId, date, acts_as, note?.trim() || null, new Date().toISOString());
       this.tasksService?.reconcileCalendarDay(childId, date);
-    })();
+    }))();
     return this.db.prepare('SELECT * FROM makeup_days WHERE id = ?').get(id);
   }
 
@@ -151,10 +157,10 @@ class PeriodsService {
     const existing = this.db.prepare('SELECT * FROM makeup_days WHERE id = ?').get(id);
     if (!existing) throw { status: 404, message: '调休上学日不存在' };
     if (existing.date < getTodayDate()) throw { status: 400, message: '过去的调休上学日不能删除' };
-    this.db.transaction(() => {
+    this.db.transaction(() => this.changeCalendar(existing.child_id, () => {
       this.db.prepare('DELETE FROM makeup_days WHERE id = ?').run(id);
       this.tasksService?.reconcileCalendarDay(existing.child_id, existing.date);
-    })();
+    }))();
     return { success: true, id };
   }
 

@@ -238,8 +238,10 @@ class TasksService {
         WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0 AND schedule_type = 'weekly_times'`)
         .run(extra.allow_extra, extra.extra_points, extra.extra_reward_limit, id, getTodayDate());
       // Tasks still to do follow the carry-over setting, so a break that has begun is covered too.
-      this.db.prepare('UPDATE daily_tasks SET carry_over = ? WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0')
-        .run(carry ? 1 : 0, id);
+      // Turning it off also drops a deadline pinned by a calendar change.
+      this.db.prepare(`UPDATE daily_tasks SET carry_over = ?, due_date = CASE WHEN ? THEN due_date END
+        WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0`)
+        .run(carry ? 1 : 0, carry ? 1 : 0, id);
       if (childIds !== undefined) this.setTemplateChildren(id, childIds);
       // Today's unfinished tasks follow the timing settings at once; turning timing off drops their timer.
       this.db.prepare(`UPDATE daily_tasks SET track_time = ?, expected_minutes = ?,
@@ -353,14 +355,7 @@ class TasksService {
         for (const carried of carriedRows) {
           const row = carried.row;
           if (!row.projected) continue;
-          if (!byDate.has(row.date)) {
-            // A generated date is a snapshot for weekly completion. Include its other templates
-            // too, so materializing a carry cannot hide that day's ordinary unfinished tasks.
-            byDate.set(row.date, this.generateTemplateTasks(childId, row.date,
-              schedule.assigned.filter(t => t.since <= row.date && schedule.allowedOn(t.id, row.date))));
-            this.generateClassTasks(childId, row.date, this.classTasksOn(childId)(row.date));
-            this.recordDaySnapshot(childId, row.date);
-          }
+          if (!byDate.has(row.date)) byDate.set(row.date, this.materializeDay(childId, row.date, schedule));
           carried.row = byDate.get(row.date).get(row.template_id);
         }
       })();
@@ -376,8 +371,56 @@ class TasksService {
       });
   }
 
+  // A generated date is a snapshot for weekly completion. Saving an unopened day for one carried
+  // task creates its other templates and class check-ins too, so none of them is hidden later.
+  materializeDay(childId, date, schedule = this.scheduleFor(childId)) {
+    const rows = this.generateTemplateTasks(childId, date, schedule.assigned.filter(t => t.since <= date && schedule.allowedOn(t.id, date)));
+    this.generateClassTasks(childId, date, this.classTasksOn(childId)(date));
+    this.recordDaySnapshot(childId, date);
+    return rows;
+  }
+
   calendarFor(childId) {
     return schoolCalendar(this.db, childId);
+  }
+
+  // Deadlines of carried template tasks from past days within MAX_CARRY_DAYS, saved or
+  // unopened, under the calendar as it stands. Pinned deadlines (due_date) no longer follow it.
+  carryDeadlines(childId) {
+    const schedule = this.scheduleFor(childId);
+    const today = getTodayDate();
+    const first = shiftDate(today, -MAX_CARRY_DAYS);
+    const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date < ? AND date >= ? ORDER BY date, rowid')
+      .all(childId, today, first);
+    // Completed and skipped cards still use their deadlines for today's display and corrections.
+    const unpinned = rows.filter(row => row.carry_over && !row.due_date);
+    return new Map([...unpinned, ...this.unopenedCarries(childId, first, today, rows, schedule)]
+      .map(row => [`${row.source_template_id ?? row.template_id}|${row.date}`, { row, due: schedule.calendar.carryUntil(row.date) }]));
+  }
+
+  // Applies a calendar change (a make-up day) without moving a past task's deadline across today:
+  // a task already closed stays closed and an open one cannot close in the past. Deadlines that
+  // stay ahead of today follow the new calendar. Moved tasks keep their old deadline as due_date,
+  // saving an unopened day first.
+  guardCarryDeadlines(childId, change) {
+    const today = getTodayDate();
+    const before = this.carryDeadlines(childId);
+    const result = change();
+    const after = this.carryDeadlines(childId);
+    const schedule = this.scheduleFor(childId);
+    const pin = this.db.prepare('UPDATE daily_tasks SET due_date = ? WHERE id = ?');
+    const saved = new Map();
+    for (const [key, { row, due }] of before) {
+      const next = after.get(key)?.due ?? row.date;
+      if (next === due || (due >= today && next >= today)) continue;
+      if (!row.projected) {
+        pin.run(due, row.id);
+        continue;
+      }
+      if (!saved.has(row.date)) saved.set(row.date, this.materializeDay(childId, row.date, schedule));
+      pin.run(due, saved.get(row.date).get(row.template_id).id);
+    }
+    return result;
   }
 
   // Tasks of earlier days that may still be done on some day between two dates (their deadline is
@@ -388,30 +431,39 @@ class TasksService {
     // Include non-carrying snapshots too: a template edit must not project a second task over one.
     const rows = this.db.prepare(`SELECT * FROM daily_tasks WHERE child_id = ? AND date < ? AND date >= ? ORDER BY date, rowid`)
       .all(childId, to, first);
-    const existing = new Set(rows.map(row => `${row.source_template_id ?? row.template_id}|${row.date}`));
-    const templates = schedule.assigned.filter(t => t.carry_over && t.schedule_type !== 'weekly_times');
-    const start = [first, schedule.childSince].filter(Boolean).sort().at(-1);
-    if (templates.length && schedule.childSince) {
-      // A recorded date keeps only the rows it had; later template edits cannot add carried tasks to it.
-      const recorded = new Set(this.db.prepare('SELECT date FROM task_day_snapshots WHERE child_id = ? AND date >= ? AND date < ?')
-        .all(childId, start, to).map(row => row.date));
-      for (let date = start; date < to; date = shiftDate(date, 1)) {
-        const due = calendar.carryUntil(date);
-        if (due < from || due <= date || recorded.has(date)) continue;
-        for (const template of templates) {
-          if (template.since > date || !schedule.allowedOn(template.id, date) || existing.has(`${template.id}|${date}`)) continue;
-          rows.push({ id: `unopened:${template.id}:${date}`, child_id: childId, template_id: template.id,
-            source_template_id: template.id, template_created_at: template.created_at, origin: 'template',
-            title: template.title, subject: template.subject, points: template.points, date,
-            schedule_type: 'fixed_days', weekly_target_times: null, is_completed: 0, completed_at: null,
-            track_time: template.track_time ? 1 : 0, expected_minutes: template.expected_minutes,
-            duration_seconds: null, carry_over: 1, due_date: null, projected: true });
-        }
-      }
-    }
+    rows.push(...this.unopenedCarries(childId, first, to, rows, schedule, date => {
+      const due = calendar.carryUntil(date);
+      return due >= from && due > date;
+    }));
     return rows.filter(row => row.carry_over || row.due_date)
       .map(row => ({ row, due: dueDateOf(row, calendar) }))
       .filter(({ row, due }) => due >= from && due > row.date);
+  }
+
+  // Carry-over template tasks of days from `first` to before `to` that have no saved row (`rows`)
+  // and no recorded board, as unsaved rows (`projected: true`); `wanted` picks the source days.
+  unopenedCarries(childId, first, to, rows, schedule, wanted = () => true) {
+    const templates = schedule.assigned.filter(t => t.carry_over && t.schedule_type !== 'weekly_times');
+    if (!templates.length || !schedule.childSince) return [];
+    const existing = new Set(rows.map(row => `${row.source_template_id ?? row.template_id}|${row.date}`));
+    const start = [first, schedule.childSince].sort().at(-1);
+    // A recorded date keeps only the rows it had; later template edits cannot add carried tasks to it.
+    const recorded = new Set(this.db.prepare('SELECT date FROM task_day_snapshots WHERE child_id = ? AND date >= ? AND date < ?')
+      .all(childId, start, to).map(row => row.date));
+    const projected = [];
+    for (let date = start; date < to; date = shiftDate(date, 1)) {
+      if (recorded.has(date) || !wanted(date)) continue;
+      for (const template of templates) {
+        if (template.since > date || !schedule.allowedOn(template.id, date) || existing.has(`${template.id}|${date}`)) continue;
+        projected.push({ id: `unopened:${template.id}:${date}`, child_id: childId, template_id: template.id,
+          source_template_id: template.id, template_created_at: template.created_at, origin: 'template',
+          title: template.title, subject: template.subject, points: template.points, date,
+          schedule_type: 'fixed_days', weekly_target_times: null, is_completed: 0, completed_at: null,
+          track_time: template.track_time ? 1 : 0, expected_minutes: template.expected_minutes,
+          duration_seconds: null, carry_over: 1, due_date: null, projected: true });
+      }
+    }
+    return projected;
   }
 
   // Each day's tasks for summaries (history, all-done, rest days): its own tasks, plus tasks of
