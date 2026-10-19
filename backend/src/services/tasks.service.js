@@ -290,6 +290,19 @@ class TasksService {
     return rows;
   }
 
+  // An outside class that makes check-ins is a task on each day its lesson takes place.
+  generateClassTasks(childId, date, lessons) {
+    const classRow = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND class_id = ? AND date = ? AND COALESCE(class_lesson_date, date) = ?');
+    const insertClass = this.db.prepare(`INSERT INTO daily_tasks
+      (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, class_id, class_lesson_date)
+      VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'class', ?, ?)`);
+    for (const lesson of lessons) {
+      if (!classRow.get(childId, lesson.class_id, date, lesson.class_lesson_date)) {
+        insertClass.run(generateId(), childId, lesson.title, lesson.subject, lesson.points, date, lesson.class_id, lesson.class_lesson_date);
+      }
+    }
+  }
+
   getDailyTasks(childId, targetDate) {
     if (!childId) {
       throw { status: 400, message: 'child_id is required' };
@@ -319,16 +332,7 @@ class TasksService {
       for (const goal of this.dailyGoalsOn(childId, date)) {
         if (!goalRow.get(goal.id, date)) insertGoalDailyRow(this.db, goal, date, Boolean(loggedOn.get(goal.id, date)));
       }
-      // An outside class that makes check-ins is a task on each day its lesson takes place.
-      const classRow = this.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND class_id = ? AND date = ? AND COALESCE(class_lesson_date, date) = ?');
-      const insertClass = this.db.prepare(`INSERT INTO daily_tasks
-        (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type, weekly_target_times, origin, class_id, class_lesson_date)
-        VALUES (?, ?, NULL, ?, ?, ?, ?, 0, NULL, 'fixed_days', NULL, 'class', ?, ?)`);
-      for (const lesson of classLessons) {
-        if (!classRow.get(childId, lesson.class_id, date, lesson.class_lesson_date)) {
-          insertClass.run(generateId(), childId, lesson.title, lesson.subject, lesson.points, date, lesson.class_id, lesson.class_lesson_date);
-        }
-      }
+      this.generateClassTasks(childId, date, classLessons);
     })();
     // The latest skip request tells the child whether one is waiting or was turned down.
     const latestSkip = this.db.prepare('SELECT id, status, reason FROM task_skip_requests WHERE daily_task_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1');
@@ -649,19 +653,71 @@ class TasksService {
     return { success: true, id };
   }
 
-  // Reading this list must never generate or reconcile historical rows.
-  getBackfillTasks(childId, date) {
+  validateBackfillDay(childId, date) {
     if (typeof childId !== 'string' || !childId) throw { status: 400, message: '请选择孩子' };
     parseDate(date);
     if (date >= getTodayDate()) throw { status: 400, message: '补卡日期必须早于今天' };
     if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) {
       throw { status: 404, message: '孩子不存在' };
     }
+  }
+
+  // What applied to a past day: its templates (from their creation, on allowed days, not paused)
+  // and outside-class check-ins. Weekly templates whose target that week was already met drop out,
+  // as when the day is generated.
+  pastDaySources(childId, date, schedule = this.scheduleFor(childId)) {
+    if (!schedule.childSince || date < schedule.childSince) return { templates: [], lessons: [] };
     return {
-      tasks: this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => !['goal', 'study'].includes(task.origin)),
+      templates: schedule.assigned.filter(t => t.since <= date && schedule.allowedOn(t.id, date) &&
+        (t.schedule_type !== 'weekly_times' || t.allow_extra || this.weeklyCount(childId, t.id, date) < t.weekly_target_times)),
+      lessons: this.classTasksOn(childId)(date)
+    };
+  }
+
+  // Reading this list must never generate or reconcile historical rows. A day the child never
+  // opened has no rows, so what applied that day is listed as projections (`projected: true`) for
+  // a parent to backfill; materializeBackfillDay creates them only when a parent acts.
+  getBackfillTasks(childId, date) {
+    this.validateBackfillDay(childId, date);
+    const tasks = this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => !['goal', 'study'].includes(task.origin));
+    const { templates, lessons } = this.pastDaySources(childId, date);
+    const hasTemplate = new Set(tasks.map(task => task.template_id).filter(Boolean));
+    const hasLesson = new Set(tasks.filter(task => task.class_id).map(classLessonKey));
+    const base = { child_id: childId, date, is_completed: false, is_skipped: false, completed_at: null, completion_source: null,
+      duration_seconds: null, earned_points: null, projected: true };
+    const projected = [
+      ...templates.filter(t => !hasTemplate.has(t.id)).map(t => {
+        const weekly = t.schedule_type === 'weekly_times';
+        const task = { ...base, id: `unopened:template:${t.id}`, origin: 'template', template_id: t.id, source_template_id: t.id,
+          title: t.title, subject: t.subject, points: t.points, schedule_type: t.schedule_type, weekly_target_times: weekly ? t.weekly_target_times : null,
+          track_time: Boolean(t.track_time), allow_extra: Boolean(t.allow_extra) };
+        const isExtra = weekly && this.weeklyCount(childId, t.id, date) >= t.weekly_target_times;
+        const award = isExtra ? (this.weeklyExtraRewardCount(task) < t.extra_reward_limit ? t.extra_points : 0) : t.points;
+        return { ...task, is_extra: isExtra, award_points: award };
+      }),
+      ...lessons.filter(lesson => !hasLesson.has(classLessonKey(lesson))).map(lesson => ({ ...base,
+        id: `unopened:class:${lesson.class_id}:${lesson.class_lesson_date}`, origin: 'class', template_id: null,
+        class_id: lesson.class_id, class_lesson_date: lesson.class_lesson_date, title: lesson.title, subject: lesson.subject,
+        points: lesson.points, award_points: lesson.points, schedule_type: 'fixed_days', weekly_target_times: null,
+        track_time: false, allow_extra: false, is_extra: false }))
+    ];
+    return {
+      tasks: [...tasks, ...projected],
       events: this.db.prepare('SELECT * FROM task_backfill_events WHERE child_id = ? AND task_date = ? ORDER BY created_at DESC, rowid DESC')
         .all(childId, date)
     };
+  }
+
+  // A parent acting on an unopened past day creates that day's rows as the board would have, so
+  // weekly completion keeps one snapshot of the day.
+  materializeBackfillDay(childId, date) {
+    this.validateBackfillDay(childId, date);
+    const { templates, lessons } = this.pastDaySources(childId, date);
+    this.db.transaction(() => {
+      this.generateTemplateTasks(childId, date, templates);
+      this.generateClassTasks(childId, date, lessons);
+    })();
+    return this.getBackfillTasks(childId, date);
   }
 
   backfillDailyTask(taskId, { duration_seconds = null } = {}) {

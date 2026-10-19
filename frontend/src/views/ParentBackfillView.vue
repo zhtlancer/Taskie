@@ -4,7 +4,7 @@
     <main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <router-link to="/parent/dashboard" class="text-sm font-bold text-brand-600">← 返回数据总览</router-link>
       <h2 class="text-xl font-black text-slate-800">{{ childName }} · 家长补卡</h2>
-      <p class="text-sm text-slate-500">选择过去日期，为当天已有的普通任务补记完成。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
+      <p class="text-sm text-slate-500">选择过去日期，为当天的普通任务补记完成。孩子当天没打开 App 的任务也会列出。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
       <label class="flex items-center gap-3 text-sm font-bold text-slate-700">
         任务日期
         <input v-model="date" type="date" :max="yesterday" :disabled="busy" class="rounded-xl border p-2" @change="load" />
@@ -12,7 +12,7 @@
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ error }}</p>
       <p v-if="loading" class="text-slate-500">正在加载…</p>
       <template v-else>
-        <p v-if="!tasks.length" class="bg-white rounded-2xl p-5 text-sm text-slate-500">当天没有已生成的普通任务记录。长期任务请到「假期与长期任务」补记进度。</p>
+        <p v-if="!tasks.length" class="bg-white rounded-2xl p-5 text-sm text-slate-500">当天没有需要完成的任务。长期任务请到「假期与长期任务」补记进度。</p>
         <article v-for="task in tasks" :key="task.id" class="bg-white border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3">
             <div>
@@ -23,6 +23,7 @@
                 <span v-if="task.is_extra" class="text-violet-600"> · 额外挑战（不影响考核）</span>
                 <template v-if="task.schedule_type === 'weekly_times'"> · 每周目标 {{ task.weekly_target_times }} 次</template>
                 <template v-if="task.duration_seconds"> · 用时 {{ Math.round(task.duration_seconds / 60) }} 分钟</template>
+                <span v-if="task.projected" class="text-amber-600"> · 当天未打开 App</span>
               </p>
             </div>
             <button v-if="task.is_completed && task.completion_source === 'parent_backfill'" :disabled="busy || loading" class="text-sm font-bold text-rose-600 disabled:opacity-50" @click="act(task, 'undo')">撤销补卡</button>
@@ -83,6 +84,15 @@ async function load() {
   }
 }
 
+async function materialize(task) {
+  const result = await api.materializeBackfillDay(route.params.id, task.date);
+  const row = result.tasks.find(item => !item.projected && (task.class_id
+    ? item.class_id === task.class_id && item.class_lesson_date === task.class_lesson_date
+    : item.template_id === task.template_id));
+  if (!row) throw '当天的任务已变化，请刷新后重试';
+  return row;
+}
+
 async function act(task, action) {
   if (busy.value || loading.value) return;
   const message = action === 'complete'
@@ -91,11 +101,13 @@ async function act(task, action) {
       ? `撤销${childName.value} ${task.date} 的「${task.title}」补卡？将扣回 ${task.earned_points ?? task.points} 积分，已兑换时余额可能为负。`
       : `撤销 ${task.date} 的「${task.title}」跳过状态？`;
   if (!confirm(message)) return;
+  const value = minutes.value[task.id];
   busy.value = true;
   error.value = '';
   try {
+    // A task of a day the child never opened exists only once the parent acts on it.
+    if (task.projected) task = await materialize(task);
     if (action === 'complete') {
-      const value = minutes.value[task.id];
       await api.backfillDailyTask(task.id, { duration_seconds: value ? Number(value) * 60 : null });
     } else if (action === 'undo') await api.undoBackfillDailyTask(task.id);
     else await api.unskipDailyTask(task.id);

@@ -175,3 +175,55 @@ test('backfill markers and audit survive backup restore; v14 migrates and damage
   assert.equal(ctx.db.pragma('user_version', { simple: true }), 17);
   assert.equal((await ctx.list()).json().events.length, 0);
 });
+
+test('unopened past days list projections without writing, and a parent materializes them on demand', async t => {
+  const ctx = await fixture(t);
+  const lastMonday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
+  const day = n => shiftDate(lastMonday, n);
+  const backdate = `${day(-30)}T04:00:00.000Z`;
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(backdate);
+  const daily = ctx.tasks.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], points: 10 });
+  const weekly = ctx.tasks.createTemplate({ title: '跳绳', subject: '体育', days_of_week: [0, 1, 2, 3, 4, 5, 6], points: 5,
+    schedule_type: 'weekly_times', weekly_target_times: 1 });
+  ctx.tasks.createTemplate({ title: '周日阅读', subject: '语文', days_of_week: [0], points: 5 });
+  const piano = (await ctx.app.inject({ method: 'POST', url: '/api/outside-classes', payload: {
+    title: '钢琴课', days_of_week: [2], start_time: '16:30', end_time: '17:30', start_date: day(-30), create_task: true, points: 8
+  } })).json();
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(backdate);
+  ctx.db.prepare('UPDATE outside_classes SET created_at = ?').run(backdate);
+  const count = () => ctx.db.prepare('SELECT COUNT(*) n FROM daily_tasks').get().n;
+  const materialize = (date, headers) => ctx.rawInject({ method: 'POST', url: '/api/daily-tasks/backfill/day', payload: { child_id: ctx.child.id, date },
+    headers: headers || { authorization: `Bearer ${ctx.app.jwt.sign({ role: 'parent', epoch: ctx.app.sessionEpoch() })}` } });
+
+  // Tuesday was never opened: its templates and piano check-in are projected, nothing is written.
+  const before = count();
+  const projected = (await ctx.list(day(1))).json().tasks;
+  assert.deepEqual(projected.map(task => [task.title, task.projected]).sort(), [['口算', true], ['跳绳', true], ['钢琴课', true]]);
+  assert.equal(projected.find(task => task.title === '钢琴课').class_id, piano.id);
+  assert.equal(count(), before, 'listing an unopened day must not create tasks');
+  assert.deepEqual((await ctx.list(day(-31))).json().tasks, [], 'nothing applied before the child existed');
+
+  const child = { authorization: `Bearer ${ctx.app.jwt.sign({ role: 'child', child_id: ctx.child.id, epoch: ctx.app.sessionEpoch() })}` };
+  assert.equal((await materialize(day(1), child)).statusCode, 403);
+  for (const date of [getTodayDate(), 'bad']) assert.equal((await materialize(date)).statusCode, 400);
+
+  for (let i = 0; i < 2; i++) {
+    const response = await materialize(day(1));
+    assert.equal(response.statusCode, 200, response.body);
+    assert.ok(response.json().tasks.every(task => !task.projected));
+    assert.equal(response.json().tasks.length, 3);
+  }
+  assert.equal(count(), before + 3, 'materializing is idempotent');
+  const rows = (await ctx.list(day(1))).json().tasks;
+  const row = rows.find(task => task.template_id === daily.id);
+  assert.equal((await ctx.post(row.id)).json().points_earned, 10);
+  assert.equal((await ctx.post(rows.find(task => task.title === '钢琴课').id)).json().points_earned, 8);
+  const completion = ctx.app.services.statsService.getWeeklyCompletion(ctx.child.id, day(0), day(6), day(6));
+  assert.equal(completion.items.find(item => item.title === '口算').completed, 1);
+
+  // A weekly target met on Thursday drops the weekly template from Tuesday's projection.
+  const thursday = (await materialize(day(3))).json().tasks;
+  assert.equal((await ctx.post(thursday.find(task => task.template_id === weekly.id).id)).statusCode, 200);
+  assert.ok(!(await ctx.list(day(2))).json().tasks.some(task => task.template_id === weekly.id));
+  assert.ok((await ctx.list(day(2))).json().tasks.some(task => task.template_id === daily.id));
+});

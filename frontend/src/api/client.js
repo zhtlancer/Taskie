@@ -55,6 +55,7 @@ export const api = {
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
   // data.duration_seconds: the time a timed task took (null for none); left out, the timer's time counts.
   getBackfillTasks: (id, date) => get('/daily-tasks/backfill', { child_id: id, date }),
+  materializeBackfillDay: (id, date) => post('/daily-tasks/backfill/day', { child_id: id, date }),
   backfillDailyTask: (id, data) => post(`/daily-tasks/${id}/backfill`, data),
   undoBackfillDailyTask: id => post(`/daily-tasks/${id}/undo-backfill`),
   completeDailyTask: (id, data) => post(`/daily-tasks/${id}/complete`, data),

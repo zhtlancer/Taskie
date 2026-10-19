@@ -41,6 +41,13 @@ async function dailyTasksRoutes(fastify, options) {
       return reply.code(err.status || 500).send({ error: err.message || '操作失败' });
     }
   });
+  fastify.post('/backfill/day', async (request, reply) => {
+    try {
+      return tasksService.materializeBackfillDay(request.body?.child_id, request.body?.date);
+    } catch (err) {
+      return reply.code(err.status || 500).send({ error: err.message || '操作失败' });
+    }
+  });
   for (const [path, method] of [['backfill', 'backfillDailyTask'], ['undo-backfill', 'undoBackfillDailyTask']]) {
     fastify.post(`/:id/${path}`, async (request, reply) => {
       try {
