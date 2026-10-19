@@ -286,7 +286,7 @@ test('study snapshots, memory, attempts and points survive backup; missing v17 d
   for (const table of ['word_study_attempts', 'word_study_items', 'word_study_batches', 'word_study_days', 'word_study_states', 'word_study_plans']) legacy.exec(`DROP TABLE ${table}`);
   legacy.pragma('user_version = 16');
   backup.restore(gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') })));
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 18);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 19);
   assert.deepEqual(ctx.study.plans(ctx.child.id), []);
   legacy.close();
 });

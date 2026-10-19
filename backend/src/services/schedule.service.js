@@ -444,3 +444,4 @@ class ScheduleService {
 
 module.exports = ScheduleService;
 module.exports.CLASS_TASK_SUBJECT = CLASS_TASK_SUBJECT;
+module.exports.weekLabel = weekLabel;

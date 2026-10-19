@@ -260,7 +260,7 @@ test('v7 holiday tasks migrate to long-term tasks with their progress, child and
 
     initDb(db);
     initDb(db);
-    assert.equal(db.pragma('user_version', { simple: true }), 18);
+    assert.equal(db.pragma('user_version', { simple: true }), 19);
     assert.equal(db.pragma('foreign_keys', { simple: true }), 1);
     assert.deepEqual(db.prepare('SELECT id, period_id, child_id, start_date, end_date, input_mode, completed_at FROM period_tasks ORDER BY id').all(), [
       { id: 'done', period_id: 'p', child_id: 'c', start_date: '2026-01-20', end_date: '2026-02-25', input_mode: 'increment', completed_at: '2026-01-22T10:00:00Z' },

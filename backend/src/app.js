@@ -22,6 +22,7 @@ const TimersService = require('./services/timers.service');
 const ScheduleService = require('./services/schedule.service');
 const TimeStatsService = require('./services/time-stats.service');
 const WordStudyService = require('./services/word-study.service');
+const HomeworkService = require('./services/homework.service');
 const wordStudyRoutes = require('./routes/word-study.routes');
 const { installAuthorization, getSetting } = require('./auth');
 const { DeviceRegistry, installDeviceGate, deviceRoutes } = require('./device-auth');
@@ -42,6 +43,7 @@ const adhocTasksRoutes = require('./routes/adhoc-tasks.routes');
 const skipsRoutes = require('./routes/skips.routes');
 const timersRoutes = require('./routes/timers.routes');
 const scheduleRoutes = require('./routes/schedule.routes');
+const homeworkRoutes = require('./routes/homework.routes');
 
 function buildApp(opts = {}) {
   console.log('  1/4 正在配置 Fastify 与上传目录...');
@@ -81,6 +83,8 @@ function buildApp(opts = {}) {
   tasksService.wordStudyService = wordStudyService;
   statsService.wordStudyService = wordStudyService;
   rewardsService.wordStudyService = wordStudyService;
+  const homeworkService = new HomeworkService(db, tasksService, scheduleService);
+  tasksService.homeworkService = homeworkService;
 
   // Decorate fastify with services and db for easy access
   fastify.decorate('db', db);
@@ -98,7 +102,8 @@ function buildApp(opts = {}) {
     timersService,
     scheduleService,
     timeStatsService,
-    wordStudyService
+    wordStudyService,
+    homeworkService
   });
 
   console.log('  4/4 正在挂载路由与静态资源中间件...');
@@ -200,6 +205,7 @@ function buildApp(opts = {}) {
   fastify.register(timersRoutes, { prefix: '/api', timersService, tasksService, periodsService });
   fastify.register(scheduleRoutes, { prefix: '/api', scheduleService });
   fastify.register(wordStudyRoutes, { prefix: '/api', wordStudyService });
+  fastify.register(homeworkRoutes, { prefix: '/api', homeworkService });
 
   return fastify;
 }

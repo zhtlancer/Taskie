@@ -383,10 +383,12 @@ class TasksService {
     const carried = carriedRows
       .filter(({ row }) => row.is_completed ? row.completion_source !== 'parent_backfill' && doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
       .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, is_optional: due > date }));
+    // A one-off task made from a homework record shows what the homework is.
+    const homeworkOf = this.homeworkService ? this.homeworkService.homeworkByTask(childId) : new Map();
     return [...this.describeTasksBetween(childId, date, date).filter(isActiveTask), ...carried]
       .map(task => {
         const lesson = task.class_id && lessonOf.get(classLessonKey(task));
-        return { ...task, skip_request: latestSkip.get(task.id) || null,
+        return { ...task, skip_request: latestSkip.get(task.id) || null, homework: homeworkOf.get(task.id) || null,
           class_lesson: lesson ? { start_time: lesson.start_time, end_time: lesson.end_time, location: lesson.location, institution: lesson.institution } : null };
       });
   }

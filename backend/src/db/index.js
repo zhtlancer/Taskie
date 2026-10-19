@@ -373,6 +373,9 @@ function initDb(db) {
       db.pragma('user_version = 18');
     })();
   }
+  // v19: homework records and per-course homework points come from schema.sql; the version tells
+  // backups that carry them apart from older ones.
+  if (db.pragma('user_version', { simple: true }) < 19) db.pragma('user_version = 19');
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

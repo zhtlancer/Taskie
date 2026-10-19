@@ -471,3 +471,31 @@ CREATE TABLE IF NOT EXISTS task_day_snapshots (
   date TEXT NOT NULL,
   PRIMARY KEY(child_id, date)
 );
+
+-- Homework a teacher set in a school lesson or an outside class (作业记录), kept to look up later.
+-- A record may own one one-off task on the board; a child's record asks a parent before its task
+-- is created (task_requested). Subject is the timetable subject or a snapshot of the class title.
+CREATE TABLE IF NOT EXISTS homework_records (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  course_kind TEXT NOT NULL CHECK(course_kind IN ('school', 'class')),
+  subject TEXT NOT NULL,
+  class_id TEXT REFERENCES outside_classes(id) ON DELETE SET NULL,
+  assigned_date TEXT NOT NULL,      -- YYYY-MM-DD, the lesson it was set in
+  due_date TEXT,                    -- last day to do it; NULL: unknown (no next lesson found)
+  content TEXT NOT NULL,
+  points INTEGER NOT NULL,          -- for its task
+  created_by TEXT NOT NULL CHECK(created_by IN ('parent', 'child')),
+  task_requested INTEGER NOT NULL DEFAULT 0,
+  daily_task_id TEXT REFERENCES daily_tasks(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_homework_child_date ON homework_records(child_id, assigned_date);
+CREATE INDEX IF NOT EXISTS idx_homework_task ON homework_records(daily_task_id);
+
+-- Default points of a homework task per course: 'school:<subject>' or 'class:<outside class id>'.
+CREATE TABLE IF NOT EXISTS homework_course_points (
+  course_key TEXT PRIMARY KEY,
+  points INTEGER NOT NULL
+);
