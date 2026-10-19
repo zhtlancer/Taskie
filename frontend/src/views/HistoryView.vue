@@ -197,7 +197,7 @@
                   {{ formatDate(item.date) }}
                 </div>
                 <div class="text-xs text-slate-400">
-                  {{ item.not_opened ? '未打卡：当天没有打开' : item.total_tasks === 0 ? '休息日' : `完成 ${item.completed_tasks} / ${item.total_tasks} 项` }}{{ item.skipped_tasks ? ` · 跳过 ${item.skipped_tasks} 项` : '' }}
+                  {{ item.not_opened ? '当天没有打开 App' : item.total_tasks === 0 ? '休息日' : `完成 ${item.completed_tasks} / ${item.total_tasks} 项` }}{{ item.skipped_tasks ? ` · 跳过 ${item.skipped_tasks} 项` : '' }}
                   <span v-if="item.tasks?.some(task => task.completion_source === 'parent_backfill')" class="text-sky-600"> · 含家长补记</span>
                 </div>
               </div>
