@@ -81,7 +81,12 @@ class WordStudyService {
 
   ensureScheduled(childId) {
     const today = getTodayDate();
-    const plans = this.db.prepare('SELECT * FROM word_study_plans WHERE child_id = ?').all(childId);
+    const hasDay = this.db.prepare('SELECT 1 FROM word_study_days WHERE plan_id = ? AND date = ?');
+    // Most reads find every plan already scheduled through today; they must not write. A study day
+    // without a list (nothing to learn yet) is checked again, in case words were added since.
+    const settled = plan => plan.last_scheduled_date === today && (!plan.enabled || today < plan.start_date ||
+      !parseList(plan.days_of_week).includes(getDayOfWeek(today)) || Boolean(hasDay.get(plan.id, today)));
+    const plans = this.db.prepare('SELECT * FROM word_study_plans WHERE child_id = ?').all(childId).filter(plan => !settled(plan));
     if (!plans.length) return;
     this.db.transaction(() => {
       for (const plan of plans) {
@@ -102,7 +107,7 @@ class WordStudyService {
           if (candidates.length) this.db.prepare(`INSERT INTO daily_tasks (id, child_id, title, subject, points, date, origin, study_day_id)
             VALUES (?, ?, ?, '语文', ?, ?, 'study', ?)`).run(generateId(), childId, title(plan.skill), plan.points, date, day.id);
         }
-        this.db.prepare('UPDATE word_study_plans SET last_scheduled_date = ? WHERE id = ?').run(today, plan.id);
+        if (plan.last_scheduled_date !== today) this.db.prepare('UPDATE word_study_plans SET last_scheduled_date = ? WHERE id = ?').run(today, plan.id);
       }
     })();
   }

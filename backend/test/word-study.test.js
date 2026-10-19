@@ -309,3 +309,23 @@ test('missed study days show on the parent backfill page and can be skipped, nev
   ctx.app.services.skipsService.unskip(missed.id);
   assert.equal(ctx.tasks.getBackfillTasks(ctx.child.id, '2026-10-13').tasks.find(task => task.id === missed.id).is_skipped, false);
 });
+
+test('reads that find every plan scheduled through today do not write', async t => {
+  const ctx = await fixture(t);
+  ctx.plan({ days_of_week: [1, 2] });
+  ctx.today();
+  const changes = () => ctx.db.prepare('SELECT total_changes() AS n').get().n;
+  const before = changes();
+  ctx.today();
+  ctx.tasks.getDailyTasks(ctx.child.id);
+  ctx.rewards.getCurrentStreak(ctx.child.id);
+  ctx.stats.getWeeklySummary(ctx.child.id);
+  assert.equal(changes(), before, 'no list today and no words: nothing to write');
+  // A word added later the same day still gets today's list on the next read.
+  ctx.add('山');
+  assert.equal(ctx.today().length, 1);
+  const after = changes();
+  ctx.today();
+  ctx.tasks.getDailyTasks(ctx.child.id);
+  assert.equal(changes(), after, 'once today has its list, reads stay read-only');
+});
