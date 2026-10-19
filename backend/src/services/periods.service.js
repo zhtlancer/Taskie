@@ -294,18 +294,20 @@ class PeriodsService {
     return { success: true, id };
   }
 
-  // Days already logged stay in history; days still waiting for an entry are dropped.
+  // Days already logged stay in history; days still waiting for an entry are dropped from today on.
+  // Earlier pending rows are kept: history reads hide those the task no longer requires, so a
+  // change that excuses past days can be undone without losing them.
   removePendingDailyRows(taskId) {
-    this.db.prepare('DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0').run(taskId);
+    this.db.prepare('DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0 AND date >= ?').run(taskId, getTodayDate());
   }
 
   prunePendingDailyRows(task) {
     if (!task.daily_required) return this.removePendingDailyRows(task.id);
     const lastDate = this.db.prepare('SELECT MAX(date) AS date FROM period_task_logs WHERE period_task_id = ?').get(task.id).date;
     const finishedOn = completedOn(task, lastDate);
-    this.db.prepare(`DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0
+    this.db.prepare(`DELETE FROM daily_tasks WHERE goal_id = ? AND is_completed = 0 AND date >= ?
       AND (date < ? OR (? IS NOT NULL AND date > ?) OR (? IS NOT NULL AND date > ?))`)
-      .run(task.id, task.start_date, task.end_date, task.end_date, finishedOn, finishedOn);
+      .run(task.id, getTodayDate(), task.start_date, task.end_date, task.end_date, finishedOn, finishedOn);
   }
 
   validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false, track_time, expected_minutes }) {

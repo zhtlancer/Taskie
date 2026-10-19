@@ -275,3 +275,66 @@ test('v7 holiday tasks migrate to long-term tasks with their progress, child and
     db.close();
   }
 });
+
+// A daily-required goal from Monday 10-12, read on Monday 10-19: every day logged except Wednesday
+// 10-14, which the child opened and missed.
+async function missedWednesday(t) {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-19T04:00:00Z') });
+  const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
+  const { childrenService, periodsService, tasksService, statsService, rewardsService } = ctx.app.services;
+  const child = childrenService.createChild({ name: '漏记一天' });
+  ctx.db.prepare('UPDATE children SET created_at = ?').run('2026-10-01T04:00:00Z');
+  const goal = periodsService.createGoal(child.id, { title: '每天读书', subject: '语文', mode: 'progress', total_amount: 100, unit: '页', daily_required: true, start_date: '2026-10-12', points: 1 });
+  for (const date of ['2026-10-12', '2026-10-13', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18']) {
+    periodsService.logProgress(goal.id, { amount: 1, date }, { role: 'parent' });
+  }
+  tasksService.getDailyTasks(child.id, '2026-10-14');
+  const state = () => ({
+    history: statsService.getHistory(child.id, '2026-10-12', '2026-10-18').map(day => [day.total_tasks, day.completed_tasks, day.all_done]),
+    streak: rewardsService.getCurrentStreak(child.id, '2026-10-18'),
+    week: statsService.getWeeklyCompletion(child.id, '2026-10-12', '2026-10-18', '2026-10-18').items.map(item => [item.completed, item.total])
+  });
+  const wednesday = () => ctx.db.prepare("SELECT is_completed FROM daily_tasks WHERE goal_id = ? AND date = '2026-10-14'").get(goal.id);
+  return { ctx, child, goal, periodsService, state, wednesday };
+}
+
+const excuses = {
+  'turning daily logging off': [{ daily_required: false }, { daily_required: true }],
+  'starting the goal later': [{ start_date: '2026-10-15' }, { start_date: '2026-10-12' }],
+  'ending the goal earlier': [{ end_date: '2026-10-13' }, { end_date: null }]
+};
+for (const [name, [change, undo]] of Object.entries(excuses)) {
+  test(`${name} excuses a missed past day, and undoing it restores the miss everywhere`, async t => {
+    const { periodsService, goal, state, wednesday } = await missedWednesday(t);
+    const before = state();
+    assert.deepEqual([before.history[2], before.streak, before.week], [[1, 0, false], 4, [[6, 7]]]);
+    periodsService.updateTask(goal.id, change);
+    const excused = state();
+    assert.deepEqual([excused.history[2], excused.streak], [[0, 0, false], 6], 'Wednesday becomes a rest day');
+    assert.deepEqual(wednesday(), { is_completed: 0 }, 'the missed row is kept, only hidden');
+    periodsService.updateTask(goal.id, undo);
+    assert.deepEqual(state(), before, 'history, streak and weekly completion agree again');
+  });
+}
+
+test('deleting a goal excuses its missed past days without exposing the kept rows', async t => {
+  const { periodsService, goal, state, wednesday } = await missedWednesday(t);
+  periodsService.deleteTask(goal.id);
+  const after = state();
+  // Logged days still count; the kept missed row does not resurface (6/7).
+  assert.deepEqual([after.history[2], after.week], [[0, 0, false], [[6, 6]]]);
+  assert.deepEqual(wednesday(), { is_completed: 0 });
+});
+
+test('a holiday shortened and restored keeps its task\'s missed past day consistent', async t => {
+  const { ctx, child, periodsService } = await missedWednesday(t);
+  const autumn = periodsService.createPeriod(child.id, { name: '秋假', start_date: '2026-10-12', end_date: '2026-10-20' });
+  const homework = periodsService.createTask(autumn.id, { title: '假期阅读', subject: '语文', mode: 'progress', total_amount: 50, unit: '页', daily_required: true });
+  ctx.app.services.tasksService.getDailyTasks(child.id, '2026-10-14');
+  const missed = () => ctx.app.services.statsService.getHistory(child.id, '2026-10-14', '2026-10-14')[0].tasks.filter(task => task.title === homework.title && !task.is_completed).length;
+  assert.equal(missed(), 1);
+  periodsService.updatePeriod(autumn.id, { start_date: '2026-10-15' });
+  assert.equal(missed(), 0);
+  periodsService.updatePeriod(autumn.id, { start_date: '2026-10-12' });
+  assert.equal(missed(), 1);
+});
