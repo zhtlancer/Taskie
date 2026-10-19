@@ -56,15 +56,16 @@ class PeriodsService {
     };
   }
 
+  // A holiday may be set on past days too, to excuse them; calendar changes go through changeCalendar.
   createPeriod(childId, body) {
     this.requireChild(childId);
     const fields = this.validatePeriod(childId, body);
     const id = generateId();
-    this.db.transaction(() => {
+    this.db.transaction(() => this.changeCalendar(childId, () => {
       this.db.prepare('INSERT INTO periods (id, child_id, name, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run(id, childId, fields.name, fields.start_date, fields.end_date, new Date().toISOString());
       this.setPausedTemplates(id, fields.paused_template_ids ?? []);
-    })();
+    }))();
     return this.describePeriod(this.getPeriod(id));
   }
 
@@ -72,7 +73,7 @@ class PeriodsService {
     const existing = this.getPeriod(id);
     if (!existing) throw { status: 404, message: '假期不存在' };
     const fields = this.validatePeriod(existing.child_id, { ...existing, ...body }, id);
-    this.db.transaction(() => {
+    this.db.transaction(() => this.changeCalendar(existing.child_id, () => {
       this.db.prepare('UPDATE periods SET name = ?, start_date = ?, end_date = ? WHERE id = ?')
         .run(fields.name, fields.start_date, fields.end_date, id);
       // Holiday tasks follow their period's dates.
@@ -80,17 +81,18 @@ class PeriodsService {
         .run(fields.start_date, fields.end_date, id);
       for (const task of this.db.prepare('SELECT * FROM period_tasks WHERE period_id = ?').all(id)) this.prunePendingDailyRows(task);
       if (body.paused_template_ids !== undefined) this.setPausedTemplates(id, fields.paused_template_ids);
-    })();
+    }))();
     return this.describePeriod(this.getPeriod(id));
   }
 
   // Points already earned in the period stay with the child (point_logs keep them, unlinked).
   deletePeriod(id) {
-    if (!this.getPeriod(id)) throw { status: 404, message: '假期不存在' };
-    this.db.transaction(() => {
+    const existing = this.getPeriod(id);
+    if (!existing) throw { status: 404, message: '假期不存在' };
+    this.db.transaction(() => this.changeCalendar(existing.child_id, () => {
       for (const { id: taskId } of this.db.prepare('SELECT id FROM period_tasks WHERE period_id = ?').all(id)) this.removePendingDailyRows(taskId);
       this.db.prepare('DELETE FROM periods WHERE id = ?').run(id);
-    })();
+    }))();
     return { success: true, id };
   }
 
@@ -127,8 +129,8 @@ class PeriodsService {
     return this.db.prepare('SELECT * FROM makeup_days WHERE child_id = ? ORDER BY date DESC').all(childId);
   }
 
-  // A make-up day moves the end of a break, so earlier tasks waiting it out must not have their
-  // deadline cross today (see TasksService.guardCarryDeadlines).
+  // A holiday or make-up day moves the end of a break, so earlier tasks waiting it out must not
+  // have their deadline cross today (see TasksService.guardCarryDeadlines).
   changeCalendar(childId, change) {
     return this.tasksService ? this.tasksService.guardCarryDeadlines(childId, change) : change();
   }

@@ -398,10 +398,10 @@ class TasksService {
       .map(row => [`${row.source_template_id ?? row.template_id}|${row.date}`, { row, due: schedule.calendar.carryUntil(row.date) }]));
   }
 
-  // Applies a calendar change (a make-up day) without moving a past task's deadline across today:
+  // Applies a calendar change (a holiday or make-up day) without moving a past task's deadline across today:
   // a task already closed stays closed and an open one cannot close in the past. Deadlines that
   // stay ahead of today follow the new calendar. Moved tasks keep their old deadline as due_date,
-  // saving an unopened day first.
+  // saving an unopened day first. A task the change removes (a holiday pausing it) is excused.
   guardCarryDeadlines(childId, change) {
     const today = getTodayDate();
     const before = this.carryDeadlines(childId);
@@ -411,7 +411,8 @@ class TasksService {
     const pin = this.db.prepare('UPDATE daily_tasks SET due_date = ? WHERE id = ?');
     const saved = new Map();
     for (const [key, { row, due }] of before) {
-      const next = after.get(key)?.due ?? row.date;
+      if (!after.has(key)) continue;
+      const next = after.get(key).due;
       if (next === due || (due >= today && next >= today)) continue;
       if (!row.projected) {
         pin.run(due, row.id);

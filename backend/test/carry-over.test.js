@@ -158,6 +158,46 @@ test("removing today's make-up day keeps a completed overdue card closed to corr
   assert.deepEqual(tasks.getDailyTasks(child.id), []);
 });
 
+test('a holiday set today keeps an overdue Friday task closed', async t => {
+  const { periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, '2026-10-19T04:00:00Z'); // Monday
+  tasksService.getDailyTasks(child.id, '2026-10-16');
+  const sunday = () => tasksService.summaryTasksBetween(child.id, '2026-10-18', '2026-10-18').map(task => [task.title, task.carried_from]);
+  assert.deepEqual(sunday(), [['周五口算', '2026-10-16']], 'missed on Sunday');
+  periodsService.createPeriod(child.id, { name: '秋假', start_date: '2026-10-19', end_date: '2026-10-23' });
+  assert.deepEqual(sunday(), [['周五口算', '2026-10-16']]);
+  assert.equal(fridayRow().due_date, '2026-10-18');
+  assert.equal(tasksService.childMayActOn(fridayRow()), false);
+  assert.deepEqual(tasksService.getDailyTasks(child.id), []);
+  assert.equal(saturday().total_tasks, 0);
+});
+
+for (const action of ['delete', 'end early']) {
+  test(`a holiday under way (${action}) keeps an open Friday task open`, async t => {
+    const { periodsService, tasksService, child, fridayRow } = await carryChild(t, '2026-10-17T04:00:00Z'); // Saturday
+    const autumn = periodsService.createPeriod(child.id, { name: '秋假', start_date: '2026-10-19', end_date: '2026-10-23' });
+    tasksService.getDailyTasks(child.id, '2026-10-16');
+    t.mock.timers.setTime(new Date('2026-10-20T04:00:00Z').getTime()); // Tuesday, inside the holiday
+    assert.equal(tasksService.getDailyTasks(child.id)[0].due_date, '2026-10-25');
+    if (action === 'delete') periodsService.deletePeriod(autumn.id);
+    else periodsService.updatePeriod(autumn.id, { end_date: '2026-10-19' });
+    assert.equal(fridayRow().due_date, '2026-10-25');
+    assert.equal(tasksService.childMayActOn(fridayRow()), true);
+    assert.deepEqual(tasksService.summaryTasksBetween(child.id, '2026-10-17', '2026-10-19'), [], 'no day before today gains a missed task');
+  });
+}
+
+test('a holiday set on past days still excuses a missed task, and removing it restores the miss', async t => {
+  const { periodsService, tasksService, child, template, fridayRow } = await carryChild(t, '2026-10-19T04:00:00Z'); // Monday
+  const sunday = () => tasksService.summaryTasksBetween(child.id, '2026-10-18', '2026-10-18').length;
+  assert.equal(sunday(), 1, "the unopened Friday's task was missed on Sunday");
+  const excuse = periodsService.createPeriod(child.id, { name: '病假', start_date: '2026-10-16', end_date: '2026-10-16', paused_template_ids: [template.id] });
+  assert.equal(sunday(), 0);
+  assert.equal(fridayRow(), undefined, 'an excused day is not saved');
+  assert.equal(tasksService.hasDaySnapshot(child.id, '2026-10-16'), false);
+  periodsService.deletePeriod(excuse.id);
+  assert.equal(sunday(), 1);
+});
+
 async function fixture(t) {
   const ctx = createTestApp();
   t.after(() => cleanupTestApp(ctx));
@@ -177,7 +217,14 @@ async function fixture(t) {
   const board = date => tasksService.getDailyTasks(child.id, date);
   const find = (date, title) => board(date).find(task => task.title === title);
   const history = (from, to = from) => statsService.getHistory(child.id, from, to);
-  const holiday = (start_date, end_date, extra = {}) => periodsService.createPeriod(child.id, { name: '假期', start_date, end_date, ...extra });
+  // A holiday the parent set before the dates under test came; setting one today would keep
+  // deadlines that already passed from reopening (see guardCarryDeadlines).
+  const holiday = (start_date, end_date, { paused_template_ids = [] } = {}) => {
+    const id = randomUUID();
+    ctx.db.prepare("INSERT INTO periods (id, child_id, name, start_date, end_date, created_at) VALUES (?, ?, '假期', ?, ?, ?)")
+      .run(id, child.id, start_date, end_date, `${day(-30)}T04:00:00.000Z`);
+    for (const templateId of paused_template_ids) ctx.db.prepare('INSERT INTO period_paused_templates (period_id, template_id) VALUES (?, ?)').run(id, templateId);
+  };
   // A make-up day the parent set before it came; the service only accepts today or later.
   const makeup = (date, acts_as, note = null) => ctx.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
     .run(randomUUID(), child.id, date, acts_as, note, new Date().toISOString());
