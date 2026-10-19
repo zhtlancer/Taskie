@@ -34,6 +34,12 @@ console.log('数据库路径:', config.dbPath);
 console.log('上传目录:', config.uploadDir);
 console.log('前端静态目录:', config.clientDistDir);
 console.log('监听地址:', `${config.host}:${config.port}`);
+// Task dates, week boundaries and the midnight switch follow TIME_ZONE, not the container's clock zone.
+try {
+  console.log('家庭时区:', config.timeZone, '· 今天:', require('./utils/date').getTodayDate(), '· UTC:', new Date().toISOString());
+} catch (err) {
+  console.error(`❌ [时区配置错误] TIME_ZONE="${config.timeZone}" 无效，请使用 Asia/Shanghai 这类标准时区名:`, err.message);
+}
 console.log('==================================================');
 
 // Pre-flight check 1: Verify write permissions for the data directory
