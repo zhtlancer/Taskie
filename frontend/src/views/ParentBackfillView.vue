@@ -4,7 +4,7 @@
     <main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <router-link to="/parent/dashboard" class="text-sm font-bold text-brand-600">← 返回数据总览</router-link>
       <h2 class="text-xl font-black text-slate-800">{{ childName }} · 家长补卡</h2>
-      <p class="text-sm text-slate-500">选择过去日期，为当天的普通任务补记完成，或标记跳过。孩子当天没打开 App 的任务也会列出。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
+      <p class="text-sm text-slate-500">选择过去日期，为当天的普通任务补记完成，或标记跳过。未记录的日期按现有规则推算任务，请核对后补记。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
       <label class="flex items-center gap-3 text-sm font-bold text-slate-700">
         任务日期
         <input v-model="date" type="date" :max="yesterday" :disabled="busy" class="rounded-xl border p-2" @change="load" />
@@ -23,7 +23,7 @@
                 <span v-if="task.is_extra" class="text-violet-600"> · 额外挑战（不影响考核）</span>
                 <template v-if="task.schedule_type === 'weekly_times'"> · 每周目标 {{ task.weekly_target_times }} 次</template>
                 <template v-if="task.duration_seconds"> · 用时 {{ Math.round(task.duration_seconds / 60) }} 分钟</template>
-                <span v-if="task.projected" class="text-amber-600"> · 当天未打开 App</span>
+                <span v-if="task.projected" class="text-amber-600"> · 按现有规则推算，请核对</span>
               </p>
             </div>
             <button v-if="task.is_completed && task.completion_source === 'parent_backfill'" :disabled="busy || loading" class="text-sm font-bold text-rose-600 disabled:opacity-50" @click="act(task, 'undo')">撤销补卡</button>

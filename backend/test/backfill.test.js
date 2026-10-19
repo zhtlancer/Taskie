@@ -150,29 +150,32 @@ test('backfill markers and audit survive backup restore; v14 migrates and damage
   const ctx = await fixture(t);
   const task = ctx.create();
   await ctx.post(task.id);
+  ctx.tasks.recordDaySnapshot(ctx.child.id, ctx.date);
   const backup = ctx.app.backupService;
   const archive = fs.readFileSync(backup.getPath(backup.create().name));
   await ctx.post(task.id, 'undo-backfill');
+  ctx.db.prepare('DELETE FROM task_day_snapshots').run();
   const restore = buffer => ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(buffer) });
   assert.equal((await restore(archive)).statusCode, 200);
+  assert.equal(ctx.tasks.hasDaySnapshot(ctx.child.id, ctx.date), true);
   assert.equal((await ctx.list()).json().events.length, 1);
   assert.equal((await ctx.list()).json().tasks[0].completion_source, 'parent_backfill');
   const data = JSON.parse(gunzipSync(archive));
-  for (const mutation of ['DROP TABLE task_backfill_events', 'ALTER TABLE daily_tasks DROP COLUMN completion_source']) {
+  for (const mutation of ['DROP TABLE task_backfill_events', 'ALTER TABLE daily_tasks DROP COLUMN completion_source', 'DROP TABLE task_day_snapshots']) {
     const db = new Database(Buffer.from(data.database, 'base64'));
     db.exec(mutation);
     const damaged = gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }));
     db.close();
     const response = await restore(damaged);
     assert.equal(response.statusCode, 400, response.body);
-    assert.match(response.body, /补卡/);
+    assert.match(response.body, /补卡|快照/);
   }
   const db = new Database(Buffer.from(data.database, 'base64'));
   db.exec('DROP TABLE task_backfill_events; ALTER TABLE daily_tasks DROP COLUMN completion_source; PRAGMA user_version = 14');
   const legacy = gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }));
   db.close();
   assert.equal((await restore(legacy)).statusCode, 200);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 17);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 18);
   assert.equal((await ctx.list()).json().events.length, 0);
 });
 

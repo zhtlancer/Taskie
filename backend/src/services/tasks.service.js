@@ -326,13 +326,15 @@ class TasksService {
         this.removeUnassignedTodayTasks();
         this.reconcileCalendarDay(childId, date, schedule);
       }
-      this.generateTemplateTasks(childId, date, matching);
+      const frozen = date < getTodayDate() && this.hasDaySnapshot(childId, date);
+      if (!frozen) this.generateTemplateTasks(childId, date, matching);
       const goalRow = this.db.prepare('SELECT id FROM daily_tasks WHERE goal_id = ? AND date = ?');
       const loggedOn = this.db.prepare('SELECT 1 FROM period_task_logs WHERE period_task_id = ? AND date = ?');
       for (const goal of this.dailyGoalsOn(childId, date)) {
         if (!goalRow.get(goal.id, date)) insertGoalDailyRow(this.db, goal, date, Boolean(loggedOn.get(goal.id, date)));
       }
-      this.generateClassTasks(childId, date, classLessons);
+      if (!frozen) this.generateClassTasks(childId, date, classLessons);
+      this.recordDaySnapshot(childId, date);
     })();
     // The latest skip request tells the child whether one is waiting or was turned down.
     const latestSkip = this.db.prepare('SELECT id, status, reason FROM task_skip_requests WHERE daily_task_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1');
@@ -356,6 +358,8 @@ class TasksService {
             // too, so materializing a carry cannot hide that day's ordinary unfinished tasks.
             byDate.set(row.date, this.generateTemplateTasks(childId, row.date,
               schedule.assigned.filter(t => t.since <= row.date && schedule.allowedOn(t.id, row.date))));
+            this.generateClassTasks(childId, row.date, this.classTasksOn(childId)(row.date));
+            this.recordDaySnapshot(childId, row.date);
           }
           carried.row = byDate.get(row.date).get(row.template_id);
         }
@@ -388,9 +392,12 @@ class TasksService {
     const templates = schedule.assigned.filter(t => t.carry_over && t.schedule_type !== 'weekly_times');
     const start = [first, schedule.childSince].filter(Boolean).sort().at(-1);
     if (templates.length && schedule.childSince) {
+      // A recorded date keeps only the rows it had; later template edits cannot add carried tasks to it.
+      const recorded = new Set(this.db.prepare('SELECT date FROM task_day_snapshots WHERE child_id = ? AND date >= ? AND date < ?')
+        .all(childId, start, to).map(row => row.date));
       for (let date = start; date < to; date = shiftDate(date, 1)) {
         const due = calendar.carryUntil(date);
-        if (due < from || due <= date) continue;
+        if (due < from || due <= date || recorded.has(date)) continue;
         for (const template of templates) {
           if (template.since > date || !schedule.allowedOn(template.id, date) || existing.has(`${template.id}|${date}`)) continue;
           rows.push({ id: `unopened:${template.id}:${date}`, child_id: childId, template_id: template.id,
@@ -662,11 +669,19 @@ class TasksService {
     }
   }
 
-  // What applied to a past day: its templates (from their creation, on allowed days, not paused)
-  // and outside-class check-ins. Weekly templates whose target that week was already met drop out,
-  // as when the day is generated.
+  hasDaySnapshot(childId, date) {
+    return Boolean(this.db.prepare('SELECT 1 FROM task_day_snapshots WHERE child_id = ? AND date = ?').get(childId, date));
+  }
+
+  recordDaySnapshot(childId, date) {
+    if (!this.hasDaySnapshot(childId, date)) {
+      this.db.prepare('INSERT INTO task_day_snapshots(child_id, date) VALUES (?, ?)').run(childId, date);
+    }
+  }
+
+  // Unrecorded dates can only be reconstructed from current rules, not historical versions.
   pastDaySources(childId, date, schedule = this.scheduleFor(childId)) {
-    if (!schedule.childSince || date < schedule.childSince) return { templates: [], lessons: [] };
+    if (this.hasDaySnapshot(childId, date) || !schedule.childSince || date < schedule.childSince) return { templates: [], lessons: [] };
     return {
       templates: schedule.assigned.filter(t => t.since <= date && schedule.allowedOn(t.id, date) &&
         (t.schedule_type !== 'weekly_times' || t.allow_extra || this.weeklyCount(childId, t.id, date) < t.weekly_target_times)),
@@ -674,11 +689,11 @@ class TasksService {
     };
   }
 
-  // Reading this list must never generate or reconcile historical rows. A day the child never
-  // opened has no rows, so what applied that day is listed as projections (`projected: true`) for
-  // a parent to backfill; materializeBackfillDay creates them only when a parent acts.
+  // Study plans catch up on missed dates independently of ordinary task projections.
+  // Ordinary tasks are persisted only when a parent acts on a reconstructed date.
   getBackfillTasks(childId, date) {
     this.validateBackfillDay(childId, date);
+    this.wordStudyService?.ensureScheduled(childId);
     const tasks = this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => task.origin !== 'goal');
     const { templates, lessons } = this.pastDaySources(childId, date);
     const hasTemplate = new Set(tasks.map(task => task.template_id).filter(Boolean));
@@ -716,6 +731,7 @@ class TasksService {
     this.db.transaction(() => {
       this.generateTemplateTasks(childId, date, templates);
       this.generateClassTasks(childId, date, lessons);
+      this.recordDaySnapshot(childId, date);
     })();
     return this.getBackfillTasks(childId, date);
   }

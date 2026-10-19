@@ -286,7 +286,7 @@ test('study snapshots, memory, attempts and points survive backup; missing v17 d
   for (const table of ['word_study_attempts', 'word_study_items', 'word_study_batches', 'word_study_days', 'word_study_states', 'word_study_plans']) legacy.exec(`DROP TABLE ${table}`);
   legacy.pragma('user_version = 16');
   backup.restore(gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') })));
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 17);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 18);
   assert.deepEqual(ctx.study.plans(ctx.child.id), []);
   legacy.close();
 });
@@ -296,10 +296,15 @@ test('missed study days show on the parent backfill page and can be skipped, nev
   ctx.add('山');
   ctx.plan();
   ctx.advance('2026-10-14');
-  ctx.today();
-  const missed = ctx.tasks.getBackfillTasks(ctx.child.id, '2026-10-13').tasks.find(task => task.origin === 'study');
+  // Direct entry must work without visiting the study page first.
+  const response = await ctx.app.inject({ method: 'GET', url: `/api/daily-tasks/backfill?child_id=${ctx.child.id}&date=2026-10-13` });
+  assert.equal(response.statusCode, 200, response.body);
+  const missed = response.json().tasks.find(task => task.origin === 'study');
   assert.ok(missed, 'a missed study day is listed for parents');
   assert.equal(missed.is_completed, false);
+  const changes = ctx.db.prepare('SELECT total_changes() n').get().n;
+  ctx.tasks.getBackfillTasks(ctx.child.id, '2026-10-13');
+  assert.equal(ctx.db.prepare('SELECT total_changes() n').get().n, changes, 'repeat backfill reads do not reschedule');
   assert.throws(() => ctx.tasks.backfillDailyTask(missed.id), error => error.status === 409);
   assert.equal(ctx.stats.getHistory(ctx.child.id, '2026-10-13', '2026-10-13')[0].all_done, false);
   ctx.app.services.skipsService.requestSkip(missed.id, '生病请假', { role: 'parent' });
@@ -315,6 +320,7 @@ test('reads that find every plan scheduled through today do not write', async t 
   ctx.plan({ days_of_week: [1, 2] });
   ctx.today();
   const changes = () => ctx.db.prepare('SELECT total_changes() AS n').get().n;
+  ctx.tasks.getDailyTasks(ctx.child.id); // First board visit records even an empty day.
   const before = changes();
   ctx.today();
   ctx.tasks.getDailyTasks(ctx.child.id);

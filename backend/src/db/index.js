@@ -365,6 +365,14 @@ function initDb(db) {
       db.pragma('user_version = 17');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 18) {
+    db.transaction(() => {
+      // Legacy template/class rows prove a board was generated. Study/adhoc rows do not.
+      db.exec(`INSERT OR IGNORE INTO task_day_snapshots(child_id, date)
+        SELECT DISTINCT child_id, date FROM daily_tasks WHERE origin IN ('template', 'class')`);
+      db.pragma('user_version = 18');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

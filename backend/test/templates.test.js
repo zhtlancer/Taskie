@@ -77,7 +77,7 @@ describe('Task Templates API (/api/task-templates)', () => {
     const createChild = async name => (await ctx.app.inject({ method: 'POST', url: '/api/children', payload: { name } })).json();
     const a = await createChild('孩子A'), b = await createChild('孩子B');
     const create = payload => ctx.app.inject({ method: 'POST', url: '/api/task-templates', payload: { subject: '语文', days_of_week: [0, 1, 2, 3, 4, 5, 6], ...payload } });
-    const titles = async childId => (await ctx.app.inject({ method: 'GET', url: `/api/daily-tasks?child_id=${childId}&date=2026-10-13` })).json().map(t => t.title).sort();
+    const titles = async childId => (await ctx.app.inject({ method: 'GET', url: `/api/daily-tasks?child_id=${childId}` })).json().map(t => t.title).sort();
 
     const shared = (await create({ title: '全家任务' })).json();
     assert.equal(shared.child_ids, null);

@@ -464,3 +464,10 @@ CREATE TABLE IF NOT EXISTS word_study_attempts (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_word_study_attempts_item ON word_study_attempts(item_id);
+
+-- Records even an empty board so later template edits cannot rewrite that date.
+CREATE TABLE IF NOT EXISTS task_day_snapshots (
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  PRIMARY KEY(child_id, date)
+);
