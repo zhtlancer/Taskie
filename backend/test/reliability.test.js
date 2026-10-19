@@ -306,10 +306,6 @@ test('old schema migrates without losing existing children and fixed-day templat
   try {
     db.exec(fs.readFileSync(path.join(__dirname, '../src/db/schema.sql'), 'utf8'));
     db.prepare('INSERT INTO children VALUES (?, ?, ?, ?, ?)').run('legacy', '保留账号', '🐱', null, '2026-10-01');
-    // Recreate the pre-migration schema now that schema.sql also includes v16 columns.
-    for (const [table, columns] of Object.entries(require('../src/db').WEEKLY_EXTRA_COLUMNS)) {
-      for (const name of Object.keys(columns)) db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`);
-    }
     db.prepare('INSERT INTO task_templates VALUES (?, ?, ?, ?, ?, ?)').run('legacy-task', '旧任务', '数学', '[1]', 10, '2026-10-01');
     initDb(db); initDb(db);
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');

@@ -1,3 +1,7 @@
+-- New tables are declared here (CREATE ... IF NOT EXISTS); columns added to an existing table go
+-- only into a versioned upgrade in index.js, never into its CREATE TABLE below. One definition per
+-- object keeps fresh and upgraded databases identical (test/schema.test.js).
+
 -- Children accounts
 CREATE TABLE IF NOT EXISTS children (
   id TEXT PRIMARY KEY,
@@ -14,10 +18,7 @@ CREATE TABLE IF NOT EXISTS task_templates (
   subject TEXT NOT NULL,
   days_of_week TEXT NOT NULL, -- JSON array string, e.g. '[1,2,3,4,5]'
   points INTEGER NOT NULL DEFAULT 10,
-  created_at TEXT NOT NULL,
-  allow_extra INTEGER NOT NULL DEFAULT 0,
-  extra_points INTEGER NOT NULL DEFAULT 0,
-  extra_reward_limit INTEGER NOT NULL DEFAULT 0
+  created_at TEXT NOT NULL
 );
 
 -- Children a template is limited to (used only when task_templates.assign_all = 0)
@@ -42,11 +43,6 @@ CREATE TABLE IF NOT EXISTS daily_tasks (
   date TEXT NOT NULL, -- YYYY-MM-DD
   is_completed INTEGER NOT NULL DEFAULT 0, -- 0: false, 1: true
   completed_at TEXT,
-  allow_extra INTEGER NOT NULL DEFAULT 0,
-  extra_points INTEGER NOT NULL DEFAULT 0,
-  extra_reward_limit INTEGER NOT NULL DEFAULT 0,
-  is_extra_completion INTEGER NOT NULL DEFAULT 0,
-  earned_points INTEGER,
   FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE,
   FOREIGN KEY (template_id) REFERENCES task_templates(id) ON DELETE SET NULL
 );

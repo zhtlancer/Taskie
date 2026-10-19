@@ -114,7 +114,8 @@ function initDb(db) {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
   db.exec(schemaSql);
-  // Versioned, idempotent upgrades preserve existing NAS data.
+  // Versioned, idempotent upgrades preserve existing NAS data. They add columns to existing tables;
+  // new tables belong in schema.sql (see its header).
   if (db.pragma('user_version', { simple: true }) < 1) {
     db.transaction(() => {
       const addColumns = (table, columns) => {
@@ -330,22 +331,10 @@ function initDb(db) {
   }
   if (db.pragma('user_version', { simple: true }) < 15) {
     db.transaction(() => {
+      // task_backfill_events itself comes from schema.sql, which runs first.
       if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'completion_source')) {
         db.exec("ALTER TABLE daily_tasks ADD COLUMN completion_source TEXT");
       }
-      db.exec(`CREATE TABLE IF NOT EXISTS task_backfill_events (
-        id TEXT PRIMARY KEY,
-        child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
-        daily_task_id TEXT NOT NULL,
-        task_title TEXT NOT NULL,
-        task_date TEXT NOT NULL,
-        action TEXT NOT NULL CHECK(action IN ('complete', 'undo')),
-        actor TEXT NOT NULL DEFAULT 'parent',
-        points INTEGER NOT NULL,
-        duration_seconds INTEGER,
-        created_at TEXT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_backfill_child_date ON task_backfill_events(child_id, task_date);`);
       db.pragma('user_version = 15');
     })();
   }
