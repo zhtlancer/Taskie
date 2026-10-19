@@ -198,6 +198,56 @@ test('a holiday set on past days still excuses a missed task, and removing it re
   assert.equal(sunday(), 1);
 });
 
+for (const pinned of [false, true]) {
+  for (const undo of ['delete', 'unpause']) {
+    test(`a past holiday excuses a generated carry (${pinned ? 'pinned' : 'dynamic'} deadline), restored by ${undo}`, async t => {
+      const { child, template, tasksService: tasks, periodsService: periods, statsService: stats, rewardsService: rewards, fridayRow } =
+        await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+      const carry = tasks.getDailyTasks(child.id, '2026-10-16')[0];
+      if (pinned) periods.createMakeupDay(child.id, { date: '2026-10-18', acts_as: 1 });
+      t.mock.timers.setTime(new Date('2026-10-19T04:00:00Z').getTime()); // Monday
+      const sundayTask = tasks.createAdhocTask(child.id, { title: '周日阅读', subject: '语文', date: '2026-10-18', points: 5 });
+      tasks.backfillDailyTask(sundayTask.id);
+      const history = () => stats.getHistory(child.id, '2026-10-18', '2026-10-18')[0];
+      const before = history();
+      const week = stats.getWeeklyCompletion(child.id, '2026-10-12', '2026-10-18', '2026-10-18');
+      assert.deepEqual([before.total_tasks, before.all_done], [2, false]);
+      const saved = fridayRow();
+      const points = rewards.getTotalPoints(child.id);
+      const excuse = periods.createPeriod(child.id, { name: '病假', start_date: '2026-10-16', end_date: '2026-10-16', paused_template_ids: [template.id] });
+      assert.deepEqual([history().total_tasks, history().all_done], [1, true]);
+      assert.ok(!stats.getWeeklyCompletion(child.id, '2026-10-12', '2026-10-18', '2026-10-18').items.some(item => item.template_id === template.id));
+      assert.deepEqual(fridayRow(), { ...saved, due_date: '2026-10-18' }, 'pausing keeps the task and its original deadline for withdrawal');
+      assert.equal(rewards.getTotalPoints(child.id), points);
+      assert.ok(tasks.getBackfillTasks(child.id, '2026-10-16').tasks.some(row => row.id === carry.id), 'parents retain access to the historical row');
+
+      if (undo === 'delete') periods.deletePeriod(excuse.id);
+      else periods.updatePeriod(excuse.id, { paused_template_ids: [] });
+      assert.deepEqual(history(), before, 'withdrawing the excuse restores the original missed deadline');
+      assert.deepEqual(stats.getWeeklyCompletion(child.id, '2026-10-12', '2026-10-18', '2026-10-18'), week);
+      assert.deepEqual(fridayRow(), { ...saved, due_date: '2026-10-18' });
+      assert.equal(rewards.getTotalPoints(child.id), points);
+    });
+  }
+}
+
+test('a retroactive pause preserves a completed carried card and its correction permissions', async t => {
+  const { ctx, child, template, tasksService: tasks, periodsService: periods, rewardsService: rewards, fridayRow } =
+    await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+  tasks.updateTemplate(template.id, { track_time: true });
+  const carry = tasks.getDailyTasks(child.id)[0];
+  tasks.completeDailyTask(carry.id, { duration_seconds: 600 });
+  const before = tasks.getDailyTasks(child.id).find(row => row.id === carry.id);
+  const points = rewards.getTotalPoints(child.id);
+  periods.createPeriod(child.id, { name: '病假', start_date: '2026-10-16', end_date: '2026-10-16', paused_template_ids: [template.id] });
+  assert.deepEqual(tasks.getDailyTasks(child.id).find(row => row.id === carry.id), before);
+  assert.equal(fridayRow().due_date, '2026-10-18');
+  assert.equal(rewards.getTotalPoints(child.id), points);
+  const login = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json();
+  const edit = await ctx.rawInject({ method: 'PUT', url: `/api/daily-tasks/${carry.id}/duration`, headers: { authorization: `Bearer ${login.token}` }, payload: { duration_seconds: 900 } });
+  assert.equal(edit.statusCode, 200, edit.body);
+});
+
 async function fixture(t) {
   const ctx = createTestApp();
   t.after(() => cleanupTestApp(ctx));

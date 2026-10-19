@@ -436,7 +436,10 @@ class TasksService {
       const due = calendar.carryUntil(date);
       return due >= from && due > date;
     }));
-    return rows.filter(row => row.carry_over || row.due_date)
+    // Match ordinary history: a pause excuses unfinished saved rows too. Keep completed
+    // snapshots visible, and keep the saved rows intact so removing the pause restores them.
+    return rows.filter(row => (row.carry_over || row.due_date) &&
+      (row.is_completed || !schedule.isPaused(row.source_template_id ?? row.template_id, row.date)))
       .map(row => ({ row, due: dueDateOf(row, calendar) }))
       .filter(({ row, due }) => due >= from && due > row.date);
   }
