@@ -34,6 +34,9 @@ class StatsService {
     // A past day with nothing saved still had tasks if its configuration required any: the child
     // never opened the app that day (before automatic generation, or while the server was down).
     const isRestDay = this.tasksService.restDayChecker(childId, from, to);
+    // A recorded empty day is known history, even if today's rules would require tasks there.
+    const recordedDates = new Set(this.db.prepare('SELECT date FROM task_day_snapshots WHERE child_id = ? AND date BETWEEN ? AND ?')
+      .all(childId, from, to).map(row => row.date));
     const today = getTodayDate();
 
     // Query points by date from point_logs
@@ -67,7 +70,7 @@ class StatsService {
         skipped_tasks: summary.skipped,
         completion_rate: completionRate,
         all_done: summary.all_done,
-        not_opened: d < today && summary.total === 0 && !isRestDay(d),
+        not_opened: d < today && summary.total === 0 && !recordedDates.has(d) && !isRestDay(d),
         points_earned: pointsEarned,
         tasks: dayTasks.map(t => ({
           id: t.id,
@@ -202,10 +205,13 @@ class StatsService {
       return items.get(key);
     };
 
-    // A day counts as opened once template tasks were generated for it; one-off tasks a parent
-    // added ahead of time do not, so the templates of an unopened day are still projected.
-    // Daily-required long-term tasks count on every day they applied, projected where no row exists.
-    const openedDates = new Set(rows.filter(row => row.origin === 'template').map(row => row.date));
+    // A day counts as opened once its board was recorded (older days: once template tasks were
+    // generated for it); one-off tasks a parent added ahead of time do not, so the templates of an
+    // unopened day are still projected. A recorded day keeps the tasks it had: daily-required
+    // long-term tasks and class check-ins are projected only on unrecorded days with no row.
+    const recordedDates = new Set(this.db.prepare('SELECT date FROM task_day_snapshots WHERE child_id = ? AND date BETWEEN ? AND ?')
+      .all(childId, weekStart, cutoff).map(row => row.date));
+    const openedDates = new Set([...rows.filter(row => row.origin === 'template').map(row => row.date), ...recordedDates]);
     for (const date of getDateRangeList(weekStart, cutoff)) {
       for (const row of rows) {
         if (row.date !== date || row.origin === 'template' || isSkipped(row) || notYetDue(row)) continue;
@@ -213,11 +219,11 @@ class StatsService {
         item.total++;
         if (row.is_completed) item.completed++;
       }
-      for (const goal of goalsOn(date)) {
+      for (const goal of recordedDates.has(date) ? [] : goalsOn(date)) {
         if (!rows.some(row => row.goal_id === goal.id && row.date === date)) itemFor(keyFor({ goal_id: goal.id }), goal).total++;
       }
       // Class check-ins count on every day their lesson took place, projected where no row exists.
-      for (const lesson of classTasksOn(date)) {
+      for (const lesson of recordedDates.has(date) ? [] : classTasksOn(date)) {
         if (!rows.some(row => row.date === date && classLessonKey(row) === classLessonKey(lesson))) itemFor(keyFor(lesson), lesson).total++;
       }
       if (openedDates.has(date)) {
@@ -248,9 +254,19 @@ class StatsService {
         item.target_points_earned += row.earned_points ?? row.points;
       } else if (isSkipped(row)) item.skipped++;
     }
+    const projectedWeeklyCapacity = new Map();
     if (cutoff >= childSince) {
       for (const t of templates) {
-        if (t.schedule_type === 'weekly_times' && t.since <= cutoff && !items.has(keyFor(t))) itemFor(keyFor(t), t).target = t.weekly_target_times;
+        if (t.schedule_type !== 'weekly_times' || t.since > cutoff || items.has(keyFor(t))) continue;
+        const start = [weekStart, childSince, t.since].sort().at(-1);
+        const unseenDays = getDateRangeList(start, cutoff)
+          .filter(date => !openedDates.has(date) && schedule.allowedOn(t.id, date)).length;
+        if (!unseenDays) continue;
+        const key = keyFor(t);
+        itemFor(key, t).target = t.weekly_target_times;
+        // Only unrecorded past days can acquire obligations from today's configuration.
+        // Keep future opportunities so an ongoing week's flexible target is not due early.
+        projectedWeeklyCapacity.set(key, unseenDays + schedule.availableDays(t.id, shiftDate(cutoff, 1), weekEnd));
       }
     }
 
@@ -261,7 +277,8 @@ class StatsService {
       // creation. Real backfilled completions still count, even before creation.
       const start = [weekStart, childSince, since].sort().at(-1);
       // Weekly tasks limited to some weekdays only owe as many times as those days allow.
-      const effectiveTarget = Math.max(0, Math.min(target, schedule.availableDays(item.template_id, start, weekEnd)) - skipped);
+      const availableDays = projectedWeeklyCapacity.get(item.key) ?? schedule.availableDays(item.template_id, start, weekEnd);
+      const effectiveTarget = Math.max(0, Math.min(target, availableDays) - skipped);
       const daysAfterCutoff = schedule.availableDays(item.template_id, shiftDate(cutoff, 1), weekEnd);
       // Old deleted templates lost their identity before snapshots existed. Keep
       // each earned completion; do not invent shared quotas from matching titles.

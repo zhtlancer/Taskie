@@ -233,6 +233,12 @@ class TasksService {
         WHERE id = ?
       `).run(newTitle, newSubject, JSON.stringify(newDays), newPoints, schedule, schedule === 'weekly_times' ? target : null,
         timing.track_time ? 1 : 0, timing.expected_minutes, carry ? 1 : 0, extra.allow_extra, extra.extra_points, extra.extra_reward_limit, id);
+      // Automatic generation may already have saved today's cards before anyone opens them.
+      // Keep pending cards in sync while retaining their ids, timers and settled snapshots.
+      this.db.prepare(`UPDATE daily_tasks SET title = ?, subject = ?, points = ?, schedule_type = ?, weekly_target_times = ?
+        WHERE COALESCE(source_template_id, template_id) = ? AND origin = 'template'
+          AND date >= ? AND is_completed = 0 AND skipped_at IS NULL`)
+        .run(newTitle, newSubject, newPoints, schedule, schedule === 'weekly_times' ? target : null, id, getTodayDate());
       // New policy affects only pending tasks from today onwards, never past snapshots or awards.
       this.db.prepare(`UPDATE daily_tasks SET allow_extra = ?, extra_points = ?, extra_reward_limit = ?
         WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0 AND schedule_type = 'weekly_times'`)
@@ -646,10 +652,14 @@ class TasksService {
         weeklyDone.get(key).push(task.date);
       }
     }
+    // A recorded day keeps the tasks it had, so later templates, classes or long-term tasks never
+    // add to it; projections cover only days with no record.
+    const recorded = new Set(this.db.prepare('SELECT date FROM task_day_snapshots WHERE child_id = ? AND date BETWEEN ? AND ?')
+      .all(childId, fromDate, toDate).map(row => row.date));
     // Skipped tasks were not required that day, so a day with everything skipped is a rest day.
     return date => {
       if (byDate.has(date)) return byDate.get(date).every(task => task.is_optional || task.is_skipped);
-      if (!schedule.childSince || date < schedule.childSince) return true;
+      if (!schedule.childSince || date < schedule.childSince || recorded.has(date)) return true;
       if (goalsOn(date).length || classTasksOn(date).length) return false;
       return !schedule.assigned.some(t => {
         if (t.since > date || !schedule.allowedOn(t.id, date)) return false;
