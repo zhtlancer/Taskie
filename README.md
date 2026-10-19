@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-213%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-292%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -329,7 +329,7 @@ npm run seed:backend
 项目拥有严密的测试覆盖，共 **213 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (173 tests)
+# 运行后端全量测试 (252 tests)
 npm run test:backend
 
 # 运行前端工具测试 (40 tests)
