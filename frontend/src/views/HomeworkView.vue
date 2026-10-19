@@ -38,72 +38,149 @@
         </div>
       </header>
 
-      <!-- Course and status filters, and a search over the content -->
-      <div class="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm mb-4 space-y-3">
-        <div class="flex gap-2 overflow-x-auto whitespace-nowrap -mx-1 px-1">
-          <button
-            v-for="option in courseFilters"
-            :key="option.key"
-            type="button"
-            class="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border font-chinese"
-            :class="courseFilter === option.key ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600'"
-            @click="courseFilter = option.key"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            v-for="option in [{ key: 'all', label: '全部' }, { key: 'todo', label: '还没完成' }]"
-            :key="option.key"
-            type="button"
-            class="px-3 py-1.5 rounded-xl text-xs font-bold"
-            :class="statusFilter === option.key ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'"
-            @click="statusFilter = option.key"
-          >
-            {{ option.label }}
-          </button>
-          <input v-model="search" type="search" placeholder="搜索作业内容" class="flex-1 min-w-[160px] px-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-brand-500 font-chinese" />
-        </div>
+      <!-- The records themselves, or how each course's homework went -->
+      <div class="flex gap-2 mb-3">
+        <button
+          v-for="option in [{ key: 'list', label: '📋 作业列表' }, { key: 'summary', label: '📊 按课程统计' }]"
+          :key="option.key"
+          type="button"
+          class="px-4 py-2 rounded-xl text-xs font-bold border"
+          :class="view === option.key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-600'"
+          @click="setView(option.key)"
+        >
+          {{ option.label }}
+        </button>
       </div>
 
       <p v-if="actionError" class="mb-3 px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ actionError }}</p>
 
-      <div v-if="loading" class="text-center py-16 text-brand-500 font-bold"><span class="animate-spin mr-2">⏳</span> 正在加载作业本...</div>
+      <template v-if="view === 'list'">
+        <!-- Course and status filters, and a search over the content -->
+        <div class="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200/80 shadow-sm mb-4 space-y-3">
+          <div class="flex gap-2 overflow-x-auto whitespace-nowrap -mx-1 px-1">
+            <button
+              v-for="option in courseFilters"
+              :key="option.key"
+              type="button"
+              class="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border font-chinese"
+              :class="courseFilter === option.key ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600'"
+              @click="courseFilter = option.key"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              v-for="option in [{ key: 'all', label: '全部' }, { key: 'todo', label: '还没完成' }]"
+              :key="option.key"
+              type="button"
+              class="px-3 py-1.5 rounded-xl text-xs font-bold"
+              :class="statusFilter === option.key ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'"
+              @click="statusFilter = option.key"
+            >
+              {{ option.label }}
+            </button>
+            <input v-model="search" type="search" placeholder="搜索作业内容" class="flex-1 min-w-[160px] px-3 py-1.5 rounded-xl border border-slate-200 text-xs outline-none focus:border-brand-500 font-chinese" />
+          </div>
+          <button v-if="rangeFilter" type="button" class="px-3 py-1.5 rounded-xl bg-brand-50 text-brand-700 text-xs font-bold" @click="rangeFilter = null">
+            📅 只看{{ rangeFilter.label }}布置的 ✕
+          </button>
+        </div>
 
-      <div v-else-if="!shown.length" class="text-center py-16 bg-white rounded-3xl border border-slate-200">
-        <div class="text-5xl mb-2">📒</div>
-        <p class="text-slate-500 text-sm font-bold">{{ records.length ? '没有符合条件的作业' : '还没有作业记录，点“记作业”记下老师布置的作业吧' }}</p>
-      </div>
+        <div v-if="loading" class="text-center py-16 text-brand-500 font-bold"><span class="animate-spin mr-2">⏳</span> 正在加载作业本...</div>
 
-      <div v-else class="space-y-4">
-        <section v-for="group in groups" :key="group.date">
-          <h3 class="px-1 mb-2 text-xs font-black text-slate-500">{{ group.date === today ? '今天' : dayName(group.date) }} 布置</h3>
+        <div v-else-if="!shown.length" class="text-center py-16 bg-white rounded-3xl border border-slate-200">
+          <div class="text-5xl mb-2">📒</div>
+          <p class="text-slate-500 text-sm font-bold">{{ records.length ? '没有符合条件的作业' : '还没有作业记录，点“记作业”记下老师布置的作业吧' }}</p>
+        </div>
+
+        <div v-else class="space-y-4">
+          <section v-for="group in groups" :key="group.date">
+            <h3 class="px-1 mb-2 text-xs font-black text-slate-500">{{ group.date === today ? '今天' : dayName(group.date) }} 布置</h3>
+            <ul class="space-y-2">
+              <li v-for="record in group.records" :key="record.id" class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+                <div class="flex flex-wrap items-center gap-2 mb-1.5">
+                  <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ record.subject }}</span>
+                  <span class="text-[11px] font-bold" :class="dueClass(record)">{{ dueText(record) }}</span>
+                  <span class="ml-auto px-2 py-0.5 rounded-lg text-[11px] font-black" :class="STATE[record.task_state].class">{{ STATE[record.task_state].label }}</span>
+                </div>
+                <p class="text-sm font-bold text-slate-700 whitespace-pre-line break-words font-chinese">{{ record.content }}</p>
+                <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                  <span class="text-slate-400">{{ record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
+                  <span class="flex-1"></span>
+                  <template v-if="asParent && record.task_state === 'pending'">
+                    <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-emerald-500 text-white disabled:opacity-50" @click="createTask(record)">生成任务</button>
+                    <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 disabled:opacity-50" @click="rejectTask(record)">不需要</button>
+                  </template>
+                  <button v-else-if="asParent && record.can_create_task" type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 disabled:opacity-50" @click="createTask(record)">➕ 生成打卡任务</button>
+                  <template v-if="editable(record)">
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600" @click="openForm(record)">修改</button>
+                    <button type="button" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-rose-500" @click="deleteTarget = record">删除</button>
+                  </template>
+                </div>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </template>
+
+      <!-- Per course: how many homework records in the range, and how their tasks went -->
+      <template v-else>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button
+            v-for="option in summaryRanges"
+            :key="option.key"
+            type="button"
+            class="px-3 py-1.5 rounded-xl text-xs font-bold"
+            :class="summaryRange === option.key ? 'bg-brand-500 text-white' : 'bg-white border border-slate-200 text-slate-600'"
+            @click="setSummaryRange(option.key)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+        <div v-if="!summary" class="text-center py-16 text-brand-500 font-bold"><span class="animate-spin mr-2">⏳</span> 正在统计...</div>
+        <div v-else-if="!summary.courses.length" class="text-center py-16 bg-white rounded-3xl border border-slate-200">
+          <div class="text-5xl mb-2">📊</div>
+          <p class="text-slate-500 text-sm font-bold">{{ rangeLabel }}还没有作业记录</p>
+        </div>
+        <template v-else>
+          <div class="mb-3 grid grid-cols-3 gap-2 sm:gap-3 text-center">
+            <div class="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm">
+              <span class="block text-[11px] font-bold text-slate-400">{{ rangeLabel }}作业</span>
+              <span class="text-2xl font-black text-slate-800">{{ summary.totals.total }}</span><span class="text-xs font-bold text-slate-500"> 条</span>
+            </div>
+            <div class="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm">
+              <span class="block text-[11px] font-bold text-slate-400">已完成</span>
+              <span class="text-2xl font-black text-slate-800">{{ summary.totals.done }}</span><span class="text-xs font-bold text-slate-500"> 条</span>
+            </div>
+            <div class="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm">
+              <span class="block text-[11px] font-bold text-slate-400">完成率</span>
+              <span class="text-2xl font-black text-slate-800">{{ formatRate(summary.totals.completion_rate) }}</span>
+            </div>
+          </div>
           <ul class="space-y-2">
-            <li v-for="record in group.records" :key="record.id" class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
-              <div class="flex flex-wrap items-center gap-2 mb-1.5">
-                <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ record.subject }}</span>
-                <span class="text-[11px] font-bold" :class="dueClass(record)">{{ dueText(record) }}</span>
-                <span class="ml-auto px-2 py-0.5 rounded-lg text-[11px] font-black" :class="STATE[record.task_state].class">{{ STATE[record.task_state].label }}</span>
-              </div>
-              <p class="text-sm font-bold text-slate-700 whitespace-pre-line break-words font-chinese">{{ record.content }}</p>
-              <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
-                <span class="text-slate-400">{{ record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
-                <span class="flex-1"></span>
-                <template v-if="asParent && record.task_state === 'pending'">
-                  <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-emerald-500 text-white disabled:opacity-50" @click="createTask(record)">生成任务</button>
-                  <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 disabled:opacity-50" @click="rejectTask(record)">不需要</button>
-                </template>
-                <button v-else-if="asParent && record.can_create_task" type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-orange-50 text-orange-700 disabled:opacity-50" @click="createTask(record)">➕ 生成打卡任务</button>
-                <template v-if="editable(record)">
-                  <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600" @click="openForm(record)">修改</button>
-                  <button type="button" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-rose-500" @click="deleteTarget = record">删除</button>
-                </template>
-              </div>
+            <li v-for="row in summary.courses" :key="row.course_key">
+              <button type="button" class="w-full text-left bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm hover:border-brand-300 active:scale-[0.99] transition-all" @click="openCourse(row)">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="row.kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ row.subject }}</span>
+                  <span class="text-xs font-bold text-slate-500">共 {{ row.total }} 条 · 最近 {{ shortDate(row.latest_assigned_date) }}</span>
+                  <span class="ml-auto text-right">
+                    <span class="text-lg font-black text-slate-800">{{ formatRate(row.completion_rate) }}</span>
+                    <span class="block text-[10px] font-bold text-slate-400 -mt-0.5">完成率</span>
+                  </span>
+                </div>
+                <div class="h-2 rounded-full bg-slate-100 overflow-hidden" role="img" :aria-label="`完成率 ${formatRate(row.completion_rate)}`">
+                  <div class="h-full rounded-full bg-emerald-500" :style="{ width: `${Math.round((row.completion_rate ?? 0) * 100)}%` }"></div>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-slate-500">
+                  <span v-for="part in COUNTS.filter(part => row[part.key])" :key="part.key">{{ part.label }} {{ row[part.key] }}</span>
+                </div>
+              </button>
             </li>
           </ul>
-        </section>
-      </div>
+          <p class="mt-3 text-[11px] font-bold text-slate-400">按布置日期统计。完成率 = 已完成 ÷（已完成 + 没按时完成），跳过、还没到截止日期和只记录没生成任务的作业不计入。点某门课可以查看这些作业。</p>
+        </template>
+      </template>
     </div>
 
     <HomeworkFormModal
@@ -166,7 +243,7 @@ import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
-import { WEEKDAY_NAMES, addDays, localDate, shortDate } from '../utils/schedule.js';
+import { WEEKDAY_NAMES, addDays, localDate, mondayOf, shortDate } from '../utils/schedule.js';
 
 // What became of a record's task.
 const STATE = {
@@ -177,6 +254,16 @@ const STATE = {
   skipped: { label: '已跳过', class: 'bg-slate-100 text-slate-500' },
   missed: { label: '没按时完成', class: 'bg-rose-100 text-rose-600' }
 };
+
+// The counts of a course in the summary, in the order shown.
+const COUNTS = [
+  { key: 'done', label: '已完成' },
+  { key: 'missed', label: '没按时完成' },
+  { key: 'skipped', label: '已跳过' },
+  { key: 'open', label: '待完成' },
+  { key: 'pending', label: '等家长确认' },
+  { key: 'none', label: '仅记录' }
+];
 
 const route = useRoute();
 const childId = computed(() => route.params.id);
@@ -197,6 +284,11 @@ const busy = ref(false);
 const courseFilter = ref('all');
 const statusFilter = ref('all');
 const search = ref('');
+const view = ref('list');
+const summary = ref(null);
+const summaryRange = ref('month');
+// Set from the summary: only homework assigned within its range.
+const rangeFilter = ref(null);
 
 const courseFilters = computed(() => {
   const options = [{ key: 'all', label: '全部' }];
@@ -210,7 +302,8 @@ const shown = computed(() => {
   const words = search.value.trim();
   return records.value.filter(record => (courseFilter.value === 'all' || record.course_key === courseFilter.value) &&
     (statusFilter.value === 'all' || ['open', 'pending'].includes(record.task_state) || (record.task_state === 'none' && record.due_date >= today)) &&
-    (!words || record.content.includes(words)));
+    (!words || record.content.includes(words)) &&
+    (!rangeFilter.value || (record.assigned_date >= rangeFilter.value.from && (!rangeFilter.value.to || record.assigned_date <= rangeFilter.value.to))));
 });
 
 const groups = computed(() => {
@@ -234,6 +327,47 @@ const dueClass = record => !record.due_date || record.due_date < today ? 'text-s
 
 // A child may change only what they recorded themselves, until it has a task.
 const editable = record => asParent || (record.created_by === 'child' && !record.task);
+
+// 本周 and 本月 run to today; 本学期 is today's timetable term, once the summary has told it.
+const summaryRanges = computed(() => [
+  { key: 'week', label: '本周', from: mondayOf(today), to: null },
+  { key: 'month', label: '本月', from: `${today.slice(0, 8)}01`, to: null },
+  ...(summary.value?.term ? [{ key: 'term', label: '本学期', from: summary.value.term.start_date, to: summary.value.term.end_date }] : []),
+  { key: 'all', label: '全部', from: '0000-01-01', to: null }
+]);
+const currentRange = () => summaryRanges.value.find(option => option.key === summaryRange.value) || summaryRanges.value.at(-1);
+const rangeLabel = computed(() => (summaryRange.value === 'all' ? '' : currentRange().label));
+const formatRate = rate => (rate === null || rate === undefined ? '—' : `${Math.round(rate * 100)}%`);
+
+async function loadSummary() {
+  const range = currentRange();
+  try {
+    summary.value = await api.getHomeworkSummary(childId.value, { from: range.key === 'all' ? undefined : range.from, to: range.to ?? undefined });
+  } catch (err) {
+    actionError.value = typeof err === 'string' ? err : '统计失败，请重试';
+  }
+}
+
+function setView(key) {
+  playClick();
+  view.value = key;
+  if (key === 'summary') loadSummary();
+}
+
+function setSummaryRange(key) {
+  summaryRange.value = key;
+  loadSummary();
+}
+
+// From a course's summary to its records in the same range.
+function openCourse(row) {
+  playClick();
+  const range = currentRange();
+  courseFilter.value = row.course_key;
+  statusFilter.value = 'all';
+  rangeFilter.value = range.key === 'all' ? null : { from: range.from, to: range.to, label: range.label };
+  view.value = 'list';
+}
 
 async function load() {
   try {

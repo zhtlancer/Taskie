@@ -106,6 +106,18 @@ async function main() {
   assert.equal((await api('GET', `/children/${child.id}/homework`)).find(r => r.content === '练习册第 12 页').task_state, 'none');
   pass('same-subject daily tasks are flagged and the task is left out by default');
 
+  // The summary counts each course's homework; a course opens its records.
+  await parentPage.getByRole('button', { name: '📊 按课程统计' }).click();
+  await parentPage.getByRole('button', { name: '全部', exact: true }).click();
+  const scienceRow = parentPage.locator('li button').filter({ hasText: '科学' });
+  await scienceRow.getByText('待完成 1').waitFor();
+  await parentPage.locator('li button').filter({ hasText: '数学' }).getByText('仅记录 1').waitFor();
+  await shot(parentPage, '7-parent-course-summary');
+  await scienceRow.click();
+  await parentPage.getByText('完成实验报告').waitFor();
+  assert.equal(await parentPage.getByText('练习册第 12 页').count(), 0);
+  pass('the course summary counts homework per course and opens a course\'s records');
+
   // Phones: the homework book fits the screen and the tab bar links to it.
   const phone = await open('child', childToken, { width: 390, height: 844 });
   await phone.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'domcontentloaded' });
@@ -113,6 +125,9 @@ async function main() {
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await phone.locator('nav a[href$="/homework"]').waitFor();
   await shot(phone, '6-phone-homework-book');
+  await phone.getByRole('button', { name: '📊 按课程统计' }).click();
+  await phone.getByText('完成率', { exact: true }).first().waitFor();
+  assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   pass('the homework book fits a phone screen');
 
   assert.deepEqual(errors, []);

@@ -13,6 +13,7 @@ async function homeworkRoutes(fastify, options) {
   fastify.post('/children/:id/homework', handle(async (request, reply) =>
     reply.code(201).send(homeworkService.create(request.params.id, request.body || {}, actor(request)))));
   fastify.get('/children/:id/homework/courses', handle(async request => homeworkService.listCourses(request.params.id)));
+  fastify.get('/children/:id/homework/summary', handle(async request => homeworkService.summary(request.params.id, request.query)));
   fastify.get('/children/:id/homework/suggest', handle(async request => homeworkService.suggest(request.params.id, request.query)));
 
   fastify.put('/homework/:id', handle(async request => homeworkService.update(request.params.id, request.body || {}, actor(request))));

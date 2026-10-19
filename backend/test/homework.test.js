@@ -218,3 +218,36 @@ test('homework records survive a backup and restore', async t => {
   assert.deepEqual([restored.length, restored[0].task_state], [1, 'open']);
   assert.equal(ctx.app.services.homeworkService.coursePoints('school:科学'), 6);
 });
+
+test('a summary per course counts records and how their tasks went, within a date range', async t => {
+  const { ctx, day, child, headers, createChild, loginAs, asParent, asChild, record } = await fixture(t);
+  const done = (await record({ content: '实验报告', create_task: true })).json();
+  await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${done.task.id}/complete`, headers });
+  await record({ content: '观察记录', create_task: true });
+  await record({ content: '旧作业', assigned_date: day(-11) });
+  // A task whose last day passed undone is missed; a skipped one is left out of the rate.
+  const missed = (await record({ subject: '数学', content: '口算', create_task: true })).json();
+  ctx.db.prepare('UPDATE daily_tasks SET date = ?, due_date = NULL WHERE id = ?').run(day(-1), missed.task.id);
+  const skipped = (await record({ subject: '数学', content: '练习册', create_task: true })).json();
+  await asParent('POST', `/api/daily-tasks/${skipped.task.id}/skip`, { reason: '老师没布置' });
+  await asChild('POST', `/api/children/${child.id}/homework`, { course_kind: 'school', subject: '数学', content: '订正', create_task: true });
+
+  const summary = async query => (await asParent('GET', `/api/children/${child.id}/homework/summary?${new URLSearchParams(query)}`)).json();
+  const all = await summary({});
+  assert.equal(all.term.name, '本学期');
+  const row = subject => all.courses.find(c => c.subject === subject);
+  assert.deepEqual(all.courses.map(c => c.subject), ['数学', '科学']);
+  assert.deepEqual(['total', 'done', 'missed', 'skipped', 'open', 'pending', 'none', 'completion_rate'].map(k => row('科学')[k]), [3, 1, 0, 0, 1, 0, 1, 1]);
+  assert.deepEqual(['total', 'done', 'missed', 'skipped', 'open', 'pending', 'none', 'completion_rate'].map(k => row('数学')[k]), [3, 0, 1, 1, 0, 1, 0, 0]);
+  assert.deepEqual([all.totals.total, all.totals.done, all.totals.missed, all.totals.completion_rate], [6, 1, 1, 0.5]);
+
+  // Only homework set within the range counts.
+  const recent = await summary({ from: day(-7) });
+  assert.equal(recent.courses.find(c => c.subject === '科学').total, 2);
+  assert.equal((await asParent('GET', `/api/children/${child.id}/homework/summary?from=bad`)).statusCode, 400);
+
+  // A child sees their own summary only.
+  assert.equal((await asChild('GET', `/api/children/${child.id}/homework/summary`)).statusCode, 200);
+  const sister = await createChild('小红');
+  assert.equal((await asChild('GET', `/api/children/${child.id}/homework/summary`, undefined, await loginAs(sister))).statusCode, 403);
+});

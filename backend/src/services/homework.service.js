@@ -210,6 +210,32 @@ class HomeworkService {
     return this.query(where.join(' AND '), params);
   }
 
+  // Per course, how the homework set between two dates (by assigned date) went: how many records,
+  // and their tasks done, missed, skipped, still open or waiting for a parent, or none at all. The
+  // completion rate counts settled tasks only (done or missed). Also the term timetable of today,
+  // so the page can offer it as a range.
+  summary(childId, { from, to } = {}) {
+    const records = this.list(childId, { from, to });
+    const courses = new Map();
+    for (const record of records) {
+      if (!courses.has(record.course_key)) {
+        courses.set(record.course_key, { course_key: record.course_key, kind: record.course_kind, subject: record.subject, class_id: record.class_id,
+          total: 0, done: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0, latest_assigned_date: record.assigned_date });
+      }
+      const course = courses.get(record.course_key);
+      course.total += 1;
+      course[record.task_state] += 1;
+    }
+    const rate = row => (row.done + row.missed ? row.done / (row.done + row.missed) : null);
+    const rows = [...courses.values()].sort((a, b) => b.total - a.total || a.subject.localeCompare(b.subject))
+      .map(row => ({ ...row, completion_rate: rate(row) }));
+    const totals = { total: 0, done: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0 };
+    for (const row of rows) for (const key of Object.keys(totals)) totals[key] += row[key];
+    const today = getTodayDate();
+    const term = this.db.prepare('SELECT name, start_date, end_date FROM timetables WHERE child_id = ? AND start_date <= ? AND end_date >= ?').get(childId, today, today) ?? null;
+    return { from: from ?? null, to: to ?? null, term, courses: rows, totals: { ...totals, completion_rate: rate(totals) } };
+  }
+
   // Children's records waiting for a parent to create their tasks, across children.
   listTaskRequests() {
     return this.query('r.task_requested = 1 AND r.daily_task_id IS NULL', []);

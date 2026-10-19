@@ -119,6 +119,7 @@ export const api = {
   deleteAdhocTask: id => remove(`/adhoc-tasks/${id}`),
   getHomework: (childId, params = {}) => get(`/children/${childId}/homework`, params),
   getHomeworkCourses: childId => get(`/children/${childId}/homework/courses`),
+  getHomeworkSummary: (childId, params = {}) => get(`/children/${childId}/homework/summary`, params),
   suggestHomework: (childId, params) => get(`/children/${childId}/homework/suggest`, params),
   createHomework: (childId, data) => post(`/children/${childId}/homework`, data),
   updateHomework: (id, data) => put(`/homework/${id}`, data),
