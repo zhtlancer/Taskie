@@ -177,7 +177,7 @@ class HomeworkService {
     // pending: a child asked for a task; open, done, skipped or missed: the task's state; none: record only.
     const taskState = task ? (task.is_completed ? 'done' : task.is_skipped ? 'skipped' : task.due_date < today ? 'missed' : 'open')
       : record.task_requested ? 'pending' : 'none';
-    return { ...record, task_requested: Boolean(record.task_requested), course_key: courseKey({ kind: record.course_kind, ...record }),
+    return { ...record, task_requested: Boolean(record.task_requested),
       task, task_state: taskState, can_create_task: !task && Boolean(record.due_date) && record.due_date >= today };
   }
 
@@ -199,7 +199,7 @@ class HomeworkService {
     this.requireChild(childId);
     const where = ['r.child_id = ?'];
     const params = [childId];
-    if (class_id) { where.push('r.class_id = ?'); params.push(class_id); }
+    if (class_id) { where.push('r.course_key = ?'); params.push(`class:${class_id}`); }
     else if (subject) { where.push("r.subject = ? AND r.course_kind = 'school'"); params.push(subject); }
     if (from) { where.push('r.assigned_date >= ?'); params.push(validateDate(from, '开始日期')); }
     if (to) { where.push('r.assigned_date <= ?'); params.push(validateDate(to, '结束日期')); }
@@ -271,9 +271,9 @@ class HomeworkService {
     const id = generateId();
     const now = new Date().toISOString();
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO homework_records (id, child_id, course_kind, subject, class_id, assigned_date, due_date, content, points,
-        created_by, task_requested, daily_task_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`)
-        .run(id, childId, course.kind, course.subject, course.class_id, assigned, due, content, points, actor,
+      this.db.prepare(`INSERT INTO homework_records (id, child_id, course_kind, course_key, subject, class_id, assigned_date, due_date, content, points,
+        created_by, task_requested, daily_task_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`)
+        .run(id, childId, course.kind, courseKey(course), course.subject, course.class_id, assigned, due, content, points, actor,
           body.create_task && actor !== 'parent' ? 1 : 0, now, now);
       if (timing) this.attachTask(id, timing);
     })();

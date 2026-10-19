@@ -5,6 +5,74 @@ const { getTodayDate, getDayOfWeek, shiftDate } = require('../src/utils/date');
 
 const countTask = (response, id) => response.json().filter(task => task.id === id).length;
 
+test('deleted classes keep distinct homework identities, filters and summary through backup restore', async t => {
+  const { ctx, child, day, asParent, record } = await fixture(t);
+  const schedule = ctx.app.services.scheduleService;
+  const homework = ctx.app.services.homeworkService;
+  const classes = [];
+  // Even two classes with the same title must retain different identities.
+  for (const title of ['钢琴课', '游泳课', '钢琴课']) {
+    const cls = schedule.createClass({ title, days_of_week: [1], start_time: '16:00', end_time: '17:00', start_date: day(-30), child_ids: [child.id] });
+    classes.push(cls);
+    const created = await record({ course_kind: 'class', class_id: cls.id, content: `${title}作业`, due_date: day(1), create_task: true });
+    assert.equal(created.statusCode, 201, created.body);
+  }
+  const summary = () => {
+    const result = homework.summary(child.id);
+    return { ...result, courses: result.courses.map(({ class_id, ...course }) => course) };
+  };
+  const before = summary();
+  assert.equal(before.courses.length, 3);
+  const ids = homework.list(child.id).map(row => [row.id, row.course_key, row.task.id]);
+  for (const cls of classes) schedule.deleteClass(cls.id);
+  assert.deepEqual(summary(), before);
+  assert.deepEqual(homework.list(child.id).map(row => [row.id, row.course_key, row.task.id]), ids);
+  assert.ok(homework.list(child.id).every(row => row.class_id === null));
+  for (const cls of classes) {
+    const filtered = await asParent('GET', `/api/children/${child.id}/homework?class_id=${cls.id}`);
+    assert.equal(filtered.statusCode, 200, filtered.body);
+    assert.deepEqual(filtered.json().map(row => row.course_key), [`class:${cls.id}`]);
+  }
+  const backup = ctx.app.backupService;
+  const archive = require('node:fs').readFileSync(backup.getPath(backup.create('course-identity').name));
+  ctx.db.prepare('DELETE FROM homework_records').run();
+  backup.restore(archive);
+  assert.deepEqual(summary(), before);
+  assert.deepEqual(homework.list(child.id).map(row => [row.id, row.course_key, row.task.id]), ids);
+});
+
+test('v19 homework backups gain stable course keys; damaged v20 backups are rejected before restore', async t => {
+  const { ctx, child, day, record } = await fixture(t);
+  const Database = require('better-sqlite3');
+  const { gzipSync, gunzipSync } = require('node:zlib');
+  const schedule = ctx.app.services.scheduleService;
+  const homework = ctx.app.services.homeworkService;
+  const makeClass = title => schedule.createClass({ title, days_of_week: [1], start_time: '16:00', end_time: '17:00', start_date: day(-30), child_ids: [child.id] });
+  const live = makeClass('钢琴课');
+  const archived = makeClass('游泳课');
+  for (const cls of [live, archived, archived]) {
+    assert.equal((await record({ course_kind: 'class', class_id: cls.id, content: `${cls.title}作业`, due_date: day(1) })).statusCode, 201);
+  }
+  assert.equal((await record({ content: '科学实验报告' })).statusCode, 201);
+  schedule.deleteClass(archived.id);
+  const backup = ctx.app.backupService;
+  const data = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath(backup.create('legacy-courses').name))));
+  const legacy = new Database(Buffer.from(data.database, 'base64'));
+  t.after(() => legacy.close());
+  legacy.exec('ALTER TABLE homework_records DROP COLUMN course_key');
+  const pack = () => gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') }));
+  const before = homework.list(child.id);
+  assert.throws(() => backup.restore(pack()), /作业课程标识/);
+  assert.deepEqual(homework.list(child.id), before);
+  legacy.pragma('user_version = 19');
+  backup.restore(pack());
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 20);
+  assert.deepEqual(homework.summary(child.id).courses.map(row => [row.course_key, row.total]).sort(),
+    [[`class:${live.id}`, 1], ['class:archived:游泳课', 2], ['school:科学', 1]].sort());
+  schedule.deleteClass(live.id);
+  assert.equal(homework.list(child.id).find(row => row.subject === '钢琴课').course_key, `class:${live.id}`);
+});
+
 // 科学 is taught once a week, on the weekday three days from today, so homework set today is due in
 // two days; 数学 is taught on every other day of the week.
 async function fixture(t) {

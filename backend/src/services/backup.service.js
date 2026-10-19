@@ -134,6 +134,7 @@ class BackupService {
       }
       if (schemaVersion >= 18 && !tables.includes('task_day_snapshots')) throw fail('备份缺少每日任务快照，无法恢复');
       if (schemaVersion >= 19 && !HOMEWORK_TABLES.every(table => tables.includes(table))) throw fail('备份缺少作业记录，无法恢复');
+      if (schemaVersion >= 20 && !hasColumn('homework_records', 'course_key')) throw fail('备份缺少作业课程标识，无法恢复');
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {

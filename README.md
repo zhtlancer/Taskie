@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-292%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-303%20Passed-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -115,6 +115,7 @@
 - **孩子记的作业由家长确认**：孩子勾选“请家长生成打卡任务”后，任务要等家长在数据总览里点“生成任务”才会出现；家长也可以点“不需要”。孩子可以修改或删除自己记的、还没有生成任务的作业；
 - **按课程统计**：作业本的「📊 按课程统计」按布置日期汇总本周、本月、本学期（课程表的学期日期）或全部的作业：每门课的作业条数，已完成、没按时完成、已跳过、待完成、等家长确认、仅记录各多少条，以及完成率（已完成 ÷（已完成 + 没按时完成），跳过、还没到截止日期和只记录的不计入）。点某门课可以查看这个时间范围内这门课的作业；
 - **课程默认积分**：家长在作业本里设置每门课作业任务的默认积分（所有孩子通用，未设置的课默认 10 分），每条作业还可以单独修改；
+- **课程历史**：删除课外班后，已有作业仍保留独立课程标识，可分别筛选和统计，同名课程也不会混合。升级前已经删除的课外班只能按历史名称归类，旧数据中同名课程已丢失的原始标识无法恢复。
 - **修改与删除**：修改作业内容、积分或截止日期时，未完成的任务会同步更新；已经完成、跳过或过了截止日期的任务保持原样。删除作业记录时，可以选择保留任务，或者一起删除任务（已完成的会扣回积分）。
 
 ### 8. 📈 周完成度与学习历史
@@ -338,10 +339,10 @@ npm run seed:backend
 项目拥有严密的测试覆盖，共 **300 项自动化测试** 全部绿灯通过：
 
 ```bash
-# 运行后端全量测试 (260 tests)
+# 运行后端全量测试 (262 tests)
 npm run test:backend
 
-# 运行前端工具测试 (40 tests)
+# 运行前端工具测试 (41 tests)
 npm --prefix frontend test
 ```
 

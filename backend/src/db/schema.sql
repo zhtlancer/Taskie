@@ -475,6 +475,7 @@ CREATE TABLE IF NOT EXISTS task_day_snapshots (
 -- Homework a teacher set in a school lesson or an outside class (作业记录), kept to look up later.
 -- A record may own one one-off task on the board; a child's record asks a parent before its task
 -- is created (task_requested). Subject is the timetable subject or a snapshot of the class title.
+-- The immutable course_key column is added by the v20 migration, independently of class_id's FK.
 CREATE TABLE IF NOT EXISTS homework_records (
   id TEXT PRIMARY KEY,
   child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,

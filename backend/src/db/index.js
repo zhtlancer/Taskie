@@ -376,6 +376,20 @@ function initDb(db) {
   // v19: homework records and per-course homework points come from schema.sql; the version tells
   // backups that carry them apart from older ones.
   if (db.pragma('user_version', { simple: true }) < 19) db.pragma('user_version = 19');
+  if (db.pragma('user_version', { simple: true }) < 20) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(homework_records)').some(column => column.name === 'course_key')) {
+        db.exec("ALTER TABLE homework_records ADD COLUMN course_key TEXT NOT NULL DEFAULT ''");
+      }
+      // A deleted legacy class has already lost its id. Its saved title is the best remaining
+      // identity; separate different titles rather than merging every archived class together.
+      db.exec(`UPDATE homework_records SET course_key = CASE
+        WHEN course_kind = 'school' THEN 'school:' || subject
+        WHEN class_id IS NOT NULL THEN 'class:' || class_id
+        ELSE 'class:archived:' || subject END WHERE course_key = ''`);
+      db.pragma('user_version = 20');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing
