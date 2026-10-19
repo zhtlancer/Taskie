@@ -7,7 +7,7 @@
 
       <div>
         <label class="block text-xs font-bold text-slate-600 mb-1.5">哪门课</label>
-        <div v-if="record" class="px-3 py-2 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 font-chinese">{{ record.subject }}</div>
+        <div v-if="record" class="px-3 py-2 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 font-chinese">{{ courseLabel(record) }}</div>
         <template v-else>
           <div class="flex flex-wrap gap-2">
             <button
@@ -105,6 +105,7 @@ import { computed, reactive, ref } from 'vue';
 import api from '../api/client';
 import TimingFields from './TimingFields.vue';
 import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, localDate, shortDate } from '../utils/schedule.js';
+import { courseLabel } from '../utils/homework.js';
 
 const props = defineProps({
   childId: { type: String, required: true },

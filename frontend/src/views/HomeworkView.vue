@@ -100,7 +100,7 @@
             <ul class="space-y-2">
               <li v-for="record in group.records" :key="record.id" class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
                 <div class="flex flex-wrap items-center gap-2 mb-1.5">
-                  <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ record.subject }}</span>
+                  <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ courseLabel(record) }}</span>
                   <span class="text-[11px] font-bold" :class="dueClass(record)">{{ dueText(record) }}</span>
                   <span class="ml-auto px-2 py-0.5 rounded-lg text-[11px] font-black" :class="STATE[record.task_state].class">{{ STATE[record.task_state].label }}</span>
                 </div>
@@ -162,7 +162,7 @@
             <li v-for="row in summary.courses" :key="row.course_key">
               <button type="button" class="w-full text-left bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm hover:border-brand-300 active:scale-[0.99] transition-all" @click="openCourse(row)">
                 <div class="flex items-center gap-2 mb-2">
-                  <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="row.kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ row.subject }}</span>
+                  <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="row.kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ courseLabel(row) }}</span>
                   <span class="text-xs font-bold text-slate-500">共 {{ row.total }} 条 · 最近 {{ shortDate(row.latest_assigned_date) }}</span>
                   <span class="ml-auto text-right">
                     <span class="text-lg font-black text-slate-800">{{ formatRate(row.completion_rate) }}</span>
@@ -197,7 +197,7 @@
     <div v-if="deleteTarget" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="deleteTarget = null">
       <div class="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
         <h3 class="text-lg font-black text-slate-800 font-chinese">删除这条作业记录？</h3>
-        <p class="text-xs font-bold text-slate-500 font-chinese whitespace-pre-line line-clamp-3">{{ deleteTarget.subject }}：{{ deleteTarget.content }}</p>
+        <p class="text-xs font-bold text-slate-500 font-chinese whitespace-pre-line line-clamp-3">{{ courseLabel(deleteTarget) }}：{{ deleteTarget.content }}</p>
         <p v-if="deleteTarget.task" class="text-xs font-bold text-amber-600">它已经生成了打卡任务{{ deleteTarget.task.is_completed ? '，而且已经完成，一起删除会扣回积分' : '' }}。</p>
         <div class="flex flex-col gap-2">
           <button v-if="deleteTarget.task" type="button" :disabled="busy" class="px-4 py-2.5 rounded-xl bg-rose-500 text-white text-xs font-bold disabled:opacity-50" @click="remove(true)">删除记录和打卡任务</button>
@@ -244,6 +244,7 @@ import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
 import { WEEKDAY_NAMES, addDays, localDate, mondayOf, shortDate } from '../utils/schedule.js';
+import { courseLabel } from '../utils/homework.js';
 
 // What became of a record's task.
 const STATE = {
@@ -293,7 +294,7 @@ const rangeFilter = ref(null);
 const courseFilters = computed(() => {
   const options = [{ key: 'all', label: '全部' }];
   for (const item of [...courses.value, ...records.value]) {
-    if (!options.some(option => option.key === item.course_key)) options.push({ key: item.course_key, label: item.subject });
+    if (!options.some(option => option.key === item.course_key)) options.push({ key: item.course_key, label: courseLabel(item) });
   }
   return options;
 });

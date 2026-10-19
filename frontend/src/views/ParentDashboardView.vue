@@ -101,7 +101,7 @@
           <li v-for="r in homeworkRequests" :key="r.id" class="p-3 rounded-2xl bg-orange-50/60 border border-orange-100 flex flex-wrap items-center gap-x-3 gap-y-2">
             <span class="text-2xl">{{ r.child_avatar_emoji }}</span>
             <div class="flex-1 min-w-[180px]">
-              <div class="text-sm font-bold text-slate-800 font-chinese">{{ r.child_name }} · {{ r.subject }} · {{ dayLabel(r.assigned_date) }}布置</div>
+              <div class="text-sm font-bold text-slate-800 font-chinese">{{ r.child_name }} · {{ courseLabel(r) }} · {{ dayLabel(r.assigned_date) }}布置</div>
               <div class="text-xs font-bold text-slate-600 font-chinese whitespace-pre-line line-clamp-2">{{ r.content }}</div>
               <div class="text-[11px] font-bold text-orange-700">{{ r.due_date ? `截止 ${dayLabel(r.due_date)}` : '没有截止日期' }} · ★{{ r.points }}</div>
             </div>
@@ -324,6 +324,7 @@ import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { formatMinutes } from '../utils/timeStats.js';
 import TimingFields from '../components/TimingFields.vue';
+import { courseLabel } from '../utils/homework.js';
 
 const childrenStats = ref([]);
 const loading = ref(true);
