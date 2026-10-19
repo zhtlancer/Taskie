@@ -679,7 +679,7 @@ class TasksService {
   // a parent to backfill; materializeBackfillDay creates them only when a parent acts.
   getBackfillTasks(childId, date) {
     this.validateBackfillDay(childId, date);
-    const tasks = this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => !['goal', 'study'].includes(task.origin));
+    const tasks = this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => task.origin !== 'goal');
     const { templates, lessons } = this.pastDaySources(childId, date);
     const hasTemplate = new Set(tasks.map(task => task.template_id).filter(Boolean));
     const hasLesson = new Set(tasks.filter(task => task.class_id).map(classLessonKey));

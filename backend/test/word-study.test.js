@@ -290,3 +290,22 @@ test('study snapshots, memory, attempts and points survive backup; missing v17 d
   assert.deepEqual(ctx.study.plans(ctx.child.id), []);
   legacy.close();
 });
+
+test('missed study days show on the parent backfill page and can be skipped, never backfilled', async t => {
+  const ctx = await fixture(t);
+  ctx.add('山');
+  ctx.plan();
+  ctx.advance('2026-10-14');
+  ctx.today();
+  const missed = ctx.tasks.getBackfillTasks(ctx.child.id, '2026-10-13').tasks.find(task => task.origin === 'study');
+  assert.ok(missed, 'a missed study day is listed for parents');
+  assert.equal(missed.is_completed, false);
+  assert.throws(() => ctx.tasks.backfillDailyTask(missed.id), error => error.status === 409);
+  assert.equal(ctx.stats.getHistory(ctx.child.id, '2026-10-13', '2026-10-13')[0].all_done, false);
+  ctx.app.services.skipsService.requestSkip(missed.id, '生病请假', { role: 'parent' });
+  const skipped = ctx.tasks.getBackfillTasks(ctx.child.id, '2026-10-13').tasks.find(task => task.id === missed.id);
+  assert.equal(skipped.is_skipped, true);
+  assert.ok(ctx.tasks.restDayChecker(ctx.child.id, '2026-10-13', '2026-10-13')('2026-10-13'), 'a skipped study day is a rest day');
+  ctx.app.services.skipsService.unskip(missed.id);
+  assert.equal(ctx.tasks.getBackfillTasks(ctx.child.id, '2026-10-13').tasks.find(task => task.id === missed.id).is_skipped, false);
+});

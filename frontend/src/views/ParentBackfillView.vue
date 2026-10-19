@@ -4,7 +4,7 @@
     <main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
       <router-link to="/parent/dashboard" class="text-sm font-bold text-brand-600">← 返回数据总览</router-link>
       <h2 class="text-xl font-black text-slate-800">{{ childName }} · 家长补卡</h2>
-      <p class="text-sm text-slate-500">选择过去日期，为当天的普通任务补记完成。孩子当天没打开 App 的任务也会列出。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
+      <p class="text-sm text-slate-500">选择过去日期，为当天的普通任务补记完成，或标记跳过。孩子当天没打开 App 的任务也会列出。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
       <label class="flex items-center gap-3 text-sm font-bold text-slate-700">
         任务日期
         <input v-model="date" type="date" :max="yesterday" :disabled="busy" class="rounded-xl border p-2" @change="load" />
@@ -28,9 +28,11 @@
             </div>
             <button v-if="task.is_completed && task.completion_source === 'parent_backfill'" :disabled="busy || loading" class="text-sm font-bold text-rose-600 disabled:opacity-50" @click="act(task, 'undo')">撤销补卡</button>
             <button v-else-if="task.is_skipped" :disabled="busy || loading" class="text-sm font-bold text-slate-600 disabled:opacity-50" @click="act(task, 'unskip')">撤销跳过</button>
+            <button v-else-if="!task.is_completed && !task.is_extra" :disabled="busy || loading" class="text-sm font-bold text-slate-500 disabled:opacity-50" @click="act(task, 'skip')">标记跳过</button>
           </div>
           <p v-if="!task.is_completed && task.is_extra && !task.allow_extra" class="text-xs text-slate-400">本周目标已完成，该任务未开启额外完成。</p>
-          <form v-if="!task.is_completed && !task.is_skipped && (!task.is_extra || task.allow_extra)" class="flex flex-wrap items-center gap-3" @submit.prevent="act(task, 'complete')">
+          <p v-if="task.origin === 'study' && !task.is_completed && !task.is_skipped" class="text-xs text-slate-400">字词学习需当天逐项练习，不能补记；确实没学可标记跳过，不影响全勤和连续打卡。</p>
+          <form v-if="task.origin !== 'study' && !task.is_completed && !task.is_skipped && (!task.is_extra || task.allow_extra)" class="flex flex-wrap items-center gap-3" @submit.prevent="act(task, 'complete')">
             <label v-if="task.track_time" class="text-xs text-slate-600">
               实际用时（可不填）
               <input v-model="minutes[task.id]" type="number" min="1" max="720" step="1" :disabled="busy" class="w-20 p-2 border rounded-lg ml-1" /> 分钟
@@ -95,12 +97,18 @@ async function materialize(task) {
 
 async function act(task, action) {
   if (busy.value || loading.value) return;
-  const message = action === 'complete'
-    ? `为${childName.value}补记 ${task.date} 的「${task.title}」完成？${task.is_extra ? '额外完成，' : ''}将增加 ${task.award_points ?? task.points} 积分。`
-    : action === 'undo'
-      ? `撤销${childName.value} ${task.date} 的「${task.title}」补卡？将扣回 ${task.earned_points ?? task.points} 积分，已兑换时余额可能为负。`
-      : `撤销 ${task.date} 的「${task.title}」跳过状态？`;
-  if (!confirm(message)) return;
+  let reason = '';
+  if (action === 'skip') {
+    reason = prompt(`标记${childName.value} ${task.date} 的「${task.title}」为跳过，请写下理由（不超过 50 字）：`, '家长补登请假');
+    if (reason === null) return;
+  } else {
+    const message = action === 'complete'
+      ? `为${childName.value}补记 ${task.date} 的「${task.title}」完成？${task.is_extra ? '额外完成，' : ''}将增加 ${task.award_points ?? task.points} 积分。`
+      : action === 'undo'
+        ? `撤销${childName.value} ${task.date} 的「${task.title}」补卡？将扣回 ${task.earned_points ?? task.points} 积分，已兑换时余额可能为负。`
+        : `撤销 ${task.date} 的「${task.title}」跳过状态？`;
+    if (!confirm(message)) return;
+  }
   const value = minutes.value[task.id];
   busy.value = true;
   error.value = '';
@@ -110,6 +118,7 @@ async function act(task, action) {
     if (action === 'complete') {
       await api.backfillDailyTask(task.id, { duration_seconds: value ? Number(value) * 60 : null });
     } else if (action === 'undo') await api.undoBackfillDailyTask(task.id);
+    else if (action === 'skip') await api.skipDailyTask(task.id, reason);
     else await api.unskipDailyTask(task.id);
     await load();
   } catch (err) {
