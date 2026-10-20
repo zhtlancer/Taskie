@@ -12,7 +12,7 @@
       <div class="flex items-center gap-1 shrink-0">
         <span class="text-xs font-bold" :class="task.is_completed ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-400'">{{ statusLabel }}</span>
         <button v-if="menuActions.length" ref="menuTrigger" type="button" aria-label="更多任务操作" :aria-expanded="menuOpen" :aria-controls="`task-menu-${task.id}`"
-          class="w-10 h-10 -my-1 -mr-2 rounded-xl text-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-indigo-400" @click.stop="toggleMenu">⋯</button>
+          class="w-11 h-11 -my-1 -mr-2 rounded-xl text-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 focus-visible:ring-2 focus-visible:ring-indigo-400" @click.stop="toggleMenu">⋯</button>
       </div>
     </header>
 
@@ -50,8 +50,8 @@
     <div v-else-if="skipPending" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-2.5 text-xs text-amber-700 dark:text-amber-300 space-y-2">
       <p class="break-words">⏳ 申请跳过：{{ task.skip_request.reason }} · 等家长确认</p>
       <div v-if="asParent" class="flex gap-2">
-        <button type="button" class="min-h-[40px] px-3 rounded-lg bg-emerald-500 text-white font-bold" @click.stop="emit('approve-skip', task)">同意跳过</button>
-        <button type="button" class="min-h-[40px] px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold" @click.stop="emit('reject-skip', task)">不同意</button>
+        <button type="button" class="min-h-[44px] px-3 rounded-lg bg-emerald-500 text-white font-bold" @click.stop="emit('approve-skip', task)">同意跳过</button>
+        <button type="button" class="min-h-[44px] px-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold" @click.stop="emit('reject-skip', task)">不同意</button>
       </div>
     </div>
     <p v-else-if="skipTurnedDown && !asParent" class="text-xs text-rose-500 dark:text-rose-400">家长没有同意跳过，今天还是要完成哦</p>

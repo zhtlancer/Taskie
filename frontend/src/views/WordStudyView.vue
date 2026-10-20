@@ -3,7 +3,7 @@
     <main class="max-w-4xl mx-auto space-y-5">
       <header class="flex flex-wrap items-center justify-between gap-3">
         <div><h1 class="text-xl font-black text-slate-800 dark:text-slate-100">📚 字词学习</h1><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">先回忆，再核对；每天达标后还可以自愿多学。</p></div>
-        <div class="flex flex-wrap gap-3 text-sm font-bold text-brand-600 dark:text-brand-300">
+        <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm font-bold [&>a]:inline-flex [&>a]:items-center [&>a]:min-h-[44px] [&>button]:min-h-[44px] text-brand-600 dark:text-brand-300">
           <router-link :to="`/child/${childId}/characters`">生字生词本</router-link>
           <router-link :to="`/child/${childId}/today`">今日看板</router-link>
           <button :disabled="busy || loading" @click="refresh">刷新安排</button>
@@ -59,7 +59,7 @@
               <button v-else :disabled="busy" class="text-brand-600 dark:text-brand-300" @click="begin(day, batch)">开始 / 继续 →</button>
             </div>
             <details class="mt-2"><summary class="min-h-[44px] py-3 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">查看字词清单与练习结果</summary><div class="flex flex-wrap gap-2">
-              <button v-for="item in batch.items" :key="item.id" :disabled="busy" class="px-2 py-1 rounded-lg border text-xs" :class="item.result === 'good' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : item.result ? 'text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'" @click="openItem(day, batch, item)">{{ item.text }} · {{ resultName(item.result) }}</button>
+              <button v-for="item in batch.items" :key="item.id" :disabled="busy" class="min-h-[44px] px-3 py-2 rounded-lg border text-xs" :class="item.result === 'good' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : item.result ? 'text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'" @click="openItem(day, batch, item)">{{ item.text }} · {{ resultName(item.result) }}</button>
             </div></details>
           </div>
           <p v-if="day.remaining_early" class="text-xs text-slate-400">还有 {{ day.remaining_early }} 项可提前巩固，答对不会跳过原定复习阶段。</p>
@@ -75,9 +75,8 @@
       </template>
     </main>
 
-    <div v-if="active" class="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-3" @click.self="!busy && closePractice()">
-      <section role="dialog" aria-modal="true" aria-labelledby="practice-title" class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg max-h-[92vh] overflow-y-auto p-5 space-y-4 text-center">
-        <div class="flex justify-between items-center"><h2 id="practice-title" class="font-black">{{ skillName(active.skill) }}练习 · {{ active.item.is_early ? '提前巩固（不升级周期）' : active.item.kind === 'review' ? '复习' : '新学' }}</h2><button :disabled="busy" aria-label="关闭练习" @click="closePractice">✕</button></div>
+    <UiDialog v-if="active" :title="`${skillName(active.skill)}练习 · ${active.item.is_early ? '提前巩固（不升级周期）' : active.item.kind === 'review' ? '复习' : '新学'}`" :busy="busy" close-label="关闭练习" @close="closePractice">
+      <div class="space-y-4 text-center">
         <p class="text-xs text-slate-500 dark:text-slate-400">{{ active.skill === 'write' ? '先听词或看拼音，在纸上默写，再核对字形与笔顺。' : '先尝试读出字词，再揭晓拼音核对。' }}</p>
         <div v-if="active.skill === 'recognize' || revealed" class="text-4xl font-reading text-slate-800 dark:text-slate-100">{{ active.item.text }}</div>
         <div v-if="active.skill === 'write' || revealed" class="text-xl text-brand-600 dark:text-brand-300">{{ active.item.pinyin || getCharPinyin(active.item.text) }}</div>
@@ -85,7 +84,7 @@
         <button v-if="!revealed" class="block mx-auto px-5 py-3 rounded-xl bg-brand-500 text-white font-bold" @click="revealed = true">我已尝试，揭晓核对</button>
         <template v-else>
           <template v-if="active.skill === 'write' || feedbackResult === 'again'">
-            <div class="flex flex-wrap justify-center gap-2"><button v-for="(char, index) in Array.from(active.item.text)" :key="index" class="px-3 py-1 rounded-lg border" :class="charIndex === index ? 'border-brand-400 bg-brand-50 dark:bg-brand-900/40' : 'border-slate-200 dark:border-slate-700'" @click="charIndex = index">{{ char }}</button></div>
+            <div class="flex flex-wrap justify-center gap-2"><button v-for="(char, index) in Array.from(active.item.text)" :key="index" class="min-w-[44px] min-h-[44px] px-3 py-2 rounded-lg border" :class="charIndex === index ? 'border-brand-400 bg-brand-50 dark:bg-brand-900/40' : 'border-slate-200 dark:border-slate-700'" @click="charIndex = index">{{ char }}</button></div>
             <HanziGrid :key="`${active.item.id}-${charIndex}`" :character="Array.from(active.item.text)[charIndex]" :size="240" :auto-play="false" />
           </template>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ asParent ? '由家长核对结果' : '请如实自评，系统不自动判定读音或书写正确性' }}；需要提示或答错也算完成本项练习。</p>
@@ -102,8 +101,8 @@
           </div>
         </template>
         <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
-      </section>
-    </div>
+      </div>
+    </UiDialog>
     <ChildTabBar :child-id="childId" />
   </div>
 </template>
@@ -113,6 +112,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
+import UiDialog from '../components/UiDialog.vue';
 import HanziGrid from '../components/HanziGrid.vue';
 import { getCharPinyin, speakHanzi } from '../utils/hanzi';
 import { CATEGORIES } from '../utils/wordBook';

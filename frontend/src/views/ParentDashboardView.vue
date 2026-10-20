@@ -96,6 +96,9 @@
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">今日完成</p><p class="text-xl font-black text-emerald-600 dark:text-emerald-300">{{ overallCompletionRate }}%</p></div>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">累计积分</p><p class="text-xl font-black text-amber-600 dark:text-amber-300">{{ totalPointsIssued }}</p></div>
       </div>
+      <div v-if="dashboardError" role="alert" class="mb-4 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-4 text-sm text-rose-700 dark:text-rose-300 flex flex-wrap items-center justify-between gap-3">
+        <span>{{ dashboardError }}</span><button type="button" :disabled="loading" class="min-h-[44px] px-4 rounded-xl bg-white dark:bg-slate-900 font-bold disabled:opacity-50" @click="loadDashboard">重新加载</button>
+      </div>
       <!-- Children Detail Progress Grid -->
       <h3 class="text-base font-bold text-slate-700 dark:text-slate-200 mb-3 px-1">
         各个小朋友实时看板
@@ -105,7 +108,7 @@
         <span class="animate-spin mr-2">⏳</span> 正在统计今日作业进展...
       </div>
 
-      <div v-else-if="childrenStats.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
+      <div v-else-if="!dashboardError && childrenStats.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
         <div class="text-5xl mb-2">👶</div>
         <p class="text-slate-500 dark:text-slate-400 text-sm mb-4">还没有添加小朋友账号哦</p>
         <router-link
@@ -311,6 +314,7 @@ import { courseLabel } from '../utils/homework.js';
 
 const childrenStats = ref([]);
 const loading = ref(true);
+const dashboardError = ref('');
 const adhocForm = ref(null);
 const adhocSaving = ref(false);
 const adhocError = ref('');
@@ -452,7 +456,9 @@ const totalPointsIssued = computed(() => {
   return childrenStats.value.reduce((sum, item) => sum + (item.stats.total_points || 0), 0);
 });
 
-onMounted(async () => {
+async function loadDashboard() {
+  loading.value = true;
+  dashboardError.value = '';
   try {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
@@ -463,8 +469,10 @@ onMounted(async () => {
     [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests(), loadCompletionRequests()]);
   } catch (err) {
     console.error('Failed to load parent dashboard:', err);
+    dashboardError.value = '暂时无法加载孩子的进展，请重新加载。';
   } finally {
     loading.value = false;
   }
-});
+}
+onMounted(loadDashboard);
 </script>

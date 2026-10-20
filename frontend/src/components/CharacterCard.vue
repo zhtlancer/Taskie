@@ -4,12 +4,12 @@
     @click="$emit('select', character)"
   >
     <!-- Top Row: Mastery Status & Quick Speech Button -->
-    <div class="flex items-center justify-between gap-2 mb-2" @click.stop>
+    <div class="flex flex-wrap items-center justify-between gap-1 mb-2" @click.stop>
       <!-- Mastery Status Tag (Clickable to switch state) -->
       <button
         type="button"
         @click.stop="onToggleMaster"
-        class="px-2.5 py-1 rounded-full text-xs font-black transition-all flex items-center gap-1 active:scale-95"
+        class="min-h-[44px] px-2 py-1 rounded-full text-xs font-black transition-all flex items-center gap-1 active:scale-95"
         :class="[
           character.is_mastered
             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/40'
@@ -24,7 +24,7 @@
       <button
         type="button"
         @click.stop="onSpeak"
-        class="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-500 dark:text-slate-400 flex items-center justify-center text-sm transition-all active:scale-90"
+        class="w-11 h-11 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-500 dark:text-slate-400 flex items-center justify-center text-sm transition-all active:scale-90"
         title="听发音"
       >
         🔊
@@ -32,24 +32,24 @@
     </div>
 
     <!-- Pinyin Display & Mask Toggle -->
-    <div class="h-8 flex items-center justify-center mb-1" @click.stop>
+    <div class="min-h-[44px] flex items-center justify-center mb-1" @click.stop>
       <!-- Revealed Pinyin -->
-      <div
-        v-if="isRevealed"
-        class="flex items-center gap-1 px-3 py-0.5 rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-black text-sm tracking-wide animate-pop-in"
+      <button
+        v-if="isRevealed" type="button"
+        class="min-h-[44px] flex items-center gap-1 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-black text-sm tracking-wide animate-pop-in"
         @click="isRevealed = false"
         title="点击遮罩拼音"
       >
         <span>{{ displayPinyin }}</span>
         <span class="text-xs text-brand-400 opacity-60 ml-0.5">👁️</span>
-      </div>
+      </button>
 
       <!-- Masked Button (Default State) -->
       <button
         v-else
         type="button"
         @click="revealPinyin"
-        class="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 border border-dashed border-slate-300 dark:border-slate-600"
+        class="min-h-[44px] px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 border border-dashed border-slate-300 dark:border-slate-600"
         title="点击查看拼音"
       >
         <span>🙈</span>
@@ -58,8 +58,8 @@
     </div>
 
     <!-- Center Calligraphy Tian-Zi-Ge (田字格大字); a word gets one smaller box per character -->
-    <div class="flex flex-wrap justify-center gap-1 my-1 min-h-[8rem] content-center mx-auto" :class="box.row">
-      <div
+    <button type="button" :aria-label="`查看「${character.char}」的笔顺与详情`" @click.stop="$emit('select', character)" class="flex flex-wrap justify-center gap-1 my-1 min-h-[8rem] content-center mx-auto" :class="box.row">
+      <span
         v-for="(ch, index) in chars"
         :key="index"
         class="relative rounded-xl bg-[#FFFDF9] border-2 border-red-300/80 dark:border-red-700/80 shadow-inner flex items-center justify-center overflow-hidden"
@@ -76,8 +76,8 @@
         <span class="relative z-10 font-kai text-[#1e293b] leading-none group-hover:scale-105 transition-transform duration-300" :class="box.text">
           {{ ch }}
         </span>
-      </div>
-    </div>
+      </span>
+    </button>
 
     <!-- Categories -->
     <div v-if="categories.length" class="flex flex-wrap justify-center gap-1 mt-1">

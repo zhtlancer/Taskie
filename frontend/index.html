@@ -8,12 +8,13 @@
     <meta name="theme-color" content="#6C63FF" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <script>
-      try {
-        var theme = localStorage.getItem('taskie_theme') || 'system';
+      (() => {
+        var theme = 'system';
+        try { theme = localStorage.getItem('taskie_theme') || 'system'; } catch (_) {}
         var dark = theme === 'dark' || (theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.classList.toggle('dark', dark);
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-      } catch (_) {}
+      })();
     </script>
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />

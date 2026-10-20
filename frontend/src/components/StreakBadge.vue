@@ -1,5 +1,5 @@
 <template>
-  <div
+  <button type="button" :aria-label="`连续打卡 ${count} 天`"
     class="relative inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 select-none shadow-sm cursor-pointer hover:bg-amber-100/80 dark:hover:bg-amber-950/40 transition-colors"
     @click="triggerWiggle"
   >
@@ -24,7 +24,7 @@
         <span class="text-xs font-bold text-amber-700 dark:text-amber-300">天</span>
       </div>
     </div>
-  </div>
+  </button>
 </template>
 
 <script setup>

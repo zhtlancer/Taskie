@@ -13,6 +13,11 @@ export function settleConfirmation(value) {
   confirmation.value = queue[0] || null;
   current?.resolve(value);
 }
+export function cancelConfirmations() {
+  const pending = queue.splice(0);
+  confirmation.value = null;
+  for (const item of pending) item.resolve(null);
+}
 export async function confirmAction(message) {
   return Boolean(await ask({ title: '确认操作', message, confirmText: '确认', tone: 'danger' }));
 }

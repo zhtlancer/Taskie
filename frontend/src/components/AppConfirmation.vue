@@ -14,10 +14,15 @@
 <script setup>
 import { ref, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
-import { confirmation, settleConfirmation } from '../utils/confirmation';
+import { useRoute } from 'vue-router';
+import { confirmation, settleConfirmation, cancelConfirmations } from '../utils/confirmation';
+const route = useRoute();
 const value = ref(''), dialogKey = ref(0);
 watch(confirmation, current => { value.value = current?.initial || ''; dialogKey.value++; });
+// Browser back/forward must not leave a confirmation acting on a page already left.
+watch(() => route.fullPath, cancelConfirmations, { flush: 'sync' });
 function submit() {
+  if (!confirmation.value) return;
   if (confirmation.value.input && !value.value.trim()) return;
   settleConfirmation(confirmation.value.input ? value.value.trim() : true);
 }

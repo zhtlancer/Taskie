@@ -5,9 +5,9 @@
         class="ui-dialog bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 w-full rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col max-h-[92dvh]" :class="wide ? 'max-w-2xl' : 'max-w-md'">
         <header class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
           <h2 :id="titleId" class="text-base font-bold">{{ title }}</h2>
-          <button type="button" :disabled="busy" class="w-11 h-11 shrink-0 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40" aria-label="关闭" @click="requestClose">✕</button>
+          <button type="button" :disabled="busy" class="w-11 h-11 shrink-0 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40" :aria-label="closeLabel" @click="requestClose">✕</button>
         </header>
-        <div class="p-5 overflow-y-auto min-h-0"><slot /></div>
+        <div class="p-5 overflow-y-auto min-h-0" :style="!$slots.footer ? { paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' } : undefined"><slot /></div>
         <footer v-if="$slots.footer" class="p-4 border-t border-slate-100 dark:border-slate-700 shrink-0 flex flex-wrap justify-end gap-2"><slot name="footer" /></footer>
       </section>
     </div>
@@ -19,7 +19,7 @@ let originalOverflow;
 </script>
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, useId } from 'vue';
-const props = defineProps({ title: { type: String, required: true }, busy: Boolean, wide: Boolean });
+const props = defineProps({ title: { type: String, required: true }, busy: Boolean, wide: Boolean, closeLabel: { type: String, default: '关闭' } });
 const emit = defineEmits(['close']);
 const panel = ref(null), titleId = useId();
 let previousFocus;
