@@ -8,7 +8,24 @@
         <p class="whitespace-pre-line text-sm font-bold">{{ study.record.subject }}：{{ study.record.content }}</p>
         <p class="text-xs text-slate-500 dark:text-slate-400">{{ taskId ? '任务' : '作业' }}截止 {{ study.record.task.due_date }} · 已保存累计 {{ formatDuration(study.total_seconds) }} · {{ study.sessions.length }} 次学习</p>
         <p v-if="study.record.task.expected_minutes" class="text-xs text-slate-500 dark:text-slate-400">整项任务预计 {{ study.record.task.expected_minutes }} 分钟<span v-if="pace"> · {{ pace.text }}</span></p>
-        <p v-if="study.legacy_seconds" class="text-xs text-slate-400">其中旧累计用时 {{ formatDuration(study.legacy_seconds) }}，保留原值，没有分次明细。</p>
+        <p v-if="study.legacy_seconds" class="text-xs text-slate-400">其中旧累计用时 {{ formatDuration(study.legacy_seconds) }}，没有分次明细，不重新分配到每天。</p>
+        <div v-if="asParent && study.legacy_available" class="rounded-xl border p-3 space-y-2 text-sm">
+          <button v-if="!legacyEdit" type="button" :disabled="busy" class="min-h-[44px] text-indigo-600 dark:text-indigo-300 disabled:opacity-50" @click="openLegacy">更正旧累计用时</button>
+          <form v-if="legacyEdit" class="space-y-3" @submit.prevent="saveLegacy">
+            <p class="text-xs text-slate-500 dark:text-slate-400">当前旧累计 {{ formatDuration(study.legacy_seconds) }}。仅更正旧累计，不修改分次学习、积分或完成状态；允许归零。</p>
+            <label class="block">旧累计用时（分钟）<input v-model.number="legacyEdit.minutes" type="number" min="0" max="720" step="any" required :disabled="busy" class="ml-2 w-28 rounded-lg border p-2" /></label>
+            <label class="block">更正原因<textarea v-model="legacyEdit.reason" maxlength="500" required :disabled="busy" rows="2" class="mt-1 w-full rounded-xl border p-3" /></label>
+            <button :disabled="busy" class="rounded-xl bg-indigo-600 px-4 py-3 text-white disabled:opacity-50">保存旧累计更正</button>
+            <button type="button" :disabled="busy" class="px-4 py-3" @click="legacyEdit = null">取消</button>
+          </form>
+          <details v-if="study.legacy_corrections?.length">
+            <summary class="min-h-[44px] cursor-pointer py-3">旧累计更正记录（{{ study.legacy_corrections.length }}）</summary>
+            <article v-for="(entry, index) in study.legacy_corrections" :key="index" class="border-t py-2 space-y-1">
+              <p>{{ dateOf(entry.created_at) }} {{ businessClock(Date.parse(entry.created_at), study.time_zone) }} · 家长 · {{ formatDuration(entry.old_seconds) }} → {{ formatDuration(entry.new_seconds) }}</p>
+              <p class="whitespace-pre-line break-words text-slate-500 dark:text-slate-400">{{ entry.reason }}</p>
+            </article>
+          </details>
+        </div>
         <p v-if="study.record.completion_requested_at && !study.record.task.is_completed" class="bg-amber-50 dark:bg-amber-950/40 rounded-xl p-3 text-sm text-amber-700 dark:text-amber-300">已申请全部完成，等待家长确认。仍可继续学习、记录用时。</p>
         <p v-if="study.record.task.is_completed" class="text-emerald-600 dark:text-emerald-300 font-bold">✓ {{ taskId ? '任务已完成' : '作业已全部完成' }}</p>
         <p v-else-if="overdue && !taskId" class="text-amber-700 dark:text-amber-300 text-xs">已过截止日期，可以继续学习；全部完成需家长确认。</p>
@@ -65,13 +82,14 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
 import { formatDuration, formatClock, paceLabel } from '../utils/taskTimer.js';
 import { localDate } from '../utils/schedule.js';
-import { businessDate } from '../utils/businessDate.js';
+import { businessDate, businessClock } from '../utils/businessDate.js';
 const props = defineProps({ recordId: String, taskId: String, asParent: Boolean });
 const studyApi = {
   get: () => props.taskId ? api.getTaskStudy(props.taskId) : api.getHomeworkStudy(props.recordId),
   start: () => props.taskId ? api.startTaskStudy(props.taskId) : api.startHomeworkStudy(props.recordId),
   pause: sid => props.taskId ? api.pauseTaskStudy(props.taskId, sid) : api.pauseHomeworkStudy(props.recordId, sid),
   finish: (sid, data) => props.taskId ? api.finishTaskStudy(props.taskId, sid, data) : api.finishHomeworkStudy(props.recordId, sid, data),
+  legacy: data => props.taskId ? api.correctTaskLegacy(props.taskId, data) : api.correctHomeworkLegacy(props.recordId, data),
   complete: () => props.taskId ? api.completeTaskStudy(props.taskId) : api.completeHomework(props.recordId),
   add: data => props.taskId ? api.addTaskStudy(props.taskId, data) : api.addHomeworkStudy(props.recordId, data),
   edit: (sid, data) => props.taskId ? api.editTaskStudy(props.taskId, sid, data) : api.editHomeworkStudy(props.recordId, sid, data)
@@ -80,6 +98,7 @@ const emit = defineEmits(['close', 'saved']);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const study = ref(null), error = ref(''), notice = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
 const manualOpen = ref(false), manualDate = ref(localDate()), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
+const legacyEdit = ref(null);
 const today = computed(() => businessDate(now.value, study.value?.time_zone));
 const dateOf = iso => businessDate(Date.parse(iso), study.value?.time_zone);
 watch(today, date => { if (!props.asParent) manualDate.value = date; });
@@ -124,6 +143,14 @@ async function act(fn) {
     try { study.value = hydrate(await studyApi.get()); emit('saved'); } catch { /* Keep input for retry. */ }
   }
   finally { busy.value = false; }
+}
+function openLegacy() {
+  legacyEdit.value = { minutes: study.value.legacy_seconds / 60, expected: study.value.legacy_seconds, reason: '' };
+}
+async function saveLegacy() {
+  if (!legacyEdit.value) return;
+  await act(() => studyApi.legacy({ duration_seconds: Math.round(legacyEdit.value.minutes * 60), expected_old_seconds: legacyEdit.value.expected, reason: legacyEdit.value.reason }));
+  if (!error.value) legacyEdit.value = null;
 }
 async function finish(complete) {
   await act(() => study.value.active ? studyApi.finish(study.value.active.id, { note: note.value, complete }) : studyApi.complete());

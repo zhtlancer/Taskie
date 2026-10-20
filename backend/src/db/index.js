@@ -421,6 +421,8 @@ function initDb(db) {
       db.pragma('user_version = 23');
     })();
   }
+  // v24 adds study_legacy_corrections in schema.sql; no historical time is rewritten.
+  if (db.pragma('user_version', { simple: true }) < 24) db.pragma('user_version = 24');
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

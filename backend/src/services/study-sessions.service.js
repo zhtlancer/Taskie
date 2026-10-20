@@ -49,7 +49,10 @@ class StudySessionsService {
   details(recordId) {
     const { record, task } = this.task(recordId);
     const rows = this.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ? ORDER BY started_at DESC, rowid DESC').all(task.id);
+    const corrections = this.db.prepare('SELECT old_seconds, new_seconds, reason, actor, created_at FROM study_legacy_corrections WHERE task_id = ? ORDER BY rowid DESC').all(task.id);
     return { record, time_zone: timeZone, legacy_seconds: task.homework_legacy_seconds || 0,
+      legacy_available: task.homework_legacy_seconds > 0 || corrections.length > 0,
+      legacy_corrections: corrections,
       total_seconds: (task.homework_legacy_seconds || 0) + rows.filter(r => r.ended_at).reduce((n, r) => n + r.duration_seconds, 0),
       active: rows.find(r => !r.ended_at) ? this.describe(rows.find(r => !r.ended_at)) : null,
       sessions: rows.filter(r => r.ended_at).map(r => this.describe(r)) };
@@ -112,6 +115,25 @@ class StudySessionsService {
     parseDate(date);
     if (date > getTodayDate()) throw fail(400, '不能记录未来的学习');
     if (actor !== 'parent' && date !== getTodayDate()) throw fail(403, '孩子只能更正今天的学习记录');
+  }
+
+  correctLegacy(recordId, body, actor) {
+    if (actor !== 'parent') throw fail(403, '需要家长权限');
+    const seconds = this.validateSeconds(body.duration_seconds);
+    const expected = this.validateSeconds(body.expected_old_seconds);
+    const reason = this.validateNote(body.reason);
+    if (!reason) throw fail(400, '请填写更正原因');
+    this.db.transaction(() => {
+      const { task } = this.task(recordId);
+      if (task.homework_legacy_seconds === null || (task.homework_legacy_seconds === 0 &&
+        !this.db.prepare('SELECT 1 FROM study_legacy_corrections WHERE task_id = ?').get(task.id))) throw fail(409, '没有可更正的旧累计用时，请使用手动补记学习');
+      if (task.homework_legacy_seconds !== expected) throw fail(409, '旧累计用时已变化，请核对最新数值后重试');
+      if (seconds === expected) return;
+      this.db.prepare('UPDATE daily_tasks SET homework_legacy_seconds = ? WHERE id = ?').run(seconds, task.id);
+      this.db.prepare(`INSERT INTO study_legacy_corrections(id, task_id, child_id, old_seconds, new_seconds, reason, actor, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'parent', ?)`).run(generateId(), task.id, task.child_id, expected, seconds, reason, new Date().toISOString());
+    })();
+    return this.details(recordId);
   }
 
   finish(recordId, id, body, actor) {

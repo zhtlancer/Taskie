@@ -23,6 +23,7 @@ async function homeworkRoutes(fastify, options) {
   fastify.post('/homework/:id/reject-task', handle(async request => homeworkService.rejectTask(request.params.id)));
 
   fastify.get('/homework/:id/study', handle(async r => study.details(r.params.id)));
+  fastify.put('/homework/:id/study/legacy', handle(r => study.correctLegacy(r.params.id, r.body || {}, actor(r))));
   fastify.post('/homework/:id/study/start', handle(async r => study.start(r.params.id)));
   fastify.post('/homework/:id/sessions/:sid/pause', handle(async r => study.pauseSession(r.params.id, r.params.sid)));
   fastify.post('/homework/:id/sessions/:sid/finish', handle(async r => study.finish(r.params.id, r.params.sid, r.body || {}, actor(r))));

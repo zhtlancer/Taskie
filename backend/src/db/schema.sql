@@ -523,3 +523,16 @@ CREATE TABLE IF NOT EXISTS homework_session_days (
   seconds INTEGER NOT NULL,
   PRIMARY KEY(session_id, date)
 );
+
+-- Parent corrections retain the unknown historical allocation of legacy time.
+CREATE TABLE IF NOT EXISTS study_legacy_corrections (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES daily_tasks(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  old_seconds INTEGER NOT NULL CHECK(old_seconds BETWEEN 0 AND 43200),
+  new_seconds INTEGER NOT NULL CHECK(new_seconds BETWEEN 0 AND 43200),
+  reason TEXT NOT NULL,
+  actor TEXT NOT NULL CHECK(actor = 'parent'),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_study_legacy_corrections_task ON study_legacy_corrections(task_id);

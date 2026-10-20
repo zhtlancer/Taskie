@@ -38,7 +38,7 @@ function installAuthorization(app, db) {
       db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1') {
       return reply.code(403).send({ error: '请先修改默认家长 PIN', code: 'PARENT_PIN_CHANGE_REQUIRED' });
     }
-    const parentOnly = /^\/api\/children\/[^/]+\/word-study\/plans\/[^/]+\/?$/.test(url) || url.startsWith('/api/backups') || url === '/api/auth/parent-pin' || url.startsWith('/api/devices') ||
+    const parentOnly = /^\/api\/(?:daily-tasks|homework)\/[^/]+\/study\/legacy\/?$/.test(url) || /^\/api\/children\/[^/]+\/word-study\/plans\/[^/]+\/?$/.test(url) || url.startsWith('/api/backups') || url === '/api/auth/parent-pin' || url.startsWith('/api/devices') ||
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||
       /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/reward-items') && request.method !== 'GET' ||

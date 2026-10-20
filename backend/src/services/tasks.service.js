@@ -153,7 +153,8 @@ class TasksService {
 
   studyRetention(id) {
     return this.db.prepare(`SELECT id, homework_legacy_seconds,
-      EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study
+      (EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) OR
+       EXISTS (SELECT 1 FROM study_legacy_corrections c WHERE c.task_id = daily_tasks.id)) AS has_study
       FROM daily_tasks WHERE id = ?`).get(id);
   }
 
