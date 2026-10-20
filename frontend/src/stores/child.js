@@ -13,6 +13,7 @@ export const useChildStore = defineStore('child', {
       today_completion_rate: 0,
       today_points: 0
     },
+    statsRequestId: 0,
     loadingStats: false
   }),
 
@@ -37,10 +38,11 @@ export const useChildStore = defineStore('child', {
     async fetchStats() {
       if (!this.childId) return;
       const requestedChild = this.childId;
+      const serial = ++this.statsRequestId;
       this.loadingStats = true;
       try {
         const stats = await api.getChildStats(requestedChild);
-        if (this.childId !== requestedChild) return;
+        if (this.childId !== requestedChild || serial !== this.statsRequestId) return;
         this.stats = {
           total_points: stats.total_points || 0,
           available_points: stats.available_points ?? stats.total_points ?? 0,
@@ -53,7 +55,7 @@ export const useChildStore = defineStore('child', {
       } catch (err) {
         console.error('Failed to fetch child stats:', err);
       } finally {
-        if (this.childId === requestedChild) this.loadingStats = false;
+        if (this.childId === requestedChild && serial === this.statsRequestId) this.loadingStats = false;
       }
     },
 

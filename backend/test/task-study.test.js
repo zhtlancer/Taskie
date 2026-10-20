@@ -549,3 +549,92 @@ test('deleting a template keeps its legacy timer available for later conversion'
   assert.equal(detail.active.timer_seconds, 600);
   assert.equal(c.taskStudyService.finish(task.id, detail.active.id, {}, 'child').total_seconds, 600);
 });
+
+test('ending across midnight saves the session even when completing the expired task is rejected', async t => {
+  const c = await fixture(t, '2026-10-20T15:50:00Z');
+  const sid = (await c.call('POST', '/study/start')).json().active.id;
+  c.advance(1800);
+  const ended = await c.call('POST', `/sessions/${sid}/finish`, { complete: true, note: '跨日已学完这部分' });
+  assert.equal(ended.statusCode, 200, ended.body);
+  const result = ended.json();
+  assert.equal(result.completion_result.status, 'rejected');
+  assert.equal(result.completion_result.status_code, 403);
+  assert.equal(result.active, null);
+  assert.equal(result.total_seconds, 1800);
+  assert.equal(result.sessions[0].note, '跨日已学完这部分');
+  assert.equal(result.record.task.is_completed, false);
+  assert.deepEqual(c.stats('2026-10-20', '2026-10-21').days.map(day => day.recorded_seconds), [600,1200]);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+  c.advance(120);
+  assert.equal((await c.call('POST', `/sessions/${sid}/finish`, { complete: true })).json().total_seconds, 1800);
+  assert.equal((await c.call('POST', '/study/start')).statusCode, 409);
+  assert.equal((await c.call('POST', '/study/complete')).statusCode, 403);
+  assert.equal((await c.call('POST', '/backfill', {}, true)).statusCode, 200);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 10);
+  await c.call('POST', '/uncomplete', undefined, true);
+  const retry = (await c.call('POST', `/sessions/${sid}/finish`, { complete: true }, true)).json();
+  assert.equal(retry.record.task.is_completed, false, 'retrying an old finish must not complete an undone task again');
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+});
+
+test('completion storage failures roll back completion but never undo the saved session', async t => {
+  const c = await fixture(t);
+  const sid = (await c.call('POST', '/study/start')).json().active.id;
+  c.advance(600);
+  c.db.exec("CREATE TRIGGER fail_completion BEFORE INSERT ON point_logs BEGIN SELECT RAISE(ABORT, 'simulated completion failure'); END");
+  assert.equal((await c.call('POST', `/sessions/${sid}/finish`, { complete: true, note: '已保存学习' })).statusCode, 500);
+  assert.equal(c.details().total_seconds, 600);
+  assert.equal(c.details().active, null);
+  assert.equal(c.details().sessions[0].note, '已保存学习');
+  assert.equal(c.details().record.task.is_completed, false);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+});
+
+test('invalid finish input does not save or stop an active session', async t => {
+  const c = await fixture(t);
+  const sid = (await c.call('POST', '/study/start')).json().active.id;
+  c.advance(120);
+  for (const payload of [{ complete: 'true' }, { note: '字'.repeat(501), complete: true }]) {
+    assert.equal((await c.call('POST', `/sessions/${sid}/finish`, payload)).statusCode, 400);
+    assert.ok(c.details().active.timer_started_at);
+    assert.equal(c.details().sessions.length, 0);
+  }
+});
+
+test('unfinished study stays discoverable after midnight without rejoining today or mutating history', async t => {
+  const c = await fixture(t, '2026-10-20T15:30:00Z');
+  const sid = (await c.call('POST', '/study/start')).json().active.id;
+  c.advance(3600);
+  const next = c.tasksService.createAdhocTask(c.child.id, { title: '第二天学习', subject: '数学', track_time: true });
+  c.taskStudyService.start(next.id);
+  assert.equal(c.tasksService.getDailyTasks(c.child.id).some(task => task.id === c.task.id), false);
+  const before = c.db.prepare('SELECT total_changes() AS n').get().n;
+  const response = await c.rawInject({ method: 'GET', url: `/api/children/${c.child.id}/unfinished-study`, headers: c.headers() });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(c.db.prepare('SELECT total_changes() AS n').get().n, before, 'the discovery endpoint must be read-only');
+  const found = response.json().items.find(item => item.task_id === c.task.id);
+  assert.equal(response.json().today, '2026-10-21');
+  assert.equal(response.json().time_zone, require('../src/config').timeZone);
+  assert.equal(found.session.id, sid);
+  assert.equal(found.session.timer_started_at, null);
+  assert.equal(found.session.timer_seconds, 3600);
+  const ended = await c.call('POST', `/sessions/${sid}/finish`, { note: '保存昨晚的学习' });
+  assert.equal(ended.statusCode, 200, ended.body);
+  assert.equal(c.taskStudyService.unfinished(c.child.id).items.some(item => item.task_id === c.task.id), false);
+  assert.equal(c.stats('2026-10-20', '2026-10-21').summary.recorded_seconds, 3600);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+});
+
+test('unfinished study includes homework identifiers and enforces sibling and anonymous access', async t => {
+  const c = await fixture(t);
+  const record = c.homeworkService.create(c.child.id, { subject: '语文', content: '未结束的课文练习', due_date: '2026-10-21', create_task: true }, 'parent');
+  c.homeworkStudyService.start(record.id);
+  const item = c.taskStudyService.unfinished(c.child.id).items[0];
+  assert.equal(item.record_id, record.id);
+  assert.equal(item.task_id, record.task.id);
+  const other = c.childrenService.createChild({ name: '其他孩子' });
+  const url = `/api/children/${other.id}/unfinished-study`;
+  assert.equal((await c.rawInject({ method: 'GET', url, headers: c.headers() })).statusCode, 403);
+  assert.equal((await c.rawInject({ method: 'GET', url })).statusCode, 401);
+  assert.equal((await c.app.inject({ method: 'GET', url: '/api/children/missing/unfinished-study' })).statusCode, 404);
+});

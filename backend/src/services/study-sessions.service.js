@@ -1,5 +1,6 @@
 const { generateId } = require('../utils/crypto');
 const { getTodayDate, formatDate, parseDate } = require('../utils/date');
+const { timeZone } = require('../config');
 const MAX_SECONDS = 12 * 3600;
 const fail = (status, message) => ({ status, message });
 
@@ -48,7 +49,7 @@ class StudySessionsService {
   details(recordId) {
     const { record, task } = this.task(recordId);
     const rows = this.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ? ORDER BY started_at DESC, rowid DESC').all(task.id);
-    return { record, legacy_seconds: task.homework_legacy_seconds || 0,
+    return { record, time_zone: timeZone, legacy_seconds: task.homework_legacy_seconds || 0,
       total_seconds: (task.homework_legacy_seconds || 0) + rows.filter(r => r.ended_at).reduce((n, r) => n + r.duration_seconds, 0),
       active: rows.find(r => !r.ended_at) ? this.describe(rows.find(r => !r.ended_at)) : null,
       sessions: rows.filter(r => r.ended_at).map(r => this.describe(r)) };
@@ -116,6 +117,7 @@ class StudySessionsService {
   finish(recordId, id, body, actor) {
     if (body.complete !== undefined && typeof body.complete !== 'boolean') throw fail(400, '完成设置无效');
     const note = this.validateNote(body.note);
+    let saved = false;
     this.db.transaction(() => {
       const { task } = this.task(recordId);
       this.checkActor(task, actor, 'finish');
@@ -124,9 +126,24 @@ class StudySessionsService {
       this.pause(row);
       this.db.prepare('UPDATE homework_sessions SET ended_at = ?, note = ?, completion_action = ? WHERE id = ?')
         .run(new Date().toISOString(), note, body.complete ? 1 : 0, id);
-      if (body.complete) this.complete(recordId, actor);
+      saved = true;
     })();
-    return this.details(recordId);
+    // Ending a valid session must survive a later denial of completion (for example midnight).
+    // A retry of an already-ended session never completes the task again after an undo.
+    let completion;
+    if (body.complete && saved) {
+      try { this.db.transaction(() => this.complete(recordId, actor))(); }
+      catch (err) {
+        if (![403, 409].includes(err.status)) throw err;
+        completion = { status: 'rejected', status_code: err.status, message: err.message };
+      }
+    }
+    const details = this.details(recordId);
+    if (body.complete) details.completion_result = completion || {
+      status: details.record.task.is_completed ? 'completed' : details.record.completion_requested_at ? 'requested' : 'not_completed',
+      message: details.record.task.is_completed ? '任务已完成' : details.record.completion_requested_at ? '已申请全部完成，等待家长确认' : '学习已保存，如需完成任务请单独操作'
+    };
+    return details;
   }
 
   manual(recordId, body, actor) {

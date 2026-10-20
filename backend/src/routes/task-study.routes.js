@@ -3,6 +3,7 @@ async function taskStudyRoutes(fastify, { taskStudyService: study }) {
     try { return fn(request); }
     catch (err) { return reply.code(err.status || 500).send({ error: err.message || '操作失败' }); }
   };
+  fastify.get('/children/:id/unfinished-study', handle(r => study.unfinished(r.params.id)));
   fastify.get('/daily-tasks/:id/study', handle(r => study.details(r.params.id)));
   fastify.post('/daily-tasks/:id/study/start', handle(r => study.start(r.params.id)));
   fastify.post('/daily-tasks/:id/sessions/:sid/pause', handle(r => study.pauseSession(r.params.id, r.params.sid)));

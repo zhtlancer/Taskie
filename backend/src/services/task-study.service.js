@@ -3,8 +3,21 @@ const { generateId } = require('../utils/crypto');
 const { getTodayDate } = require('../utils/date');
 const { isActiveTask } = require('./tasks.service');
 const { MAX_DURATION_SECONDS } = require('../utils/timer');
+const { timeZone } = require('../config');
 
 class TaskStudyService extends StudySessionsService {
+  unfinished(childId) {
+    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
+    // Read-only: do not bring expired tasks back into the day's completion or points counts.
+    const items = this.db.prepare(`SELECT s.*, d.title, d.subject, d.date AS task_date, r.id AS record_id
+      FROM homework_sessions s JOIN daily_tasks d ON d.id = s.task_id
+      LEFT JOIN homework_records r ON r.daily_task_id = d.id
+      WHERE s.child_id = ? AND s.ended_at IS NULL ORDER BY s.started_at, s.id`).all(childId)
+      .map(row => ({ task_id: row.task_id, record_id: row.record_id, title: row.title, subject: row.subject,
+        date: row.task_date, session: this.describe(row) }));
+    return { items, time_zone: timeZone, today: getTodayDate() };
+  }
+
   // Destructive task edits also need this conversion, even if no client opened /study yet.
   // Stay in the caller's transaction and keep unknown past runs as a legacy aggregate.
   preserveTime(id, { endActive = false, convert = true } = {}) {

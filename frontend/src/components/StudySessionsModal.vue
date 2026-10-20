@@ -2,6 +2,7 @@
   <UiDialog :title="taskId ? '分次学习' : '分次做作业'" :busy="busy" wide @close="$emit('close')">
     <div class="space-y-4">
       <p v-if="error" role="alert" class="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 rounded-xl p-3 text-sm">{{ error }}</p>
+      <p v-if="notice" role="status" class="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 rounded-xl p-3 text-sm">{{ notice }}</p>
       <p v-if="!study" class="text-slate-400">正在加载学习记录…</p>
       <template v-else>
         <p class="whitespace-pre-line text-sm font-bold">{{ study.record.subject }}：{{ study.record.content }}</p>
@@ -60,10 +61,11 @@
 </template>
 <script setup>
 import UiDialog from './UiDialog.vue';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
 import { formatDuration, formatClock, paceLabel } from '../utils/taskTimer.js';
 import { localDate } from '../utils/schedule.js';
+import { businessDate } from '../utils/businessDate.js';
 const props = defineProps({ recordId: String, taskId: String, asParent: Boolean });
 const studyApi = {
   get: () => props.taskId ? api.getTaskStudy(props.taskId) : api.getHomeworkStudy(props.recordId),
@@ -76,10 +78,11 @@ const studyApi = {
 };
 const emit = defineEmits(['close', 'saved']);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-const study = ref(null), error = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
+const study = ref(null), error = ref(''), notice = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
 const manualOpen = ref(false), manualDate = ref(localDate()), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
-const today = computed(() => localDate(new Date(now.value)));
-const dateOf = iso => localDate(new Date(iso));
+const today = computed(() => businessDate(now.value, study.value?.time_zone));
+const dateOf = iso => businessDate(Date.parse(iso), study.value?.time_zone);
+watch(today, date => { if (!props.asParent) manualDate.value = date; });
 const overdue = computed(() => study.value && study.value.record.task.due_date < today.value);
 const canStart = computed(() => !props.taskId || (study.value?.record.task.track_time && !overdue.value && study.value?.record.assigned_date <= today.value));
 const canComplete = computed(() => !props.taskId || props.asParent || !overdue.value);
@@ -99,13 +102,27 @@ const hydrate = value => ({ ...value, active: value.active ? { ...value.active, 
 async function load() {
   const serial = ++requestSerial;
   const result = await studyApi.get();
-  if (serial === requestSerial && !busy.value) study.value = hydrate(result);
+  if (serial === requestSerial && !busy.value) {
+    study.value = hydrate(result);
+    if (!manualOpen.value) manualDate.value = today.value;
+  }
 }
 async function act(fn) {
   if (busy.value) return;
-  busy.value = true; requestSerial += 1; error.value = '';
-  try { study.value = hydrate(await fn()); emit('saved'); }
-  catch (err) { error.value = typeof err === 'string' ? err : '操作失败，请重试'; }
+  busy.value = true; requestSerial += 1; error.value = ''; notice.value = '';
+  try {
+    const result = await fn();
+    study.value = hydrate(result);
+    if (result.completion_result && ['rejected', 'not_completed'].includes(result.completion_result.status)) {
+      notice.value = `学习已保存。${result.completion_result.message}`;
+    }
+    emit('saved');
+  }
+  catch (err) {
+    error.value = typeof err === 'string' ? err : '操作失败，请重试';
+    // A save may have committed before the response was lost or completion failed.
+    try { study.value = hydrate(await studyApi.get()); emit('saved'); } catch { /* Keep input for retry. */ }
+  }
   finally { busy.value = false; }
 }
 async function finish(complete) {

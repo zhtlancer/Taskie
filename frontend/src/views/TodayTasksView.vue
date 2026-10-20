@@ -112,6 +112,15 @@
             <span class="animate-spin mr-2">⏳</span> 正在加载今日任务...
           </div>
 
+          <section v-if="unfinishedAttention.length" aria-label="未结束的学习" class="mb-3 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-4 space-y-2">
+            <h2 class="text-sm font-bold text-amber-800 dark:text-amber-200">还有学习记录未结束</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">这些记录不计入今天的必做任务，可以打开并保存已学用时。</p>
+            <div v-for="item in unfinishedAttention" :key="item.session.id" class="flex items-center justify-between gap-3 text-sm">
+              <span class="min-w-0 break-words">{{ item.date }} · {{ item.subject }} · {{ item.title }} <span class="text-xs text-slate-500 dark:text-slate-400">{{ item.session.timer_started_at ? '计时中' : '已暂停' }}</span></span>
+              <button type="button" class="shrink-0 min-h-[44px] px-3 rounded-xl bg-white dark:bg-slate-900 font-bold text-brand-700 dark:text-brand-300" @click="openUnfinished(item)">结束 / 查看记录</button>
+            </div>
+          </section>
+
           <!-- What to bring tomorrow, from tomorrow's lessons and outside classes -->
           <button
             v-if="!loading && tomorrowSchedule?.bring.length"
@@ -271,13 +280,13 @@
       :child-id="childId"
       initial-char="学"
     />
-    <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null" @saved="loadTasks(); loadGoals()" />
-    <StudySessionsModal v-if="studyTask" :task-id="studyTask" :as-parent="asParent" @close="studyTask = null" @saved="loadTasks(); loadGoals()" />
+    <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null; loadUnfinished()" @saved="refreshStudy" />
+    <StudySessionsModal v-if="studyTask" :task-id="studyTask" :as-parent="asParent" @close="studyTask = null; loadUnfinished()" @saved="refreshStudy" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import confetti from 'canvas-confetti';
 import api from '../api/client';
@@ -298,6 +307,7 @@ import { addDays, lessonHappens } from '../utils/schedule.js';
 import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
 import { currentRole } from '../utils/session.js';
+import { businessDate, businessClock, businessDayLabel, DEFAULT_TIME_ZONE } from '../utils/businessDate.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -321,25 +331,34 @@ const periods = ref([]);
 const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
 // Running long-term tasks, plus any finished today so the child sees the celebration.
-const activeGoals = computed(() => goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString));
-const todayString = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-})();
+const activeGoals = computed(() => goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString.value));
+const timeZone = ref(DEFAULT_TIME_ZONE);
+const unfinished = ref([]);
+let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, loadSerial = 0;
 
 // Keep task timers and the next-class reminder current even when no task timer is running.
 const now = ref(Date.now());
+const todayString = computed(() => businessDate(now.value, timeZone.value));
+const unfinishedAttention = computed(() => unfinished.value.filter(item => item.date < todayString.value || (!loading.value && !tasks.value.some(task => task.id === item.task_id))));
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
-onUnmounted(() => clearInterval(clock));
+onUnmounted(() => {
+  clearInterval(clock);
+  taskSerial++; goalSerial++; scheduleSerial++; unfinishedSerial++; loadSerial++;
+  document.removeEventListener('visibilitychange', onResume);
+  window.removeEventListener('pageshow', onResume);
+});
 async function fetchTasks() {
-  const list = (await api.getDailyTasks(childId.value)).map(task => withClock(task));
+  const serial = ++taskSerial, id = childId.value, date = todayString.value;
+  const list = (await api.getDailyTasks(id)).map(task => withClock(task));
   now.value = Date.now();
-  return list;
+  if (serial === taskSerial && id === childId.value && date === todayString.value) tasks.value = list;
 }
 
 async function loadGoals() {
+  const serial = ++goalSerial, id = childId.value, date = todayString.value;
   try {
-    const [periodList, goalList] = await Promise.all([api.getChildPeriods(childId.value), api.getChildGoals(childId.value)]);
+    const [periodList, goalList] = await Promise.all([api.getChildPeriods(id), api.getChildGoals(id)]);
+    if (serial !== goalSerial || id !== childId.value || date !== todayString.value) return;
     periods.value = periodList;
     goals.value = goalList.map(goal => withClock(goal));
     now.value = Date.now();
@@ -353,11 +372,11 @@ async function refreshGoals() {
   const wasAllDone = allDone.value;
   await loadGoals();
   try {
-    tasks.value = await fetchTasks();
+    await fetchTasks();
   } catch (err) {
     console.error('Failed to refresh daily tasks:', err);
   }
-  await childStore.fetchStats();
+  await Promise.all([childStore.fetchStats(), loadUnfinished()]);
   if (!wasAllDone && allDone.value) fireCelebration(true);
 }
 const selectedSubject = ref('全部');
@@ -374,11 +393,7 @@ const subjects = [
   { name: '其他', icon: '🎨' },
 ];
 
-const formattedDate = computed(() => {
-  const d = new Date();
-  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return `${weekDays[d.getDay()]} · ${d.getMonth() + 1}月${d.getDate()}日`;
-});
+const formattedDate = computed(() => businessDayLabel(todayString.value));
 
 // Daily items of long-term tasks are logged in their panel, so the card grid leaves them out
 // (they still count towards today's progress).
@@ -423,13 +438,15 @@ const scheduleOpen = ref(false);
 const todayClasses = computed(() => (todaySchedule.value?.outside || []).filter(lessonHappens));
 // The outside class still to come today (or the last one once all have started).
 const nextClass = computed(() => {
-  const nowTime = new Date(now.value).toTimeString().slice(0, 5);
+  const nowTime = businessClock(now.value, timeZone.value);
   return todayClasses.value.find(lesson => lesson.end_time > nowTime) || todayClasses.value.at(-1) || null;
 });
 
 async function loadSchedule() {
+  const serial = ++scheduleSerial, id = childId.value, date = todayString.value;
   try {
-    [todaySchedule.value, tomorrowSchedule.value] = await api.getChildSchedule(childId.value, todayString, addDays(todayString, 1));
+    const result = await api.getChildSchedule(id, date, addDays(date, 1));
+    if (serial === scheduleSerial && id === childId.value && date === todayString.value) [todaySchedule.value, tomorrowSchedule.value] = result;
   } catch (err) {
     console.error('Failed to load the timetable:', err);
   }
@@ -440,25 +457,56 @@ function openSchedule() {
   scheduleOpen.value = true;
 }
 
-onMounted(async () => {
-  await Promise.all([loadTasks(), loadGoals(), loadSchedule()]);
+async function loadUnfinished() {
+  const serial = ++unfinishedSerial, id = childId.value;
+  try {
+    const result = await api.getUnfinishedStudy(id);
+    if (serial !== unfinishedSerial || id !== childId.value) return;
+    timeZone.value = result.time_zone;
+    unfinished.value = result.items;
+  } catch (err) { console.error('Failed to load unfinished study:', err); }
+}
+function openUnfinished(item) {
+  if (item.record_id) studyRecord.value = item.record_id;
+  else studyTask.value = item.task_id;
+}
+async function refreshBoard() { await Promise.all([loadTasks(), loadGoals(), loadSchedule()]); }
+async function refreshStudy() { await Promise.all([loadTasks(), loadGoals()]); }
+function onResume() {
+  if (document.hidden) return;
+  const date = todayString.value;
+  now.value = Date.now();
+  if (date === todayString.value) refreshBoard(); // A changed date is handled by the watcher.
+}
+watch([todayString, childId], () => {
+  tasks.value = []; goals.value = []; periods.value = []; unfinished.value = [];
+  childStore.statsRequestId++;
+  childStore.stats = { ...childStore.stats, today_points: 0, today_total_tasks: 0, today_completed_tasks: 0, today_completion_rate: 0 };
+  todaySchedule.value = null; tomorrowSchedule.value = null;
+  refreshBoard();
+});
+onMounted(() => {
+  document.addEventListener('visibilitychange', onResume);
+  window.addEventListener('pageshow', onResume);
+  refreshBoard();
 });
 
 async function loadTasks() {
+  const serial = ++loadSerial, id = childId.value;
   loading.value = true;
   try {
     if (childStore.childId !== childId.value && childId.value) {
       // Restore child info
       const children = await api.getChildren();
+      if (serial !== loadSerial || id !== childId.value) return;
       const match = children.find(c => c.id === childId.value);
       if (match) childStore.setChild(match);
     }
-    tasks.value = await fetchTasks();
-    await childStore.fetchStats();
+    await Promise.all([fetchTasks(), childStore.fetchStats(), loadUnfinished()]);
   } catch (err) {
     console.error('Failed to load daily tasks:', err);
   } finally {
-    loading.value = false;
+    if (serial === loadSerial) loading.value = false;
   }
 }
 
@@ -503,7 +551,7 @@ async function handleTaskToggle(task, durationBody = null) {
       }
 
       // Refresh child stats & trigger streak shake
-      tasks.value = await fetchTasks();
+      await fetchTasks();
       await childStore.fetchStats();
       if (streakRef.value) {
         streakRef.value.wiggle();
@@ -519,7 +567,7 @@ async function handleTaskToggle(task, durationBody = null) {
         task.weekly_completed_times = Math.max(0, (task.weekly_completed_times || 0) - 1);
       }
 
-      tasks.value = await fetchTasks();
+      await fetchTasks();
       await childStore.fetchStats();
     }
   } catch (err) {
@@ -562,7 +610,7 @@ async function submitDuration(seconds) {
   try {
     await api.setTaskDuration(task.id, seconds);
     durationAsk.value = null;
-    tasks.value = await fetchTasks();
+    await fetchTasks();
   } catch (err) {
     durationError.value = typeof err === 'string' ? err : '保存失败，请重试';
   } finally {
@@ -578,7 +626,7 @@ const skipError = ref('');
 // Reloads after a skip change; an approved skip may finish the day or unlock a badge.
 async function afterSkipChange(result) {
   const wasAllDone = allDone.value;
-  tasks.value = await fetchTasks();
+  await fetchTasks();
   await Promise.all([loadGoals(), childStore.fetchStats()]);
   if (!wasAllDone && allDone.value) fireCelebration(true);
   else if (result?.new_badges?.length) {
