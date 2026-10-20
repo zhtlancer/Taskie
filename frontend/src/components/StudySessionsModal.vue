@@ -1,7 +1,7 @@
 <template>
-  <div class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-3" @click.self="$emit('close')">
+  <div class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-3" @click.self="!busy && $emit('close')">
     <section class="bg-white rounded-3xl p-5 max-w-xl w-full max-h-[92dvh] overflow-y-auto space-y-4" role="dialog" aria-modal="true" :aria-label="taskId ? '分次学习' : '分次做作业'">
-      <header class="flex items-center justify-between gap-3"><h3 class="font-black text-lg">📒 {{ taskId ? '分次学习' : '分次做作业' }}</h3><button class="p-3" aria-label="关闭" @click="$emit('close')">✕</button></header>
+      <header class="flex items-center justify-between gap-3"><h3 class="font-black text-lg">📒 {{ taskId ? '分次学习' : '分次做作业' }}</h3><button :disabled="busy" class="p-3 disabled:opacity-50" aria-label="关闭" @click="$emit('close')">✕</button></header>
       <p v-if="error" role="alert" class="bg-rose-50 text-rose-600 rounded-xl p-3 text-sm">{{ error }}</p>
       <p v-if="!study" class="text-slate-400">正在加载学习记录…</p>
       <template v-else>

@@ -89,7 +89,7 @@ async function main() {
   // The board shows the task with its homework.
   await childPage.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
   await childPage.getByText('科学：完成实验报告', { exact: true }).waitFor();
-  await childPage.getByText(/📒 完成实验报告/).waitFor();
+  await childPage.getByText(/📒 画出电路图/).waitFor();
   await shot(childPage, '4-child-board-task');
   pass('the board shows the homework task and its full content');
 
@@ -99,6 +99,10 @@ async function main() {
   await study.getByRole('button', { name: '开始本次', exact: true }).click();
   await childPage.waitForTimeout(1100);
   await study.getByRole('button', { name: '暂停', exact: true }).click();
+  await study.getByRole('button', { name: '关闭', exact: true }).click();
+  await childPage.getByRole('timer', { name: '本次学习用时', exact: true }).waitFor();
+  await childPage.getByText('已暂停', { exact: true }).waitFor();
+  await childPage.getByRole('button', { name: '学习 / 记录', exact: true }).click();
   await study.getByRole('button', { name: '继续本次', exact: true }).click();
   await study.getByPlaceholder(/例如：写完第一部分/).fill('第一部分已完成');
   await study.getByRole('button', { name: '结束本次学习', exact: true }).click();
@@ -188,13 +192,45 @@ async function main() {
   const pointsBefore = app.services.rewardsService.getTotalPoints(child.id);
   await phone.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
   const ordinaryCard = phone.locator('div.select-none.border-2').filter({ has: phone.getByRole('heading', { name: '普通分次练习', exact: true }) });
+  await ordinaryCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  await ordinaryCard.getByRole('group', { name: '任务操作', exact: true }).getByRole('button', { name: '今天没有？', exact: true }).waitFor();
+  await phone.getByRole('button', { name: '关闭任务菜单', exact: true }).click({ position: { x: 5, y: 5 } });
+  assert.equal((await api('GET', `/daily-tasks?child_id=${child.id}`)).find(row => row.id === ordinary.id).is_completed, false, 'opening and dismissing the menu must not check off the task');
   await ordinaryCard.getByRole('button', { name: '学习 / 记录', exact: true }).click();
   const ordinaryStudy = phone.getByRole('dialog', { name: '分次学习', exact: true });
   await ordinaryStudy.getByRole('button', { name: '开始本次', exact: true }).click();
+  await ordinaryStudy.getByRole('button', { name: '暂停', exact: true }).waitFor();
   db.prepare('UPDATE homework_sessions SET timer_started_at = ? WHERE task_id = ? AND ended_at IS NULL')
     .run(new Date(Date.now() - 120000).toISOString(), ordinary.id);
   await ordinaryStudy.getByRole('button', { name: '暂停', exact: true }).click();
+  await ordinaryStudy.getByRole('button', { name: '关闭', exact: true }).click();
+  const cardClock = ordinaryCard.getByRole('timer', { name: '本次学习用时', exact: true });
+  await cardClock.waitFor();
+  await ordinaryCard.getByText('已暂停', { exact: true }).waitFor();
+  const pausedClock = await cardClock.innerText();
+  assert.match(pausedClock, /本次 02:/);
+  await phone.waitForTimeout(1100);
+  assert.equal(await cardClock.innerText(), pausedClock, 'the paused card clock stays frozen');
+  await ordinaryCard.getByRole('button', { name: '学习 / 记录', exact: true }).click();
   await ordinaryStudy.getByRole('button', { name: '继续本次', exact: true }).click();
+  await ordinaryStudy.getByRole('button', { name: '关闭', exact: true }).click();
+  await ordinaryCard.getByText('计时中', { exact: true }).waitFor();
+  const runningClock = await cardClock.innerText();
+  await phone.waitForFunction(previous => {
+    const card = [...document.querySelectorAll('div.select-none.border-2')].find(el => el.textContent.includes('普通分次练习'));
+    const timer = card?.querySelector('[role=timer]');
+    return timer && timer.textContent.trim() !== previous;
+  }, runningClock);
+  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await ordinaryCard.scrollIntoViewIfNeeded();
+  await shot(phone, '11-phone-card-clock');
+  await phone.setViewportSize({ width: 1180, height: 820 });
+  await cardClock.waitFor();
+  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await shot(phone, '12-ipad-card-clock');
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await ordinaryCard.getByRole('button', { name: '学习 / 记录', exact: true }).click();
+  pass('phone and tablet cards show live session clocks and retain paused readings');
   await ordinaryStudy.getByPlaceholder(/例如：写完第一部分/).fill('第一段练习');
   await ordinaryStudy.getByRole('button', { name: '结束本次学习', exact: true }).click();
   await ordinaryStudy.getByText('第一段练习', { exact: true }).waitFor();
@@ -206,6 +242,7 @@ async function main() {
   assert.equal(app.services.rewardsService.getTotalPoints(child.id), pointsBefore);
   assert.equal((await api('GET', `/daily-tasks/${ordinary.id}/study`)).record.task.is_completed, false);
   await ordinaryStudy.getByRole('button', { name: '开始本次', exact: true }).click();
+  await ordinaryStudy.getByRole('button', { name: '暂停', exact: true }).waitFor();
   db.prepare('UPDATE homework_sessions SET timer_started_at = ? WHERE task_id = ? AND ended_at IS NULL')
     .run(new Date(Date.now() - 180000).toISOString(), ordinary.id);
   await ordinaryStudy.getByRole('button', { name: '结束计时并完成任务', exact: true }).click();
@@ -222,6 +259,15 @@ async function main() {
   assert.equal((await api('GET', `/daily-tasks/${ordinary.id}/study`)).total_seconds, ordinaryDetail.total_seconds);
   await ordinaryStudy.getByRole('button', { name: '关闭', exact: true }).click();
   pass('ordinary tasks support repeated sessions, one final award and undo retaining time on phones');
+  await ordinaryCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  await ordinaryCard.getByRole('button', { name: '今天没有？', exact: true }).click();
+  await phone.getByPlaceholder('也可以自己写，例如：数学老师请假了').fill('今天没有布置');
+  await phone.getByRole('button', { name: '请家长确认', exact: true }).click();
+  await ordinaryCard.getByText(/申请跳过：今天没有布置/).waitFor();
+  await ordinaryCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  await ordinaryCard.getByRole('button', { name: '撤回申请', exact: true }).click();
+  await ordinaryCard.getByText(/申请跳过：今天没有布置/).waitFor({ state: 'detached' });
+  pass('task menus can request and withdraw a skip without marking the task complete');
 
   // A parent can inspect, add historical time and backfill without replacing saved sessions.
   const past = await api('POST', `/children/${child.id}/adhoc-tasks`, {
@@ -246,10 +292,37 @@ async function main() {
   assert.equal(pastDetail.record.task.completion_source, 'parent_backfill');
   pass('parent backfill can add historical study time and complete while preserving individual sessions');
 
+  await ordinaryCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  await ordinaryCard.getByRole('button', { name: '今天没有？', exact: true }).click();
+  await phone.getByPlaceholder('也可以自己写，例如：数学老师请假了').fill('请家长确认跳过');
+  await phone.getByRole('button', { name: '请家长确认', exact: true }).click();
+  await ordinaryCard.getByText(/申请跳过：请家长确认跳过/).waitFor();
+  await parentPage.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
+  const parentCard = parentPage.locator('div.select-none.border-2').filter({ has: parentPage.getByRole('heading', { name: '普通分次练习', exact: true }) });
+  await parentCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  await parentCard.getByRole('button', { name: '同意跳过', exact: true }).click();
+  await parentCard.getByText(/今天已跳过 · 请家长确认跳过/).waitFor();
+  await parentCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  await parentCard.getByRole('button', { name: '撤销跳过', exact: true }).click();
+  await parentCard.getByRole('button', { name: '学习 / 记录', exact: true }).waitFor();
+  assert.equal((await api('GET', `/daily-tasks/${ordinary.id}/study`)).total_seconds, ordinaryDetail.total_seconds);
+  pass('parent task menus approve and undo skips while retaining study records');
+
+  const plainCard = phone.locator('div.select-none.border-2').filter({ has: phone.getByRole('heading', { name: '数学练习册', exact: true }) });
+  await plainCard.getByRole('button', { name: '完成任务', exact: true }).click();
+  await plainCard.getByText('✓ 已完成', { exact: true }).waitFor();
+  await plainCard.getByRole('button', { name: '撤销完成', exact: true }).click();
+  await plainCard.getByRole('button', { name: '完成任务', exact: true }).waitFor();
+  pass('untimed tasks complete and undo from the single footer action');
+
   assert.deepEqual(errors, []);
 }
 
-main().then(() => console.log('Homework browser smoke test passed'), error => {
+main().then(() => console.log('Homework browser smoke test passed'), async error => {
+  if (browser && process.env.SCREENSHOT_DIR) {
+    const page = browser.contexts().at(-1)?.pages().at(-1);
+    if (page) await shot(page, 'homework-smoke-failure');
+  }
   console.error(error);
   process.exitCode = 1;
 }).finally(async () => {
