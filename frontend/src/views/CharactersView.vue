@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none relative">
+  <div class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none relative">
     <div class="max-w-6xl w-full mx-auto">
       <!-- Top Header Bar -->
       <header class="flex flex-wrap items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
@@ -8,16 +8,16 @@
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-slate-200 items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
+            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 items-center justify-center text-xl text-slate-600 dark:text-slate-300 hover:border-brand-300 dark:hover:border-brand-700 shadow-sm active:scale-95 transition-all"
             title="返回今日看板"
           >
             ←
           </router-link>
           <div>
-            <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
               <span>📖</span>
               <span>生字生词本</span>
-              <span class="hidden sm:inline text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200">
+              <span class="hidden sm:inline text-xs font-bold text-brand-600 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/40 px-2 py-0.5 rounded-md border border-brand-200 dark:border-brand-800">
                 笔顺动画 · 描红临摹
               </span>
             </h1>
@@ -27,30 +27,7 @@
           </div>
         </div>
 
-        <!-- Center: Stats Pills -->
-        <div class="order-last w-full lg:order-none lg:w-auto flex flex-wrap items-center gap-x-3 gap-y-1 whitespace-nowrap bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-slate-400">总收录:</span>
-            <span class="text-sm font-black text-slate-800">{{ characterStore.totalCount }} 个</span>
-          </div>
-          <span class="text-slate-200 font-bold">|</span>
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-emerald-500">已掌握:</span>
-            <span class="text-sm font-black text-emerald-600">{{ characterStore.masteredCount }}</span>
-          </div>
-          <span class="text-slate-200 font-bold">|</span>
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-amber-500">学习中:</span>
-            <span class="text-sm font-black text-amber-600">{{ characterStore.learningCount }}</span>
-          </div>
-          <span class="text-slate-200 font-bold">|</span>
-          <div class="flex items-center gap-1.5">
-            <span class="text-xs font-bold text-brand-500">掌握率:</span>
-            <span class="text-xs font-black text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
-              {{ characterStore.masteryRate }}%
-            </span>
-          </div>
-        </div>
+        <p class="order-last w-full text-xs text-slate-500 dark:text-slate-400">共 {{ characterStore.totalCount }} 项 · 已掌握 {{ characterStore.masteredCount }} · 学习中 {{ characterStore.learningCount }} · 掌握率 {{ characterStore.masteryRate }}%</p>
 
         <!-- Right: Actions -->
         <div class="flex items-center gap-2.5">
@@ -59,7 +36,7 @@
           <router-link
             to="/parent/login"
             @click="playClick"
-            class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all active:scale-95 shadow-xs"
+            class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs transition-all active:scale-95 shadow-xs"
           >
             <span>⚙️</span>
             <span>家长</span>
@@ -68,7 +45,7 @@
       </header>
 
       <!-- Subheader: Filters & Quick Search Entry -->
-      <div class="bg-white rounded-2xl p-3 px-4 border border-slate-200/90 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-3 px-4 border border-slate-200/90 dark:border-slate-700/90 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-3">
         <!-- Left: Status Filter Capsules -->
         <div class="flex items-center gap-2">
           <button
@@ -80,14 +57,14 @@
             :class="[
               currentFilter === f.key
                 ? 'bg-brand-500 text-white shadow-button'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             ]"
           >
             <span>{{ f.icon }}</span>
             <span>{{ f.label }}</span>
             <span
-              class="text-[10px] px-1.5 py-0.2 rounded-full"
-              :class="currentFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-500'"
+              class="text-xs px-1.5 py-0.2 rounded-full"
+              :class="currentFilter === f.key ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'"
             >
               {{ f.count }}
             </span>
@@ -103,8 +80,8 @@
             class="h-11 px-3.5 rounded-xl border text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5"
             :class="[
               globalShowPinyin
-                ? 'bg-brand-50 text-brand-600 border-brand-200 shadow-xs'
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-300 border-brand-200 dark:border-brand-800 shadow-xs'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
             ]"
             title="一键揭示或遮罩全部拼音"
           >
@@ -125,7 +102,7 @@
       </div>
 
       <!-- Category filter: tap one to show only its entries, tap again to show all -->
-      <div class="flex flex-wrap items-center gap-2 -mt-3 mb-6">
+      <details class="mb-4"><summary class="cursor-pointer min-h-[44px] py-3 text-sm text-slate-600 dark:text-slate-300 font-bold">分类筛选{{ currentCategory ? ' · 已启用' : '' }}</summary><div class="flex flex-wrap items-center gap-2">
         <span class="text-xs font-bold text-slate-400">按分类:</span>
         <button
           v-for="category in CATEGORIES"
@@ -133,19 +110,26 @@
           type="button"
           @click="selectCategory(category.key)"
           class="px-3 py-1.5 rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center gap-1"
-          :class="currentCategory === category.key ? category.chip + ' ring-2 ring-offset-1 ring-brand-300' : 'bg-white text-slate-500 border-slate-200'"
+          :class="currentCategory === category.key ? category.chip + ' ring-2 ring-offset-1 ring-brand-300 dark:ring-brand-700' : 'bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'"
           :aria-pressed="currentCategory === category.key ? 'true' : 'false'"
         >
           <span>{{ category.icon }}</span>
           <span>{{ category.label }}</span>
-          <span class="text-[10px] opacity-70">{{ characterStore.categoryCount(category.key) }}</span>
+          <span class="text-xs opacity-70">{{ characterStore.categoryCount(category.key) }}</span>
+        </button>
+      </div></details>
+
+      <button type="button" class="lg:hidden min-h-[44px] text-sm font-bold text-brand-600 dark:text-brand-300 mb-3" @click="compact = !compact">{{ compact ? '切换为字卡' : '切换为列表' }}</button>
+      <div v-if="filteredCharacters.length && compact" class="space-y-2 lg:hidden mb-4">
+        <button v-for="item in filteredCharacters" :key="item.id" type="button" class="w-full min-h-[68px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 flex items-center justify-between gap-3 text-left" @click="openDetailModal(item)">
+          <span class="min-w-0"><span class="block text-2xl font-reading text-slate-800 dark:text-slate-100 break-words">{{ item.char }}</span><span v-if="globalShowPinyin" class="text-xs text-brand-600 dark:text-brand-300">{{ getCharPinyin(item.char) }}</span></span>
+          <span class="shrink-0 text-xs" :class="item.is_mastered ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'">{{ item.is_mastered ? '已掌握' : '学习中' }} ›</span>
         </button>
       </div>
-
       <!-- Character Cards Flow / Grid (Responsive for iPad Air 5 1180px) -->
       <div
         v-if="filteredCharacters.length > 0"
-        class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
+        :class="compact ? 'hidden lg:grid' : 'grid'" class="grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3"
       >
         <CharacterCard
           v-for="charItem in filteredCharacters"
@@ -160,10 +144,10 @@
       <!-- Empty State -->
       <div
         v-else
-        class="bg-white rounded-3xl p-12 text-center border border-slate-200/90 shadow-sm flex flex-col items-center justify-center my-6"
+        class="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-slate-200/90 dark:border-slate-700/90 shadow-sm flex flex-col items-center justify-center my-6"
       >
         <div class="text-6xl mb-4 animate-bounce">📖</div>
-        <h3 class="text-xl font-black text-slate-800 mb-2">
+        <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 mb-2">
           {{ currentFilter === 'all' && !currentCategory ? '生字生词本还是空的' : '当前筛选下没有字词' }}
         </h3>
         <p class="text-xs font-bold text-slate-400 max-w-sm mb-6 leading-relaxed">
@@ -204,6 +188,7 @@
 </template>
 
 <script setup>
+import { getCharPinyin } from '../utils/hanzi';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
@@ -222,6 +207,7 @@ const characterStore = useCharacterStore();
 const currentFilter = ref('all');
 const currentCategory = ref(null);
 const globalShowPinyin = ref(false);
+const compact = ref(true);
 const selectedCharacter = ref(null);
 const isLookupModalOpen = ref(false);
 

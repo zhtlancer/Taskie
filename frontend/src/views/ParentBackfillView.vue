@@ -1,50 +1,50 @@
 <template>
-  <div class="min-h-screen bg-slate-50 pb-12">
+  <div class="min-h-screen bg-slate-50 dark:bg-slate-800 pb-12">
     <ParentNavBar />
     <main class="max-w-3xl mx-auto px-4 py-6 space-y-5">
-      <router-link to="/parent/dashboard" class="text-sm font-bold text-brand-600">← 返回数据总览</router-link>
-      <h2 class="text-xl font-black text-slate-800">{{ childName }} · 家长补卡</h2>
-      <p class="text-sm text-slate-500">选择过去日期，为当天的普通任务补记完成，或标记跳过。未记录的日期按现有规则推算任务，请核对后补记。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
-      <label class="flex items-center gap-3 text-sm font-bold text-slate-700">
+      <router-link to="/parent/dashboard" class="text-sm font-bold text-brand-600 dark:text-brand-300">← 返回数据总览</router-link>
+      <h2 class="text-xl font-black text-slate-800 dark:text-slate-100">{{ childName }} · 家长补卡</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400">选择过去日期，为当天的普通任务补记完成，或标记跳过。未记录的日期按现有规则推算任务，请核对后补记。积分和完成度计入任务所属日期，补卡不计入当天完成时间统计。</p>
+      <label class="flex items-center gap-3 text-sm font-bold text-slate-700 dark:text-slate-200">
         任务日期
         <input v-model="date" type="date" :max="yesterday" :disabled="busy" class="rounded-xl border p-2" @change="load" />
       </label>
-      <p v-if="error" role="alert" class="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{{ error }}</p>
-      <p v-if="loading" class="text-slate-500">正在加载…</p>
+      <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
+      <p v-if="loading" class="text-slate-500 dark:text-slate-400">正在加载…</p>
       <template v-else>
-        <p v-if="!tasks.length" class="bg-white rounded-2xl p-5 text-sm text-slate-500">当天没有需要完成的任务。长期任务请到「假期与长期任务」补记进度。</p>
-        <article v-for="task in tasks" :key="task.id" class="bg-white border rounded-2xl p-4 space-y-3">
+        <p v-if="!tasks.length" class="bg-white dark:bg-slate-900 rounded-2xl p-5 text-sm text-slate-500 dark:text-slate-400">当天没有需要完成的任务。长期任务请到「假期与长期任务」补记进度。</p>
+        <article v-for="task in tasks" :key="task.id" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3">
             <div>
-              <h3 class="font-bold text-slate-800">{{ task.subject }} · {{ task.title }}</h3>
-              <p class="text-xs text-slate-500 mt-1">
+              <h3 class="font-bold text-slate-800 dark:text-slate-100">{{ task.subject }} · {{ task.title }}</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 {{ task.is_completed ? (task.completion_source === 'parent_backfill' ? '已完成 · 家长补记' : '已完成') : task.is_skipped ? '已跳过，请先撤销跳过再补卡' : '未完成' }}
                 · {{ task.is_completed ? task.earned_points ?? task.points : task.award_points ?? task.points }} 积分
-                <span v-if="task.is_extra" class="text-violet-600"> · 额外挑战（不影响考核）</span>
+                <span v-if="task.is_extra" class="text-violet-600 dark:text-violet-300"> · 额外挑战（不影响考核）</span>
                 <template v-if="task.schedule_type === 'weekly_times'"> · 每周目标 {{ task.weekly_target_times }} 次</template>
                 <template v-if="task.duration_seconds"> · 用时 {{ Math.round(task.duration_seconds / 60) }} 分钟</template>
-                <span v-if="task.projected" class="text-amber-600"> · 按现有规则推算，请核对</span>
+                <span v-if="task.projected" class="text-amber-600 dark:text-amber-300"> · 按现有规则推算，请核对</span>
               </p>
             </div>
-            <button v-if="task.is_completed && task.completion_source === 'parent_backfill'" :disabled="busy || loading" class="text-sm font-bold text-rose-600 disabled:opacity-50" @click="act(task, 'undo')">撤销补卡</button>
-            <button v-else-if="task.is_skipped" :disabled="busy || loading" class="text-sm font-bold text-slate-600 disabled:opacity-50" @click="act(task, 'unskip')">撤销跳过</button>
-            <button v-else-if="!task.is_completed && !task.is_extra" :disabled="busy || loading" class="text-sm font-bold text-slate-500 disabled:opacity-50" @click="act(task, 'skip')">标记跳过</button>
+            <button v-if="task.is_completed && task.completion_source === 'parent_backfill'" :disabled="busy || loading" class="text-sm font-bold text-rose-600 dark:text-rose-300 disabled:opacity-50" @click="act(task, 'undo')">撤销补卡</button>
+            <button v-else-if="task.is_skipped" :disabled="busy || loading" class="text-sm font-bold text-slate-600 dark:text-slate-300 disabled:opacity-50" @click="act(task, 'unskip')">撤销跳过</button>
+            <button v-else-if="!task.is_completed && !task.is_extra" :disabled="busy || loading" class="text-sm font-bold text-slate-500 dark:text-slate-400 disabled:opacity-50" @click="act(task, 'skip')">标记跳过</button>
           </div>
           <p v-if="!task.is_completed && task.is_extra && !task.allow_extra" class="text-xs text-slate-400">本周目标已完成，该任务未开启额外完成。</p>
           <p v-if="task.origin === 'study' && !task.is_completed && !task.is_skipped" class="text-xs text-slate-400">字词学习需当天逐项练习，不能补记；确实没学可标记跳过，不影响全勤和连续打卡。</p>
-          <button v-if="!task.projected && task.origin !== 'study' && (task.track_time || task.study_sessions)" :disabled="busy" class="text-sm text-indigo-600 py-2" @click="studyTask = task">学习记录 / 补记用时</button>
-          <p v-if="task.study_sessions?.managed" class="text-xs text-slate-500">已保存 {{ task.study_sessions.count }} 次学习 · 累计 {{ Math.round(task.study_sessions.seconds / 60) }} 分钟，补卡保留已有记录。</p>
+          <button v-if="!task.projected && task.origin !== 'study' && (task.track_time || task.study_sessions)" :disabled="busy" class="text-sm text-indigo-600 dark:text-indigo-300 py-2" @click="studyTask = task">学习记录 / 补记用时</button>
+          <p v-if="task.study_sessions?.managed" class="text-xs text-slate-500 dark:text-slate-400">已保存 {{ task.study_sessions.count }} 次学习 · 累计 {{ Math.round(task.study_sessions.seconds / 60) }} 分钟，补卡保留已有记录。</p>
           <form v-if="task.origin !== 'study' && !task.is_completed && !task.is_skipped && (!task.is_extra || task.allow_extra)" class="flex flex-wrap items-center gap-3" @submit.prevent="act(task, 'complete')">
-            <label v-if="task.track_time && !task.study_sessions?.managed" class="text-xs text-slate-600">
+            <label v-if="task.track_time && !task.study_sessions?.managed" class="text-xs text-slate-600 dark:text-slate-300">
               实际用时（可不填）
               <input v-model="minutes[task.id]" type="number" min="1" max="720" step="1" :disabled="busy" class="w-20 p-2 border rounded-lg ml-1" /> 分钟
             </label>
             <button :disabled="busy || loading" type="submit" class="px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50">补记完成</button>
           </form>
         </article>
-        <section v-if="events.length" class="rounded-2xl bg-white border p-4">
+        <section v-if="events.length" class="rounded-2xl bg-white dark:bg-slate-900 border p-4">
           <h3 class="font-bold mb-3">补卡操作记录</h3>
-          <ul class="space-y-2 text-xs text-slate-500">
+          <ul class="space-y-2 text-xs text-slate-500 dark:text-slate-400">
             <li v-for="event in events" :key="event.id">{{ formatTime(event.created_at) }} · 家长{{ event.action === 'complete' ? '补记完成' : '撤销补卡' }}「{{ event.task_title }}」 · 积分 {{ event.points >= 0 ? '+' : '' }}{{ event.points }}</li>
           </ul>
         </section>
@@ -55,6 +55,7 @@
 </template>
 
 <script setup>
+import { confirmAction, promptAction } from '../utils/confirmation';
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
@@ -104,7 +105,7 @@ async function act(task, action) {
   if (busy.value || loading.value) return;
   let reason = '';
   if (action === 'skip') {
-    reason = prompt(`标记${childName.value} ${task.date} 的「${task.title}」为跳过，请写下理由（不超过 50 字）：`, '家长补登请假');
+    reason = await promptAction(`标记${childName.value} ${task.date} 的「${task.title}」为跳过，请写下理由（不超过 50 字）：`, '家长补登请假');
     if (reason === null) return;
   } else {
     const message = action === 'complete'
@@ -112,7 +113,7 @@ async function act(task, action) {
       : action === 'undo'
         ? `撤销${childName.value} ${task.date} 的「${task.title}」补卡？将扣回 ${task.earned_points ?? task.points} 积分，已兑换时余额可能为负。`
         : `撤销 ${task.date} 的「${task.title}」跳过状态？`;
-    if (!confirm(message)) return;
+    if (!await confirmAction(message)) return;
   }
   const value = minutes.value[task.id];
   busy.value = true;

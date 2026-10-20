@@ -1,31 +1,31 @@
 <template>
   <div class="min-h-[var(--app-content-height)] lg:h-[var(--app-content-height)] lg:max-h-[820px] w-full max-w-[1180px] mx-auto flex flex-col lg:justify-between p-3 pb-24 lg:p-4 select-none lg:overflow-hidden">
     <!-- Top Header Bar (wraps into two rows on phones) -->
-    <header class="lg:h-16 shrink-0 bg-white rounded-2xl px-4 py-3 lg:px-5 lg:py-0 border border-slate-200 shadow-sm flex flex-wrap lg:flex-nowrap items-center justify-between gap-y-3">
+    <header class="lg:h-16 shrink-0 bg-white dark:bg-slate-900 rounded-2xl px-4 py-3 lg:px-5 lg:py-0 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-wrap lg:flex-nowrap items-center justify-between gap-y-3">
       <!-- Left: Child Info & Date -->
       <div class="flex items-center gap-3">
-        <div class="w-11 h-11 rounded-2xl bg-brand-50 flex items-center justify-center text-2xl shadow-inner">
+        <div class="w-11 h-11 rounded-2xl bg-brand-50 dark:bg-brand-900/40 flex items-center justify-center text-2xl shadow-inner">
           {{ childAvatar }}
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <h2 class="text-lg font-black text-slate-800 leading-tight">{{ childName }}</h2>
-            <span class="text-xs font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md">学生端</span>
+            <h2 class="text-lg font-black text-slate-800 dark:text-slate-100 leading-tight">{{ childName }}</h2>
+            <span class="text-xs font-bold text-brand-600 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/40 px-2 py-0.5 rounded-md">{{ asParent ? '家长' : '学生端' }}</span>
           </div>
           <p class="text-xs font-semibold text-slate-400 leading-tight">{{ formattedDate }}</p>
         </div>
       </div>
 
       <!-- Center: Today Progress (its own full-width row on phones) -->
-      <div class="order-last w-full lg:order-none lg:w-auto flex items-center gap-4 bg-slate-50 px-4 py-1.5 rounded-2xl border border-slate-100">
+      <div class="order-last w-full lg:order-none lg:w-auto flex items-center gap-4 bg-slate-50 dark:bg-slate-800 px-4 py-1.5 rounded-2xl border border-slate-100 dark:border-slate-700">
         <div class="flex flex-col lg:text-right shrink-0">
-          <span class="text-xs font-bold text-slate-500">今日完成进度</span>
-          <span class="text-sm font-black text-slate-800">
+          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">今日完成进度</span>
+          <span class="text-sm font-black text-slate-800 dark:text-slate-100">
             完成 {{ completedCount }} / {{ totalCount }}
           </span>
         </div>
 
-        <div class="flex-1 lg:flex-none lg:w-28 bg-slate-200 h-3 rounded-full overflow-hidden p-0.5">
+        <div class="flex-1 lg:flex-none lg:w-28 bg-slate-200 dark:bg-slate-700 h-3 rounded-full overflow-hidden p-0.5">
           <div
             class="h-full rounded-full transition-all duration-500"
             :class="completionRate >= 100 ? 'bg-emerald-500' : 'bg-brand-500'"
@@ -48,19 +48,19 @@
           type="button"
           @click="openSchedule"
           class="relative flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 shadow-xs"
-          :class="todayClasses.length ? 'bg-violet-500 hover:bg-violet-600 text-white' : 'bg-violet-50 hover:bg-violet-100 text-violet-700'"
+          :class="todayClasses.length ? 'bg-violet-500 hover:bg-violet-600 text-white' : 'bg-violet-50 dark:bg-violet-950/40 hover:bg-violet-100 dark:hover:bg-violet-950/40 text-violet-700 dark:text-violet-300'"
           title="今天的课"
         >
           <span>{{ todayClasses.length ? '🎨' : '📅' }}</span>
           <!-- Phones keep the next class's time; wider screens add its name -->
           <span v-if="nextClass" class="tabular-nums">{{ nextClass.start_time }}</span>
           <span class="hidden sm:inline font-chinese">{{ nextClass ? nextClass.title : '今天的课' }}</span>
-          <span v-if="todayClasses.length > 1" class="px-1.5 rounded-md bg-white/25 text-[10px]">{{ todayClasses.length }}</span>
+          <span v-if="todayClasses.length > 1" class="px-1.5 rounded-md bg-white/25 text-xs">{{ todayClasses.length }}</span>
         </button>
         <button
           type="button"
           @click="openStrokeLookup"
-          class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold text-xs transition-all active:scale-95 shadow-xs"
+          class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 hover:bg-brand-100 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-300 font-bold text-xs transition-all active:scale-95 shadow-xs"
           title="实时查笔画"
         >
           <span>🔍</span>
@@ -70,7 +70,7 @@
         <router-link
           to="/parent/login"
           @click="playClick"
-          class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs transition-all active:scale-95"
+          class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs transition-all active:scale-95"
         >
           <span>⚙️</span>
           <span class="hidden sm:inline">家长</span>
@@ -79,11 +79,11 @@
     </header>
 
     <!-- Phones: streak, points and subject chips (the iPad layout shows these in the sidebar) -->
-    <div class="lg:hidden mt-3 space-y-2.5">
+    <div class="mt-3 space-y-2.5">
       <div class="flex items-center gap-2 text-xs font-black">
-        <span class="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-700">🔥 连续 {{ streakDays }} 天</span>
-        <span class="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-700">💰 今日已得 {{ todayPoints }} 分</span>
-        <router-link to="/" class="ml-auto px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-500 whitespace-nowrap" @click="playClick">🔄 切换</router-link>
+        <StreakBadge ref="streakRef" :count="streakDays" />
+        <span class="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300">💰 今日已得 {{ todayPoints }} 分</span>
+        <router-link to="/" class="ml-auto px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 whitespace-nowrap" @click="playClick">🔄 切换</router-link>
       </div>
       <div class="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
         <button
@@ -92,7 +92,7 @@
           type="button"
           @click="selectSubject(sub.name)"
           class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all"
-          :class="selectedSubject === sub.name ? 'bg-brand-500 text-white shadow-button' : 'bg-white text-slate-600 border border-slate-200'"
+          :class="selectedSubject === sub.name ? 'bg-brand-500 text-white shadow-button' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'"
         >
           <span>{{ sub.icon }}</span>
           <span>{{ sub.name }}</span>
@@ -103,134 +103,12 @@
 
     <!-- Main Layout (Two Columns on iPad landscape) -->
     <div class="flex-1 flex gap-4 my-3 lg:min-h-0 lg:overflow-hidden">
-      <!-- Left Sidebar: Subject filter nav + Streak + Points + Quick links -->
-      <aside class="hidden lg:flex w-60 shrink-0 bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex-col justify-between">
-        <!-- Subjects Filter Navigation -->
-        <div>
-          <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider mb-2 px-1">
-            学科筛选
-          </h3>
-          <nav class="space-y-1.5">
-            <button
-              v-for="sub in subjects"
-              :key="sub.name"
-              type="button"
-              @click="selectSubject(sub.name)"
-              class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-bold transition-all text-left"
-              :class="[
-                selectedSubject === sub.name
-                  ? 'bg-brand-500 text-white shadow-button'
-                  : 'text-slate-600 hover:bg-slate-100 active:scale-98'
-              ]"
-            >
-              <div class="flex items-center gap-2">
-                <span>{{ sub.icon }}</span>
-                <span>{{ sub.name }}</span>
-              </div>
-              <span
-                class="text-xs px-2 py-0.5 rounded-full"
-                :class="selectedSubject === sub.name ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'"
-              >
-                {{ getSubjectTaskCount(sub.name) }}
-              </span>
-            </button>
-          </nav>
-        </div>
-
-        <!-- Center Divider & Widgets -->
-        <div class="space-y-3 pt-3 border-t border-slate-100">
-          <!-- Streak Badge Widget -->
-          <div class="flex items-center justify-between p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80">
-            <StreakBadge :count="streakDays" ref="streakRef" />
-          </div>
-
-          <!-- Today Earned Points Widget -->
-          <div class="flex items-center justify-between p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80">
-            <div class="flex items-center gap-2">
-              <span class="text-2xl">💰</span>
-              <div>
-                <span class="text-[10px] font-black uppercase text-emerald-700">今日已得</span>
-                <div class="text-base font-black text-emerald-600 leading-tight">
-                  {{ todayPoints }} <span class="text-xs font-bold">分</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Child Page Navigation Links -->
-        <div class="space-y-1 pt-3 border-t border-slate-100">
-          <router-link
-            :to="`/child/${childId}/rewards`"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-          >
-            <span>🏆</span>
-            <span>积分与徽章</span>
-          </router-link>
-
-          <router-link
-            :to="`/child/${childId}/history`"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-          >
-            <span>📊</span>
-            <span>历史统计</span>
-          </router-link>
-
-          <router-link
-            :to="`/child/${childId}/homework`"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-          >
-            <span>📒</span>
-            <span>作业本</span>
-          </router-link>
-
-          <router-link
-            :to="`/child/${childId}/mistakes`"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-          >
-            <span>📝</span>
-            <span>错题本</span>
-          </router-link>
-
-          <router-link
-            :to="`/child/${childId}/characters`"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-          >
-            <span>📖</span>
-            <span>生字生词本</span>
-          </router-link>
-
-          <router-link
-            :to="`/child/${childId}/schedule`"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-600 transition-colors"
-          >
-            <span>📅</span>
-            <span>课程表</span>
-          </router-link>
-
-          <router-link
-            to="/"
-            @click="playClick"
-            class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
-          >
-            <span>🔄</span>
-            <span>切换小朋友</span>
-          </router-link>
-        </div>
-      </aside>
-
       <!-- Right Area: 2-Column Task Grid & Bottom Motivation Banner -->
-      <main class="flex-1 min-w-0 bg-white rounded-2xl p-3 lg:p-4 border border-slate-200 shadow-sm flex flex-col justify-between lg:overflow-hidden">
+      <main class="flex-1 min-w-0 bg-white dark:bg-slate-900 rounded-2xl p-3 lg:p-4 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between lg:overflow-hidden">
         <!-- Task Cards Grid (2 Columns, optimized for up to 8 tasks without scrolling on 1180x820) -->
         <div class="flex-1 lg:overflow-y-auto lg:pr-1">
           <!-- Loading state -->
-          <div v-if="loading" class="flex justify-center items-center h-48 text-brand-500 font-bold">
+          <div v-if="loading" class="flex justify-center items-center h-48 text-brand-500 dark:text-brand-400 font-bold">
             <span class="animate-spin mr-2">⏳</span> 正在加载今日任务...
           </div>
 
@@ -238,7 +116,7 @@
           <button
             v-if="!loading && tomorrowSchedule?.bring.length"
             type="button"
-            class="w-full mb-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-left text-xs font-bold text-amber-800 font-chinese truncate"
+            class="w-full mb-3 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-left text-xs font-bold text-amber-800 dark:text-amber-200 font-chinese truncate"
             @click="openSchedule"
           >
             🎒 明天要带：{{ tomorrowSchedule.bring.map(item => `${item.for}·${item.items}`).join('；') }}
@@ -263,7 +141,7 @@
             class="flex flex-col items-center justify-center h-64 text-slate-400"
           >
             <span class="text-5xl mb-3">🏖️</span>
-            <span class="text-base font-bold text-slate-600">当前分类下暂无任务</span>
+            <span class="text-base font-bold text-slate-600 dark:text-slate-300">当前分类下暂无任务</span>
             <span class="text-xs text-slate-400 mt-1">可以选择“全部”查看或在家长端添加任务</span>
           </div>
 
@@ -290,7 +168,7 @@
           </div>
           <section v-if="!loading && extraTasks.length" class="mt-5 space-y-3">
             <div>
-              <h3 class="text-sm font-black text-violet-700">✨ 额外挑战</h3>
+              <h3 class="text-sm font-black text-violet-700 dark:text-violet-300">✨ 额外挑战</h3>
               <p class="text-xs font-bold text-slate-400">自愿完成，不增加应做次数，不影响完成率、全勤和连续打卡。</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -321,7 +199,7 @@
             <button
               type="button"
               @click="handleRecelebrate"
-              class="px-3.5 py-1.5 rounded-xl bg-white text-emerald-700 font-black text-xs hover:bg-emerald-50 active:scale-95 transition-all shadow-sm whitespace-nowrap"
+              class="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 font-black text-xs hover:bg-emerald-50 dark:hover:bg-emerald-950/40 active:scale-95 transition-all shadow-sm whitespace-nowrap"
             >
               再撒一次花 🎉
             </button>
@@ -330,24 +208,24 @@
           <!-- Everything left today was skipped -->
           <div
             v-else-if="totalCount === 0 && skippedCount > 0"
-            class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-2.5"
+            class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center gap-2.5"
           >
             <span class="text-xl">⏭️</span>
-            <span class="text-sm font-bold text-slate-600">今天的任务都跳过啦，好好休息～</span>
+            <span class="text-sm font-bold text-slate-600 dark:text-slate-300">今天的任务都跳过啦，好好休息～</span>
           </div>
 
           <!-- When in progress -->
           <div
             v-else
-            class="p-3.5 rounded-2xl bg-gradient-to-r from-brand-50 via-indigo-50 to-amber-50 border border-brand-100 flex flex-wrap items-center justify-between gap-2"
+            class="p-3.5 rounded-2xl bg-gradient-to-r from-brand-50 dark:from-brand-900/40 via-indigo-50 dark:via-indigo-950/40 to-amber-50 dark:to-amber-950/40 border border-brand-100 dark:border-brand-800 flex flex-wrap items-center justify-between gap-2"
           >
             <div class="flex items-center gap-2.5">
               <span class="text-xl">✨</span>
-              <span class="text-sm font-bold text-slate-700">
+              <span class="text-sm font-bold text-slate-700 dark:text-slate-200">
                 全部完成今天任务，即可冲击更高连胜纪录与荣耀徽章！
               </span>
             </div>
-            <span class="text-xs font-black text-brand-600 bg-white px-3 py-1 rounded-xl shadow-xs whitespace-nowrap">
+            <span class="text-xs font-black text-brand-600 dark:text-brand-300 bg-white dark:bg-slate-900 px-3 py-1 rounded-xl shadow-xs whitespace-nowrap">
               加油！还剩 {{ totalCount - completedCount }} 项
             </span>
           </div>

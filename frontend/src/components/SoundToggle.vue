@@ -4,11 +4,11 @@
     @click="handleToggle"
     :title="isMuted ? '声音已静音（点击开启）' : '声音已开启（点击静音）'"
     :aria-label="isMuted ? '声音已静音' : '声音已开启'"
-    class="relative group flex items-center justify-center min-w-[48px] min-h-[48px] w-12 h-12 rounded-2xl border-2 transition-all duration-200 active:scale-95 select-none focus:outline-none focus:ring-2 focus:ring-brand-300 shrink-0 cursor-pointer"
+    class="relative group flex items-center justify-center min-w-[48px] min-h-[48px] w-12 h-12 rounded-2xl border-2 transition-all duration-200 active:scale-95 select-none focus:outline-none focus:ring-2 focus:ring-brand-300 dark:focus:ring-brand-700 shrink-0 cursor-pointer"
     :class="[
       isMuted
-        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-400 shadow-none'
-        : 'bg-gradient-to-tr from-amber-50 via-indigo-50/60 to-purple-50 hover:from-amber-100 hover:to-indigo-100 border-amber-300/80 text-amber-600 shadow-sm hover:shadow-md'
+        ? 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-400 shadow-none'
+        : 'bg-gradient-to-tr from-amber-50 dark:from-amber-950/40 via-indigo-50/60 dark:via-indigo-950/40 to-purple-50 dark:to-purple-950/40 hover:from-amber-100 dark:hover:from-amber-950/40 hover:to-indigo-100 dark:hover:to-indigo-950/40 border-amber-300/80 dark:border-amber-700/80 text-amber-600 dark:text-amber-300 shadow-sm hover:shadow-md'
     ]"
   >
     <!-- Ripple wave animation when sound is active -->

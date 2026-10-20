@@ -1,36 +1,35 @@
 <template>
-  <div class="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-3" @click.self="!busy && $emit('close')">
-    <section class="bg-white rounded-3xl p-5 max-w-xl w-full max-h-[92dvh] overflow-y-auto space-y-4" role="dialog" aria-modal="true" :aria-label="taskId ? '分次学习' : '分次做作业'">
-      <header class="flex items-center justify-between gap-3"><h3 class="font-black text-lg">📒 {{ taskId ? '分次学习' : '分次做作业' }}</h3><button :disabled="busy" class="p-3 disabled:opacity-50" aria-label="关闭" @click="$emit('close')">✕</button></header>
-      <p v-if="error" role="alert" class="bg-rose-50 text-rose-600 rounded-xl p-3 text-sm">{{ error }}</p>
+  <UiDialog :title="taskId ? '分次学习' : '分次做作业'" :busy="busy" wide @close="$emit('close')">
+    <div class="space-y-4">
+      <p v-if="error" role="alert" class="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 rounded-xl p-3 text-sm">{{ error }}</p>
       <p v-if="!study" class="text-slate-400">正在加载学习记录…</p>
       <template v-else>
         <p class="whitespace-pre-line text-sm font-bold">{{ study.record.subject }}：{{ study.record.content }}</p>
-        <p class="text-xs text-slate-500">{{ taskId ? '任务' : '作业' }}截止 {{ study.record.task.due_date }} · 已保存累计 {{ formatDuration(study.total_seconds) }} · {{ study.sessions.length }} 次学习</p>
-        <p v-if="study.record.task.expected_minutes" class="text-xs text-slate-500">整项任务预计 {{ study.record.task.expected_minutes }} 分钟<span v-if="pace"> · {{ pace.text }}</span></p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">{{ taskId ? '任务' : '作业' }}截止 {{ study.record.task.due_date }} · 已保存累计 {{ formatDuration(study.total_seconds) }} · {{ study.sessions.length }} 次学习</p>
+        <p v-if="study.record.task.expected_minutes" class="text-xs text-slate-500 dark:text-slate-400">整项任务预计 {{ study.record.task.expected_minutes }} 分钟<span v-if="pace"> · {{ pace.text }}</span></p>
         <p v-if="study.legacy_seconds" class="text-xs text-slate-400">其中旧累计用时 {{ formatDuration(study.legacy_seconds) }}，保留原值，没有分次明细。</p>
-        <p v-if="study.record.completion_requested_at && !study.record.task.is_completed" class="bg-amber-50 rounded-xl p-3 text-sm text-amber-700">已申请全部完成，等待家长确认。仍可继续学习、记录用时。</p>
-        <p v-if="study.record.task.is_completed" class="text-emerald-600 font-bold">✓ {{ taskId ? '任务已完成' : '作业已全部完成' }}</p>
-        <p v-else-if="overdue && !taskId" class="text-amber-700 text-xs">已过截止日期，可以继续学习；全部完成需家长确认。</p>
+        <p v-if="study.record.completion_requested_at && !study.record.task.is_completed" class="bg-amber-50 dark:bg-amber-950/40 rounded-xl p-3 text-sm text-amber-700 dark:text-amber-300">已申请全部完成，等待家长确认。仍可继续学习、记录用时。</p>
+        <p v-if="study.record.task.is_completed" class="text-emerald-600 dark:text-emerald-300 font-bold">✓ {{ taskId ? '任务已完成' : '作业已全部完成' }}</p>
+        <p v-else-if="overdue && !taskId" class="text-amber-700 dark:text-amber-300 text-xs">已过截止日期，可以继续学习；全部完成需家长确认。</p>
 
-        <p v-if="taskId && overdue && !asParent" class="text-amber-700 text-xs">任务已超期，请由家长补卡。已有学习记录和用时保留。</p>
-        <div v-if="!study.record.task.is_completed && !study.record.task.is_skipped" class="rounded-2xl bg-indigo-50 p-4 space-y-3">
+        <p v-if="taskId && overdue && !asParent" class="text-amber-700 dark:text-amber-300 text-xs">任务已超期，请由家长补卡。已有学习记录和用时保留。</p>
+        <div v-if="!study.record.task.is_completed && !study.record.task.is_skipped" class="rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 p-4 space-y-3">
           <div class="text-2xl font-black tabular-nums">{{ formatClock(elapsed) }} <span class="text-xs font-normal">{{ study.active ? (study.active.timer_started_at ? '正在计时' : '已暂停') : '本次学习' }}</span></div>
           <div class="flex flex-wrap gap-2">
             <button v-if="!study.active?.timer_started_at && canStart" :disabled="busy" class="rounded-xl px-4 py-3 bg-indigo-600 text-white disabled:opacity-50" @click="act(() => studyApi.start())">{{ study.active ? '继续本次' : '开始本次' }}</button>
-            <button v-else-if="study.active?.timer_started_at" :disabled="busy" class="rounded-xl px-4 py-3 bg-white border disabled:opacity-50" @click="act(() => studyApi.pause(study.active.id))">暂停</button>
-            <button v-if="study.active" :disabled="busy" class="rounded-xl px-4 py-3 bg-white border disabled:opacity-50" @click="finish(false)">结束本次学习</button>
+            <button v-else-if="study.active?.timer_started_at" :disabled="busy" class="rounded-xl px-4 py-3 bg-white dark:bg-slate-900 border disabled:opacity-50" @click="act(() => studyApi.pause(study.active.id))">暂停</button>
+            <button v-if="study.active" :disabled="busy" class="rounded-xl px-4 py-3 bg-white dark:bg-slate-900 border disabled:opacity-50" @click="finish(false)">结束本次学习</button>
           </div>
           <label class="block text-xs">本次进展（选填）<textarea v-model="note" maxlength="500" rows="2" placeholder="例如：写完第一部分，剩下两题明天做" class="mt-1 w-full rounded-xl border p-3 text-sm" /></label>
           <button v-if="canComplete" :disabled="busy" class="rounded-xl px-4 py-3 bg-emerald-600 text-white disabled:opacity-50" @click="finish(true)">{{ taskId ? (study.active ? '结束计时并完成任务' : '完成任务') : overdue && !asParent ? '申请作业全部完成' : '作业全部完成' }}</button>
-          <p class="text-xs text-slate-500">暂停后继续属于同一次；结束后再开始是新的一次。同一天可记录多次，完成奖励只结算一次。关闭此窗口后，正在进行的计时仍继续。</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">暂停后继续属于同一次；结束后再开始是新的一次。同一天可记录多次，完成奖励只结算一次。关闭此窗口后，正在进行的计时仍继续。</p>
         </div>
         <div class="flex flex-wrap gap-3">
-          <button :disabled="busy" class="text-sm text-indigo-600 py-2" @click="manualOpen = !manualOpen">＋ 手动补记学习</button>
-          <button v-if="study.record.task.is_completed && (asParent || !overdue)" :disabled="busy" class="text-sm text-slate-500 py-2" @click="undo">撤销全部完成</button>
+          <button :disabled="busy" class="text-sm text-indigo-600 dark:text-indigo-300 py-2" @click="manualOpen = !manualOpen">＋ 手动补记学习</button>
+          <button v-if="study.record.task.is_completed && (asParent || !overdue)" :disabled="busy" class="text-sm text-slate-500 dark:text-slate-400 py-2" @click="undo">撤销全部完成</button>
           <template v-if="asParent && study.record.completion_requested_at && !study.record.task.is_completed">
-            <button :disabled="busy || Boolean(study.active)" class="text-sm text-emerald-700 py-2" @click="act(() => api.completeHomework(recordId))">确认全部完成</button>
-            <button :disabled="busy" class="text-sm text-slate-500 py-2" @click="act(() => api.rejectHomeworkCompletion(recordId))">暂不确认</button>
+            <button :disabled="busy || Boolean(study.active)" class="text-sm text-emerald-700 dark:text-emerald-300 py-2" @click="act(() => api.completeHomework(recordId))">确认全部完成</button>
+            <button :disabled="busy" class="text-sm text-slate-500 dark:text-slate-400 py-2" @click="act(() => api.rejectHomeworkCompletion(recordId))">暂不确认</button>
           </template>
         </div>
         <form v-if="manualOpen" class="rounded-xl border p-3 space-y-2" @submit.prevent="manual">
@@ -45,8 +44,8 @@
           <article v-for="session in study.sessions" :key="session.id" class="border rounded-xl p-3 text-sm space-y-2">
             <div>{{ session.days.length ? session.days.map(day => day.date).join(' / ') : dateOf(session.started_at) }} · {{ formatDuration(session.duration_seconds) }}</div>
             <p v-if="session.days.length > 1" class="text-xs text-slate-400">跨日用时：{{ session.days.map(day => `${day.date} ${formatDuration(day.seconds)}`).join('；') }}</p>
-            <p class="whitespace-pre-line text-slate-600">{{ session.note || '未填写进展' }}</p>
-            <button v-if="canEdit(session)" :disabled="busy" class="text-indigo-600 text-xs py-2" @click="openEdit(session)">更正本次记录</button>
+            <p class="whitespace-pre-line text-slate-600 dark:text-slate-300">{{ session.note || '未填写进展' }}</p>
+            <button v-if="canEdit(session)" :disabled="busy" class="text-indigo-600 dark:text-indigo-300 text-xs py-2" @click="openEdit(session)">更正本次记录</button>
             <form v-if="editing?.id === session.id" class="space-y-2" @submit.prevent="saveEdit">
               <label v-for="day in editing.days" :key="day.date" class="block text-xs">{{ day.date }} 用时（分钟）<input v-model.number="day.minutes" type="number" min="0" max="720" step="0.1" required class="border rounded-lg p-2 w-24" /></label>
               <textarea v-model="editing.note" maxlength="500" class="border rounded-xl p-2 w-full" />
@@ -56,10 +55,11 @@
           </article>
         </div>
       </template>
-    </section>
-  </div>
+    </div>
+  </UiDialog>
 </template>
 <script setup>
+import UiDialog from './UiDialog.vue';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
 import { formatDuration, formatClock, paceLabel } from '../utils/taskTimer.js';

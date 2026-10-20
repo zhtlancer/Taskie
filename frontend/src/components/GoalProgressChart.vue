@@ -5,6 +5,8 @@
 </template>
 
 <script setup>
+import { useChartTheme, useChartInk } from '../utils/chartTheme';
+const chartInk = useChartInk();
 import { computed } from 'vue';
 import { Chart as ChartJS, Tooltip, Legend, LineElement, PointElement, CategoryScale, LinearScale, Filler } from 'chart.js';
 import { Line } from 'vue-chartjs';
@@ -52,7 +54,7 @@ const chartData = computed(() => {
   return { labels: dates.value.map(date => date.slice(5).replace('-', '/')), datasets };
 });
 
-const chartOptions = computed(() => ({
+const chartOptions = useChartTheme(computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   plugins: { legend: { display: Boolean(props.goal.end_date), labels: { boxWidth: 12, font: { size: 11 } } } },
@@ -60,5 +62,5 @@ const chartOptions = computed(() => ({
     y: { min: 0, max: props.goal.total_amount, ticks: { font: { size: 11 } } },
     x: { grid: { display: false }, ticks: { font: { size: 10 }, maxTicksLimit: 8 } }
   }
-}));
+})));
 </script>

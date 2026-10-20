@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: [
     "./index.html",
     "./src/**/*.{vue,js,ts,jsx,tsx}",
@@ -45,9 +46,7 @@ export default {
       },
       fontFamily: {
         sans: [
-          'Nunito',
-          '"LXGW WenKai Screen"',
-          '"Noto Sans SC"',
+          'system-ui',
           'ui-sans-serif',
           'system-ui',
           '-apple-system',
@@ -58,8 +57,7 @@ export default {
           'sans-serif'
         ],
         chinese: [
-          '"LXGW WenKai Screen"',
-          '"Noto Sans SC"',
+          'system-ui',
           '"PingFang SC"',
           '"Hiragino Sans GB"',
           '"Microsoft YaHei"',

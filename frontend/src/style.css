@@ -20,11 +20,10 @@
     height: 100%;
     margin: 0;
     padding: 0;
-    font-family: 'Nunito', 'LXGW WenKai Screen', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
-    user-select: none;
     touch-action: manipulation;
   }
 
@@ -105,3 +104,41 @@
   font-family: 'LXGW WenKai Screen', 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', serif;
 }
 
+
+/* Shared UI surfaces: typography, focus, fields and theme-aware native controls. */
+:root {
+  --ui-page: #f4f6fb;
+  --ui-surface: #ffffff;
+  --ui-text: #1e293b;
+  --ui-border: #cbd5e1;
+}
+:root.dark {
+  --ui-page: #0b1120;
+  --ui-surface: #111827;
+  --ui-text: #e2e8f0;
+  --ui-border: #334155;
+}
+html, body { background: var(--ui-page); color: var(--ui-text); }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid #8e82fd; outline-offset: 3px; }
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]), select, textarea {
+  color: var(--ui-text);
+  background-color: var(--ui-surface);
+}
+.ui-dialog footer { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+@layer components {
+  .ui-input { @apply min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm; }
+  .ui-button-primary { @apply min-h-[44px] rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-50; }
+  .ui-button-secondary { @apply min-h-[44px] rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 dark:hover:bg-slate-700; }
+}
+@media (min-width: 1024px) {
+  .student-shell { padding-left: calc(13rem + env(safe-area-inset-left, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+
+@media (pointer: coarse) {
+  button:not([role=checkbox]):not([role=switch]), a { min-height: 44px; }
+}
+summary { list-style-position: inside; }

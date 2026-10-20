@@ -5,16 +5,16 @@
   >
     <!-- Modal Window (Optimized for iPad Air 5 Landscape 1180x820) -->
     <div
-      class="bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-5xl h-[760px] max-h-[94vh] flex flex-col overflow-hidden animate-pop-in"
+      class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-700/80 w-full max-w-5xl h-[760px] max-h-[94vh] flex flex-col overflow-hidden animate-pop-in"
     >
       <!-- Modal Header -->
-      <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0 bg-white">
+      <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3 shrink-0 bg-white dark:bg-slate-900">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-brand-50 flex items-center justify-center text-xl text-brand-500 font-black">
+          <div class="w-10 h-10 rounded-2xl bg-brand-50 dark:bg-brand-900/40 flex items-center justify-center text-xl text-brand-500 dark:text-brand-400 font-black">
             {{ step === 'select' ? '📸' : step === 'crop' ? '✂️' : '✨' }}
           </div>
           <div>
-            <h2 class="text-base sm:text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h2 class="text-base sm:text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
               <span v-if="step === 'select'">拍照或选择错题图片</span>
               <span v-else-if="step === 'crop'">交互式区域裁剪 & 旋转</span>
               <span v-else>清晰锐化增强 & 完善错题</span>
@@ -32,14 +32,14 @@
           <div v-if="step !== 'select'" class="hidden md:flex items-center gap-2 text-xs font-bold whitespace-nowrap">
             <span
               class="px-3 py-1 rounded-full transition-all"
-              :class="step === 'crop' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500'"
+              :class="step === 'crop' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
             >
               1. 裁剪旋转
             </span>
             <span class="text-slate-300">→</span>
             <span
               class="px-3 py-1 rounded-full transition-all"
-              :class="step === 'filter' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 text-slate-500'"
+              :class="step === 'filter' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
             >
               2. 滤镜保存
             </span>
@@ -48,7 +48,7 @@
           <button
             type="button"
             @click="handleClose"
-            class="w-12 h-12 rounded-2xl hover:bg-slate-100 active:scale-95 text-slate-400 hover:text-slate-600 font-bold text-xl flex items-center justify-center transition-all"
+            class="w-12 h-12 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold text-xl flex items-center justify-center transition-all"
             title="关闭"
           >
             ✕
@@ -76,7 +76,7 @@
       <!-- ================= STEP 0: Select File / Camera / Dropzone ================= -->
       <div
         v-if="step === 'select'"
-        class="flex-1 p-8 flex flex-col items-center justify-center bg-slate-50/50"
+        class="flex-1 p-8 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-800/50"
         @dragover.prevent="isDragOver = true"
         @dragleave.prevent="isDragOver = false"
         @drop.prevent="onDropFile"
@@ -85,12 +85,12 @@
           class="w-full max-w-2xl border-3 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center text-center transition-all"
           :class="[
             isDragOver
-              ? 'border-brand-500 bg-brand-50/50 scale-[1.01]'
-              : 'border-slate-300 hover:border-brand-400 bg-white shadow-sm'
+              ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-900/40 scale-[1.01]'
+              : 'border-slate-300 dark:border-slate-600 hover:border-brand-400 bg-white dark:bg-slate-900 shadow-sm'
           ]"
         >
           <div class="text-6xl mb-4 animate-bounce">📸</div>
-          <h3 class="text-2xl font-black text-slate-800 mb-2">录入错题拍照图片</h3>
+          <h3 class="text-2xl font-black text-slate-800 dark:text-slate-100 mb-2">录入错题拍照图片</h3>
           <p class="text-sm text-slate-400 max-w-md mb-8">
             专为小学生 iPad 横屏设计。拍完后可自由框选错题区域，系统将自动锐化字迹并滤除纸张暗底！
           </p>
@@ -109,7 +109,7 @@
             <button
               type="button"
               @click="triggerGallery"
-              class="h-16 rounded-2xl bg-white border-2 border-slate-200 hover:border-brand-300 hover:bg-slate-50 text-slate-700 font-black text-base shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
+              class="h-16 rounded-2xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-black text-base shadow-sm flex items-center justify-center gap-2 active:scale-95 transition-all"
             >
               <span class="text-2xl">🖼️</span>
               <span>相册选图</span>
@@ -208,7 +208,7 @@
               class="absolute -top-6 -left-6 w-12 h-12 flex items-center justify-center cursor-nwse-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'tl')"
             >
-              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Top-Right Handle -->
@@ -216,7 +216,7 @@
               class="absolute -top-6 -right-6 w-12 h-12 flex items-center justify-center cursor-nesw-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'tr')"
             >
-              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Bottom-Left Handle -->
@@ -224,7 +224,7 @@
               class="absolute -bottom-6 -left-6 w-12 h-12 flex items-center justify-center cursor-nesw-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'bl')"
             >
-              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Bottom-Right Handle -->
@@ -232,7 +232,7 @@
               class="absolute -bottom-6 -right-6 w-12 h-12 flex items-center justify-center cursor-nwse-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'br')"
             >
-              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Edge Handles (Hit area: 48x48px) -->
@@ -241,28 +241,28 @@
               class="absolute -top-6 left-1/2 -translate-x-1/2 w-12 h-12 flex items-center justify-center cursor-ns-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 't')"
             >
-              <div class="w-6 h-2 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-6 h-2 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
             </div>
             <!-- Bottom Edge -->
             <div
               class="absolute -bottom-6 left-1/2 -translate-x-1/2 w-12 h-12 flex items-center justify-center cursor-ns-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 'b')"
             >
-              <div class="w-6 h-2 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-6 h-2 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
             </div>
             <!-- Left Edge -->
             <div
               class="absolute top-1/2 -translate-y-1/2 -left-6 w-12 h-12 flex items-center justify-center cursor-ew-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 'l')"
             >
-              <div class="w-2 h-6 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-2 h-6 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
             </div>
             <!-- Right Edge -->
             <div
               class="absolute top-1/2 -translate-y-1/2 -right-6 w-12 h-12 flex items-center justify-center cursor-ew-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 'r')"
             >
-              <div class="w-2 h-6 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-2 h-6 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
             </div>
           </div>
         </div>
@@ -315,12 +315,12 @@
       </div>
 
       <!-- ================= STEP 2: Filter Preview & Metadata Form ================= -->
-      <div v-else-if="step === 'filter'" class="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-slate-50">
+      <div v-else-if="step === 'filter'" class="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-slate-50 dark:bg-slate-800">
         <!-- Left: Image Preview & Filter Mode Switcher (55% width; stacked on phones) -->
-        <div class="w-full lg:w-7/12 p-4 lg:p-6 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200/80 bg-white">
+        <div class="w-full lg:w-7/12 p-4 lg:p-6 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900">
           <!-- Filter Mode Buttons (≥ 48px height) -->
           <div class="mb-4">
-            <label class="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+            <label class="block text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               图像滤镜处理模式
             </label>
             <div class="grid grid-cols-3 gap-2">
@@ -332,14 +332,14 @@
                 :class="[
                   activeFilter === 'enhanced'
                     ? 'bg-brand-500 border-brand-500 text-white shadow-button'
-                    : 'bg-white border-slate-200 text-slate-700 hover:border-brand-200 hover:bg-slate-50'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-brand-200 dark:hover:border-brand-800 hover:bg-slate-50 dark:hover:bg-slate-800'
                 ]"
               >
                 <span class="flex items-center gap-1 text-sm">
                   <span>✨</span>
                   <span>清晰增强</span>
                 </span>
-                <span class="text-[10px] opacity-80">默认推荐 · 锐化去灰底</span>
+                <span class="text-xs opacity-80">默认推荐 · 锐化去灰底</span>
               </button>
 
               <!-- Filter: Black & White Document -->
@@ -350,14 +350,14 @@
                 :class="[
                   activeFilter === 'bw'
                     ? 'bg-slate-800 border-slate-800 text-white shadow-button'
-                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
                 ]"
               >
                 <span class="flex items-center gap-1 text-sm">
                   <span>📄</span>
                   <span>黑白文档</span>
                 </span>
-                <span class="text-[10px] opacity-80">自适应二值化 · 仿全能王</span>
+                <span class="text-xs opacity-80">自适应二值化 · 仿全能王</span>
               </button>
 
               <!-- Filter: Original -->
@@ -368,14 +368,14 @@
                 :class="[
                   activeFilter === 'original'
                     ? 'bg-slate-700 border-slate-700 text-white shadow-button'
-                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800'
                 ]"
               >
                 <span class="flex items-center gap-1 text-sm">
                   <span>📷</span>
                   <span>原图模式</span>
                 </span>
-                <span class="text-[10px] opacity-80">保留真实拍摄原貌</span>
+                <span class="text-xs opacity-80">保留真实拍摄原貌</span>
               </button>
             </div>
           </div>
@@ -394,15 +394,15 @@
           </div>
 
           <!-- Compression info badge -->
-          <div class="mt-3 px-3 py-2 bg-slate-50 border border-slate-200/80 rounded-xl flex flex-wrap items-center justify-between gap-1 text-xs text-slate-500">
+          <div class="mt-3 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-xl flex flex-wrap items-center justify-between gap-1 text-xs text-slate-500 dark:text-slate-400">
             <div class="flex items-center gap-2">
-              <span class="font-bold text-emerald-600">✓ 压缩就绪</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-300">✓ 压缩就绪</span>
               <span>·</span>
-              <span>格式: <strong class="text-slate-700 uppercase">{{ compressionResult?.mimeType?.split('/')[1] || 'WEBP' }}</strong></span>
+              <span>格式: <strong class="text-slate-700 dark:text-slate-200 uppercase">{{ compressionResult?.mimeType?.split('/')[1] || 'WEBP' }}</strong></span>
               <span>·</span>
-              <span>体积: <strong class="text-brand-600">{{ formatFileSize(compressionResult?.size) }}</strong></span>
+              <span>体积: <strong class="text-brand-600 dark:text-brand-300">{{ formatFileSize(compressionResult?.size) }}</strong></span>
             </div>
-            <span class="text-[11px] text-slate-400">已自动优化为 150~300KB 高清存储</span>
+            <span class="text-xs text-slate-400">已自动优化为 150~300KB 高清存储</span>
           </div>
         </div>
 
@@ -411,7 +411,7 @@
           <div class="space-y-5">
             <!-- Subject Selection (≥ 48px touch buttons) -->
             <div>
-              <label class="block text-xs font-black text-slate-600 uppercase tracking-wider mb-2">
+              <label class="block text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-2">
                 所属学科
               </label>
               <div class="grid grid-cols-4 gap-2">
@@ -424,7 +424,7 @@
                   :class="[
                     formSubject === sub
                       ? 'bg-brand-500 border-brand-500 text-white shadow-button'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
                   ]"
                 >
                   {{ sub }}
@@ -434,19 +434,19 @@
 
             <!-- Description / Reflection Textarea -->
             <div>
-              <label class="block text-xs font-black text-slate-600 uppercase tracking-wider mb-2">
+              <label class="block text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-2">
                 题目内容与错因记录
               </label>
               <textarea
                 v-model="formDescription"
                 rows="6"
                 placeholder="记录题目重点、为什么做错、或正解要点（例如：看错审题条件、计算混合运算顺序有误...）"
-                class="w-full rounded-2xl border border-slate-200 p-3.5 text-sm font-chinese text-slate-700 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none resize-none bg-white shadow-sm"
+                class="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-3.5 text-sm font-chinese text-slate-700 dark:text-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none resize-none bg-white dark:bg-slate-900 shadow-sm"
               ></textarea>
             </div>
 
             <!-- Quick Hint Card -->
-            <div class="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100/80 text-xs text-indigo-700 flex items-start gap-2.5">
+            <div class="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100/80 dark:border-indigo-800/80 text-xs text-indigo-700 dark:text-indigo-300 flex items-start gap-2.5">
               <span class="text-base">💡</span>
               <span class="leading-relaxed">
                 拍好的错题图片已经完成边缘锐化与对比度增强，后续在错题本中支持一键复习与攻克标记！
@@ -455,11 +455,11 @@
           </div>
 
           <!-- Bottom Action Buttons (≥ 48px height) -->
-          <div class="pt-4 border-t border-slate-200/80 flex items-center justify-between gap-3">
+          <div class="pt-4 border-t border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3">
             <button
               type="button"
               @click="step = 'crop'"
-              class="h-12 px-5 rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-xs flex items-center gap-1 active:scale-95 transition-all"
+              class="h-12 px-5 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs flex items-center gap-1 active:scale-95 transition-all"
             >
               <span>←</span>
               <span>重新裁剪</span>

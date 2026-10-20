@@ -6,10 +6,12 @@
 </template>
 
 <script setup>
+import { useChartTheme, useChartInk } from '../utils/chartTheme';
+const chartInk = useChartInk();
 import { computed } from 'vue';
 import { Line } from 'vue-chartjs';
 import { Chart as ChartJS, CategoryScale, LinearScale, LineElement, PointElement, Tooltip } from 'chart.js';
-import { CHART_INK, SUBJECT_COLORS } from '../utils/timeStats.js';
+import { SUBJECT_COLORS } from '../utils/timeStats.js';
 import { WEEKDAY_NAMES, localDate } from '../utils/schedule.js';
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip);
@@ -34,12 +36,12 @@ const chartData = computed(() => ({
   labels: days.value.map(day => days.value.length > 14 ? `${Number(day.date.slice(5, 7))}/${Number(day.date.slice(8))}` : label(day.date)),
   datasets: [{
     label: '写完时间', data: values.value, borderColor: color, backgroundColor: color, borderWidth: 2,
-    pointRadius: 4, pointHoverRadius: 6, pointBorderColor: CHART_INK.surface, pointBorderWidth: 2, pointHitRadius: 12,
+    pointRadius: 4, pointHoverRadius: 6, pointBorderColor: chartInk.value.surface, pointBorderWidth: 2, pointHitRadius: 12,
     spanGaps: false, tension: 0, borderJoinStyle: 'round', borderCapStyle: 'round'
   }]
 }));
 
-const chartOptions = computed(() => ({
+const chartOptions = useChartTheme(computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index', intersect: false },
@@ -52,14 +54,14 @@ const chartOptions = computed(() => ({
     }
   },
   scales: {
-    x: { grid: { display: false }, border: { color: CHART_INK.axis }, ticks: { color: CHART_INK.muted, font: { size: 11, weight: '600' }, autoSkip: true, maxRotation: 0 } },
+    x: { grid: { display: false }, border: { color: chartInk.value.axis }, ticks: { color: chartInk.value.muted, font: { size: 11, weight: '600' }, autoSkip: true, maxRotation: 0 } },
     y: {
       // Whole hours around the earliest and latest finish.
       min: known.value.length ? Math.floor((Math.min(...known.value) - 30) / 60) * 60 : 17 * 60,
       max: known.value.length ? Math.ceil((Math.max(...known.value) + 30) / 60) * 60 : 22 * 60,
-      grid: { color: CHART_INK.grid }, border: { display: false },
-      ticks: { stepSize: 60, color: CHART_INK.muted, font: { size: 11 }, callback: value => toClock(value) }
+      grid: { color: chartInk.value.grid }, border: { display: false },
+      ticks: { stepSize: 60, color: chartInk.value.muted, font: { size: 11 }, callback: value => toClock(value) }
     }
   }
-}));
+})));
 </script>

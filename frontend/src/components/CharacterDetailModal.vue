@@ -4,18 +4,18 @@
     @click.self="close"
   >
     <div
-      class="bg-white rounded-3xl w-full max-w-xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh] animate-pop-in"
+      class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden flex flex-col max-h-[92vh] animate-pop-in"
       role="dialog"
       aria-modal="true"
     >
       <!-- Modal Header -->
-      <header class="px-6 py-4 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
+      <header class="px-6 py-4 bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-brand-100 text-brand-600 flex items-center justify-center text-xl shadow-xs font-black">
+          <div class="w-10 h-10 rounded-2xl bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-300 flex items-center justify-center text-xl shadow-xs font-black">
             📖
           </div>
           <div>
-            <h3 class="text-lg font-black text-slate-800 leading-tight">{{ chars.length > 1 ? '生词笔顺与临摹' : '生字笔顺与临摹' }}</h3>
+            <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 leading-tight">{{ chars.length > 1 ? '生词笔顺与临摹' : '生字笔顺与临摹' }}</h3>
             <p class="text-xs font-bold text-slate-400">{{ chars.length > 1 ? '点下面的字看它的笔顺，临摹可在田字格上手写跟笔' : '点击临摹可在田字格上手写跟笔' }}</p>
           </div>
         </div>
@@ -23,7 +23,7 @@
         <button
           type="button"
           @click="close"
-          class="w-10 h-10 rounded-2xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xl font-bold transition-all active:scale-90"
+          class="w-10 h-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-xl font-bold transition-all active:scale-90"
           title="关闭弹窗"
         >
           ✕
@@ -38,13 +38,13 @@
           <div class="flex items-center gap-2">
             <div
               v-if="showPinyin"
-              class="px-4 py-1.5 rounded-2xl bg-brand-50 border border-brand-200 text-brand-700 font-black text-xl tracking-wider animate-pop-in"
+              class="px-4 py-1.5 rounded-2xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 font-black text-xl tracking-wider animate-pop-in"
             >
               {{ pinyinText }}
             </div>
             <div
               v-else
-              class="px-4 py-1.5 rounded-2xl bg-slate-100 border border-dashed border-slate-300 text-slate-400 font-bold text-sm"
+              class="px-4 py-1.5 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 font-bold text-sm"
             >
               🙈 拼音已隐藏
             </div>
@@ -54,7 +54,7 @@
               type="button"
               @click="togglePinyin"
               class="h-9 px-3 rounded-xl border font-bold text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1"
-              :class="showPinyin ? 'bg-brand-500 text-white border-brand-500 shadow-button' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
+              :class="showPinyin ? 'bg-brand-500 text-white border-brand-500 shadow-button' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'"
             >
               <span>{{ showPinyin ? '👁️ 隐藏拼音' : '👁️ 显示拼音' }}</span>
             </button>
@@ -80,7 +80,7 @@
             type="button"
             @click="selectChar(index)"
             class="w-12 h-12 rounded-xl border-2 font-kai text-2xl transition-all active:scale-95"
-            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 text-slate-800'"
+            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 dark:border-red-700/80 text-slate-800 dark:text-slate-100'"
           >
             {{ ch }}
           </button>
@@ -98,27 +98,27 @@
 
         <!-- Character Details Cards -->
         <div class="grid grid-cols-3 gap-3 w-full max-w-md mt-5">
-          <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
-            <span class="text-[11px] font-bold text-slate-400 block mb-0.5">{{ chars.length > 1 ? `「${currentChar}」` : '' }}部首</span>
-            <span class="text-base font-black text-slate-700 font-reading">{{ radicalInfo.radical }}</span>
+          <div class="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3 border border-slate-100 dark:border-slate-700 text-center">
+            <span class="text-xs font-bold text-slate-400 block mb-0.5">{{ chars.length > 1 ? `「${currentChar}」` : '' }}部首</span>
+            <span class="text-base font-black text-slate-700 dark:text-slate-200 font-reading">{{ radicalInfo.radical }}</span>
           </div>
 
-          <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
-            <span class="text-[11px] font-bold text-slate-400 block mb-0.5">{{ chars.length > 1 ? `「${currentChar}」` : '' }}总笔画</span>
-            <span class="text-base font-black text-slate-700">{{ strokesCount }} 画</span>
+          <div class="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3 border border-slate-100 dark:border-slate-700 text-center">
+            <span class="text-xs font-bold text-slate-400 block mb-0.5">{{ chars.length > 1 ? `「${currentChar}」` : '' }}总笔画</span>
+            <span class="text-base font-black text-slate-700 dark:text-slate-200">{{ strokesCount }} 画</span>
           </div>
 
-          <div class="bg-slate-50 rounded-2xl p-3 border border-slate-100 text-center">
-            <span class="text-[11px] font-bold text-slate-400 block mb-0.5">{{ chars.length > 1 ? `「${currentChar}」` : '' }}汉字结构</span>
-            <span class="text-base font-black text-slate-700 text-xs">{{ radicalInfo.struct || '独体结构' }}</span>
+          <div class="bg-slate-50 dark:bg-slate-800 rounded-2xl p-3 border border-slate-100 dark:border-slate-700 text-center">
+            <span class="text-xs font-bold text-slate-400 block mb-0.5">{{ chars.length > 1 ? `「${currentChar}」` : '' }}汉字结构</span>
+            <span class="text-base font-black text-slate-700 dark:text-slate-200 text-xs">{{ radicalInfo.struct || '独体结构' }}</span>
           </div>
         </div>
 
         <!-- Categories: anyone may add one; only parents take one away -->
         <div class="w-full max-w-md mt-5">
           <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-black text-slate-500">分类</span>
-            <span class="text-[11px] font-bold text-slate-400">{{ role === 'parent' ? '点一下添加或去掉' : '可以添加，去掉需要家长' }}</span>
+            <span class="text-xs font-black text-slate-500 dark:text-slate-400">分类</span>
+            <span class="text-xs font-bold text-slate-400">{{ role === 'parent' ? '点一下添加或去掉' : '可以添加，去掉需要家长' }}</span>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
@@ -128,25 +128,25 @@
               :disabled="savingCategories"
               @click="onToggleCategory(category.key)"
               class="h-10 rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1"
-              :class="character.categories?.includes(category.key) ? category.chip : 'bg-white text-slate-400 border-dashed border-slate-300'"
+              :class="character.categories?.includes(category.key) ? category.chip : 'bg-white dark:bg-slate-900 text-slate-400 border-dashed border-slate-300 dark:border-slate-600'"
               :aria-pressed="character.categories?.includes(category.key) ? 'true' : 'false'"
             >
               <span>{{ category.icon }}</span>
               <span>{{ category.label }}</span>
             </button>
           </div>
-          <p v-if="categoryMessage" class="mt-2 text-xs font-bold text-rose-500">{{ categoryMessage }}</p>
+          <p v-if="categoryMessage" class="mt-2 text-xs font-bold text-rose-500 dark:text-rose-400">{{ categoryMessage }}</p>
         </div>
 
         <!-- Mastery Action Button -->
-        <div class="flex items-center justify-between w-full max-w-md mt-6 pt-4 border-t border-slate-100">
+        <div class="flex items-center justify-between w-full max-w-md mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
           <button
             type="button"
             @click="onToggleMaster"
             class="flex-1 h-12 rounded-2xl font-black text-sm transition-all shadow-sm active:scale-98 flex items-center justify-center gap-2 mr-3"
             :class="[
               character.is_mastered
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-950/40'
                 : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-button'
             ]"
           >
@@ -158,7 +158,7 @@
             type="button"
             @click="onDelete"
             :disabled="!canDelete"
-            class="h-12 px-4 rounded-2xl bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-bold text-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="h-12 px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-950/40 font-bold text-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             :title="canDelete ? '从生字生词本移出' : '有分类标记，需要家长移出'"
           >
             移出
@@ -170,6 +170,7 @@
 </template>
 
 <script setup>
+import { confirmAction } from '../utils/confirmation';
 import { ref, computed } from 'vue';
 import HanziGrid from './HanziGrid.vue';
 import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../utils/hanzi';
@@ -262,10 +263,10 @@ function onToggleMaster() {
   emit('toggle-master', props.character.id);
 }
 
-function onDelete() {
+async function onDelete() {
   playClick();
   if (!canDelete.value) return;
-  if (window.confirm(`确定要将「${props.character.char}」从生字生词本移出吗？`)) {
+  if (await confirmAction(`确定要将「${props.character.char}」从生字生词本移出吗？`)) {
     emit('delete', props.character.id);
   }
 }

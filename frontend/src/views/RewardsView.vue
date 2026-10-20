@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none">
+  <div class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none">
     <div class="max-w-5xl w-full mx-auto">
       <!-- Header -->
       <header class="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
@@ -7,12 +7,12 @@
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-slate-200 items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
+            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 items-center justify-center text-xl text-slate-600 dark:text-slate-300 hover:border-brand-300 dark:hover:border-brand-700 shadow-sm active:scale-95 transition-all"
           >
             ←
           </router-link>
           <div>
-            <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
               <span>🏆</span>
               <span>积分与荣耀徽章</span>
             </h1>
@@ -27,7 +27,7 @@
           <router-link
             :to="`/child/${childId}/characters`"
             @click="playClick"
-            class="hidden lg:flex px-3.5 py-2 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all items-center gap-1.5"
+            class="hidden lg:flex px-3.5 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 font-bold text-xs shadow-xs hover:bg-brand-100 dark:hover:bg-brand-900/40 active:scale-95 transition-all items-center gap-1.5"
           >
             <span>📖</span>
             <span>生字生词本</span>
@@ -43,52 +43,52 @@
       </header>
 
       <!-- Top Summary Stats Cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
+      <div class="grid grid-cols-3 gap-3 sm:gap-4 mb-6">
         <!-- Points Card -->
-        <div class="bg-gradient-to-tr from-amber-400 to-amber-300 rounded-3xl p-5 text-amber-950 shadow-md shadow-amber-200/50 flex items-center justify-between">
+        <div class="bg-gradient-to-tr from-amber-400 to-amber-300 dark:from-amber-400 dark:to-amber-300 rounded-2xl p-3 sm:p-5 text-amber-950 shadow-md shadow-amber-200/50 flex items-center justify-between min-w-0">
           <div>
             <span class="text-xs font-black uppercase tracking-wider text-amber-900/70">当前积分余额</span>
-            <div class="text-3xl font-black mt-1">
-              {{ totalPoints }} <span class="text-base font-bold">分</span>
+            <div class="text-xl sm:text-3xl font-black mt-1">
+              {{ totalPoints }} <span class="text-xs sm:text-base font-bold">分</span>
             </div>
           </div>
-          <span class="text-4xl">💰</span>
+          <span class="hidden sm:block text-4xl">💰</span>
         </div>
 
         <!-- Streak Card -->
-        <div class="bg-gradient-to-tr from-rose-400 to-amber-400 rounded-3xl p-5 text-white shadow-md shadow-rose-200/50 flex items-center justify-between">
+        <div class="bg-gradient-to-tr from-rose-400 to-amber-400 rounded-2xl p-3 sm:p-5 text-white shadow-md shadow-rose-200/50 flex items-center justify-between min-w-0">
           <div>
             <span class="text-xs font-black uppercase tracking-wider text-rose-100">连续坚持</span>
-            <div class="text-3xl font-black mt-1">
-              {{ streakDays }} <span class="text-base font-bold">天</span>
+            <div class="text-xl sm:text-3xl font-black mt-1">
+              {{ streakDays }} <span class="text-xs sm:text-base font-bold">天</span>
             </div>
           </div>
-          <span class="text-4xl animate-bounce">🔥</span>
+          <span class="hidden sm:block text-4xl animate-bounce">🔥</span>
         </div>
 
         <!-- Badges Count Card -->
-        <div class="bg-gradient-to-tr from-brand-500 to-indigo-400 rounded-3xl p-5 text-white shadow-md shadow-brand-200/50 flex items-center justify-between">
+        <div class="bg-gradient-to-tr from-brand-500 to-indigo-400 rounded-2xl p-3 sm:p-5 text-white shadow-md shadow-brand-200/50 flex items-center justify-between min-w-0">
           <div>
             <span class="text-xs font-black uppercase tracking-wider text-brand-100">已解锁成就</span>
-            <div class="text-3xl font-black mt-1">
-              {{ unlockedCount }} / {{ allBadges.length }} <span class="text-base font-bold">个</span>
+            <div class="text-xl sm:text-3xl font-black mt-1">
+              {{ unlockedCount }} / {{ allBadges.length }} <span class="text-xs sm:text-base font-bold">个</span>
             </div>
           </div>
-          <span class="text-4xl">🏅</span>
+          <span class="hidden sm:block text-4xl">🏅</span>
         </div>
       </div>
 
       <!-- Rewards Shop -->
-      <section class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card mb-6">
+      <section class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card mb-6">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+          <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <span>🎁</span>
             <span>积分兑换商城</span>
           </h2>
           <span class="text-xs text-slate-400 font-bold">兑换后等爸爸妈妈确认哦</span>
         </div>
 
-        <p v-if="shopError" class="mb-3 px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ shopError }}</p>
+        <p v-if="shopError" class="mb-3 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ shopError }}</p>
 
         <div v-if="rewardItems.length === 0" class="text-center py-6 text-sm font-bold text-slate-400">
           爸爸妈妈还没有上架奖励，快去提醒他们吧～
@@ -98,16 +98,16 @@
             v-for="item in rewardItems"
             :key="item.id"
             class="rounded-2xl border p-4 flex flex-col items-center text-center transition-all"
-            :class="totalPoints >= item.cost ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-slate-50/60'"
+            :class="totalPoints >= item.cost ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/40' : 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60'"
           >
             <span class="text-4xl mb-2">{{ item.icon_emoji }}</span>
-            <span class="text-sm font-bold text-slate-800 font-chinese mb-1">{{ item.title }}</span>
-            <span class="text-sm font-black text-amber-500 mb-3">★ {{ item.cost }} 分</span>
+            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 font-chinese mb-1">{{ item.title }}</span>
+            <span class="text-sm font-black text-amber-500 dark:text-amber-400 mb-3">★ {{ item.cost }} 分</span>
             <button
               v-if="totalPoints < item.cost"
               type="button"
               disabled
-              class="w-full min-h-[48px] rounded-xl bg-slate-100 text-slate-400 text-xs font-bold"
+              class="w-full min-h-[48px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 text-xs font-bold"
             >
               还差 {{ item.cost - totalPoints }} 分
             </button>
@@ -124,7 +124,7 @@
               v-else
               type="button"
               @click="playClick(); confirmingId = item.id"
-              class="w-full min-h-[48px] rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-black shadow-sm active:scale-95 transition-all"
+              class="w-full min-h-[48px] rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 dark:text-amber-200 text-xs font-black shadow-sm active:scale-95 transition-all"
             >
               兑换
             </button>
@@ -132,28 +132,28 @@
         </div>
 
         <!-- My Redemptions -->
-        <div v-if="redemptions.length" class="mt-5 pt-4 border-t border-slate-100">
-          <h3 class="text-sm font-bold text-slate-600 mb-2">我的兑换记录</h3>
+        <div v-if="redemptions.length" class="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700">
+          <h3 class="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2">我的兑换记录</h3>
           <ul class="space-y-2">
             <li
               v-for="r in redemptions"
               :key="r.id"
-              class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50"
+              class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800"
             >
-              <span class="text-sm font-bold text-slate-700 font-chinese flex items-center gap-2 min-w-0">
+              <span class="text-sm font-bold text-slate-700 dark:text-slate-200 font-chinese flex items-center gap-2 min-w-0">
                 <span>{{ r.icon_emoji }}</span>
                 <span class="truncate">{{ r.title }}</span>
-                <span class="text-amber-500 font-black shrink-0">-{{ r.cost }}</span>
+                <span class="text-amber-500 dark:text-amber-400 font-black shrink-0">-{{ r.cost }}</span>
               </span>
               <span class="flex items-center gap-2 shrink-0">
-                <span class="px-2 py-0.5 rounded-lg text-[11px] font-black" :class="statusInfo[r.status].class">
+                <span class="px-2 py-0.5 rounded-lg text-xs font-black" :class="statusInfo[r.status].class">
                   {{ statusInfo[r.status].label }}
                 </span>
                 <button
                   v-if="r.status === 'pending'"
                   type="button"
                   @click="cancel(r)"
-                  class="min-h-[36px] px-2 text-[11px] font-bold text-slate-400 hover:text-rose-500"
+                  class="min-h-[36px] px-2 text-xs font-bold text-slate-400 hover:text-rose-500 dark:hover:text-rose-400"
                 >
                   撤回
                 </button>
@@ -166,9 +166,9 @@
       <!-- Main Section: Badge Wall & Points Log Tabs or 2-column layout -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left 2 Cols: Badge Wall -->
-        <div class="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-card">
+        <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
           <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <span>🎖️</span>
               <span>徽章荣誉墙</span>
             </h2>
@@ -219,10 +219,10 @@ const redeeming = ref(false);
 const shopError = ref('');
 
 const statusInfo = {
-  pending: { label: '等待确认', class: 'bg-amber-100 text-amber-700' },
-  approved: { label: '已兑换', class: 'bg-emerald-100 text-emerald-700' },
-  rejected: { label: '未通过', class: 'bg-rose-100 text-rose-600' },
-  cancelled: { label: '已撤回', class: 'bg-slate-200 text-slate-500' }
+  pending: { label: '等待确认', class: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' },
+  approved: { label: '已兑换', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' },
+  rejected: { label: '未通过', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300' },
+  cancelled: { label: '已撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400' }
 };
 
 const unlockedCount = computed(() => allBadges.value.filter(b => b.is_unlocked).length);

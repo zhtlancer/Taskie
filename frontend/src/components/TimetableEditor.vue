@@ -1,67 +1,67 @@
 <template>
   <div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center p-2 sm:p-4 overflow-y-auto" @click.self="$emit('close')">
-    <form class="bg-white rounded-3xl p-4 sm:p-6 max-w-5xl w-full shadow-2xl border-2 border-brand-100 space-y-5 my-2 sm:my-6" @submit.prevent="save">
+    <form class="bg-white dark:bg-slate-900 rounded-3xl p-4 sm:p-6 max-w-5xl w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-5 my-2 sm:my-6" @submit.prevent="save">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="text-xl font-black text-slate-800">🏫 {{ timetable ? '编辑课程表' : '新建课程表' }}</h3>
-        <button type="button" class="w-9 h-9 rounded-xl text-slate-400 hover:bg-slate-100 text-lg" aria-label="关闭" @click="$emit('close')">✕</button>
+        <h3 class="text-xl font-black text-slate-800 dark:text-slate-100">🏫 {{ timetable ? '编辑课程表' : '新建课程表' }}</h3>
+        <button type="button" class="w-9 h-9 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 text-lg" aria-label="关闭" @click="$emit('close')">✕</button>
       </div>
-      <p v-if="error" class="px-3 py-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">{{ error }}</p>
+      <p v-if="error" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
 
       <!-- Term -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
-          <label class="block text-xs font-bold text-slate-600 mb-1.5">名称</label>
-          <input v-model="form.name" type="text" maxlength="30" required placeholder="例如：四年级上学期" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500 font-chinese" />
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">名称</label>
+          <input v-model="form.name" type="text" maxlength="30" required placeholder="例如：四年级上学期" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500 font-chinese" />
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-600 mb-1.5">开始日期</label>
-          <input v-model="form.start_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
+          <input v-model="form.start_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-600 mb-1.5">结束日期</label>
-          <input v-model="form.end_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500" />
+          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">结束日期</label>
+          <input v-model="form.end_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
         </div>
       </div>
-      <div class="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-2xl border border-indigo-100 bg-indigo-50/40">
+      <div class="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/40">
         <label class="flex items-center gap-2 cursor-pointer">
           <input v-model="form.ab_weeks" type="checkbox" class="w-4 h-4 accent-indigo-500" />
-          <span class="text-xs font-bold text-slate-700">有单双周（A/B 周）不同的课</span>
+          <span class="text-xs font-bold text-slate-700 dark:text-slate-200">有单双周（A/B 周）不同的课</span>
         </label>
         <template v-if="form.ab_weeks">
-          <span class="text-xs font-bold text-slate-500">这周是</span>
+          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">这周是</span>
           <button
             v-for="week in ['A', 'B']"
             :key="week"
             type="button"
             class="px-3 py-1 rounded-lg text-xs font-black border"
-            :class="form.this_week === week ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-slate-200 text-slate-600'"
+            :class="form.this_week === week ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
             @click="form.this_week = week"
           >
             {{ week }} 周
           </button>
         </template>
-        <span v-else-if="hasAbLessons" class="text-[11px] font-bold text-amber-600">关闭后只保留 A 周的课</span>
+        <span v-else-if="hasAbLessons" class="text-xs font-bold text-amber-600 dark:text-amber-300">关闭后只保留 A 周的课</span>
       </div>
 
       <!-- The day's periods -->
-      <details class="rounded-2xl border border-slate-200 p-3" :open="!timetable">
-        <summary class="cursor-pointer text-sm font-black text-slate-700">⏱ 作息时间（{{ classSlots.length }} 节课）</summary>
+      <details class="rounded-2xl border border-slate-200 dark:border-slate-700 p-3" :open="!timetable">
+        <summary class="cursor-pointer text-sm font-black text-slate-700 dark:text-slate-200">⏱ 作息时间（{{ classSlots.length }} 节课）</summary>
         <div class="mt-3 space-y-2">
           <div v-for="slot in sortedSlots" :key="slot.id" class="flex flex-wrap items-center gap-2">
-            <select v-model="slot.kind" class="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-bold bg-white">
+            <select v-model="slot.kind" class="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold bg-white dark:bg-slate-900">
               <option value="class">上课</option>
               <option value="break">休息</option>
             </select>
-            <input v-model="slot.label" type="text" maxlength="10" required class="w-24 px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none focus:border-brand-500 font-chinese" />
-            <input v-model="slot.start_time" type="time" required class="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-bold" />
+            <input v-model="slot.label" type="text" maxlength="10" required class="w-24 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold outline-none focus:border-brand-500 font-chinese" />
+            <input v-model="slot.start_time" type="time" required class="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold" />
             <span class="text-xs text-slate-400">–</span>
-            <input v-model="slot.end_time" type="time" required class="px-2 py-1.5 rounded-lg border border-slate-200 text-xs font-bold" />
-            <button type="button" class="px-2 py-1 text-xs font-bold text-slate-400 hover:text-rose-500" @click="removeSlot(slot)">删除</button>
+            <input v-model="slot.end_time" type="time" required class="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-bold" />
+            <button type="button" class="px-2 py-1 text-xs font-bold text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="removeSlot(slot)">删除</button>
           </div>
           <div class="flex flex-wrap gap-2 pt-1">
-            <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-bold text-slate-600" @click="addSlot('class')">＋ 加一节课</button>
-            <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-bold text-slate-600" @click="addSlot('break')">＋ 加课间操 / 午休</button>
-            <button type="button" class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-500" @click="resetSlots">用常见作息重置</button>
+            <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="addSlot('class')">＋ 加一节课</button>
+            <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="addSlot('break')">＋ 加课间操 / 午休</button>
+            <button type="button" class="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 dark:text-slate-400" @click="resetSlots">用常见作息重置</button>
           </div>
         </div>
       </details>
@@ -69,8 +69,8 @@
       <!-- Lessons by weekday -->
       <div>
         <div class="flex items-center justify-between mb-2">
-          <span class="text-sm font-black text-slate-700">📚 课程（点格子填写）</span>
-          <label class="flex items-center gap-1.5 text-xs font-bold text-slate-500 cursor-pointer">
+          <span class="text-sm font-black text-slate-700 dark:text-slate-200">📚 课程（点格子填写）</span>
+          <label class="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 cursor-pointer">
             <input v-model="showWeekend" type="checkbox" class="w-4 h-4 accent-brand-500" /> 显示周末
           </label>
         </div>
@@ -79,27 +79,27 @@
             <thead>
               <tr>
                 <th class="w-20"></th>
-                <th v-for="weekday in weekdays" :key="weekday" class="text-xs font-black text-slate-500 py-1">{{ WEEKDAY_NAMES[weekday] }}</th>
+                <th v-for="weekday in weekdays" :key="weekday" class="text-xs font-black text-slate-500 dark:text-slate-400 py-1">{{ WEEKDAY_NAMES[weekday] }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="slot in sortedSlots" :key="slot.id">
-                <td class="align-middle text-[11px] font-bold text-slate-500 leading-tight">
-                  <div class="font-chinese" :class="slot.kind === 'class' ? 'text-slate-700' : ''">{{ slot.label }}</div>
+                <td class="align-middle text-xs font-bold text-slate-500 dark:text-slate-400 leading-tight">
+                  <div class="font-chinese" :class="slot.kind === 'class' ? 'text-slate-700 dark:text-slate-200' : ''">{{ slot.label }}</div>
                   <div class="tabular-nums text-slate-400">{{ slot.start_time }}</div>
                 </td>
-                <td v-if="slot.kind === 'break'" :colspan="weekdays.length" class="rounded-lg bg-slate-50 text-center text-[11px] font-bold text-slate-400">{{ slot.label }}</td>
+                <td v-if="slot.kind === 'break'" :colspan="weekdays.length" class="rounded-lg bg-slate-50 dark:bg-slate-800 text-center text-xs font-bold text-slate-400">{{ slot.label }}</td>
                 <template v-else>
                   <td v-for="weekday in weekdays" :key="weekday">
                     <button
                       type="button"
                       class="w-full min-h-[44px] px-1 py-1 rounded-lg border text-xs font-bold font-chinese leading-tight"
-                      :class="cellLessons(slot.id, weekday).length ? 'bg-brand-50 border-brand-200 text-slate-800' : 'bg-white border-dashed border-slate-200 text-slate-300 hover:border-brand-300'"
+                      :class="cellLessons(slot.id, weekday).length ? 'bg-brand-50 dark:bg-brand-900/40 border-brand-200 dark:border-brand-800 text-slate-800 dark:text-slate-100' : 'bg-white dark:bg-slate-900 border-dashed border-slate-200 dark:border-slate-700 text-slate-300 hover:border-brand-300 dark:hover:border-brand-700'"
                       @click="openCell(slot, weekday)"
                     >
                       <template v-if="cellLessons(slot.id, weekday).length">
                         <div v-for="lesson in cellLessons(slot.id, weekday)" :key="lesson.week">
-                          <span v-if="lesson.week !== 'all'" class="text-indigo-500">{{ lesson.week }} </span>{{ lesson.subject }}
+                          <span v-if="lesson.week !== 'all'" class="text-indigo-500 dark:text-indigo-400">{{ lesson.week }} </span>{{ lesson.subject }}
                         </div>
                       </template>
                       <span v-else>＋</span>
@@ -112,45 +112,45 @@
         </div>
       </div>
 
-      <div class="flex justify-end gap-3 pt-3 border-t border-slate-100">
-        <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100" @click="$emit('close')">取消</button>
+      <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+        <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
         <button type="submit" :disabled="saving" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ saving ? '保存中...' : '保存课程表' }}</button>
       </div>
     </form>
 
     <!-- One cell: the lesson every week, or separate A and B week lessons -->
     <div v-if="cell" class="fixed inset-0 z-[60] bg-slate-900/30 flex items-center justify-center p-4" @click.self="cell = null">
-      <form class="bg-white rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-3" @submit.prevent="applyCell">
-        <h4 class="text-base font-black text-slate-800 font-chinese">{{ WEEKDAY_NAMES[cell.weekday] }} · {{ cell.slot.label }}（{{ cell.slot.start_time }}–{{ cell.slot.end_time }}）</h4>
+      <form class="bg-white dark:bg-slate-900 rounded-3xl p-5 max-w-md w-full shadow-2xl space-y-3" @submit.prevent="applyCell">
+        <h4 class="text-base font-black text-slate-800 dark:text-slate-100 font-chinese">{{ WEEKDAY_NAMES[cell.weekday] }} · {{ cell.slot.label }}（{{ cell.slot.start_time }}–{{ cell.slot.end_time }}）</h4>
         <div v-if="form.ab_weeks" class="flex gap-2">
-          <button type="button" class="flex-1 py-1.5 rounded-lg text-xs font-bold border" :class="cell.mode === 'all' ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600'" @click="cell.mode = 'all'">每周一样</button>
-          <button type="button" class="flex-1 py-1.5 rounded-lg text-xs font-bold border" :class="cell.mode === 'ab' ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white border-slate-200 text-slate-600'" @click="cell.mode = 'ab'">A/B 周不同</button>
+          <button type="button" class="flex-1 py-1.5 rounded-lg text-xs font-bold border" :class="cell.mode === 'all' ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'" @click="cell.mode = 'all'">每周一样</button>
+          <button type="button" class="flex-1 py-1.5 rounded-lg text-xs font-bold border" :class="cell.mode === 'ab' ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'" @click="cell.mode = 'ab'">A/B 周不同</button>
         </div>
-        <div v-for="week in cell.mode === 'ab' ? ['A', 'B'] : ['all']" :key="week" class="space-y-2" :class="cell.mode === 'ab' ? 'p-2.5 rounded-2xl bg-indigo-50/50' : ''">
-          <div v-if="week !== 'all'" class="text-xs font-black text-indigo-600">{{ week }} 周</div>
+        <div v-for="week in cell.mode === 'ab' ? ['A', 'B'] : ['all']" :key="week" class="space-y-2" :class="cell.mode === 'ab' ? 'p-2.5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/40' : ''">
+          <div v-if="week !== 'all'" class="text-xs font-black text-indigo-600 dark:text-indigo-300">{{ week }} 周</div>
           <div class="flex flex-wrap gap-1.5">
             <button
               v-for="subject in SCHOOL_SUBJECTS"
               :key="subject"
               type="button"
               class="px-2 py-1 rounded-lg text-xs font-bold border font-chinese"
-              :class="cell.entries[week].subject === subject ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white border-slate-200 text-slate-600'"
+              :class="cell.entries[week].subject === subject ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
               @click="pickSubject(week, subject)"
             >
               {{ subject }}
             </button>
           </div>
-          <input v-model="cell.entries[week].subject" type="text" maxlength="10" placeholder="科目（可自己填，空着表示没课）" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-500 font-chinese" @change="pickSubject(week, cell.entries[week].subject)" />
+          <input v-model="cell.entries[week].subject" type="text" maxlength="10" placeholder="科目（可自己填，空着表示没课）" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500 font-chinese" @change="pickSubject(week, cell.entries[week].subject)" />
           <div class="grid grid-cols-2 gap-2">
-            <input v-model="cell.entries[week].teacher" type="text" maxlength="10" placeholder="老师（可不填）" class="px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-brand-500 font-chinese" />
-            <input v-model="cell.entries[week].room" type="text" maxlength="20" placeholder="教室（可不填）" class="px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-brand-500 font-chinese" />
+            <input v-model="cell.entries[week].teacher" type="text" maxlength="10" placeholder="老师（可不填）" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-brand-500 font-chinese" />
+            <input v-model="cell.entries[week].room" type="text" maxlength="20" placeholder="教室（可不填）" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-brand-500 font-chinese" />
           </div>
-          <input v-model="cell.entries[week].bring" type="text" maxlength="30" placeholder="要带的东西，如 水彩笔、调色盘（可不填）" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs outline-none focus:border-brand-500 font-chinese" />
+          <input v-model="cell.entries[week].bring" type="text" maxlength="30" placeholder="要带的东西，如 水彩笔、调色盘（可不填）" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-brand-500 font-chinese" />
         </div>
         <div class="flex justify-between gap-2 pt-2">
-          <button type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-rose-500" @click="clearCell">清空这一格</button>
+          <button type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="clearCell">清空这一格</button>
           <div class="flex gap-2">
-            <button type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100" @click="cell = null">取消</button>
+            <button type="button" class="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="cell = null">取消</button>
             <button type="submit" class="px-5 py-2 rounded-xl bg-brand-500 text-white text-xs font-bold">确定</button>
           </div>
         </div>
@@ -160,6 +160,7 @@
 </template>
 
 <script setup>
+import { confirmAction } from '../utils/confirmation';
 import { computed, ref } from 'vue';
 import api from '../api/client';
 import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, addDays, localDate, mondayOf, presetSlots } from '../utils/schedule.js';
@@ -232,8 +233,8 @@ function removeSlot(slot) {
   form.value.lessons = form.value.lessons.filter(l => l.slot_id !== slot.id);
 }
 
-function resetSlots() {
-  if (form.value.lessons.length && !confirm('重置作息时间会清空已填的课程，确定吗？')) return;
+async function resetSlots() {
+  if (form.value.lessons.length && !await confirmAction('重置作息时间会清空已填的课程，确定吗？')) return;
   form.value.slots = presetSlots(newId);
   form.value.lessons = [];
 }

@@ -5,20 +5,20 @@
     @click.self="close"
   >
     <div
-      class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh] animate-pop-in"
+      class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden flex flex-col max-h-[92vh] animate-pop-in"
       role="dialog"
       aria-modal="true"
     >
       <!-- Modal Header -->
-      <header class="px-6 py-4 bg-gradient-to-r from-brand-50 to-indigo-50/60 border-b border-slate-100 flex items-center justify-between">
+      <header class="px-6 py-4 bg-gradient-to-r from-brand-50 dark:from-brand-900/40 to-indigo-50/60 dark:to-indigo-950/40 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-11 h-11 rounded-2xl bg-brand-500 text-white flex items-center justify-center text-2xl shadow-button font-black">
             🔍
           </div>
           <div>
-            <h2 class="text-xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h2 class="text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
               <span>实时查笔画</span>
-              <span class="text-xs font-bold text-brand-600 bg-brand-100/70 px-2 py-0.5 rounded-full">动画演示</span>
+              <span class="text-xs font-bold text-brand-600 dark:text-brand-300 bg-brand-100/70 dark:bg-brand-900/40 px-2 py-0.5 rounded-full">动画演示</span>
             </h2>
             <p class="text-xs font-bold text-slate-400">
               输入汉字或词语，实时看书写动画与总笔画，一键加入生字生词本
@@ -29,7 +29,7 @@
         <button
           type="button"
           @click="close"
-          class="w-10 h-10 rounded-2xl bg-white border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center text-xl font-bold transition-all active:scale-90 shadow-xs"
+          class="w-10 h-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-xl font-bold transition-all active:scale-90 shadow-xs"
           title="关闭"
         >
           ✕
@@ -47,7 +47,7 @@
               type="text"
               maxlength="20"
               placeholder="输入汉字或词语（如：学、春天）"
-              class="w-full h-14 pl-5 pr-14 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-brand-500 focus:bg-white text-xl font-black text-slate-800 placeholder:text-slate-300 placeholder:font-normal outline-none transition-all shadow-inner"
+              class="w-full h-14 pl-5 pr-14 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:bg-white dark:focus:bg-slate-900 text-xl font-black text-slate-800 dark:text-slate-100 placeholder:text-slate-300 placeholder:font-normal outline-none transition-all shadow-inner"
               @input="onInputChanged"
               @keydown.enter="onInputConfirm"
             />
@@ -55,7 +55,7 @@
               v-if="inputRaw"
               type="button"
               @click="clearInput"
-              class="absolute right-4 w-7 h-7 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-500 flex items-center justify-center text-xs font-bold active:scale-90"
+              class="absolute right-4 w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold active:scale-90"
               title="清空"
             >
               ✕
@@ -71,7 +71,7 @@
               type="button"
               @click="selectChar(s)"
               class="px-2.5 py-1 rounded-xl text-xs font-black transition-all active:scale-95 shrink-0"
-              :class="entry === s ? 'bg-brand-500 text-white shadow-button' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+              :class="entry === s ? 'bg-brand-500 text-white shadow-button' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'"
             >
               {{ s }}
             </button>
@@ -86,18 +86,18 @@
             type="button"
             @click="pickChar(index)"
             class="w-11 h-11 rounded-xl border-2 font-kai text-2xl transition-all active:scale-95"
-            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 text-slate-800'"
+            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 dark:border-red-700/80 text-slate-800 dark:text-slate-100'"
           >
             {{ ch }}
           </button>
         </div>
 
         <!-- 2. Character Metadata Strip (Pinyin with sound, Radical, Strokes) -->
-        <div class="flex flex-wrap items-center justify-center gap-3 w-full max-w-md mb-4 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+        <div class="flex flex-wrap items-center justify-center gap-3 w-full max-w-md mb-4 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700">
           <!-- Pinyin & Listen -->
           <div class="flex items-center gap-2">
             <span class="text-xs font-bold text-slate-400">拼音:</span>
-            <span class="text-lg font-black text-brand-600 tracking-wider">{{ pinyinText }}</span>
+            <span class="text-lg font-black text-brand-600 dark:text-brand-300 tracking-wider">{{ pinyinText }}</span>
             <button
               type="button"
               @click="onSpeak"
@@ -113,7 +113,7 @@
           <!-- Radical -->
           <div class="flex items-center gap-1">
             <span class="text-xs font-bold text-slate-400">{{ charPrefix }}部首:</span>
-            <span class="text-sm font-black text-slate-700 font-reading">{{ radicalInfo.radical }}</span>
+            <span class="text-sm font-black text-slate-700 dark:text-slate-200 font-reading">{{ radicalInfo.radical }}</span>
           </div>
 
           <span class="text-slate-200 font-bold">|</span>
@@ -121,7 +121,7 @@
           <!-- Strokes Count -->
           <div class="flex items-center gap-1">
             <span class="text-xs font-bold text-slate-400">{{ charPrefix }}总笔画:</span>
-            <span class="text-sm font-black text-slate-700">{{ strokesCount }} 画</span>
+            <span class="text-sm font-black text-slate-700 dark:text-slate-200">{{ strokesCount }} 画</span>
           </div>
 
           <span class="text-slate-200 font-bold">|</span>
@@ -129,7 +129,7 @@
           <!-- Structure -->
           <div class="flex items-center gap-1">
             <span class="text-xs font-bold text-slate-400">{{ charPrefix }}结构:</span>
-            <span class="text-xs font-bold text-slate-600">{{ radicalInfo.struct }}</span>
+            <span class="text-xs font-bold text-slate-600 dark:text-slate-300">{{ radicalInfo.struct }}</span>
           </div>
         </div>
 
@@ -144,7 +144,7 @@
         />
 
         <!-- 4. Core Action Button: ⭐ 加入生字生词本 / ✅ 已在生字生词本 -->
-        <div class="w-full max-w-md mt-6 pt-3 border-t border-slate-100 flex flex-col items-center">
+        <div class="w-full max-w-md mt-6 pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-col items-center">
           <!-- Categories to mark the entry with when it is added -->
           <div v-if="!isAlreadyInBook && entry" class="w-full mb-3">
             <span class="text-xs font-bold text-slate-400">加入时标记（可选）:</span>
@@ -155,7 +155,7 @@
                 type="button"
                 @click="toggleNewCategory(category.key)"
                 class="h-9 rounded-xl border text-xs font-black transition-all active:scale-95"
-                :class="newCategories.includes(category.key) ? category.chip : 'bg-white text-slate-400 border-dashed border-slate-300'"
+                :class="newCategories.includes(category.key) ? category.chip : 'bg-white dark:bg-slate-900 text-slate-400 border-dashed border-slate-300 dark:border-slate-600'"
                 :aria-pressed="newCategories.includes(category.key) ? 'true' : 'false'"
               >
                 {{ category.icon }} {{ category.label }}
@@ -178,14 +178,14 @@
           <!-- Already in Book Button -->
           <div
             v-else
-            class="w-full h-14 rounded-2xl bg-emerald-50 border-2 border-emerald-300 text-emerald-700 font-black text-base flex items-center justify-center gap-2 shadow-xs"
+            class="w-full h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border-2 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-black text-base flex items-center justify-center gap-2 shadow-xs"
           >
             <span class="text-xl">✅</span>
             <span>已在生字生词本</span>
-            <span class="hidden sm:inline text-xs font-bold text-emerald-600">（随时可以临摹复习）</span>
+            <span class="hidden sm:inline text-xs font-bold text-emerald-600 dark:text-emerald-300">（随时可以临摹复习）</span>
           </div>
 
-          <p v-if="toastMessage" class="mt-2 text-xs font-bold text-emerald-600 animate-pop-in">
+          <p v-if="toastMessage" class="mt-2 text-xs font-bold text-emerald-600 dark:text-emerald-300 animate-pop-in">
             {{ toastMessage }}
           </p>
         </div>

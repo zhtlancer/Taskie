@@ -1,18 +1,18 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between select-none">
+  <div class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col justify-between select-none">
     <header class="px-6 py-4 flex items-center justify-between max-w-sm w-full mx-auto">
-      <button type="button" class="text-xs font-bold text-slate-500 hover:text-slate-700" @click="cancel">← 退出</button>
+      <button type="button" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" @click="cancel">← 退出</button>
       <span class="text-xs font-bold text-slate-400">首次使用设置</span>
     </header>
 
     <main class="flex-1 flex flex-col items-center justify-center p-4">
-      <div class="bg-white rounded-3xl p-6 shadow-card border border-slate-200/80 max-w-sm w-full text-center">
-        <div class="w-14 h-14 mx-auto rounded-2xl bg-amber-50 flex items-center justify-center text-2xl mb-3">🔐</div>
-        <h2 class="text-2xl font-black text-slate-800 tracking-tight mb-1">{{ steps[step].title }}</h2>
+      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-card border border-slate-200/80 dark:border-slate-700/80 max-w-sm w-full text-center">
+        <div class="w-14 h-14 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/40 flex items-center justify-center text-2xl mb-3">🔐</div>
+        <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight mb-1">{{ steps[step].title }}</h2>
         <p class="text-xs text-slate-400 mb-4">{{ steps[step].hint }}</p>
 
         <PinInput :key="step" ref="pinInput" :max-length="4" :error-message="errorMessage" @complete="handleComplete" />
-        <p v-if="busy" class="mt-3 text-xs font-bold text-brand-500">正在保存…</p>
+        <p v-if="busy" class="mt-3 text-xs font-bold text-brand-500 dark:text-brand-400">正在保存…</p>
       </div>
     </main>
 

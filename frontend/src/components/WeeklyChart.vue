@@ -5,6 +5,8 @@
 </template>
 
 <script setup>
+import { useChartTheme, useChartInk } from '../utils/chartTheme';
+const chartInk = useChartInk();
 import { computed } from 'vue';
 import {
   Chart as ChartJS,
@@ -58,7 +60,7 @@ const chartData = computed(() => {
   };
 });
 
-const chartOptions = {
+const chartOptions = useChartTheme({
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
@@ -99,5 +101,5 @@ const chartOptions = {
       }
     }
   }
-};
+});
 </script>

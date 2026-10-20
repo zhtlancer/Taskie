@@ -3,10 +3,10 @@ export const MAX_ENTRY_LENGTH = 8;
 
 // Fixed categories in display order, matching the server. Anyone may add one; only parents remove.
 export const CATEGORIES = [
-  { key: 'recognize', label: '会认读', icon: '👀', chip: 'bg-sky-50 text-sky-700 border-sky-200' },
-  { key: 'write', label: '会写', icon: '✍️', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  { key: 'fix_strokes', label: '笔画要改正', icon: '🖍️', chip: 'bg-rose-50 text-rose-700 border-rose-200' },
-  { key: 'error_prone', label: '易错字', icon: '⚠️', chip: 'bg-amber-50 text-amber-700 border-amber-200' }
+  { key: 'recognize', label: '会认读', icon: '👀', chip: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' },
+  { key: 'write', label: '会写', icon: '✍️', chip: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' },
+  { key: 'fix_strokes', label: '笔画要改正', icon: '🖍️', chip: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800' },
+  { key: 'error_prone', label: '易错字', icon: '⚠️', chip: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' }
 ];
 
 export const categoryInfo = key => CATEGORIES.find(category => category.key === key);

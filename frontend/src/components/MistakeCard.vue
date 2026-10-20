@@ -3,8 +3,8 @@
     class="relative rounded-2xl border-2 p-5 transition-all duration-200 shadow-sm flex flex-col justify-between"
     :class="[
       mistake.is_mastered
-        ? 'bg-slate-50 border-slate-200/80 opacity-80'
-        : 'bg-white border-brand-100 hover:border-brand-300 hover:shadow-card'
+        ? 'bg-slate-50 dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 opacity-80'
+        : 'bg-white dark:bg-slate-900 border-brand-100 dark:border-brand-800 hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-card'
     ]"
   >
     <div>
@@ -25,14 +25,14 @@
         <!-- Mastered Badge -->
         <span
           v-if="mistake.is_mastered"
-          class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold"
+          class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 text-xs font-bold"
         >
           <span>✓</span>
           <span>已攻克掌握</span>
         </span>
         <span
           v-else
-          class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-600 text-xs font-bold"
+          class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold"
         >
           <span>✏️</span>
           <span>待复习</span>
@@ -41,7 +41,7 @@
 
       <!-- Description -->
       <p
-        class="text-base text-slate-700 leading-relaxed font-chinese font-medium mb-4 whitespace-pre-wrap"
+        class="text-base text-slate-700 dark:text-slate-200 leading-relaxed font-chinese font-medium mb-4 whitespace-pre-wrap"
         :class="{ 'line-through text-slate-400': mistake.is_mastered }"
       >
         {{ mistake.description }}
@@ -51,7 +51,7 @@
       <div
         v-if="mistake.photo_path"
         @click="$emit('preview-photo', mistake.photo_path)"
-        class="mb-4 rounded-xl overflow-hidden max-h-56 border border-slate-200 cursor-zoom-in relative group transition-all hover:border-brand-300"
+        class="mb-4 rounded-xl overflow-hidden max-h-56 border border-slate-200 dark:border-slate-700 cursor-zoom-in relative group transition-all hover:border-brand-300 dark:hover:border-brand-700"
         title="点击查看高清大图"
       >
         <PrivatePhoto :src="mistake.photo_path" alt="错题图片" class="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-200" />
@@ -63,7 +63,7 @@
     </div>
 
     <!-- Actions Footer -->
-    <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+    <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
       <!-- Toggle Mastered Button -->
       <button
         type="button"
@@ -71,7 +71,7 @@
         class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1"
         :class="[
           mistake.is_mastered
-            ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+            ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600'
             : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm shadow-emerald-200'
         ]"
       >
@@ -82,7 +82,7 @@
       <button
         type="button"
         @click="$emit('delete', mistake.id)"
-        class="text-xs text-slate-400 hover:text-rose-500 font-semibold p-1 transition-colors"
+        class="text-xs text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 font-semibold p-1 transition-colors"
       >
         删除记录
       </button>
@@ -103,10 +103,10 @@ defineEmits(['toggle-master', 'delete', 'preview-photo']);
 
 function subjectColor(subject) {
   switch (subject) {
-    case '语文': return 'bg-rose-100 text-rose-700';
-    case '数学': return 'bg-blue-100 text-blue-700';
-    case '英语': return 'bg-emerald-100 text-emerald-700';
-    default: return 'bg-amber-100 text-amber-800';
+    case '语文': return 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300';
+    case '数学': return 'bg-blue-100 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300';
+    case '英语': return 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300';
+    default: return 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200';
   }
 }
 

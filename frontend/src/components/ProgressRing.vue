@@ -28,7 +28,7 @@
     <!-- Center Label -->
     <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
       <span class="text-xs font-bold text-slate-400" v-if="subtitle">{{ subtitle }}</span>
-      <span class="font-black text-slate-800" :style="{ fontSize: fontSize }">
+      <span class="font-black text-slate-800 dark:text-slate-100" :style="{ fontSize: fontSize }">
         {{ Math.round(percentage) }}%
       </span>
     </div>

@@ -3,14 +3,14 @@
   <div>
     <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
       <!-- Legend with each subject's total: the identity and value channel beside the colors -->
-      <ul class="flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold text-slate-600">
+      <ul class="flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold text-slate-600 dark:text-slate-300">
         <li v-for="item in legend" :key="item.label" class="flex items-center gap-1.5">
           <span class="w-2.5 h-2.5 rounded-sm" :style="{ background: item.color }"></span>
           <span>{{ item.label }}</span>
           <span class="text-slate-400">{{ formatMinutes(item.seconds) }}</span>
         </li>
       </ul>
-      <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-bold text-slate-600" @click="showTable = !showTable">
+      <button type="button" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="showTable = !showTable">
         {{ showTable ? '📊 看图' : '📋 看表格' }}
       </button>
     </div>
@@ -18,9 +18,9 @@
     <div v-if="!showTable" class="h-64">
       <Bar :data="chartData" :options="chartOptions" />
     </div>
-    <div v-else class="max-h-64 overflow-auto rounded-xl border border-slate-100">
+    <div v-else class="max-h-64 overflow-auto rounded-xl border border-slate-100 dark:border-slate-700">
       <table class="w-full text-xs">
-        <thead class="sticky top-0 bg-slate-50 text-slate-500">
+        <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
           <tr>
             <th class="px-2 py-1.5 text-left font-bold">日期</th>
             <th v-for="subject in shownSubjects" :key="subject" class="px-2 py-1.5 text-right font-bold">{{ subject }}</th>
@@ -30,7 +30,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="day in days" :key="day.date" class="border-t border-slate-100 text-slate-700">
+          <tr v-for="day in days" :key="day.date" class="border-t border-slate-100 dark:border-slate-700 text-slate-700 dark:text-slate-200">
             <td class="px-2 py-1.5 font-bold">{{ dayLabel(day.date) }}</td>
             <td v-for="subject in shownSubjects" :key="subject" class="px-2 py-1.5 text-right">{{ subjectSeconds(day)[subject] ? formatMinutes(subjectSeconds(day)[subject]) : '–' }}</td>
             <td class="px-2 py-1.5 text-right font-bold">{{ day.recorded_seconds ? formatMinutes(day.recorded_seconds) : '–' }}</td>
@@ -44,10 +44,12 @@
 </template>
 
 <script setup>
+import { useChartTheme, useChartInk } from '../utils/chartTheme';
+const chartInk = useChartInk();
 import { computed, ref } from 'vue';
 import { Bar } from 'vue-chartjs';
 import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from 'chart.js';
-import { CHART_INK, ESTIMATE_COLOR, SUBJECTS, SUBJECT_COLORS, formatMinutes, subjectOf } from '../utils/timeStats.js';
+import { ESTIMATE_COLOR, SUBJECTS, SUBJECT_COLORS, formatMinutes, subjectOf } from '../utils/timeStats.js';
 import { WEEKDAY_NAMES } from '../utils/schedule.js';
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
@@ -97,11 +99,11 @@ const chartData = computed(() => ({
   labels: props.days.map(day => props.days.length > 14 ? `${Number(day.date.slice(5, 7))}/${Number(day.date.slice(8))}` : dayLabel(day.date)),
   datasets: series.value.map(s => ({
     label: s.label, data: s.values, backgroundColor: s.color, stack: 'time',
-    borderColor: CHART_INK.surface, borderWidth: { top: 2 }, borderSkipped: 'start', borderRadius: topRadius, maxBarThickness: 24
+    borderColor: chartInk.value.surface, borderWidth: { top: 2 }, borderSkipped: 'start', borderRadius: topRadius, maxBarThickness: 24
   }))
 }));
 
-const chartOptions = computed(() => ({
+const chartOptions = useChartTheme(computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index', intersect: false },
@@ -131,12 +133,12 @@ const chartOptions = computed(() => ({
     }
   },
   scales: {
-    x: { stacked: true, grid: { display: false }, border: { color: CHART_INK.axis }, ticks: { color: CHART_INK.muted, font: { size: 11, weight: '600' }, autoSkip: true, maxRotation: 0 } },
+    x: { stacked: true, grid: { display: false }, border: { color: chartInk.value.axis }, ticks: { color: chartInk.value.muted, font: { size: 11, weight: '600' }, autoSkip: true, maxRotation: 0 } },
     y: {
       stacked: true, beginAtZero: true,
-      grid: { color: CHART_INK.grid }, border: { display: false },
-      ticks: { color: CHART_INK.muted, font: { size: 11 }, callback: value => `${value} 分`, maxTicksLimit: 6 }
+      grid: { color: chartInk.value.grid }, border: { display: false },
+      ticks: { color: chartInk.value.muted, font: { size: 11 }, callback: value => `${value} 分`, maxTicksLimit: 6 }
     }
   }
-}));
+})));
 </script>

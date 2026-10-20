@@ -1,6 +1,6 @@
 <template>
   <div
-    class="min-h-screen bg-[#F4F6FB] flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none relative"
+    class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none relative"
     @dragover.prevent="isPageDragOver = true"
     @dragleave.prevent="isPageDragOver = false"
     @drop.prevent="onPageDrop"
@@ -38,13 +38,13 @@
         <div class="flex items-center gap-3">
           <router-link
             :to="`/child/${childId}/today`"
-            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-slate-200 items-center justify-center text-xl text-slate-600 hover:border-brand-300 shadow-sm active:scale-95 transition-all"
+            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 items-center justify-center text-xl text-slate-600 dark:text-slate-300 hover:border-brand-300 dark:hover:border-brand-700 shadow-sm active:scale-95 transition-all"
             title="返回今日看板"
           >
             ←
           </router-link>
           <div>
-            <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+            <h1 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
               <span>📖</span>
               <span>错题智能本</span>
             </h1>
@@ -70,7 +70,7 @@
           <button
             type="button"
             @click="triggerGallery"
-            class="h-11 px-3.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1.5"
+            class="h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1.5"
           >
             <span class="text-base">🖼️</span>
             <span>相册选图</span>
@@ -80,7 +80,7 @@
           <button
             type="button"
             @click="openAddTextModal"
-            class="h-11 px-3 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1"
+            class="h-11 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1"
             title="纯文字输入记录"
           >
             <span>✍️</span>
@@ -92,7 +92,7 @@
           <router-link
             :to="`/child/${childId}/characters`"
             @click="playClick"
-            class="hidden lg:flex h-11 px-3.5 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 font-bold text-xs shadow-xs hover:bg-brand-100 active:scale-95 transition-all items-center gap-1.5"
+            class="hidden lg:flex h-11 px-3.5 rounded-xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 font-bold text-xs shadow-xs hover:bg-brand-100 dark:hover:bg-brand-900/40 active:scale-95 transition-all items-center gap-1.5"
             title="生字生词本"
           >
             <span>📖</span>
@@ -102,7 +102,7 @@
           <router-link
             :to="`/child/${childId}/today`"
             @click="playClick"
-            class="hidden lg:flex h-11 px-3.5 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs shadow-sm hover:bg-slate-50 active:scale-95 transition-all items-center"
+            class="hidden lg:flex h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 active:scale-95 transition-all items-center"
           >
             返回今日看板
           </router-link>
@@ -110,7 +110,7 @@
       </header>
 
       <!-- Filter Controls -->
-      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
         <!-- Subject Filter Tabs -->
         <div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
           <span class="text-xs font-bold text-slate-400 mr-1">学科：</span>
@@ -123,7 +123,7 @@
             :class="[
               selectedSubject === sub
                 ? 'bg-brand-500 text-white shadow-button'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             ]"
           >
             {{ sub }}
@@ -142,7 +142,7 @@
             :class="[
               statusFilter === status
                 ? 'bg-slate-800 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             ]"
           >
             {{ status }}
@@ -152,16 +152,16 @@
 
       <!-- Mistakes Grid -->
       <div>
-        <div v-if="loading" class="flex justify-center items-center py-24 text-brand-500 font-bold">
+        <div v-if="loading" class="flex justify-center items-center py-24 text-brand-500 dark:text-brand-400 font-bold">
           <span class="animate-spin mr-2">⏳</span> 正在整理错题...
         </div>
 
         <div
           v-else-if="filteredMistakes.length === 0"
-          class="bg-white rounded-3xl p-12 border border-slate-200 text-center shadow-card max-w-lg mx-auto"
+          class="bg-white dark:bg-slate-900 rounded-3xl p-12 border border-slate-200 dark:border-slate-700 text-center shadow-card max-w-lg mx-auto"
         >
           <div class="text-5xl mb-3">🎉</div>
-          <h3 class="text-lg font-bold text-slate-800 mb-1">太棒了，暂无符合条件的错题！</h3>
+          <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">太棒了，暂无符合条件的错题！</h3>
           <p class="text-xs text-slate-400 mb-6">做题有疑问可立即使用 iPad 拍照录入并精准裁剪</p>
 
           <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -176,7 +176,7 @@
             <button
               type="button"
               @click="triggerGallery"
-              class="h-12 px-5 rounded-2xl bg-white border border-slate-200 text-slate-700 text-xs font-bold shadow-sm hover:bg-slate-50 flex items-center justify-center gap-2 active:scale-95 transition-all w-full sm:w-auto"
+              class="h-12 px-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center gap-2 active:scale-95 transition-all w-full sm:w-auto"
             >
               <span class="text-base">🖼️</span>
               <span>相册选图</span>
@@ -212,16 +212,16 @@
       class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
       @click.self="showAddTextModal = false"
     >
-      <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xl font-black text-slate-800 flex items-center gap-2">
+          <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <span>✍️</span>
             <span>添加纯文字错题记录</span>
           </h3>
           <button
             type="button"
             @click="showAddTextModal = false"
-            class="text-slate-400 hover:text-slate-600 font-bold text-lg"
+            class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold text-lg"
           >
             ✕
           </button>
@@ -230,7 +230,7 @@
         <form @submit.prevent="submitAddTextMistake" class="space-y-4">
           <!-- Subject Select -->
           <div>
-            <label class="block text-xs font-bold text-slate-600 mb-1.5">选择学科</label>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">选择学科</label>
             <div class="grid grid-cols-4 gap-2">
               <button
                 v-for="sub in ['语文', '数学', '英语', '其他']"
@@ -241,7 +241,7 @@
                 :class="[
                   formSubject === sub
                     ? 'bg-brand-500 border-brand-500 text-white shadow-button'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
                 ]"
               >
                 {{ sub }}
@@ -251,22 +251,22 @@
 
           <!-- Description Textarea -->
           <div>
-            <label class="block text-xs font-bold text-slate-600 mb-1.5">题目内容与错误原因描述</label>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">题目内容与错误原因描述</label>
             <textarea
               v-model="formDescription"
               rows="4"
               required
               placeholder="记录题目、做错的原因或正确解题思路..."
-              class="w-full rounded-2xl border border-slate-200 p-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-200 outline-none resize-none"
+              class="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none resize-none"
             ></textarea>
           </div>
 
           <!-- Actions -->
-          <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
             <button
               type="button"
               @click="showAddTextModal = false"
-              class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+              class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               取消
             </button>
@@ -308,6 +308,7 @@
 </template>
 
 <script setup>
+import { confirmAction } from '../utils/confirmation';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
@@ -447,7 +448,7 @@ async function handleToggleMaster(mistake) {
 }
 
 async function handleDeleteMistake(id) {
-  if (!confirm('确定要删除这条错题记录吗？')) return;
+  if (!await confirmAction('确定要删除这条错题记录吗？')) return;
   playClick();
   try {
     await api.deleteMistake(id);

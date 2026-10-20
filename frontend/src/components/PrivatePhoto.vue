@@ -1,6 +1,6 @@
 <template>
   <img v-if="image" :src="image" />
-  <span v-else class="block p-4 text-sm text-slate-500">{{ failed ? '图片加载失败，请刷新重试' : '图片加载中…' }}</span>
+  <span v-else class="block p-4 text-sm text-slate-500 dark:text-slate-400">{{ failed ? '图片加载失败，请刷新重试' : '图片加载中…' }}</span>
 </template>
 <script setup>
 import { ref, watch, onBeforeUnmount } from 'vue';

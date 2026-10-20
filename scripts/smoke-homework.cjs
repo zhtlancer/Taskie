@@ -153,7 +153,7 @@ async function main() {
   await phone.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'domcontentloaded' });
   await phone.getByText('完成实验报告').waitFor();
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
-  await phone.locator('nav a[href$="/homework"]').waitFor();
+  await phone.locator('nav a[href$="/homework"]:visible').waitFor();
   await shot(phone, '6-phone-homework-book');
   await phone.getByRole('button', { name: '学习 / 记录', exact: true }).click();
   await phone.getByRole('dialog', { name: '分次做作业' }).waitFor();
@@ -299,14 +299,14 @@ async function main() {
   await ordinaryCard.getByText(/申请跳过：请家长确认跳过/).waitFor();
   await parentPage.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
   const parentCard = parentPage.locator('div.select-none.border-2').filter({ has: parentPage.getByRole('heading', { name: '普通分次练习', exact: true }) });
-  await parentCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
+  assert.equal(await parentCard.getByRole('button', { name: '更多任务操作', exact: true }).count(), 0, 'a pending request is answered on the card, not in the menu');
   await parentCard.getByRole('button', { name: '同意跳过', exact: true }).click();
   await parentCard.getByText(/今天已跳过 · 请家长确认跳过/).waitFor();
   await parentCard.getByRole('button', { name: '更多任务操作', exact: true }).click();
   await parentCard.getByRole('button', { name: '撤销跳过', exact: true }).click();
   await parentCard.getByRole('button', { name: '学习 / 记录', exact: true }).waitFor();
   assert.equal((await api('GET', `/daily-tasks/${ordinary.id}/study`)).total_seconds, ordinaryDetail.total_seconds);
-  pass('parent task menus approve and undo skips while retaining study records');
+  pass('parents approve a skip on the card and undo it from the menu while retaining study records');
 
   const plainCard = phone.locator('div.select-none.border-2').filter({ has: phone.getByRole('heading', { name: '数学练习册', exact: true }) });
   await plainCard.getByRole('button', { name: '完成任务', exact: true }).click();
@@ -314,6 +314,21 @@ async function main() {
   await plainCard.getByRole('button', { name: '撤销完成', exact: true }).click();
   await plainCard.getByRole('button', { name: '完成任务', exact: true }).waitFor();
   pass('untimed tasks complete and undo from the single footer action');
+
+  const doneButton = plainCard.getByRole('button', { name: '完成任务', exact: true });
+  await doneButton.focus();
+  await phone.keyboard.press('Escape');
+  assert.equal(await doneButton.evaluate(el => el === document.activeElement), true, 'Escape with no menu open leaves focus where it was');
+  pass('Escape only moves focus when it closes a task menu');
+
+  // A timed task still on its old board timer: that time is this session's, not saved yet.
+  const legacy = await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '旧计时任务', subject: '其他', track_time: true, points: 3 });
+  db.prepare('UPDATE daily_tasks SET timer_elapsed_seconds = 300 WHERE id = ? AND homework_legacy_seconds IS NULL').run(legacy.id);
+  await phone.reload({ waitUntil: 'domcontentloaded' });
+  const legacyCard = phone.locator('div.select-none.border-2').filter({ has: phone.getByRole('heading', { name: '旧计时任务', exact: true }) });
+  await legacyCard.getByText('⏱ 本次 05:00', { exact: true }).waitFor();
+  await legacyCard.getByText('已学 0 次 · 已保存 0 分钟', { exact: true }).waitFor();
+  pass('an old board timer reads as this session only, with nothing saved yet');
 
   assert.deepEqual(errors, []);
 }
