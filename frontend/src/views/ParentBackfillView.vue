@@ -32,8 +32,10 @@
           </div>
           <p v-if="!task.is_completed && task.is_extra && !task.allow_extra" class="text-xs text-slate-400">本周目标已完成，该任务未开启额外完成。</p>
           <p v-if="task.origin === 'study' && !task.is_completed && !task.is_skipped" class="text-xs text-slate-400">字词学习需当天逐项练习，不能补记；确实没学可标记跳过，不影响全勤和连续打卡。</p>
+          <button v-if="!task.projected && task.origin !== 'study' && (task.track_time || task.study_sessions)" :disabled="busy" class="text-sm text-indigo-600 py-2" @click="studyTask = task">学习记录 / 补记用时</button>
+          <p v-if="task.study_sessions?.managed" class="text-xs text-slate-500">已保存 {{ task.study_sessions.count }} 次学习 · 累计 {{ Math.round(task.study_sessions.seconds / 60) }} 分钟，补卡保留已有记录。</p>
           <form v-if="task.origin !== 'study' && !task.is_completed && !task.is_skipped && (!task.is_extra || task.allow_extra)" class="flex flex-wrap items-center gap-3" @submit.prevent="act(task, 'complete')">
-            <label v-if="task.track_time" class="text-xs text-slate-600">
+            <label v-if="task.track_time && !task.study_sessions?.managed" class="text-xs text-slate-600">
               实际用时（可不填）
               <input v-model="minutes[task.id]" type="number" min="1" max="720" step="1" :disabled="busy" class="w-20 p-2 border rounded-lg ml-1" /> 分钟
             </label>
@@ -48,6 +50,7 @@
         </section>
       </template>
     </main>
+    <StudySessionsModal v-if="studyTask" :task-id="studyTask.homework ? undefined : studyTask.id" :record-id="studyTask.homework?.id" as-parent @close="studyTask = null; load()" @saved="load" />
   </div>
 </template>
 
@@ -56,6 +59,7 @@ import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import StudySessionsModal from '../components/StudySessionsModal.vue';
 
 const route = useRoute();
 const d = new Date();
@@ -63,6 +67,7 @@ d.setDate(d.getDate() - 1);
 const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const date = ref(yesterday), childName = ref('孩子');
 const tasks = ref([]), events = ref([]), minutes = ref({});
+const studyTask = ref(null);
 const loading = ref(false), busy = ref(false), error = ref('');
 let requestId = 0;
 const formatTime = value => new Date(value).toLocaleString('zh-CN', { hour12: false });

@@ -24,6 +24,8 @@ const TimeStatsService = require('./services/time-stats.service');
 const WordStudyService = require('./services/word-study.service');
 const HomeworkService = require('./services/homework.service');
 const HomeworkStudyService = require('./services/homework-study.service');
+const TaskStudyService = require('./services/task-study.service');
+const taskStudyRoutes = require('./routes/task-study.routes');
 const wordStudyRoutes = require('./routes/word-study.routes');
 const { installAuthorization, getSetting } = require('./auth');
 const { DeviceRegistry, installDeviceGate, deviceRoutes } = require('./device-auth');
@@ -87,6 +89,9 @@ function buildApp(opts = {}) {
   const homeworkService = new HomeworkService(db, tasksService, scheduleService);
   tasksService.homeworkService = homeworkService;
   const homeworkStudyService = new HomeworkStudyService(db, homeworkService, tasksService, timersService);
+  const taskStudyService = new TaskStudyService(db, tasksService, timersService);
+  tasksService.taskStudyService = taskStudyService;
+  timersService.taskStudyService = taskStudyService;
   timersService.homeworkStudyService = homeworkStudyService;
   homeworkService.studyService = homeworkStudyService;
 
@@ -108,7 +113,8 @@ function buildApp(opts = {}) {
     timeStatsService,
     wordStudyService,
     homeworkService,
-    homeworkStudyService
+    homeworkStudyService,
+    taskStudyService
   });
 
   console.log('  4/4 正在挂载路由与静态资源中间件...');
@@ -208,6 +214,7 @@ function buildApp(opts = {}) {
   fastify.register(adhocTasksRoutes, { prefix: '/api', tasksService });
   fastify.register(skipsRoutes, { prefix: '/api', skipsService });
   fastify.register(timersRoutes, { prefix: '/api', timersService, tasksService, periodsService });
+  fastify.register(taskStudyRoutes, { prefix: '/api', taskStudyService });
   fastify.register(scheduleRoutes, { prefix: '/api', scheduleService });
   fastify.register(wordStudyRoutes, { prefix: '/api', wordStudyService });
   fastify.register(homeworkRoutes, { prefix: '/api', homeworkService, homeworkStudyService });

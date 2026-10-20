@@ -1,5 +1,7 @@
 // Task timers count on the server; the board keeps a running one ticking from when it was loaded.
 export const LONG_TIMER_SECONDS = 3 * 3600;
+export const usesStudySessions = task => Boolean(task.homework ||
+  (!['goal', 'study'].includes(task.origin) && (task.track_time || task.study_sessions)));
 
 export const withClock = (item, loadedAt = Date.now()) => ({ ...item, timer_loaded_at: loadedAt });
 

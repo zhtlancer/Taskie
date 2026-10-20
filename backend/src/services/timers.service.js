@@ -57,6 +57,18 @@ class TimersService {
   apply(kind, id, action) {
     const spec = this.kinds[kind];
     if (!spec || !['start', 'pause', 'reset'].includes(action)) throw { status: 404, message: 'Not found' };
+    if (kind === 'task') {
+      const row = spec.load(id);
+      if (row.homework_legacy_seconds !== null) {
+        if (action === 'reset') throw { status: 409, message: '请在学习记录中结束或更正本次用时，已保存记录不能清零' };
+        if (action === 'start') this.taskStudyService.start(id);
+        else {
+          const active = this.db.prepare('SELECT id FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(id);
+          if (active) this.taskStudyService.pauseSession(id, active.id);
+        }
+        return spec.describe(row);
+      }
+    }
     let row;
     this.db.transaction(() => {
       row = spec.load(id);

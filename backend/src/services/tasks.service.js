@@ -129,12 +129,18 @@ class TasksService {
   removeUnassignedTodayTasks(templateId = null) {
     // Assignment edits revoke pending tasks today, while completed and historical
     // snapshots (and their point logs) remain intact.
-    this.db.prepare(`DELETE FROM daily_tasks
+    const revoked = this.db.prepare(`SELECT id, homework_legacy_seconds,
+        EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study FROM daily_tasks
       WHERE date = ? AND is_completed = 0 AND (? IS NULL OR template_id = ?)
         AND EXISTS (SELECT 1 FROM task_templates WHERE id = daily_tasks.template_id AND assign_all = 0)
         AND NOT EXISTS (SELECT 1 FROM template_children
           WHERE template_id = daily_tasks.template_id AND child_id = daily_tasks.child_id)`)
-      .run(getTodayDate(), templateId, templateId);
+      .all(getTodayDate(), templateId, templateId);
+    for (const row of revoked) {
+      this.taskStudyService?.endActive(row.id);
+      // Revoking a task must not erase learning time, including after undoing completion.
+      if (!row.has_study && !(row.homework_legacy_seconds > 0)) this.db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(row.id);
+    }
   }
 
   isUnassignedTodayTask(task) {
@@ -250,6 +256,11 @@ class TasksService {
         .run(carry ? 1 : 0, carry ? 1 : 0, id);
       if (childIds !== undefined) this.setTemplateChildren(id, childIds);
       // Today's unfinished tasks follow the timing settings at once; turning timing off drops their timer.
+      if (!timing.track_time) {
+        for (const row of this.db.prepare(`SELECT id FROM daily_tasks WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0`).all(id, getTodayDate())) {
+          this.taskStudyService?.endActive(row.id);
+        }
+      }
       this.db.prepare(`UPDATE daily_tasks SET track_time = ?, expected_minutes = ?,
           timer_started_at = CASE WHEN ? THEN timer_started_at END, timer_elapsed_seconds = CASE WHEN ? THEN timer_elapsed_seconds ELSE 0 END
         WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0`)
@@ -275,9 +286,13 @@ class TasksService {
   // Completed snapshots, one-off tasks and templates still matching keep their ids and timers.
   reconcileCalendarDay(childId, date, schedule = this.scheduleFor(childId)) {
     const remove = this.db.prepare('DELETE FROM daily_tasks WHERE id = ?');
-    for (const row of this.db.prepare(`SELECT id, COALESCE(source_template_id, template_id) AS template
+    for (const row of this.db.prepare(`SELECT id, COALESCE(source_template_id, template_id) AS template, homework_legacy_seconds,
+      EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study
       FROM daily_tasks WHERE child_id = ? AND date = ? AND origin = 'template' AND is_completed = 0`).all(childId, date)) {
-      if (row.template && !schedule.allowedOn(row.template, date)) remove.run(row.id);
+      if (row.template && !schedule.allowedOn(row.template, date)) {
+        this.taskStudyService?.endActive(row.id);
+        if (!row.has_study && !(row.homework_legacy_seconds > 0)) remove.run(row.id);
+      }
     }
   }
 
@@ -385,7 +400,8 @@ class TasksService {
       .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, is_optional: due > date }));
     // A one-off task made from a homework record shows what the homework is.
     const homeworkOf = this.homeworkService ? this.homeworkService.homeworkByTask(childId) : new Map();
-    return [...this.describeTasksBetween(childId, date, date).filter(isActiveTask), ...carried]
+    const studyOf = this.studyByTask(childId);
+    return [...this.describeTasksBetween(childId, date, date, { studyOf }).filter(isActiveTask), ...carried.map(task => this.describeStudy(task, studyOf))]
       .map(task => {
         const lesson = task.class_id && lessonOf.get(classLessonKey(task));
         return { ...task, skip_request: latestSkip.get(task.id) || null, homework: homeworkOf.get(task.id) || null,
@@ -499,7 +515,7 @@ class TasksService {
     const missed = this.carriedBetween(childId, fromDate, toDate, schedule)
       .filter(({ row, due }) => due <= toDate && !row.is_completed && !row.skipped_at)
       .map(({ row, due }) => ({ ...describeRow(row), date: due, carried_from: row.date, due_date: due, is_optional: false }));
-    return [...this.describeTasksBetween(childId, fromDate, toDate, { ...options, schedule }), ...missed];
+    return [...this.describeTasksBetween(childId, fromDate, toDate, { ...options, schedule, includeStudy: false }), ...missed];
   }
 
   // Children may act on a task from its own day until its deadline.
@@ -532,12 +548,34 @@ class TasksService {
     return this.describeTasksBetween(t.child_id, t.date, t.date, { includePaused: true }).find(task => task.id === t.id);
   }
 
+  studyByTask(childId) {
+    return new Map(this.db.prepare(`SELECT task_id,
+      SUM(CASE WHEN ended_at IS NOT NULL THEN 1 ELSE 0 END) AS count,
+      SUM(CASE WHEN ended_at IS NOT NULL THEN duration_seconds ELSE 0 END) AS seconds,
+      MAX(CASE WHEN ended_at IS NULL THEN timer_started_at END) AS timer_started_at,
+      MAX(CASE WHEN ended_at IS NULL THEN duration_seconds ELSE 0 END) AS elapsed
+      FROM homework_sessions WHERE child_id = ? GROUP BY task_id`).all(childId).map(row => [row.task_id, row]));
+  }
+
+  describeStudy(task, studyOf) {
+    if (['goal', 'study'].includes(task.origin) || (!task.track_time && task.homework_legacy_seconds === null)) return task;
+    const row = studyOf.get(task.id);
+    const managed = task.homework_legacy_seconds !== null;
+    return { ...task,
+      ...(managed ? { timer_running: Boolean(row?.timer_started_at), timer_seconds: timerSeconds({ timer_started_at: row?.timer_started_at, timer_elapsed_seconds: row?.elapsed || 0 }) } : {}),
+      study_sessions: { managed, count: row?.count || 0, running: managed ? Boolean(row?.timer_started_at) : task.timer_running,
+        seconds: managed ? task.homework_legacy_seconds + (row?.seconds || 0) : task.duration_seconds ?? task.timer_seconds ?? 0 }
+    };
+  }
+
   // Describes a child's tasks between two dates with weekly progress, using one query over
   // the surrounding weeks. A weekly task is optional on a day while the times still needed
   // (counting only earlier days, so past days never change) are fewer than the days left
   // in the week including that day; once there is no slack it is required that day. A skipped
   // time takes one off the target, so skipping on a day without slack still keeps the week whole.
-  describeTasksBetween(childId, fromDate, toDate, { includePaused = false, schedule = this.scheduleFor(childId) } = {}) {
+  describeTasksBetween(childId, fromDate, toDate, { includePaused = false, schedule = this.scheduleFor(childId), includeStudy = true, studyOf = includeStudy ? this.studyByTask(childId) : null } = {}) {
+    const assigned = new Set(schedule.assigned.map(template => template.id));
+    const today = getTodayDate();
     const weekStarts = new Map();
     const weekOf = date => {
       if (!weekStarts.has(date)) weekStarts.set(date, getWeekRange(date).startDate);
@@ -567,8 +605,10 @@ class TasksService {
     }
 
     return rows.filter(row => row.date >= fromDate && row.date <= toDate &&
-      (includePaused || row.is_completed || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
-      const task = describeRow(row);
+      (includePaused || row.is_completed || (!schedule.isPaused(sourceOf(row), row.date) &&
+        (row.origin !== 'template' || row.date !== today ||
+          ((!schedule.byId.has(sourceOf(row)) || assigned.has(sourceOf(row))) && schedule.allowedOn(sourceOf(row), row.date)))))).map(row => {
+      const task = studyOf ? this.describeStudy(describeRow(row), studyOf) : describeRow(row);
       // A task that may wait out a break (or a one-off task due later) is optional until its deadline.
       if (row.schedule_type !== 'weekly_times') {
         if (row.origin === 'study') return { ...task, is_optional: !row.study_required };
@@ -776,7 +816,9 @@ class TasksService {
   getBackfillTasks(childId, date) {
     this.validateBackfillDay(childId, date);
     this.wordStudyService?.ensureScheduled(childId);
-    const tasks = this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => task.origin !== 'goal');
+    const homeworkOf = this.homeworkService?.homeworkByTask(childId) || new Map();
+    const tasks = this.describeTasksBetween(childId, date, date, { includePaused: true }).filter(task => task.origin !== 'goal')
+      .map(task => ({ ...task, homework: homeworkOf.get(task.id) || null }));
     const { templates, lessons } = this.pastDaySources(childId, date);
     const hasTemplate = new Set(tasks.map(task => task.template_id).filter(Boolean));
     const hasLesson = new Set(tasks.filter(task => task.class_id).map(classLessonKey));
@@ -853,10 +895,11 @@ class TasksService {
       throw { status: 404, message: 'Daily task not found' };
     }
 
-    if (this.db.prepare('SELECT 1 FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(taskId)) {
+    const courseHomework = this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId);
+    if (courseHomework && this.db.prepare('SELECT 1 FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(taskId)) {
       throw { status: 409, message: '请先结束本次学习，再完成作业' };
     }
-    if (duration_seconds !== undefined && duration_seconds !== null && this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId)) {
+    if (duration_seconds !== undefined && duration_seconds !== null && (courseHomework || task.homework_legacy_seconds !== null)) {
       throw { status: 409, message: '请在单次学习记录中填写用时' };
     }
     // A long-term task's daily row is completed by logging progress, never directly.
@@ -888,11 +931,12 @@ class TasksService {
       if (isExtra && !task.allow_extra) throw { status: 409, message: '本周目标已完成' };
     }
     const earned = isExtra ? (this.weeklyExtraRewardCount(task) < task.extra_reward_limit ? task.extra_points : 0) : task.points;
-    const duration = task.track_time ? resolveDuration(task, duration_seconds) : { seconds: null, source: null };
+    const duration = task.track_time && task.homework_legacy_seconds === null ? resolveDuration(task, duration_seconds) : { seconds: null, source: null };
     const now = new Date().toISOString();
     let newBadges = [];
 
     const tx = this.db.transaction(() => {
+      if (!courseHomework) this.taskStudyService?.endActive(taskId);
       // 1. Update task to completed; doing it withdraws a skip request still waiting for a parent
       this.db.prepare(`
         UPDATE daily_tasks
@@ -997,7 +1041,7 @@ class TasksService {
   setDuration(taskId, durationSeconds) {
     const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
     if (!task) throw { status: 404, message: 'Daily task not found' };
-    if (this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId)) throw { status: 409, message: '请修改单次学习记录的用时' };
+    if (task.homework_legacy_seconds !== null || this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId)) throw { status: 409, message: '请修改单次学习记录的用时' };
     if (!task.track_time) throw { status: 409, message: '这项任务不记录用时' };
     if (!task.is_completed) throw { status: 409, message: '完成任务后才能填写用时' };
     const seconds = validateDuration(durationSeconds);

@@ -181,6 +181,71 @@ async function main() {
   assert.equal((await api('GET', `/homework/${late.id}/study`)).record.task.is_completed, true);
   pass('a child studies overdue homework and only parent confirmation completes it');
 
+  // Ordinary tasks share the study UI, with completion separate from each saved session.
+  const ordinary = await api('POST', `/children/${child.id}/adhoc-tasks`, {
+    title: '普通分次练习', subject: '其他', track_time: true, expected_minutes: 10, points: 7
+  });
+  const pointsBefore = app.services.rewardsService.getTotalPoints(child.id);
+  await phone.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
+  const ordinaryCard = phone.locator('div.select-none.border-2').filter({ has: phone.getByRole('heading', { name: '普通分次练习', exact: true }) });
+  await ordinaryCard.getByRole('button', { name: '学习 / 记录', exact: true }).click();
+  const ordinaryStudy = phone.getByRole('dialog', { name: '分次学习', exact: true });
+  await ordinaryStudy.getByRole('button', { name: '开始本次', exact: true }).click();
+  db.prepare('UPDATE homework_sessions SET timer_started_at = ? WHERE task_id = ? AND ended_at IS NULL')
+    .run(new Date(Date.now() - 120000).toISOString(), ordinary.id);
+  await ordinaryStudy.getByRole('button', { name: '暂停', exact: true }).click();
+  await ordinaryStudy.getByRole('button', { name: '继续本次', exact: true }).click();
+  await ordinaryStudy.getByPlaceholder(/例如：写完第一部分/).fill('第一段练习');
+  await ordinaryStudy.getByRole('button', { name: '结束本次学习', exact: true }).click();
+  await ordinaryStudy.getByText('第一段练习', { exact: true }).waitFor();
+  await ordinaryStudy.getByRole('button', { name: '＋ 手动补记学习', exact: true }).click();
+  await ordinaryStudy.getByLabel('本次用时（分钟）').fill('5');
+  await ordinaryStudy.getByPlaceholder('本次进展（选填）').fill('第二段手动补记');
+  await ordinaryStudy.getByRole('button', { name: '保存本次', exact: true }).click();
+  await ordinaryStudy.getByText('第二段手动补记', { exact: true }).waitFor();
+  assert.equal(app.services.rewardsService.getTotalPoints(child.id), pointsBefore);
+  assert.equal((await api('GET', `/daily-tasks/${ordinary.id}/study`)).record.task.is_completed, false);
+  await ordinaryStudy.getByRole('button', { name: '开始本次', exact: true }).click();
+  db.prepare('UPDATE homework_sessions SET timer_started_at = ? WHERE task_id = ? AND ended_at IS NULL')
+    .run(new Date(Date.now() - 180000).toISOString(), ordinary.id);
+  await ordinaryStudy.getByRole('button', { name: '结束计时并完成任务', exact: true }).click();
+  await ordinaryStudy.getByText('✓ 任务已完成', { exact: true }).waitFor();
+  const ordinaryDetail = await api('GET', `/daily-tasks/${ordinary.id}/study`);
+  assert.equal(ordinaryDetail.sessions.length, 3);
+  assert.ok(ordinaryDetail.total_seconds >= 600);
+  assert.equal(app.services.rewardsService.getTotalPoints(child.id), pointsBefore + 7);
+  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await shot(phone, '10-phone-ordinary-study');
+  await ordinaryStudy.getByRole('button', { name: '撤销全部完成', exact: true }).click();
+  await ordinaryStudy.getByRole('button', { name: '开始本次', exact: true }).waitFor();
+  assert.equal(app.services.rewardsService.getTotalPoints(child.id), pointsBefore);
+  assert.equal((await api('GET', `/daily-tasks/${ordinary.id}/study`)).total_seconds, ordinaryDetail.total_seconds);
+  await ordinaryStudy.getByRole('button', { name: '关闭', exact: true }).click();
+  pass('ordinary tasks support repeated sessions, one final award and undo retaining time on phones');
+
+  // A parent can inspect, add historical time and backfill without replacing saved sessions.
+  const past = await api('POST', `/children/${child.id}/adhoc-tasks`, {
+    title: '昨天普通任务', subject: '其他', date: yesterday, track_time: true, points: 5
+  });
+  await api('POST', `/daily-tasks/${past.id}/sessions`, { request_id: 'browser_past_session', date: yesterday, duration_seconds: 120 });
+  await parentPage.goto(`${base}/parent/children/${child.id}/backfill`, { waitUntil: 'domcontentloaded' });
+  const pastCard = parentPage.locator('article').filter({ hasText: '昨天普通任务' });
+  await pastCard.getByRole('button', { name: '学习记录 / 补记用时', exact: true }).click();
+  const pastStudy = parentPage.getByRole('dialog', { name: '分次学习', exact: true });
+  await pastStudy.getByText(/1 次学习/).waitFor();
+  await pastStudy.getByRole('button', { name: '＋ 手动补记学习', exact: true }).click();
+  await pastStudy.getByLabel('学习日期').fill(yesterday);
+  await pastStudy.getByLabel('本次用时（分钟）').fill('3');
+  await pastStudy.getByPlaceholder('本次进展（选填）').fill('家长补记昨天学习');
+  await pastStudy.getByRole('button', { name: '保存本次', exact: true }).click();
+  await pastStudy.getByText('家长补记昨天学习', { exact: true }).waitFor();
+  await pastStudy.getByRole('button', { name: '完成任务', exact: true }).click();
+  await pastStudy.getByText('✓ 任务已完成', { exact: true }).waitFor();
+  const pastDetail = await api('GET', `/daily-tasks/${past.id}/study`);
+  assert.equal(pastDetail.total_seconds, 300);
+  assert.equal(pastDetail.record.task.completion_source, 'parent_backfill');
+  pass('parent backfill can add historical study time and complete while preserving individual sessions');
+
   assert.deepEqual(errors, []);
 }
 

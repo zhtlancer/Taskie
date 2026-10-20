@@ -14,20 +14,22 @@ const pad = n => String(n).padStart(2, '0');
 const sum = list => list.reduce((total, n) => total + n, 0);
 const average = list => list.length ? Math.round(sum(list) / list.length) : null;
 // Daily allocations share one learning session, even when it crosses midnight.
-function learningEntries(list) {
+function learningEntries(list, keyOf = row => row.session_id) {
   const sessions = new Map();
   const entries = [];
   for (const row of list) {
-    if (!row.session_id) { entries.push(row); continue; }
-    if (sessions.has(row.session_id)) sessions.get(row.session_id).seconds += row.seconds;
+    const key = keyOf(row);
+    if (!key) { entries.push(row); continue; }
+    if (sessions.has(key)) sessions.get(key).seconds += row.seconds;
     else {
       const entry = { ...row };
-      sessions.set(row.session_id, entry);
+      sessions.set(key, entry);
       entries.push(entry);
     }
   }
   return entries;
 }
+const taskEntries = list => learningEntries(list, row => row.task_instance_id || row.session_id);
 
 const clockFormat = new Intl.DateTimeFormat('en-GB', { timeZone: config.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 // Minutes after midnight in the family time zone, counting early-morning times as the evening before.
@@ -60,7 +62,10 @@ class TimeStatsService {
   // after the task's timer is disabled; new untimed progress is not treated as missing time.
   sessions(childId, from, to) {
     const tasks = this.db.prepare(`SELECT date, title, subject, COALESCE(source_template_id, template_id) AS template, duration_seconds, expected_minutes
-      FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND track_time = 1 AND (homework_legacy_seconds IS NULL OR (duration_seconds IS NOT NULL AND NOT EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id))) ORDER BY date, rowid`).all(childId, from, to)
+      FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND track_time = 1 AND
+        (homework_legacy_seconds IS NULL OR (NOT EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id) AND
+          (duration_seconds IS NOT NULL OR (homework_legacy_seconds = 0 AND NOT EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id AND s.ended_at IS NOT NULL)))))
+      ORDER BY date, rowid`).all(childId, from, to)
       .map(row => ({
         key: row.template ? `template:${row.template}` : `adhoc:${row.subject}|${row.title}`,
         kind: row.template ? 'template' : 'adhoc',
@@ -76,15 +81,22 @@ class TimeStatsService {
         key: `goal:${log.id}`, kind: 'goal', goal_id: log.id, unit: log.mode === 'progress' ? log.unit : null, amount: log.amount,
         date: log.date, title: log.title, subject: log.subject, seconds: log.duration_seconds, expected_minutes: log.expected_minutes
       }));
-    const homework = this.db.prepare(`SELECT a.date, a.seconds, s.id AS session_id, s.task_id, d.title, d.subject
+    const identity = row => row.is_homework
+      ? { key: `homework:${row.task_id || row.id}`, kind: 'homework' }
+      : { key: row.template ? `template:${row.template}` : `adhoc:${row.subject}|${row.title}`, kind: row.template ? 'template' : 'adhoc', task_instance_id: row.task_id || row.id };
+    const homework = this.db.prepare(`SELECT a.date, a.seconds, s.id AS session_id, s.task_id, d.title, d.subject, d.expected_minutes, d.is_completed,
+      COALESCE(d.source_template_id, d.template_id) AS template,
+      EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = d.id) AS is_homework
       FROM homework_session_days a JOIN homework_sessions s ON s.id = a.session_id JOIN daily_tasks d ON d.id = s.task_id
       WHERE s.child_id = ? AND s.ended_at IS NOT NULL AND a.date BETWEEN ? AND ? ORDER BY a.date, s.started_at`)
-      .all(childId, from, to).map(row => ({ key: `homework:${row.task_id}`, kind: 'homework', date: row.date,
-        session_id: row.session_id, title: row.title, subject: row.subject, seconds: row.seconds, expected_minutes: null }));
-    const legacy = this.db.prepare(`SELECT id, date, title, subject, homework_legacy_seconds AS seconds FROM daily_tasks
+      .all(childId, from, to).map(row => ({ ...identity(row), date: row.date,
+        session_id: row.session_id, title: row.title, subject: row.subject, seconds: row.seconds, expected_minutes: row.is_homework ? null : row.expected_minutes, is_completed: row.is_completed }));
+    const legacy = this.db.prepare(`SELECT id, date, title, subject, homework_legacy_seconds AS seconds, expected_minutes, is_completed,
+      COALESCE(source_template_id, template_id) AS template,
+      EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id) AS is_homework FROM daily_tasks
       WHERE child_id = ? AND date BETWEEN ? AND ? AND homework_legacy_seconds > 0`).all(childId, from, to)
-      .map(row => ({ key: `homework:${row.id}`, kind: 'homework', date: row.date, title: row.title, subject: row.subject,
-        seconds: row.seconds, expected_minutes: null }));
+      .map(row => ({ ...identity(row), date: row.date, title: row.title, subject: row.subject,
+        seconds: row.seconds, expected_minutes: row.is_homework ? null : row.expected_minutes, is_completed: row.is_completed }));
     return [...tasks, ...logs, ...homework, ...legacy];
   }
 
@@ -98,7 +110,7 @@ class TimeStatsService {
         WHERE t.child_id = ? AND l.date BETWEEN ? AND ?`).all(childId, from, to)
     ];
     for (const row of this.db.prepare(`SELECT completed_at AS at FROM daily_tasks WHERE child_id = ? AND homework_legacy_seconds IS NOT NULL
-      AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill'`).all(childId)) {
+      AND is_completed = 1 AND is_extra_completion = 0 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill'`).all(childId)) {
       const date = eveningMinutes(row.at) >= 24 * 60 ? shiftDate(formatDate(new Date(row.at)), -1) : formatDate(new Date(row.at));
       if (date >= from && date <= to) rows.push({ date, at: row.at });
     }
@@ -131,7 +143,7 @@ class TimeStatsService {
 
     const estimates = new Map();
     const recordedByKey = new Map();
-    for (const s of learningEntries(between(windowFrom, to)).filter(s => s.seconds !== null)) {
+    for (const s of taskEntries(between(windowFrom, to)).filter(s => s.seconds !== null)) {
       if (!recordedByKey.has(s.key)) recordedByKey.set(s.key, []);
       recordedByKey.get(s.key).push(s.seconds);
     }
@@ -168,13 +180,13 @@ class TimeStatsService {
       .sort((a, b) => b.estimated_seconds - a.estimated_seconds);
 
     // ③④ Each task: averages from recorded times, against its expected time.
-    const previousByKey = groupBy(learningEntries(previous).filter(s => s.seconds !== null), s => s.key);
-    const tasks = [...groupBy(learningEntries(current), s => s.key)].map(([key, list]) => {
+    const previousByKey = groupBy(taskEntries(previous).filter(s => s.seconds !== null), s => s.key);
+    const tasks = [...groupBy(taskEntries(current), s => s.key)].map(([key, list]) => {
       const recorded = list.filter(s => s.seconds !== null);
       const seconds = recorded.map(s => s.seconds);
       const latest = list.at(-1);
       const expected = latest.expected_minutes;
-      const judged = expected ? recorded.filter(s => s.expected_minutes) : [];
+      const judged = expected ? recorded.filter(s => s.expected_minutes && (!s.task_instance_id || s.is_completed)) : [];
       return {
         key, kind: latest.kind, title: latest.title, subject: latest.subject,
         sessions: list.length, recorded: recorded.length,

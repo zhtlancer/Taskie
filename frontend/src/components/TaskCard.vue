@@ -117,13 +117,13 @@
         </div>
 
         <!-- Timer of a timed task still to do; the time it took once done -->
-        <div v-if="task.homework" class="mt-2 text-xs text-indigo-700 flex flex-wrap gap-2 items-center">
-          <span v-if="task.homework.study_running" class="font-bold">⏱ 正在计时</span>
-          <span>已学 {{ task.homework.study_count || 0 }} 次 · 累计 {{ formatDuration(task.homework.study_seconds || 0) }}</span>
+        <div v-if="usesStudySessions(task)" class="mt-2 text-xs text-indigo-700 flex flex-wrap gap-2 items-center">
+          <span v-if="task.homework?.study_running || task.study_sessions?.running" class="font-bold">⏱ 正在计时</span>
+          <span>已学 {{ task.homework?.study_count ?? task.study_sessions?.count ?? 0 }} 次 · 累计 {{ formatDuration(task.homework?.study_seconds ?? task.study_sessions?.seconds ?? 0) }}</span>
           <button type="button" class="px-3 py-2 rounded-lg bg-indigo-50" @click.stop="emit('toggle', task)">学习 / 记录</button>
         </div>
         <TaskTimer
-          v-if="!task.homework && task.track_time && !task.is_completed && !task.is_skipped"
+          v-if="!usesStudySessions(task) && task.track_time && !task.is_completed && !task.is_skipped"
           class="mt-1.5"
           :item="task"
           :now="now"
@@ -131,7 +131,7 @@
           @pause="emit('timer', task, 'pause')"
           @reset="emit('timer', task, 'reset')"
         />
-        <div v-else-if="!task.homework && task.track_time && task.is_completed" class="mt-1 flex items-center gap-1.5 text-xs font-bold text-violet-600 font-chinese">
+        <div v-else-if="!usesStudySessions(task) && task.track_time && task.is_completed" class="mt-1 flex items-center gap-1.5 text-xs font-bold text-violet-600 font-chinese">
           <span>⏱ {{ task.duration_seconds ? `用时 ${formatDuration(task.duration_seconds)}` : '没有记录用时' }}</span>
           <button type="button" class="px-2 py-0.5 min-h-[28px] rounded-lg bg-violet-50 hover:bg-violet-100" @click.stop="emit('edit-duration', task)">
             {{ task.duration_seconds ? '改' : '补填' }}
@@ -202,7 +202,7 @@
         v-else
         class="inline-block px-3 py-1 rounded-xl bg-slate-100 text-slate-500 text-xs font-semibold hover:bg-brand-50 hover:text-brand-600 font-chinese"
       >
-        {{ task.homework?.study_count ? '进行中' : '待完成' }}
+        {{ task.homework?.study_count || task.study_sessions?.count || task.study_sessions?.running ? '进行中' : '待完成' }}
       </span>
     </div>
 
@@ -223,7 +223,7 @@
 import { ref, computed } from 'vue';
 import { playTaskComplete, playTaskUncomplete } from '../utils/sound';
 import TaskTimer from './TaskTimer.vue';
-import { formatDuration, needsDurationPrompt } from '../utils/taskTimer.js';
+import { formatDuration, needsDurationPrompt, usesStudySessions } from '../utils/taskTimer.js';
 import { deadlineText } from '../utils/schedule.js';
 
 const props = defineProps({
@@ -292,7 +292,7 @@ function handleClick(event) {
   // A skipped task cannot be checked off until a parent takes the skip back.
   if (props.task.is_skipped) return;
   // A timed task that still needs its time asks first; the celebration waits for the answer.
-  if (props.task.homework || props.task.origin === 'study') { emit('toggle', props.task); return; }
+  if (usesStudySessions(props.task) || props.task.origin === 'study') { emit('toggle', props.task); return; }
   if (!props.task.is_completed && props.task.track_time && needsDurationPrompt(props.task, props.now)) {
     emit('toggle', props.task);
     return;

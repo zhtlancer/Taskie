@@ -501,7 +501,8 @@ CREATE TABLE IF NOT EXISTS homework_course_points (
   points INTEGER NOT NULL
 );
 
--- Individual homework learning sessions; task ownership survives deleting only the homework record.
+-- Shared task learning sessions (legacy table names retained for backup compatibility).
+-- Task ownership survives deleting only the homework record.
 CREATE TABLE IF NOT EXISTS homework_sessions (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL REFERENCES daily_tasks(id) ON DELETE CASCADE,
