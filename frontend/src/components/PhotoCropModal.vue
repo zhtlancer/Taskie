@@ -454,6 +454,7 @@
             </div>
           </div>
 
+          <p v-if="saveError" role="alert" class="mt-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm font-bold text-rose-600 dark:text-rose-300">{{ saveError }}</p>
           <!-- Bottom Action Buttons (≥ 48px height) -->
           <div class="pt-4 border-t border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3">
             <button
@@ -557,7 +558,7 @@ const compressionResult = ref(null);
 
 const formSubject = ref('数学');
 const formDescription = ref('');
-const saving = ref(false);
+const saving = ref(false), saveError = ref('');
 
 // Lifecycle
 onMounted(() => {
@@ -812,6 +813,7 @@ async function saveMistakeRecord() {
   if (!formDescription.value.trim() || !compressionResult.value) return;
 
   saving.value = true;
+  saveError.value = '';
   try {
     const { file, dataUrl } = compressionResult.value;
 
@@ -827,7 +829,7 @@ async function saveMistakeRecord() {
     emit('saved', newMistake);
   } catch (err) {
     console.error('Failed to save mistake:', err);
-    alert('保存错题失败，请重试');
+    saveError.value = '保存错题失败，请重试';
   } finally {
     saving.value = false;
   }

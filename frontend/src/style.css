@@ -138,7 +138,10 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color])
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
 
+/* iPhone Safari zooms into a field under 16px when it is focused: touch screens get 16px fields,
+   while a field sized larger by its own class keeps that size. */
 @media (pointer: coarse) {
-  button:not([role=checkbox]):not([role=switch]), a { min-height: 44px; }
+  input:where(:not([type=checkbox], [type=radio], [type=range], [type=color], [type=file])), select, textarea { font-size: max(16px, 1em); }
+  :is(input, select, textarea):is(.text-xs, .text-sm, .ui-input) { font-size: 16px; }
 }
 summary { list-style-position: inside; }

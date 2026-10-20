@@ -50,6 +50,7 @@ async function main() {
   await page.goto(`${base}/parent/tasks`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: /新增任务模板/ }).click();
   await page.getByPlaceholder(/例如：/).fill('可延后口算');
+  await page.getByText('更多设置 · 计时与假期补完', { exact: true }).click();
   await page.getByLabel('🏖️ 放假前一天的可以在假期里补完', { exact: false }).check();
   await page.getByRole('button', { name: '确认保存', exact: true }).click();
   await page.getByText('可延后口算', { exact: true }).waitFor();

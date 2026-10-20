@@ -199,8 +199,8 @@ async function main() {
   pass('late child timetable and stats responses cannot change the selected child');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await render(page);
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  // The chart resizes to the narrower page over a few frames.
+  await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, null, { timeout: 2000 });
   const childContext = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Shanghai' });
   const childPage = await childContext.newPage();
   await prepare(childPage);

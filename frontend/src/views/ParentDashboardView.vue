@@ -123,14 +123,14 @@
           class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card hover:shadow-card-hover transition-all"
         >
           <!-- Top Row: Avatar, Name, Link -->
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center gap-3">
-              <div class="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-900/40 flex items-center justify-center text-3xl shadow-inner">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-16 h-16 shrink-0 rounded-2xl bg-brand-50 dark:bg-brand-900/40 flex items-center justify-center text-3xl shadow-inner">
                 {{ item.child.avatar_emoji || '🐱' }}
               </div>
               <div>
                 <h4 class="text-xl font-bold text-slate-800 dark:text-slate-100">{{ item.child.name }}</h4>
-                <div class="flex items-center gap-2 mt-0.5">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 whitespace-nowrap">
                   <span class="text-xs text-amber-600 dark:text-amber-300 font-extrabold flex items-center gap-0.5">
                     <span>🔥</span>
                     <span>连续 {{ item.stats.current_streak || 0 }} 天</span>
@@ -144,11 +144,11 @@
             </div>
 
             <div class="flex flex-wrap gap-2">
-              <router-link :to="`/child/${item.child.id}/homework`" class="px-3 py-1.5 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-xs font-bold">作业本</router-link>
-              <router-link :to="`/parent/children/${item.child.id}/backfill`" class="px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-xs font-bold">补卡</router-link>
+              <router-link :to="`/child/${item.child.id}/homework`" class="inline-flex items-center min-h-[44px] px-3 py-1.5 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-xs font-bold">作业本</router-link>
+              <router-link :to="`/parent/children/${item.child.id}/backfill`" class="inline-flex items-center min-h-[44px] px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-xs font-bold">补卡</router-link>
               <router-link
                 :to="`/child/${item.child.id}/today`"
-                class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 text-xs font-bold transition-all"
+                class="inline-flex items-center min-h-[44px] px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 text-xs font-bold transition-all"
               >
                 进入看板 →
               </router-link>
@@ -248,7 +248,7 @@
                 <span class="flex-1 truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'">{{ task.subject }} · {{ task.title }}</span>
                 <span v-if="task.due_date" class="shrink-0 text-xs font-bold text-sky-600 dark:text-sky-300">截止 {{ dayLabel(task.due_date) }}</span>
                 <span class="text-amber-500 dark:text-amber-400 font-black shrink-0">★{{ task.points }}</span>
-                <button type="button" class="text-slate-300 hover:text-rose-500 dark:hover:text-rose-400 shrink-0" title="删除" @click="removeAdhoc(item, task)">✕</button>
+                <button type="button" class="w-10 h-10 -my-2 -mr-2 shrink-0 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40" :aria-label="`删除 ${task.title}`" title="删除" @click="removeAdhoc(item, task)">✕</button>
               </li>
             </ul>
           </div>

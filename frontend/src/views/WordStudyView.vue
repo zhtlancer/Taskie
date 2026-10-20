@@ -117,6 +117,7 @@ import HanziGrid from '../components/HanziGrid.vue';
 import { getCharPinyin, speakHanzi } from '../utils/hanzi';
 import { CATEGORIES } from '../utils/wordBook';
 import { currentRole } from '../utils/session';
+import { loadLearningFont } from '../utils/learningFont';
 
 const route = useRoute(), childId = computed(() => route.params.id);
 const asParent = currentRole() === 'parent';
@@ -198,5 +199,5 @@ async function refresh() {
   loading.value = true; error.value = '';
   try { await load(); } catch (err) { error.value = message(err); } finally { loading.value = false; }
 }
-onMounted(refresh);
+onMounted(() => { loadLearningFont(); refresh(); });
 </script>

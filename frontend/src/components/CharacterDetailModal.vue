@@ -178,6 +178,7 @@ import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
 import { CATEGORIES, categoryInfo, entryChars, toggleCategory } from '../utils/wordBook';
 import { useCharacterStore } from '../stores/character';
+import { loadLearningFont } from '../utils/learningFont';
 
 const props = defineProps({
   character: {
@@ -185,6 +186,7 @@ const props = defineProps({
     required: true,
   },
 });
+loadLearningFont();
 
 const emit = defineEmits(['close', 'toggle-master', 'delete', 'updated']);
 

@@ -47,13 +47,13 @@
       <!-- Subheader: Filters & Quick Search Entry -->
       <div class="bg-white dark:bg-slate-900 rounded-2xl p-3 px-4 border border-slate-200/90 dark:border-slate-700/90 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-3">
         <!-- Left: Status Filter Capsules -->
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <button
             v-for="f in filterOptions"
             :key="f.key"
             type="button"
             @click="selectFilter(f.key)"
-            class="px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-95"
+            class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all flex items-center gap-1.5 active:scale-95"
             :class="[
               currentFilter === f.key
                 ? 'bg-brand-500 text-white shadow-button'
@@ -198,6 +198,7 @@ import CharacterDetailModal from '../components/CharacterDetailModal.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
+import { loadLearningFont } from '../utils/learningFont';
 import { CATEGORIES } from '../utils/wordBook';
 
 const route = useRoute();
@@ -231,6 +232,7 @@ function selectCategory(key) {
 }
 
 onMounted(async () => {
+  loadLearningFont();
   await characterStore.fetchCharacters(childId.value);
 });
 

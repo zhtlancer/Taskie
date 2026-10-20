@@ -201,6 +201,7 @@ import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../ut
 import { useCharacterStore } from '../stores/character';
 import { playClick } from '../utils/sound';
 import { CATEGORIES, cleanEntry, entryChars } from '../utils/wordBook';
+import { loadLearningFont } from '../utils/learningFont';
 
 const props = defineProps({
   modelValue: {
@@ -225,6 +226,7 @@ const isOpen = computed({
   get: () => props.modelValue,
   set: (val) => emit('update:modelValue', val),
 });
+watch(isOpen, open => { if (open) loadLearningFont(); }, { immediate: true });
 
 const charInputRef = ref(null);
 const inputRaw = ref(props.initialChar || '学');
