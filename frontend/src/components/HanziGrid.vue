@@ -99,12 +99,12 @@
     <!-- Action Toolbar (Under Grid) -->
     <div v-if="showControls" class="flex flex-wrap items-center justify-center gap-2 mt-4">
       <!-- Mode Toggle: Animation vs Quiz -->
-      <div class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200">
+      <div class="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700">
         <button
           type="button"
           @click="setMode('animate')"
-          class="px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1"
-          :class="currentMode === 'animate' ? 'bg-white text-brand-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+          class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1"
+          :class="currentMode === 'animate' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
         >
           <span>🎬</span>
           <span>笔顺演示</span>
@@ -112,8 +112,8 @@
         <button
           type="button"
           @click="setMode('quiz')"
-          class="px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1"
-          :class="currentMode === 'quiz' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+          class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1"
+          :class="currentMode === 'quiz' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
         >
           <span>✍️</span>
           <span>描红临摹</span>
@@ -126,7 +126,7 @@
         <button
           type="button"
           @click="togglePlayPause"
-          class="h-9 px-3.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-black text-xs shadow-button active:scale-95 transition-all flex items-center gap-1"
+          class="min-h-[44px] px-3.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-black text-xs shadow-button active:scale-95 transition-all flex items-center gap-1"
           :title="isPlaying ? '暂停书写动画' : '播放笔顺动画'"
         >
           <span>{{ isPlaying ? '⏸️ 暂停' : '▶️ 播放' }}</span>
@@ -136,7 +136,7 @@
         <button
           type="button"
           @click="replay"
-          class="h-9 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1"
+          class="min-h-[44px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1"
           title="重新从第一笔演示"
         >
           <span>🔄</span>
@@ -147,8 +147,8 @@
         <button
           type="button"
           @click="cycleSpeed"
-          class="h-9 px-3 rounded-xl border font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1"
-          :class="isSlowSpeed ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'"
+          class="min-h-[44px] px-3 rounded-xl border font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-1"
+          :class="isSlowSpeed ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800' : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'"
           title="切换书写速度"
         >
           <span>{{ isSlowSpeed ? '🐢 慢速 (0.5x)' : '🐇 正常 (1.0x)' }}</span>
@@ -160,7 +160,7 @@
         <button
           type="button"
           @click="restartQuiz"
-          class="h-9 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-button active:scale-95 transition-all flex items-center gap-1"
+          class="min-h-[44px] px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-button active:scale-95 transition-all flex items-center gap-1"
         >
           <span>🔄</span>
           <span>再描一次</span>

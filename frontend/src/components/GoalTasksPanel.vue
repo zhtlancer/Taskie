@@ -43,18 +43,18 @@
         <!-- Skipping today's required log: a child asks a parent; a parent skips at once -->
         <div v-if="goal.daily_required && dailyRow(goal) && !goal.today_logged && !goal.is_completed" class="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs font-bold font-chinese">
           <template v-if="dailyRow(goal).is_skipped">
-            <button v-if="asParent" type="button" class="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="$emit('unskip', dailyRow(goal))">撤销跳过</button>
+            <button v-if="asParent" type="button" class="min-h-[44px] px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="$emit('unskip', dailyRow(goal))">撤销跳过</button>
           </template>
           <template v-else-if="dailyRow(goal).skip_request?.status === 'pending'">
             <span class="px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300">⏳ 申请跳过：{{ dailyRow(goal).skip_request.reason }} · 等家长确认</span>
             <template v-if="asParent">
-              <button type="button" class="px-2 py-1 rounded-lg bg-emerald-500 text-white" @click="$emit('approve-skip', dailyRow(goal))">同意跳过</button>
-              <button type="button" class="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300" @click="$emit('reject-skip', dailyRow(goal))">不同意</button>
+              <button type="button" class="min-h-[44px] px-2 py-1 rounded-lg bg-emerald-500 text-white" @click="$emit('approve-skip', dailyRow(goal))">同意跳过</button>
+              <button type="button" class="min-h-[44px] px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300" @click="$emit('reject-skip', dailyRow(goal))">不同意</button>
             </template>
-            <button v-else type="button" class="px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400" @click="$emit('cancel-skip', dailyRow(goal))">撤回</button>
+            <button v-else type="button" class="min-h-[44px] px-2 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400" @click="$emit('cancel-skip', dailyRow(goal))">撤回</button>
           </template>
           <span v-else-if="!asParent && ['rejected', 'revoked'].includes(dailyRow(goal).skip_request?.status)" class="text-rose-500 dark:text-rose-400">家长没有同意跳过，今天还是要记录哦</span>
-          <button v-else type="button" class="px-2 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-950/40 text-sky-700 dark:text-sky-300" @click="$emit('skip', dailyRow(goal))">
+          <button v-else type="button" class="min-h-[44px] px-2 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-950/40 text-sky-700 dark:text-sky-300" @click="$emit('skip', dailyRow(goal))">
             {{ asParent ? '⏭️ 今天跳过' : '🙋 今天没法做？' }}
           </button>
         </div>
@@ -79,15 +79,15 @@
             <div class="h-full rounded-full transition-all duration-500" :class="goal.is_completed ? 'bg-emerald-500' : 'bg-indigo-500'" :style="{ width: `${Math.round((goal.done_amount / goal.total_amount) * 100)}%` }"></div>
           </div>
           <div v-if="!goal.is_completed" class="flex items-center gap-2">
-            <button type="button" class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-lg font-black text-slate-600 dark:text-slate-300 active:scale-95" @click="step(goal, -1)">−</button>
+            <button type="button" class="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-lg font-black text-slate-600 dark:text-slate-300 active:scale-95" @click="step(goal, -1)">−</button>
             <span class="min-w-[64px] text-center text-sm font-black text-slate-800 dark:text-slate-100">
               {{ goal.input_mode === 'position' ? `第 ${valueFor(goal)} ${goal.unit}` : `${valueFor(goal)} ${goal.unit}` }}
             </span>
-            <button type="button" class="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-lg font-black text-slate-600 dark:text-slate-300 active:scale-95" @click="step(goal, 1)">+</button>
+            <button type="button" class="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-lg font-black text-slate-600 dark:text-slate-300 active:scale-95" @click="step(goal, 1)">+</button>
             <button
               type="button"
               :disabled="busy"
-              class="flex-1 min-h-[40px] rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black shadow-sm active:scale-95 disabled:opacity-50"
+              class="flex-1 min-h-[44px] rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black shadow-sm active:scale-95 disabled:opacity-50"
               @click="record(goal)"
             >
               {{ goal.input_mode === 'position' ? '记录读到这里' : '记录今天的进度' }}
@@ -100,7 +100,7 @@
             v-if="!goal.is_completed"
             type="button"
             :disabled="busy"
-            class="w-full min-h-[40px] rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black shadow-sm active:scale-95 disabled:opacity-50"
+            class="w-full min-h-[44px] rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black shadow-sm active:scale-95 disabled:opacity-50"
             @click="record(goal)"
           >
             完成啦 ✓
@@ -115,7 +115,7 @@
               type="button"
               :disabled="busy || !entry.can_undo"
               :title="entry.can_undo ? '撤销这条进度' : '请先撤销后续进度'"
-              class="px-2 py-1 hover:text-rose-500 dark:hover:text-rose-400"
+              class="min-h-[44px] px-2 py-1 hover:text-rose-500 dark:hover:text-rose-400"
               @click="undo(entry)"
             >
               今天 {{ entryLabel(goal, entry) }} · 撤销
@@ -124,7 +124,7 @@
               v-if="goal.track_time"
               type="button"
               :disabled="busy"
-              class="px-2 py-1 border-l border-slate-200 dark:border-slate-700 text-violet-600 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+              class="min-h-[44px] px-2 py-1 border-l border-slate-200 dark:border-slate-700 text-violet-600 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40"
               @click="editDuration(goal, entry)"
             >
               ⏱ {{ entry.duration_seconds ? formatDuration(entry.duration_seconds) : '补填用时' }}

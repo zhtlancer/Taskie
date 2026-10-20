@@ -1,61 +1,6 @@
 <template>
-  <div
-    class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 select-none"
-    @click.self="handleClose"
-  >
-    <!-- Modal Window (Optimized for iPad Air 5 Landscape 1180x820) -->
-    <div
-      class="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-700/80 w-full max-w-5xl h-[760px] max-h-[94vh] flex flex-col overflow-hidden animate-pop-in"
-    >
-      <!-- Modal Header -->
-      <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between gap-3 shrink-0 bg-white dark:bg-slate-900">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-brand-50 dark:bg-brand-900/40 flex items-center justify-center text-xl text-brand-500 dark:text-brand-400 font-black">
-            {{ step === 'select' ? '📸' : step === 'crop' ? '✂️' : '✨' }}
-          </div>
-          <div>
-            <h2 class="text-base sm:text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-              <span v-if="step === 'select'">拍照或选择错题图片</span>
-              <span v-else-if="step === 'crop'">交互式区域裁剪 & 旋转</span>
-              <span v-else>清晰锐化增强 & 完善错题</span>
-            </h2>
-            <p class="hidden sm:block text-xs text-slate-400 font-medium">
-              <span v-if="step === 'select'">支持 iPad 相机拍照、相册选图或拖拽文件</span>
-              <span v-else-if="step === 'crop'">拖动手势缩放裁剪框，四角自由拉伸，支持 90° 旋转校正</span>
-              <span v-else>应用拉普拉斯 3×3 锐化及白纸去灰底滤镜，高质量压缩保存</span>
-            </p>
-          </div>
-        </div>
-
-        <!-- Step Indicator & Close Button -->
-        <div class="flex items-center gap-4">
-          <div v-if="step !== 'select'" class="hidden md:flex items-center gap-2 text-xs font-bold whitespace-nowrap">
-            <span
-              class="px-3 py-1 rounded-full transition-all"
-              :class="step === 'crop' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
-            >
-              1. 裁剪旋转
-            </span>
-            <span class="text-slate-300">→</span>
-            <span
-              class="px-3 py-1 rounded-full transition-all"
-              :class="step === 'filter' ? 'bg-brand-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'"
-            >
-              2. 滤镜保存
-            </span>
-          </div>
-
-          <button
-            type="button"
-            @click="handleClose"
-            class="w-12 h-12 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold text-xl flex items-center justify-center transition-all"
-            title="关闭"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
+  <UiDialog :title="step === 'select' ? '拍照或选择错题图片' : step === 'crop' ? '裁剪与旋转' : '增强图片与完善错题'" workspace :busy="saving || filterProcessing" @close="handleClose">
+    <template #subtitle>{{ step === 'select' ? '拍照、选择图片，或拖入图片开始录入' : step === 'crop' ? '拖动裁剪框及边角调整范围，支持旋转' : '选择图片效果，填写学科与错因后保存' }}</template>
       <!-- Hidden standard file inputs -->
       <input
         ref="cameraInputRef"
@@ -76,13 +21,13 @@
       <!-- ================= STEP 0: Select File / Camera / Dropzone ================= -->
       <div
         v-if="step === 'select'"
-        class="flex-1 p-8 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-800/50"
+        class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-800/50"
         @dragover.prevent="isDragOver = true"
         @dragleave.prevent="isDragOver = false"
         @drop.prevent="onDropFile"
       >
         <div
-          class="w-full max-w-2xl border-3 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center text-center transition-all"
+          class="w-full max-w-2xl border-3 border-dashed rounded-3xl p-4 sm:p-10 flex flex-col items-center justify-center text-center transition-all"
           :class="[
             isDragOver
               ? 'border-brand-500 bg-brand-50/50 dark:bg-brand-900/40 scale-[1.01]'
@@ -124,11 +69,12 @@
       </div>
 
       <!-- ================= STEP 1: Interactive Crop & Rotate ================= -->
-      <div v-else-if="step === 'crop'" class="flex-1 flex flex-col overflow-hidden bg-slate-900/95">
+      <div v-else-if="step === 'crop'" class="flex-1 min-h-0 flex flex-col overflow-hidden bg-slate-900/95">
         <!-- Interactive Workspace -->
         <div
           ref="cropContainerRef"
-          class="flex-1 relative overflow-hidden flex items-center justify-center select-none touch-none"
+          aria-label="图片裁剪工作区"
+          class="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center select-none touch-none"
         >
           <!-- Display Canvas for Rotated Source Image -->
           <canvas
@@ -180,6 +126,7 @@
 
           <!-- Interactive Crop Box -->
           <div
+            aria-label="裁剪选区"
             class="absolute cursor-move border-2 border-brand-400 shadow-[0_0_0_1px_rgba(255,255,255,0.7)] touch-none"
             :style="{
               left: cropRect.x + 'px',
@@ -208,7 +155,7 @@
               class="absolute -top-6 -left-6 w-12 h-12 flex items-center justify-center cursor-nwse-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'tl')"
             >
-              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Top-Right Handle -->
@@ -216,7 +163,7 @@
               class="absolute -top-6 -right-6 w-12 h-12 flex items-center justify-center cursor-nesw-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'tr')"
             >
-              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Bottom-Left Handle -->
@@ -224,7 +171,7 @@
               class="absolute -bottom-6 -left-6 w-12 h-12 flex items-center justify-center cursor-nesw-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'bl')"
             >
-              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Bottom-Right Handle -->
@@ -232,7 +179,7 @@
               class="absolute -bottom-6 -right-6 w-12 h-12 flex items-center justify-center cursor-nwse-resize touch-none z-20"
               @pointerdown.stop.prevent="startDrag($event, 'br')"
             >
-              <div class="w-5 h-5 rounded-full bg-white dark:bg-slate-900 border-2 border-brand-500 shadow-md"></div>
+              <div class="w-5 h-5 rounded-full bg-white border-2 border-brand-500 shadow-md"></div>
             </div>
 
             <!-- Edge Handles (Hit area: 48x48px) -->
@@ -241,28 +188,28 @@
               class="absolute -top-6 left-1/2 -translate-x-1/2 w-12 h-12 flex items-center justify-center cursor-ns-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 't')"
             >
-              <div class="w-6 h-2 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-6 h-2 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
             </div>
             <!-- Bottom Edge -->
             <div
               class="absolute -bottom-6 left-1/2 -translate-x-1/2 w-12 h-12 flex items-center justify-center cursor-ns-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 'b')"
             >
-              <div class="w-6 h-2 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-6 h-2 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
             </div>
             <!-- Left Edge -->
             <div
               class="absolute top-1/2 -translate-y-1/2 -left-6 w-12 h-12 flex items-center justify-center cursor-ew-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 'l')"
             >
-              <div class="w-2 h-6 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-2 h-6 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
             </div>
             <!-- Right Edge -->
             <div
               class="absolute top-1/2 -translate-y-1/2 -right-6 w-12 h-12 flex items-center justify-center cursor-ew-resize touch-none z-10"
               @pointerdown.stop.prevent="startDrag($event, 'r')"
             >
-              <div class="w-2 h-6 rounded-full bg-white/90 dark:bg-slate-900/90 border border-brand-500 shadow-sm"></div>
+              <div class="w-2 h-6 rounded-full bg-white/90 border border-brand-500 shadow-sm"></div>
             </div>
           </div>
         </div>
@@ -273,6 +220,7 @@
             <!-- Rotate 90° Button -->
             <button
               type="button"
+              aria-label="顺时针旋转 90 度"
               @click="rotateClockwise"
               class="h-12 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
             >
@@ -283,6 +231,7 @@
             <!-- Reset Crop -->
             <button
               type="button"
+              aria-label="重置裁剪选区"
               @click="resetCropRect"
               class="h-12 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
             >
@@ -293,6 +242,7 @@
             <!-- Switch Photo -->
             <button
               type="button"
+              aria-label="更换图片"
               @click="step = 'select'"
               class="h-12 px-3.5 sm:px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-2 border border-slate-700 active:scale-95 transition-all"
             >
@@ -315,7 +265,7 @@
       </div>
 
       <!-- ================= STEP 2: Filter Preview & Metadata Form ================= -->
-      <div v-else-if="step === 'filter'" class="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-slate-50 dark:bg-slate-800">
+      <div v-else-if="step === 'filter'" class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-slate-50 dark:bg-slate-800">
         <!-- Left: Image Preview & Filter Mode Switcher (55% width; stacked on phones) -->
         <div class="w-full lg:w-7/12 p-4 lg:p-6 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900">
           <!-- Filter Mode Buttons (≥ 48px height) -->
@@ -327,6 +277,7 @@
               <!-- Filter: Enhanced (Default) -->
               <button
                 type="button"
+                :disabled="saving || filterProcessing"
                 @click="switchFilter('enhanced')"
                 class="h-14 rounded-2xl font-bold text-xs border-2 flex flex-col items-center justify-center transition-all"
                 :class="[
@@ -345,6 +296,7 @@
               <!-- Filter: Black & White Document -->
               <button
                 type="button"
+                :disabled="saving || filterProcessing"
                 @click="switchFilter('bw')"
                 class="h-14 rounded-2xl font-bold text-xs border-2 flex flex-col items-center justify-center transition-all"
                 :class="[
@@ -363,6 +315,7 @@
               <!-- Filter: Original -->
               <button
                 type="button"
+                :disabled="saving || filterProcessing"
                 @click="switchFilter('original')"
                 class="h-14 rounded-2xl font-bold text-xs border-2 flex flex-col items-center justify-center transition-all"
                 :class="[
@@ -419,6 +372,7 @@
                   v-for="sub in ['语文', '数学', '英语', '其他']"
                   :key="sub"
                   type="button"
+                  :disabled="saving"
                   @click="formSubject = sub"
                   class="h-12 rounded-xl text-xs font-black border transition-all active:scale-95 flex items-center justify-center"
                   :class="[
@@ -434,11 +388,13 @@
 
             <!-- Description / Reflection Textarea -->
             <div>
-              <label class="block text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-2">
+              <label for="crop-description" class="block text-xs font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-2">
                 题目内容与错因记录
               </label>
               <textarea
+                id="crop-description"
                 v-model="formDescription"
+                :disabled="saving"
                 rows="6"
                 placeholder="记录题目重点、为什么做错、或正解要点（例如：看错审题条件、计算混合运算顺序有误...）"
                 class="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-3.5 text-sm font-chinese text-slate-700 dark:text-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none resize-none bg-white dark:bg-slate-900 shadow-sm"
@@ -459,6 +415,7 @@
           <div class="pt-4 border-t border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3">
             <button
               type="button"
+              :disabled="saving || filterProcessing"
               @click="step = 'crop'"
               class="h-12 px-5 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs flex items-center gap-1 active:scale-95 transition-all"
             >
@@ -468,7 +425,7 @@
 
             <button
               type="button"
-              :disabled="saving || !formDescription.trim()"
+              :disabled="saving || filterProcessing || !formDescription.trim() || !compressionResult"
               @click="saveMistakeRecord"
               class="h-12 flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-sm shadow-button disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2"
             >
@@ -478,12 +435,12 @@
           </div>
         </div>
       </div>
-    </div>
-  </div>
+  </UiDialog>
 </template>
 
 <script setup>
-import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue';
+import UiDialog from './UiDialog.vue';
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
 import {
   createRotatedCanvas,
   cropCanvasRegion,
@@ -560,6 +517,18 @@ const formSubject = ref('数学');
 const formDescription = ref('');
 const saving = ref(false), saveError = ref('');
 
+let workspaceResize;
+watch(cropContainerRef, element => {
+  workspaceResize?.disconnect();
+  if (!element) return;
+  initCropWorkspace(Boolean(currentRotatedCanvas));
+  workspaceResize = new ResizeObserver(() => {
+    if (dragState.active) onGlobalPointerUp();
+    initCropWorkspace(true);
+  });
+  workspaceResize.observe(element);
+}, { flush: 'post' });
+
 // Lifecycle
 onMounted(() => {
   window.addEventListener('pointermove', onGlobalPointerMove);
@@ -572,12 +541,14 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  workspaceResize?.disconnect();
   window.removeEventListener('pointermove', onGlobalPointerMove);
   window.removeEventListener('pointerup', onGlobalPointerUp);
   window.removeEventListener('pointercancel', onGlobalPointerUp);
 });
 
 function handleClose() {
+  if (saving.value || filterProcessing.value) return;
   emit('close');
 }
 
@@ -612,11 +583,11 @@ function loadSourceFile(file) {
     const img = new Image();
     img.onload = () => {
       originalImage = img;
+      currentRotatedCanvas = null;
+      compressionResult.value = null; processedPreviewUrl.value = '';
       rotation.value = 0;
       step.value = 'crop';
-      nextTick(() => {
-        initCropWorkspace();
-      });
+
     };
     img.src = event.target.result;
   };
@@ -624,7 +595,12 @@ function loadSourceFile(file) {
 }
 
 // Initialize crop canvas and dimensions
-function initCropWorkspace() {
+function initCropWorkspace(preserve = false) {
+  const selection = preserve && displayMetrics.width > 0 && displayMetrics.height > 0 ? {
+    x: (cropRect.x - displayMetrics.left) / displayMetrics.width,
+    y: (cropRect.y - displayMetrics.top) / displayMetrics.height,
+    width: cropRect.width / displayMetrics.width, height: cropRect.height / displayMetrics.height
+  } : null;
   if (!originalImage || !cropContainerRef.value) return;
 
   // 1. Create rotated canvas
@@ -663,7 +639,10 @@ function initCropWorkspace() {
   }
 
   // 4. Set initial crop rect (90% centered)
-  resetCropRect();
+  if (selection) {
+    cropRect.x = dispX + selection.x * dispW; cropRect.y = dispY + selection.y * dispH;
+    cropRect.width = selection.width * dispW; cropRect.height = selection.height * dispH;
+  } else resetCropRect();
 }
 
 function resetCropRect() {
@@ -683,6 +662,8 @@ function rotateClockwise() {
 
 // Drag & Resize Handlers
 function startDrag(e, type) {
+  if (e.button !== 0 || saving.value) return;
+  e.currentTarget.setPointerCapture?.(e.pointerId);
   dragState.active = true;
   dragState.type = type;
   dragState.startX = e.clientX;
@@ -698,7 +679,7 @@ function onGlobalPointerMove(e) {
 
   const dx = e.clientX - dragState.startX;
   const dy = e.clientY - dragState.startY;
-  const minSize = 60;
+  const minWidth = Math.min(60, displayMetrics.width), minHeight = Math.min(60, displayMetrics.height);
 
   const minX = displayMetrics.left;
   const maxX = displayMetrics.left + displayMetrics.width;
@@ -715,41 +696,41 @@ function onGlobalPointerMove(e) {
     cropRect.x = nextX;
     cropRect.y = nextY;
   } else if (dragState.type === 'br') {
-    let nextW = Math.max(minSize, Math.min(dragState.initCropW + dx, maxX - dragState.initCropX));
-    let nextH = Math.max(minSize, Math.min(dragState.initCropH + dy, maxY - dragState.initCropY));
+    let nextW = Math.max(minWidth, Math.min(dragState.initCropW + dx, maxX - dragState.initCropX));
+    let nextH = Math.max(minHeight, Math.min(dragState.initCropH + dy, maxY - dragState.initCropY));
     cropRect.width = nextW;
     cropRect.height = nextH;
   } else if (dragState.type === 'tl') {
-    let nextX = Math.max(minX, Math.min(dragState.initCropX + dx, dragState.initCropX + dragState.initCropW - minSize));
-    let nextY = Math.max(minY, Math.min(dragState.initCropY + dy, dragState.initCropY + dragState.initCropH - minSize));
+    let nextX = Math.max(minX, Math.min(dragState.initCropX + dx, dragState.initCropX + dragState.initCropW - minWidth));
+    let nextY = Math.max(minY, Math.min(dragState.initCropY + dy, dragState.initCropY + dragState.initCropH - minHeight));
     cropRect.width = dragState.initCropW - (nextX - dragState.initCropX);
     cropRect.height = dragState.initCropH - (nextY - dragState.initCropY);
     cropRect.x = nextX;
     cropRect.y = nextY;
   } else if (dragState.type === 'tr') {
-    let nextW = Math.max(minSize, Math.min(dragState.initCropW + dx, maxX - dragState.initCropX));
-    let nextY = Math.max(minY, Math.min(dragState.initCropY + dy, dragState.initCropY + dragState.initCropH - minSize));
+    let nextW = Math.max(minWidth, Math.min(dragState.initCropW + dx, maxX - dragState.initCropX));
+    let nextY = Math.max(minY, Math.min(dragState.initCropY + dy, dragState.initCropY + dragState.initCropH - minHeight));
     cropRect.width = nextW;
     cropRect.height = dragState.initCropH - (nextY - dragState.initCropY);
     cropRect.y = nextY;
   } else if (dragState.type === 'bl') {
-    let nextX = Math.max(minX, Math.min(dragState.initCropX + dx, dragState.initCropX + dragState.initCropW - minSize));
-    let nextH = Math.max(minSize, Math.min(dragState.initCropH + dy, maxY - dragState.initCropY));
+    let nextX = Math.max(minX, Math.min(dragState.initCropX + dx, dragState.initCropX + dragState.initCropW - minWidth));
+    let nextH = Math.max(minHeight, Math.min(dragState.initCropH + dy, maxY - dragState.initCropY));
     cropRect.width = dragState.initCropW - (nextX - dragState.initCropX);
     cropRect.height = nextH;
     cropRect.x = nextX;
   } else if (dragState.type === 't') {
-    let nextY = Math.max(minY, Math.min(dragState.initCropY + dy, dragState.initCropY + dragState.initCropH - minSize));
+    let nextY = Math.max(minY, Math.min(dragState.initCropY + dy, dragState.initCropY + dragState.initCropH - minHeight));
     cropRect.height = dragState.initCropH - (nextY - dragState.initCropY);
     cropRect.y = nextY;
   } else if (dragState.type === 'b') {
-    cropRect.height = Math.max(minSize, Math.min(dragState.initCropH + dy, maxY - dragState.initCropY));
+    cropRect.height = Math.max(minHeight, Math.min(dragState.initCropH + dy, maxY - dragState.initCropY));
   } else if (dragState.type === 'l') {
-    let nextX = Math.max(minX, Math.min(dragState.initCropX + dx, dragState.initCropX + dragState.initCropW - minSize));
+    let nextX = Math.max(minX, Math.min(dragState.initCropX + dx, dragState.initCropX + dragState.initCropW - minWidth));
     cropRect.width = dragState.initCropW - (nextX - dragState.initCropX);
     cropRect.x = nextX;
   } else if (dragState.type === 'r') {
-    cropRect.width = Math.max(minSize, Math.min(dragState.initCropW + dx, maxX - dragState.initCropX));
+    cropRect.width = Math.max(minWidth, Math.min(dragState.initCropW + dx, maxX - dragState.initCropX));
   }
 }
 
@@ -782,14 +763,14 @@ async function proceedToFilter() {
 }
 
 async function switchFilter(mode) {
-  if (activeFilter.value === mode) return;
+  if (saving.value || filterProcessing.value || activeFilter.value === mode) return;
   activeFilter.value = mode;
   await renderFilterPreview();
 }
 
 async function renderFilterPreview() {
   if (!baseCroppedCanvas) return;
-  filterProcessing.value = true;
+  filterProcessing.value = true; saveError.value = '';
   try {
     const processedCanvas = processCanvasWithFilter(baseCroppedCanvas, activeFilter.value);
     const result = await compressCanvas(processedCanvas);
@@ -797,6 +778,8 @@ async function renderFilterPreview() {
     processedPreviewUrl.value = result.dataUrl;
   } catch (err) {
     console.error('Filter processing error:', err);
+    compressionResult.value = null; processedPreviewUrl.value = '';
+    saveError.value = '图片处理失败，请重新裁剪后重试';
   } finally {
     filterProcessing.value = false;
   }
@@ -810,7 +793,7 @@ function formatFileSize(bytes) {
 
 // Save Mistake Record
 async function saveMistakeRecord() {
-  if (!formDescription.value.trim() || !compressionResult.value) return;
+  if (saving.value || filterProcessing.value || !formDescription.value.trim() || !compressionResult.value) return;
 
   saving.value = true;
   saveError.value = '';

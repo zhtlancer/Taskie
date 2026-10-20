@@ -118,8 +118,8 @@ export const useCharacterStore = defineStore('character', {
         return this.characters[index];
       } catch (err) {
         console.error('[CharacterStore] toggleMaster error:', err);
-        // Fallback optimistic update
-        this.characters[index].is_mastered = nextMastered;
+        // Keep the server-confirmed state; callers show the error and allow a retry.
+        throw err;
       }
     },
 

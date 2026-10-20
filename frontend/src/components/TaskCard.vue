@@ -43,7 +43,7 @@
       @start="emit('timer', task, 'start')" @pause="emit('timer', task, 'pause')" @reset="emit('timer', task, 'reset')" />
     <div v-else-if="task.track_time && task.is_completed" class="flex items-center gap-2 text-xs text-violet-600 dark:text-violet-300">
       <span>⏱ {{ task.duration_seconds ? `用时 ${formatDuration(task.duration_seconds)}` : '没有记录用时' }}</span>
-      <button type="button" class="rounded-lg px-2 py-2 bg-violet-50 dark:bg-violet-950/40" @click.stop="emit('edit-duration', task)">更正用时</button>
+      <button type="button" class="min-h-[44px] rounded-lg px-2 py-2 bg-violet-50 dark:bg-violet-950/40" @click.stop="emit('edit-duration', task)">更正用时</button>
     </div>
 
     <p v-if="task.is_skipped" class="text-xs text-slate-500 dark:text-slate-400 break-words">⏭ 今天已跳过 · {{ task.skip_reason }}</p>

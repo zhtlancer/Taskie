@@ -47,7 +47,7 @@
           v-if="todaySchedule"
           type="button"
           @click="openSchedule"
-          class="relative flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 shadow-xs"
+          class="min-h-[44px] min-w-[44px] relative flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 shadow-xs"
           :class="todayClasses.length ? 'bg-violet-500 hover:bg-violet-600 text-white' : 'bg-violet-50 dark:bg-violet-950/40 hover:bg-violet-100 dark:hover:bg-violet-950/40 text-violet-700 dark:text-violet-300'"
           title="今天的课"
         >
@@ -60,7 +60,7 @@
         <button
           type="button"
           @click="openStrokeLookup"
-          class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 hover:bg-brand-100 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-300 font-bold text-xs transition-all active:scale-95 shadow-xs"
+          class="min-h-[44px] min-w-[44px] flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 hover:bg-brand-100 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-300 font-bold text-xs transition-all active:scale-95 shadow-xs"
           title="实时查笔画"
         >
           <span>🔍</span>
@@ -70,7 +70,7 @@
         <router-link
           to="/parent/login"
           @click="playClick"
-          class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs transition-all active:scale-95"
+          class="min-h-[44px] min-w-[44px] flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs transition-all active:scale-95"
         >
           <span>⚙️</span>
           <span class="hidden sm:inline">家长</span>
@@ -91,7 +91,7 @@
           :key="sub.name"
           type="button"
           @click="selectSubject(sub.name)"
-          class="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all"
+          class="min-h-[44px] shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all"
           :class="selectedSubject === sub.name ? 'bg-brand-500 text-white shadow-button' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'"
         >
           <span>{{ sub.icon }}</span>

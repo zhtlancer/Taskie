@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-slate-50 dark:bg-slate-800 px-4 py-5 pb-24">
+  <div class="min-h-screen bg-[var(--ui-page)] px-4 py-5 pb-24">
     <main class="max-w-4xl mx-auto space-y-5">
       <header class="flex flex-wrap items-center justify-between gap-3">
         <div><h1 class="text-xl font-black text-slate-800 dark:text-slate-100">📚 字词学习</h1><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">先回忆，再核对；每天达标后还可以自愿多学。</p></div>
@@ -37,7 +37,7 @@
             <label>每天最多奖励额外 <input v-model.number="form.extra_reward_limit" type="number" min="0" max="20" required class="w-16 border rounded-lg p-2" /> 组</label>
           </div>
           <p class="text-xs text-slate-400">额外每组最多 3 项，奖励默认关闭；超过奖励名额仍能学习。奖励完成练习，不要求每项都答对。</p>
-          <button :disabled="busy" class="px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50">保存{{ skillName(form.skill) }}计划</button>
+          <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50">保存{{ skillName(form.skill) }}计划</button>
         </form>
         <p class="text-xs text-slate-500 dark:text-slate-400">独立答对后逐步采用 1、3、7、14、30 天的复习间隔；需要提示或答错时安排次日复习。具体间隔是可迭代的初始规则，并非适合所有孩子的固定最佳周期。不自动修改字词本的“已掌握”或分类标记。</p>
       </section>
@@ -56,7 +56,7 @@
             <div class="flex justify-between gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
               <span>{{ batch.is_extra ? '✨ 自愿追加' : '🎯 基础学习' }} · {{ batch.items.filter(item => item.result).length }}/{{ batch.items.length }} 项</span>
               <span v-if="batch.completed_at">已完成 · +{{ batch.points }} 分</span>
-              <button v-else :disabled="busy" class="text-brand-600 dark:text-brand-300" @click="begin(day, batch)">开始 / 继续 →</button>
+              <button v-else :disabled="busy" class="min-h-[44px] px-2 text-brand-600 dark:text-brand-300" @click="begin(day, batch)">开始 / 继续 →</button>
             </div>
             <details class="mt-2"><summary class="min-h-[44px] py-3 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">查看字词清单与练习结果</summary><div class="flex flex-wrap gap-2">
               <button v-for="item in batch.items" :key="item.id" :disabled="busy" class="min-h-[44px] px-3 py-2 rounded-lg border text-xs" :class="item.result === 'good' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : item.result ? 'text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'" @click="openItem(day, batch, item)">{{ item.text }} · {{ resultName(item.result) }}</button>
@@ -64,7 +64,7 @@
           </div>
           <p v-if="day.remaining_early" class="text-xs text-slate-400">还有 {{ day.remaining_early }} 项可提前巩固，答对不会跳过原定复习阶段。</p>
           <div v-if="day.base_done" class="flex flex-wrap items-center gap-3">
-            <button v-if="!day.batches.some(batch => !batch.completed_at)" :disabled="busy || !(day.remaining_due + day.remaining_new + day.remaining_early)" class="px-4 py-2 rounded-xl bg-violet-500 text-white text-sm font-bold disabled:opacity-50" @click="extra(day)">继续学习一小组</button>
+            <button v-if="!day.batches.some(batch => !batch.completed_at)" :disabled="busy || !(day.remaining_due + day.remaining_new + day.remaining_early)" class="min-h-[44px] px-4 py-2 rounded-xl bg-violet-500 text-white text-sm font-bold disabled:opacity-50" @click="extra(day)">继续学习一小组</button>
             <span class="text-xs text-slate-400">额外奖励 {{ day.extra_rewarded }}/{{ day.extra_reward_limit }} 组 · 自愿完成，不改变全勤和连续打卡</span>
           </div>
         </section>
@@ -80,7 +80,7 @@
         <p class="text-xs text-slate-500 dark:text-slate-400">{{ active.skill === 'write' ? '先听词或看拼音，在纸上默写，再核对字形与笔顺。' : '先尝试读出字词，再揭晓拼音核对。' }}</p>
         <div v-if="active.skill === 'recognize' || revealed" class="text-4xl font-reading text-slate-800 dark:text-slate-100">{{ active.item.text }}</div>
         <div v-if="active.skill === 'write' || revealed" class="text-xl text-brand-600 dark:text-brand-300">{{ active.item.pinyin || getCharPinyin(active.item.text) }}</div>
-        <button v-if="active.skill === 'write' || revealed" class="px-4 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-sm font-bold" @click="speakHanzi(active.item.text)">🔊 听发音</button>
+        <button v-if="active.skill === 'write' || revealed" class="min-h-[44px] px-4 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-sm font-bold" @click="speakHanzi(active.item.text)">🔊 听发音</button>
         <button v-if="!revealed" class="block mx-auto px-5 py-3 rounded-xl bg-brand-500 text-white font-bold" @click="revealed = true">我已尝试，揭晓核对</button>
         <template v-else>
           <template v-if="active.skill === 'write' || feedbackResult === 'again'">
@@ -96,8 +96,8 @@
           <div v-else class="space-y-3">
             <p v-if="nextDue" class="text-xs text-brand-600 dark:text-brand-300">下次复习：{{ nextDue }}</p>
             <p class="text-sm text-emerald-700 dark:text-emerald-300">已记录“{{ resultName(feedbackResult) }}”。同日再练不会重复加分或连续升级。</p>
-            <button class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold mr-2" @click="revealed = false; feedbackResult = null">再练一次</button>
-            <button class="px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold" @click="nextItem">下一项 / 返回清单</button>
+            <button class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold mr-2" @click="revealed = false; feedbackResult = null">再练一次</button>
+            <button class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold" @click="nextItem">下一项 / 返回清单</button>
           </div>
         </template>
         <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>

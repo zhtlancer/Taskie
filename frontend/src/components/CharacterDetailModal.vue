@@ -1,37 +1,8 @@
 <template>
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm select-none"
-    @click.self="close"
-  >
-    <div
-      class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden flex flex-col max-h-[92vh] animate-pop-in"
-      role="dialog"
-      aria-modal="true"
-    >
-      <!-- Modal Header -->
-      <header class="px-6 py-4 bg-slate-50/80 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-2xl bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-300 flex items-center justify-center text-xl shadow-xs font-black">
-            📖
-          </div>
-          <div>
-            <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 leading-tight">{{ chars.length > 1 ? '生词笔顺与临摹' : '生字笔顺与临摹' }}</h3>
-            <p class="text-xs font-bold text-slate-400">{{ chars.length > 1 ? '点下面的字看它的笔顺，临摹可在田字格上手写跟笔' : '点击临摹可在田字格上手写跟笔' }}</p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          @click="close"
-          class="w-10 h-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-xl font-bold transition-all active:scale-90"
-          title="关闭弹窗"
-        >
-          ✕
-        </button>
-      </header>
-
-      <!-- Modal Body -->
-      <div class="p-6 overflow-y-auto flex flex-col items-center">
+  <UiDialog :busy="busy" :title="chars.length > 1 ? '生词笔顺与临摹' : '生字笔顺与临摹'" wide @close="close">
+    <template #subtitle>选择汉字查看笔顺，可在田字格上临摹跟笔</template>
+    <div class="flex flex-col items-center min-w-0">
+        <p v-if="error" role="alert" class="mb-3 text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
         <!-- Top Info Strip: Pinyin & Sound -->
         <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 whitespace-nowrap">
           <!-- Pinyin with Mask Toggle (Default Hidden) -->
@@ -53,7 +24,7 @@
             <button
               type="button"
               @click="togglePinyin"
-              class="h-9 px-3 rounded-xl border font-bold text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1"
+              class="min-h-[44px] px-3 rounded-xl border font-bold text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1"
               :class="showPinyin ? 'bg-brand-500 text-white border-brand-500 shadow-button' : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'"
             >
               <span>{{ showPinyin ? '👁️ 隐藏拼音' : '👁️ 显示拼音' }}</span>
@@ -64,7 +35,7 @@
           <button
             type="button"
             @click="onSpeak"
-            class="h-9 px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1.5"
+            class="min-h-[44px] px-3.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1.5"
             title="朗读汉字发音"
           >
             <span class="text-base">🔊</span>
@@ -80,7 +51,7 @@
             type="button"
             @click="selectChar(index)"
             class="w-12 h-12 rounded-xl border-2 font-kai text-2xl transition-all active:scale-95"
-            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 dark:border-red-700/80 text-slate-800 dark:text-slate-100'"
+            :class="index === selectedIndex ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-[#FFFDF9] border-red-300/80 text-slate-800'"
           >
             {{ ch }}
           </button>
@@ -125,9 +96,9 @@
               v-for="category in CATEGORIES"
               :key="category.key"
               type="button"
-              :disabled="savingCategories"
+              :disabled="busy"
               @click="onToggleCategory(category.key)"
-              class="h-10 rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1"
+              class="min-h-[44px] rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1"
               :class="character.categories?.includes(category.key) ? category.chip : 'bg-white dark:bg-slate-900 text-slate-400 border-dashed border-slate-300 dark:border-slate-600'"
               :aria-pressed="character.categories?.includes(category.key) ? 'true' : 'false'"
             >
@@ -135,13 +106,14 @@
               <span>{{ category.label }}</span>
             </button>
           </div>
-          <p v-if="categoryMessage" class="mt-2 text-xs font-bold text-rose-500 dark:text-rose-400">{{ categoryMessage }}</p>
+          <p v-if="categoryMessage" role="alert" class="mt-2 text-xs font-bold text-rose-500 dark:text-rose-400">{{ categoryMessage }}</p>
         </div>
 
         <!-- Mastery Action Button -->
         <div class="flex items-center justify-between w-full max-w-md mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
           <button
             type="button"
+            :disabled="busy"
             @click="onToggleMaster"
             class="flex-1 h-12 rounded-2xl font-black text-sm transition-all shadow-sm active:scale-98 flex items-center justify-center gap-2 mr-3"
             :class="[
@@ -157,7 +129,7 @@
           <button
             type="button"
             @click="onDelete"
-            :disabled="!canDelete"
+            :disabled="busy || !canDelete"
             class="h-12 px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-950/40 font-bold text-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             :title="canDelete ? '从生字生词本移出' : '有分类标记，需要家长移出'"
           >
@@ -165,11 +137,11 @@
           </button>
         </div>
       </div>
-    </div>
-  </div>
+  </UiDialog>
 </template>
 
 <script setup>
+import UiDialog from './UiDialog.vue';
 import { confirmAction } from '../utils/confirmation';
 import { ref, computed } from 'vue';
 import HanziGrid from './HanziGrid.vue';
@@ -181,6 +153,8 @@ import { useCharacterStore } from '../stores/character';
 import { loadLearningFont } from '../utils/learningFont';
 
 const props = defineProps({
+  busy: Boolean,
+  error: { type: String, default: '' },
   character: {
     type: Object,
     required: true,
@@ -197,6 +171,7 @@ const dynamicStrokes = ref(null);
 const selectedIndex = ref(0);
 const savingCategories = ref(false);
 const categoryMessage = ref('');
+const busy = computed(() => props.busy || savingCategories.value);
 
 const chars = computed(() => entryChars(props.character.char));
 const currentChar = computed(() => chars.value[selectedIndex.value] || chars.value[0]);
@@ -209,6 +184,7 @@ function selectChar(index) {
 }
 
 async function onToggleCategory(key) {
+  if (busy.value) return;
   playClick();
   categoryMessage.value = '';
   const { categories, blocked } = toggleCategory(props.character.categories || [], key, role);
@@ -261,19 +237,21 @@ function onGridReady(data) {
 }
 
 function onToggleMaster() {
+  if (busy.value) return;
   playClick();
   emit('toggle-master', props.character.id);
 }
 
 async function onDelete() {
   playClick();
-  if (!canDelete.value) return;
+  if (busy.value || !canDelete.value) return;
   if (await confirmAction(`确定要将「${props.character.char}」从生字生词本移出吗？`)) {
     emit('delete', props.character.id);
   }
 }
 
 function close() {
+  if (busy.value) return;
   playClick();
   emit('close');
 }

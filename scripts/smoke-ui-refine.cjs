@@ -210,7 +210,7 @@ async function main() {
   await characterButton.focus();
   await page.keyboard.press('Enter');
   await page.getByRole('heading', { name: '生字笔顺与临摹', exact: true }).waitFor();
-  await page.getByTitle('关闭弹窗', { exact: true }).click();
+  await page.getByRole('dialog', { name: '生字笔顺与临摹', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
   pass('tablet character cards open their detail view from the keyboard');
 
   const restricted = await browser.newContext({ colorScheme: 'dark' });

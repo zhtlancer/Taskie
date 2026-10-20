@@ -170,6 +170,8 @@
     <CharacterDetailModal
       v-if="selectedCharacter"
       :character="selectedCharacter"
+      :busy="detailBusy"
+      :error="detailError"
       @close="selectedCharacter = null"
       @toggle-master="handleToggleMaster"
       @delete="handleDeleteCharacter"
@@ -252,25 +254,32 @@ function openStrokeLookup() {
   isLookupModalOpen.value = true;
 }
 
+const detailBusy = ref(false), detailError = ref('');
 function openDetailModal(charItem) {
+  detailError.value = '';
   playClick();
   selectedCharacter.value = charItem;
 }
 
 async function handleToggleMaster(id) {
-  await characterStore.toggleMaster(id);
-  // Update selectedCharacter if currently open in detail modal
-  if (selectedCharacter.value && selectedCharacter.value.id === id) {
-    const updated = characterStore.characters.find((c) => c.id === id);
-    if (updated) {
-      selectedCharacter.value = { ...updated };
+  if (detailBusy.value) return;
+  detailBusy.value = true; detailError.value = '';
+  try {
+    await characterStore.toggleMaster(id);
+    if (selectedCharacter.value?.id === id) {
+      const updated = characterStore.characters.find(c => c.id === id);
+      if (updated) selectedCharacter.value = { ...updated };
     }
-  }
+  } catch (err) { detailError.value = typeof err === 'string' ? err : err.message || '保存失败，请重试'; }
+  finally { detailBusy.value = false; }
 }
 
 async function handleDeleteCharacter(id) {
-  await characterStore.removeCharacter(id);
-  selectedCharacter.value = null;
+  if (detailBusy.value) return;
+  detailBusy.value = true; detailError.value = '';
+  try { await characterStore.removeCharacter(id); selectedCharacter.value = null; }
+  catch (err) { detailError.value = typeof err === 'string' ? err : err.message || '移出失败，请重试'; }
+  finally { detailBusy.value = false; }
 }
 
 function onCharacterAddedFromLookup(created) {
