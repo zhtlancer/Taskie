@@ -423,6 +423,15 @@ function initDb(db) {
   }
   // v24 adds study_legacy_corrections in schema.sql; no historical time is rewritten.
   if (db.pragma('user_version', { simple: true }) < 24) db.pragma('user_version = 24');
+  // v25: task provenance survives deleting its course record and undoing/repeating completion.
+  if (db.pragma('user_version', { simple: true }) < 25) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'is_course_homework')) db.exec('ALTER TABLE daily_tasks ADD COLUMN is_course_homework INTEGER NOT NULL DEFAULT 0');
+      db.exec(`UPDATE daily_tasks SET is_course_homework = 1 WHERE finish_on_actual_date = 1
+        OR EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id)`);
+      db.pragma('user_version = 25');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

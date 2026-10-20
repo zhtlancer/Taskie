@@ -151,6 +151,8 @@ async function saveLegacy() {
   if (!legacyEdit.value) return;
   await act(() => studyApi.legacy({ duration_seconds: Math.round(legacyEdit.value.minutes * 60), expected_old_seconds: legacyEdit.value.expected, reason: legacyEdit.value.reason }));
   if (!error.value) legacyEdit.value = null;
+  // A conflict reloads the latest value shown in the form; saving the kept draft again is deliberate.
+  else if (legacyEdit.value && study.value) legacyEdit.value.expected = study.value.legacy_seconds;
 }
 async function finish(complete) {
   await act(() => study.value.active ? studyApi.finish(study.value.active.id, { note: note.value, complete }) : studyApi.complete());

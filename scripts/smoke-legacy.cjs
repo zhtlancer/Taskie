@@ -74,6 +74,17 @@ async function main() {
     await modal.getByRole('button', { name: '取消', exact: true }).click();
     await modal.getByRole('button', { name: '更正旧累计用时', exact: true }).click();
     assert.equal(await modal.getByLabel('旧累计用时（分钟）', { exact: true }).inputValue(), '2');
+    // After a conflict the form shows the latest value; saving the kept draft again succeeds.
+    await modal.getByLabel('旧累计用时（分钟）', { exact: true }).fill('3');
+    await modal.getByLabel('更正原因', { exact: true }).fill('看到最新数值后仍按本设备更正');
+    c.service.correctLegacy(c.id, { duration_seconds: 60, expected_old_seconds: 120, reason: '另一个设备再次核实' }, 'parent');
+    await modal.getByRole('button', { name: '保存旧累计更正', exact: true }).click();
+    await modal.getByRole('alert').getByText(/旧累计用时已变化/).waitFor();
+    await modal.getByText(/当前旧累计 1 分钟/).waitFor();
+    await modal.getByRole('button', { name: '保存旧累计更正', exact: true }).click();
+    await modal.getByRole('button', { name: '保存旧累计更正', exact: true }).waitFor({ state: 'detached' });
+    assert.equal(c.service.details(c.id).legacy_seconds, 180);
+    assert.deepEqual(c.service.details(c.id).legacy_corrections.slice(0, 2).map(e => [e.old_seconds, e.new_seconds]), [[60, 180], [120, 60]]);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     console.log(`PASS ${c.course ? 'tablet homework' : 'phone ordinary task'} corrects and zeros legacy time, audits changes and retains drafts on conflict`);
     await page.context().close();

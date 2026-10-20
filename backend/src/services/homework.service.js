@@ -292,7 +292,7 @@ class HomeworkService {
     if (!record.due_date || record.due_date < today) throw fail(409, record.due_date ? '截止日期已过，不能生成任务' : '没有截止日期，不能生成任务');
     const task = this.tasksService.createAdhocTask(record.child_id, { title: taskTitle(record), subject: taskSubject(record), points: record.points,
       date: later(record.assigned_date, today), due_date: record.due_date, ...timing });
-    this.db.prepare('UPDATE daily_tasks SET homework_legacy_seconds = 0 WHERE id = ?').run(task.id);
+    this.db.prepare('UPDATE daily_tasks SET homework_legacy_seconds = 0, is_course_homework = 1 WHERE id = ?').run(task.id);
     this.db.prepare('UPDATE homework_records SET daily_task_id = ?, task_requested = 0, updated_at = ? WHERE id = ?').run(task.id, new Date().toISOString(), id);
   }
 

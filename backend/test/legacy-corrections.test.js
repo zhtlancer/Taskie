@@ -94,7 +94,7 @@ test('legacy corrections and zero totals survive restore; v23 backups upgrade; i
   old.pragma('user_version = 23');
   backup.restore(pack());
   old.close();
-  assert.equal(c.db.pragma('user_version', { simple: true }), 24);
+  assert.equal(c.db.pragma('user_version', { simple: true }), 25);
   assert.equal(c.service.details(c.id).legacy_seconds, 0);
   assert.deepEqual(c.service.details(c.id).legacy_corrections, []);
 });
@@ -146,4 +146,92 @@ test('revoking a task after zeroing its old aggregate preserves the correction a
   c.tasksService.revokeTask(c.task);
   assert.ok(c.db.prepare('SELECT revoked_at FROM daily_tasks WHERE id = ?').get(c.task.id).revoked_at);
   assert.equal(c.service.details(c.id).legacy_corrections.length, 1);
+});
+
+test('a zeroed old aggregate of an ordinary task counts as missing time, not as 0 seconds learned', async t => {
+  const c = await fixture(t);
+  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, completed_at = '2026-10-20T04:00:00Z', expected_minutes = 20 WHERE id = ?").run(c.task.id);
+  const stats = () => c.timeStatsService.stats(c.child.id, '2026-10-20', '2026-10-20');
+  assert.equal(stats().summary.recorded_seconds, 900);
+  await c.correct(0);
+  assert.deepEqual(stats().summary, { ...stats().summary, recorded_seconds: 0, missing: 1, sessions: 1 });
+  assert.deepEqual(stats().tasks.map(task => [task.sessions, task.recorded, task.average_seconds]), [[1, 0, null]]);
+  await c.correct(300, 0);
+  assert.equal(stats().summary.recorded_seconds, 300);
+  assert.equal(stats().summary.missing, 0);
+  c.service.manual(c.id, { request_id: 'zeroed_with_session', duration_seconds: 120 }, 'parent');
+  await c.correct(0, 300);
+  assert.deepEqual([stats().summary.recorded_seconds, stats().summary.missing], [120, 0], 'real sessions still count once the old aggregate is zeroed');
+});
+
+// Course homework only counts study sessions, whether or not its task records time.
+for (const trackTime of [0, 1]) {
+  test(`zeroed course homework (track_time ${trackTime}) leaves statistics, also after deleting its record`, async t => {
+    const c = await fixture(t, true);
+    c.db.prepare('UPDATE daily_tasks SET track_time = ?, expected_minutes = 20 WHERE id = ?').run(trackTime, c.task.id);
+    c.service.complete(c.id, 'parent');
+    // v21 kept the old duration mirrored next to the legacy aggregate.
+    c.db.prepare('UPDATE daily_tasks SET duration_seconds = 900 WHERE id = ?').run(c.task.id);
+    const stats = () => c.timeStatsService.stats(c.child.id, '2026-10-20', '2026-10-20');
+    const shape = () => [stats().summary.recorded_seconds, stats().summary.missing, stats().summary.sessions, stats().tasks.length];
+    assert.deepEqual(shape(), [900, 0, 1, 1]);
+    await c.correct(0);
+    assert.deepEqual(shape(), [0, 0, 0, 0]);
+    const before = stats();
+    c.homeworkService.delete(c.record.id, { delete_task: false }, 'parent');
+    const after = stats();
+    assert.deepEqual([after.summary, after.days, after.subjects, after.tasks], [before.summary, before.days, before.subjects, before.tasks]);
+    const url = `/api/daily-tasks/${c.task.id}/study/legacy`;
+    assert.equal((await c.app.inject({ method: 'PUT', url, payload: { duration_seconds: 300, expected_old_seconds: 0, reason: '核实' } })).statusCode, 200);
+    assert.deepEqual(shape(), [300, 0, 1, 1]);
+  });
+}
+
+for (const completeFirst of [false, true]) {
+  test(`course provenance survives zeroing, deletion and completion (complete first: ${completeFirst})`, async t => {
+    const c = await fixture(t, true);
+    c.db.prepare('UPDATE daily_tasks SET track_time = 1 WHERE id = ?').run(c.task.id);
+    await c.correct(0);
+    if (completeFirst) c.service.complete(c.id, 'parent');
+    c.homeworkService.delete(c.record.id, { delete_task: false }, 'parent');
+    if (!completeFirst) c.taskStudyService.complete(c.task.id, 'parent');
+    const check = () => {
+      const stats = c.timeStatsService.stats(c.child.id, '2026-10-20', '2026-10-20');
+      assert.deepEqual([stats.summary.missing, stats.summary.sessions, stats.summary.recorded_seconds], [0, 0, 0]);
+      assert.equal(c.db.prepare('SELECT is_course_homework FROM daily_tasks WHERE id = ?').get(c.task.id).is_course_homework, 1);
+    };
+    check();
+    c.tasksService.uncompleteDailyTask(c.task.id);
+    c.taskStudyService.complete(c.task.id, 'parent');
+    check();
+    assert.equal(c.rewardsService.getTotalPoints(c.child.id), 10);
+  });
+}
+
+test('v25 migration backfills course provenance from records or completion evidence; backups preserve it', async t => {
+  const c = await fixture(t, true);
+  const previous = c.tasksService.createAdhocTask(c.child.id, { title: '已删除的作业', subject: '数学', track_time: true });
+  c.db.prepare('UPDATE daily_tasks SET finish_on_actual_date = 1 WHERE id = ?').run(previous.id);
+  const ordinary = c.tasksService.createAdhocTask(c.child.id, { title: '普通任务', subject: '数学', track_time: true });
+  c.db.exec('ALTER TABLE daily_tasks DROP COLUMN is_course_homework');
+  c.db.pragma('user_version = 24');
+  initDb(c.db);
+  const provenance = id => c.db.prepare('SELECT is_course_homework FROM daily_tasks WHERE id = ?').get(id).is_course_homework;
+  assert.deepEqual([provenance(c.task.id), provenance(previous.id), provenance(ordinary.id)], [1, 1, 0]);
+  c.homeworkService.delete(c.record.id, { delete_task: false }, 'parent');
+  const backup = c.app.backupService;
+  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  c.db.prepare('UPDATE daily_tasks SET is_course_homework = 0').run();
+  backup.restore(archive);
+  assert.equal(provenance(c.task.id), 1);
+  const packed = JSON.parse(gunzipSync(archive));
+  const candidate = new Database(Buffer.from(packed.database, 'base64'));
+  candidate.exec('ALTER TABLE daily_tasks DROP COLUMN is_course_homework');
+  const pack = () => gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') }));
+  assert.throws(() => backup.restore(pack()), /课程作业来源/);
+  candidate.pragma('user_version = 24');
+  backup.restore(pack());
+  candidate.close();
+  assert.equal(c.db.pragma('user_version', { simple: true }), 25);
+  assert.equal(provenance(previous.id), 1);
 });

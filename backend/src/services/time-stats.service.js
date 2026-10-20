@@ -60,12 +60,16 @@ class TimeStatsService {
   // (null when not recorded). A long-term task's entries from before its first recorded duration
   // were made before timing was in use and are left out. Recorded durations remain visible even
   // after the task's timer is disabled; new untimed progress is not treated as missing time.
+  // A parent zeroing an old aggregate means its time is unknown: a done ordinary task without
+  // sessions then counts as missing time (never its mirrored old duration), not as 0 seconds.
+  // Course homework only counts its sessions, so zeroed homework leaves the statistics, also once
+  // its record is deleted; task provenance is independent of completion-time attribution.
   sessions(childId, from, to) {
-    const tasks = this.db.prepare(`SELECT date, title, subject, COALESCE(source_template_id, template_id) AS template, duration_seconds, expected_minutes
+    const tasks = this.db.prepare(`SELECT date, title, subject, COALESCE(source_template_id, template_id) AS template, expected_minutes,
+        CASE WHEN EXISTS (SELECT 1 FROM study_legacy_corrections c WHERE c.task_id = daily_tasks.id) THEN NULL ELSE duration_seconds END AS duration_seconds
       FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND track_time = 1 AND
         (homework_legacy_seconds IS NULL OR (homework_legacy_seconds = 0 AND
-          NOT EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id) AND
-          NOT EXISTS (SELECT 1 FROM study_legacy_corrections c WHERE c.task_id = daily_tasks.id) AND
+          is_course_homework = 0 AND
           NOT EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id AND s.ended_at IS NOT NULL)))
       ORDER BY date, rowid`).all(childId, from, to)
       .map(row => ({
@@ -96,7 +100,7 @@ class TimeStatsService {
     const legacy = this.db.prepare(`SELECT id, date, title, subject, homework_legacy_seconds AS seconds, expected_minutes, is_completed,
       COALESCE(source_template_id, template_id) AS template,
       EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id) AS is_homework FROM daily_tasks
-      WHERE child_id = ? AND date BETWEEN ? AND ? AND (homework_legacy_seconds > 0 OR EXISTS (SELECT 1 FROM study_legacy_corrections c WHERE c.task_id = daily_tasks.id))`).all(childId, from, to)
+      WHERE child_id = ? AND date BETWEEN ? AND ? AND homework_legacy_seconds > 0`).all(childId, from, to)
       .map(row => ({ ...identity(row), date: row.date, title: row.title, subject: row.subject,
         seconds: row.seconds, expected_minutes: row.is_homework ? null : row.expected_minutes, is_completed: row.is_completed }));
     return [...tasks, ...logs, ...homework, ...legacy];
