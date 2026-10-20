@@ -93,6 +93,32 @@ async function main() {
   await shot(childPage, '4-child-board-task');
   pass('the board shows the homework task and its full content');
 
+  // Several learning sessions on one day, from the board; no completion or points yet.
+  await childPage.getByRole('button', { name: '学习 / 记录', exact: true }).click();
+  const study = childPage.getByRole('dialog', { name: '分次做作业' });
+  await study.getByRole('button', { name: '开始本次', exact: true }).click();
+  await childPage.waitForTimeout(1100);
+  await study.getByRole('button', { name: '暂停', exact: true }).click();
+  await study.getByRole('button', { name: '继续本次', exact: true }).click();
+  await study.getByPlaceholder(/例如：写完第一部分/).fill('第一部分已完成');
+  await study.getByRole('button', { name: '结束本次学习', exact: true }).click();
+  await study.getByText('第一部分已完成', { exact: true }).waitFor();
+  await study.getByRole('button', { name: '开始本次', exact: true }).click();
+  await study.getByRole('button', { name: '结束本次学习', exact: true }).click();
+  await study.getByRole('button', { name: '＋ 手动补记学习', exact: true }).click();
+  await study.getByLabel('本次用时（分钟）').fill('5');
+  await study.getByPlaceholder('本次进展（选填）').fill('手动补记的一次');
+  await study.getByRole('button', { name: '保存本次', exact: true }).click();
+  await study.getByText('手动补记的一次', { exact: true }).waitFor();
+  const detail = await api('GET', `/homework/${record.id}/study`);
+  assert.equal(detail.sessions.length, 3);
+  assert.ok(detail.total_seconds >= 301);
+  assert.equal(detail.record.task.is_completed, false);
+  await shot(childPage, '8-homework-study-sessions');
+  await study.getByRole('button', { name: '关闭', exact: true }).click();
+  pass('same-day sessions, pause/resume and manual study time work without marking homework complete');
+
+
   // A parent recording 数学 homework is warned about the daily workbook, and no task is preset.
   await parentPage.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'domcontentloaded' });
   await parentPage.getByRole('button', { name: '➕ 记作业' }).click();
@@ -125,10 +151,35 @@ async function main() {
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await phone.locator('nav a[href$="/homework"]').waitFor();
   await shot(phone, '6-phone-homework-book');
+  await phone.getByRole('button', { name: '学习 / 记录', exact: true }).click();
+  await phone.getByRole('dialog', { name: '分次做作业' }).waitFor();
+  assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await shot(phone, '9-phone-study-sessions');
+  await phone.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+
   await phone.getByRole('button', { name: '📊 按课程统计' }).click();
   await phone.getByText('完成率', { exact: true }).first().waitFor();
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   pass('the homework book fits a phone screen');
+
+  // Overdue homework remains learnable, but a child cannot complete it without a parent.
+  const late = await api('POST', `/children/${child.id}/homework`, { subject: '科学', content: '超期练习', due_date: today, create_task: true });
+  const yesterday = shiftDate(today, -1);
+  db.prepare('UPDATE daily_tasks SET date = ?, due_date = NULL WHERE id = ?').run(yesterday, late.task.id);
+  db.prepare('UPDATE homework_records SET assigned_date = ?, due_date = ? WHERE id = ?').run(yesterday, yesterday, late.id);
+  await childPage.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'domcontentloaded' });
+  await childPage.locator('li').filter({ hasText: '超期练习' }).getByRole('button', { name: '学习 / 记录', exact: true }).click();
+  const lateStudy = childPage.getByRole('dialog', { name: '分次做作业' });
+  await lateStudy.getByRole('button', { name: '开始本次', exact: true }).click();
+  await lateStudy.getByRole('button', { name: '申请作业全部完成', exact: true }).click();
+  await lateStudy.getByText(/已申请全部完成，等待家长确认/).waitFor();
+  assert.equal((await api('GET', `/homework/${late.id}/study`)).record.task.is_completed, false);
+  await parentPage.goto(`${base}/parent/dashboard`, { waitUntil: 'domcontentloaded' });
+  await parentPage.getByText('📒 超期作业全部完成申请', { exact: true }).waitFor();
+  await parentPage.getByRole('button', { name: '确认完成', exact: true }).click();
+  await parentPage.getByText('📒 超期作业全部完成申请', { exact: true }).waitFor({ state: 'detached' });
+  assert.equal((await api('GET', `/homework/${late.id}/study`)).record.task.is_completed, true);
+  pass('a child studies overdue homework and only parent confirmation completes it');
 
   assert.deepEqual(errors, []);
 }

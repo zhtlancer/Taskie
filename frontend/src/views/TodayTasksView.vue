@@ -393,6 +393,7 @@
       :child-id="childId"
       initial-char="学"
     />
+    <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null" @saved="loadTasks(); loadGoals()" />
   </div>
 </template>
 
@@ -403,6 +404,7 @@ import confetti from 'canvas-confetti';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import TaskCard from '../components/TaskCard.vue';
+import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import ProgressRing from '../components/ProgressRing.vue';
 import StreakBadge from '../components/StreakBadge.vue';
 import SoundToggle from '../components/SoundToggle.vue';
@@ -582,7 +584,9 @@ async function loadTasks() {
 
 // A timed task whose timer barely ran (or ran far too long) asks how long it took before it is
 // checked off; durationBody carries the answer.
+const studyRecord = ref(null);
 async function handleTaskToggle(task, durationBody = null) {
+  if (task.homework) { studyRecord.value = task.homework.id; return; }
   if (task.origin === 'study') { router.push(`/child/${childId.value}/word-study`); return; }
   const willComplete = !task.is_completed;
   const wasAllDone = allDone.value;

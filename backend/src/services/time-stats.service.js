@@ -13,6 +13,21 @@ const fail = (status, message) => ({ status, message });
 const pad = n => String(n).padStart(2, '0');
 const sum = list => list.reduce((total, n) => total + n, 0);
 const average = list => list.length ? Math.round(sum(list) / list.length) : null;
+// Daily allocations share one learning session, even when it crosses midnight.
+function learningEntries(list) {
+  const sessions = new Map();
+  const entries = [];
+  for (const row of list) {
+    if (!row.session_id) { entries.push(row); continue; }
+    if (sessions.has(row.session_id)) sessions.get(row.session_id).seconds += row.seconds;
+    else {
+      const entry = { ...row };
+      sessions.set(row.session_id, entry);
+      entries.push(entry);
+    }
+  }
+  return entries;
+}
 
 const clockFormat = new Intl.DateTimeFormat('en-GB', { timeZone: config.timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 // Minutes after midnight in the family time zone, counting early-morning times as the evening before.
@@ -45,7 +60,7 @@ class TimeStatsService {
   // after the task's timer is disabled; new untimed progress is not treated as missing time.
   sessions(childId, from, to) {
     const tasks = this.db.prepare(`SELECT date, title, subject, COALESCE(source_template_id, template_id) AS template, duration_seconds, expected_minutes
-      FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND track_time = 1 ORDER BY date, rowid`).all(childId, from, to)
+      FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND track_time = 1 AND (homework_legacy_seconds IS NULL OR (duration_seconds IS NOT NULL AND NOT EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id))) ORDER BY date, rowid`).all(childId, from, to)
       .map(row => ({
         key: row.template ? `template:${row.template}` : `adhoc:${row.subject}|${row.title}`,
         kind: row.template ? 'template' : 'adhoc',
@@ -61,18 +76,32 @@ class TimeStatsService {
         key: `goal:${log.id}`, kind: 'goal', goal_id: log.id, unit: log.mode === 'progress' ? log.unit : null, amount: log.amount,
         date: log.date, title: log.title, subject: log.subject, seconds: log.duration_seconds, expected_minutes: log.expected_minutes
       }));
-    return [...tasks, ...logs];
+    const homework = this.db.prepare(`SELECT a.date, a.seconds, s.id AS session_id, s.task_id, d.title, d.subject
+      FROM homework_session_days a JOIN homework_sessions s ON s.id = a.session_id JOIN daily_tasks d ON d.id = s.task_id
+      WHERE s.child_id = ? AND s.ended_at IS NOT NULL AND a.date BETWEEN ? AND ? ORDER BY a.date, s.started_at`)
+      .all(childId, from, to).map(row => ({ key: `homework:${row.task_id}`, kind: 'homework', date: row.date,
+        session_id: row.session_id, title: row.title, subject: row.subject, seconds: row.seconds, expected_minutes: null }));
+    const legacy = this.db.prepare(`SELECT id, date, title, subject, homework_legacy_seconds AS seconds FROM daily_tasks
+      WHERE child_id = ? AND date BETWEEN ? AND ? AND homework_legacy_seconds > 0`).all(childId, from, to)
+      .map(row => ({ key: `homework:${row.id}`, kind: 'homework', date: row.date, title: row.title, subject: row.subject,
+        seconds: row.seconds, expected_minutes: null }));
+    return [...tasks, ...logs, ...homework, ...legacy];
   }
 
   // The latest completion of each day in the family's evening time, from every done task and
   // progress entry made on its own day (later corrections and backfills are left out).
   finishTimes(childId, from, to) {
     const rows = [
-      ...this.db.prepare("SELECT date, completed_at AS at FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill' AND is_extra_completion = 0")
+      ...this.db.prepare("SELECT date, completed_at AS at FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill' AND is_extra_completion = 0 AND homework_legacy_seconds IS NULL")
         .all(childId, from, to),
       ...this.db.prepare(`SELECT l.date, l.created_at AS at FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id
         WHERE t.child_id = ? AND l.date BETWEEN ? AND ?`).all(childId, from, to)
     ];
+    for (const row of this.db.prepare(`SELECT completed_at AS at FROM daily_tasks WHERE child_id = ? AND homework_legacy_seconds IS NOT NULL
+      AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill'`).all(childId)) {
+      const date = eveningMinutes(row.at) >= 24 * 60 ? shiftDate(formatDate(new Date(row.at)), -1) : formatDate(new Date(row.at));
+      if (date >= from && date <= to) rows.push({ date, at: row.at });
+    }
     const latest = new Map();
     for (const row of rows) {
       const minutes = eveningMinutes(row.at);
@@ -102,13 +131,14 @@ class TimeStatsService {
 
     const estimates = new Map();
     const recordedByKey = new Map();
-    for (const s of between(windowFrom, to).filter(s => s.seconds !== null)) {
+    for (const s of learningEntries(between(windowFrom, to)).filter(s => s.seconds !== null)) {
       if (!recordedByKey.has(s.key)) recordedByKey.set(s.key, []);
       recordedByKey.get(s.key).push(s.seconds);
     }
     for (const [key, list] of recordedByKey) if (list.length >= MIN_RECORDS_FOR_ESTIMATE) estimates.set(key, average(list));
 
     const totals = list => {
+      list = learningEntries(list);
       const missing = list.filter(s => s.seconds === null);
       const filled = missing.map(s => estimates.get(s.key)).filter(seconds => seconds !== undefined);
       const recorded = sum(list.filter(s => s.seconds !== null).map(s => s.seconds));
@@ -138,8 +168,8 @@ class TimeStatsService {
       .sort((a, b) => b.estimated_seconds - a.estimated_seconds);
 
     // ③④ Each task: averages from recorded times, against its expected time.
-    const previousByKey = groupBy(previous.filter(s => s.seconds !== null), s => s.key);
-    const tasks = [...groupBy(current, s => s.key)].map(([key, list]) => {
+    const previousByKey = groupBy(learningEntries(previous).filter(s => s.seconds !== null), s => s.key);
+    const tasks = [...groupBy(learningEntries(current), s => s.key)].map(([key, list]) => {
       const recorded = list.filter(s => s.seconds !== null);
       const seconds = recorded.map(s => s.seconds);
       const latest = list.at(-1);

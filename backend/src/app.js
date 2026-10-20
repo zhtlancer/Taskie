@@ -23,6 +23,7 @@ const ScheduleService = require('./services/schedule.service');
 const TimeStatsService = require('./services/time-stats.service');
 const WordStudyService = require('./services/word-study.service');
 const HomeworkService = require('./services/homework.service');
+const HomeworkStudyService = require('./services/homework-study.service');
 const wordStudyRoutes = require('./routes/word-study.routes');
 const { installAuthorization, getSetting } = require('./auth');
 const { DeviceRegistry, installDeviceGate, deviceRoutes } = require('./device-auth');
@@ -85,6 +86,9 @@ function buildApp(opts = {}) {
   rewardsService.wordStudyService = wordStudyService;
   const homeworkService = new HomeworkService(db, tasksService, scheduleService);
   tasksService.homeworkService = homeworkService;
+  const homeworkStudyService = new HomeworkStudyService(db, homeworkService, tasksService, timersService);
+  timersService.homeworkStudyService = homeworkStudyService;
+  homeworkService.studyService = homeworkStudyService;
 
   // Decorate fastify with services and db for easy access
   fastify.decorate('db', db);
@@ -103,7 +107,8 @@ function buildApp(opts = {}) {
     scheduleService,
     timeStatsService,
     wordStudyService,
-    homeworkService
+    homeworkService,
+    homeworkStudyService
   });
 
   console.log('  4/4 正在挂载路由与静态资源中间件...');
@@ -205,7 +210,7 @@ function buildApp(opts = {}) {
   fastify.register(timersRoutes, { prefix: '/api', timersService, tasksService, periodsService });
   fastify.register(scheduleRoutes, { prefix: '/api', scheduleService });
   fastify.register(wordStudyRoutes, { prefix: '/api', wordStudyService });
-  fastify.register(homeworkRoutes, { prefix: '/api', homeworkService });
+  fastify.register(homeworkRoutes, { prefix: '/api', homeworkService, homeworkStudyService });
 
   return fastify;
 }

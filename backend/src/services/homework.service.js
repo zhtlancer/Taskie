@@ -183,7 +183,10 @@ class HomeworkService {
 
   query(where, params) {
     return this.db.prepare(`SELECT r.*, d.id AS task_id, d.date AS task_date, d.is_completed AS task_completed, d.skipped_at AS task_skipped_at,
-      d.points AS task_points, d.due_date AS task_due_date, c.name AS child_name, c.avatar_emoji AS child_avatar_emoji
+      d.points AS task_points, d.due_date AS task_due_date,
+      COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds,
+      (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count,
+      EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running, c.name AS child_name, c.avatar_emoji AS child_avatar_emoji
       FROM homework_records r JOIN children c ON c.id = r.child_id LEFT JOIN daily_tasks d ON d.id = r.daily_task_id
       WHERE ${where} ORDER BY r.assigned_date DESC, r.created_at DESC`).all(...params).map(row => this.describe(row));
   }
@@ -289,6 +292,7 @@ class HomeworkService {
     if (!record.due_date || record.due_date < today) throw fail(409, record.due_date ? '截止日期已过，不能生成任务' : '没有截止日期，不能生成任务');
     const task = this.tasksService.createAdhocTask(record.child_id, { title: taskTitle(record), subject: taskSubject(record), points: record.points,
       date: later(record.assigned_date, today), due_date: record.due_date, ...timing });
+    this.db.prepare('UPDATE daily_tasks SET homework_legacy_seconds = 0 WHERE id = ?').run(task.id);
     this.db.prepare('UPDATE homework_records SET daily_task_id = ?, task_requested = 0, updated_at = ? WHERE id = ?').run(task.id, new Date().toISOString(), id);
   }
 
@@ -361,6 +365,14 @@ class HomeworkService {
     const record = this.get(id);
     this.requireEditable(record, actor);
     this.db.transaction(() => {
+      if (record.task && this.studyService) {
+        const active = this.db.prepare('SELECT id FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(record.task.id);
+        if (active) this.studyService.finish(id, active.id, {}, 'parent');
+      }
+      if (!delete_task && record.task) {
+        // Future ordinary-task timing starts fresh; earlier study time stays in its sessions/legacy snapshot.
+        this.db.prepare('UPDATE daily_tasks SET duration_seconds = NULL, duration_source = NULL, timer_started_at = NULL, timer_elapsed_seconds = 0 WHERE id = ?').run(record.task.id);
+      }
       this.db.prepare('DELETE FROM homework_records WHERE id = ?').run(id);
       if (delete_task && record.task) this.tasksService.deleteAdhocTask(record.task.id);
     })();
@@ -382,7 +394,7 @@ class HomeworkService {
 
   // The homework a board task came from, for its card.
   homeworkByTask(childId) {
-    return new Map(this.db.prepare('SELECT id, daily_task_id, subject, content, assigned_date FROM homework_records WHERE child_id = ? AND daily_task_id IS NOT NULL')
+    return new Map(this.db.prepare('SELECT r.id, r.daily_task_id, r.subject, r.content, r.assigned_date, r.completion_requested_at, COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds, (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count, EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running FROM homework_records r JOIN daily_tasks d ON d.id = r.daily_task_id WHERE r.child_id = ?')
       .all(childId).map(({ daily_task_id, ...record }) => [daily_task_id, record]));
   }
 }

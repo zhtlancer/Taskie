@@ -390,6 +390,18 @@ function initDb(db) {
       db.pragma('user_version = 20');
     })();
   }
+  if (db.pragma('user_version', { simple: true }) < 21) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(homework_records)').some(c => c.name === 'completion_requested_at')) db.exec('ALTER TABLE homework_records ADD COLUMN completion_requested_at TEXT');
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'homework_legacy_seconds')) db.exec('ALTER TABLE daily_tasks ADD COLUMN homework_legacy_seconds INTEGER');
+      db.exec(`UPDATE daily_tasks SET homework_legacy_seconds = MIN(43200, COALESCE(duration_seconds, timer_elapsed_seconds, 0) +
+        CASE WHEN duration_seconds IS NULL AND timer_started_at IS NOT NULL THEN
+          MAX(0, MIN(43200, CAST((julianday('now') - julianday(timer_started_at)) * 86400 AS INTEGER))) ELSE 0 END),
+        timer_started_at = NULL, timer_elapsed_seconds = 0
+        WHERE homework_legacy_seconds IS NULL AND id IN (SELECT daily_task_id FROM homework_records WHERE daily_task_id IS NOT NULL)`);
+      db.pragma('user_version = 21');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

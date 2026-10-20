@@ -52,7 +52,7 @@ function installAuthorization(app, db) {
       /^\/api\/children\/[^/]+\/timetables\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/timetables/') ||
       url.startsWith('/api/outside-classes') || url.startsWith('/api/outside-class-exceptions/') ||
       /^\/api\/children\/[^/]+\/makeup-days\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/makeup-days/') ||
-      /^\/api\/homework\/[^/]+\/(?:task|reject-task)\/?$/.test(url) || /^\/api\/homework-requests\/?$/.test(url) ||
+      /^\/api\/homework\/[^/]+\/(?:task|reject-task|reject-completion)\/?$/.test(url) || /^\/api\/homework(?:-completion)?-requests\/?$/.test(url) ||
       url.startsWith('/api/homework-course-points') && request.method !== 'GET';
     if (parentOnly && request.user.role !== 'parent') return reply.code(403).send({ error: '需要家长权限' });
     if (url.startsWith('/uploads/')) {

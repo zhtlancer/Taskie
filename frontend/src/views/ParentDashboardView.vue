@@ -114,6 +114,16 @@
         </ul>
       </section>
 
+      <section v-if="completionRequests.length" class="mb-6 bg-white rounded-2xl border border-amber-200 p-4 space-y-3">
+        <h3 class="font-bold">📒 超期作业全部完成申请</h3>
+        <p v-if="completionError" class="text-rose-600 text-sm">{{ completionError }}</p>
+        <div v-for="record in completionRequests" :key="record.id" class="flex flex-wrap items-center gap-3 text-sm">
+          <span class="flex-1">{{ record.child_name }} · {{ courseLabel(record) }}：{{ record.content }}</span>
+          <button :disabled="completionBusy" class="bg-emerald-600 text-white rounded-xl px-3 py-2" @click="resolveCompletion(record, true)">确认完成</button>
+          <button :disabled="completionBusy" class="border rounded-xl px-3 py-2" @click="resolveCompletion(record, false)">暂不确认</button>
+          <router-link :to="`/child/${record.child_id}/homework`" class="text-indigo-600">查看学习记录</router-link>
+        </div>
+      </section>
       <!-- Children Detail Progress Grid -->
       <h3 class="text-base font-bold text-slate-700 mb-3 px-1">
         各个小朋友实时看板
@@ -335,6 +345,18 @@ const skipRequests = ref([]);
 const skipBusy = ref(false);
 const skipError = ref('');
 const homeworkRequests = ref([]);
+const completionRequests = ref([]), completionBusy = ref(false), completionError = ref('');
+async function loadCompletionRequests() { completionRequests.value = await api.getHomeworkCompletionRequests(); }
+async function resolveCompletion(record, approve) {
+  completionBusy.value = true; completionError.value = '';
+  try {
+    await (approve ? api.completeHomework(record.id) : api.rejectHomeworkCompletion(record.id));
+    await loadCompletionRequests();
+    const item = childrenStats.value.find(item => item.child.id === record.child_id);
+    if (item) await refreshChild(item);
+  } catch (err) { completionError.value = typeof err === 'string' ? err : '操作失败'; }
+  finally { completionBusy.value = false; }
+}
 const homeworkBusy = ref(false);
 const homeworkError = ref('');
 
@@ -465,7 +487,7 @@ onMounted(async () => {
         api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null)]);
       return { child, stats, week, adhoc, goals: activeGoals(goals), time };
     });
-    [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests()]);
+    [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests(), loadCompletionRequests()]);
   } catch (err) {
     console.error('Failed to load parent dashboard:', err);
   } finally {

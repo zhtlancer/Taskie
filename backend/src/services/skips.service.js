@@ -71,6 +71,10 @@ class SkipsService {
   }
 
   markSkipped(row, reason, now) {
+    const study = this.tasksService.homeworkService?.studyService;
+    const homework = study && this.db.prepare('SELECT id FROM homework_records WHERE daily_task_id = ?').get(row.id);
+    const active = homework && this.db.prepare('SELECT id FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(row.id);
+    if (active) study.finish(homework.id, active.id, {}, 'parent');
     // Freeze the timer when the skip takes effect; taking the skip back keeps only time already spent.
     const stoppedAt = Date.parse(now);
     this.db.prepare(`UPDATE daily_tasks SET skipped_at = ?, skip_reason = ?,

@@ -10,7 +10,7 @@ const REQUIRED_TABLES = ['children', 'task_templates', 'daily_tasks', 'point_log
 const PERIOD_TABLES = ['periods', 'period_paused_templates', 'period_tasks', 'period_task_logs'];
 const SCHEDULE_TABLES = ['timetables', 'timetable_slots', 'timetable_lessons', 'outside_classes', 'outside_class_children', 'outside_class_exceptions'];
 const STUDY_TABLES = ['word_study_plans', 'word_study_states', 'word_study_days', 'word_study_batches', 'word_study_items', 'word_study_attempts'];
-const HOMEWORK_TABLES = ['homework_records', 'homework_course_points'];
+const HOMEWORK_TABLES = ['homework_records', 'homework_course_points', 'homework_sessions', 'homework_session_days'];
 const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES];
 const MAX_SIZE = 256 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), { statusCode: 400 });
@@ -133,8 +133,9 @@ class BackupService {
         throw fail('备份缺少字词学习计划数据，无法恢复');
       }
       if (schemaVersion >= 18 && !tables.includes('task_day_snapshots')) throw fail('备份缺少每日任务快照，无法恢复');
-      if (schemaVersion >= 19 && !HOMEWORK_TABLES.every(table => tables.includes(table))) throw fail('备份缺少作业记录，无法恢复');
+      if (schemaVersion >= 19 && !['homework_records', 'homework_course_points'].every(table => tables.includes(table))) throw fail('备份缺少作业记录，无法恢复');
       if (schemaVersion >= 20 && !hasColumn('homework_records', 'course_key')) throw fail('备份缺少作业课程标识，无法恢复');
+      if (schemaVersion >= 21 && (!HOMEWORK_TABLES.every(table => tables.includes(table)) || !hasColumn('daily_tasks', 'homework_legacy_seconds') || !hasColumn('homework_records', 'completion_requested_at'))) throw fail('备份缺少分次学习记录，无法恢复');
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {

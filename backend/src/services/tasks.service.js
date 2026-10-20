@@ -853,6 +853,12 @@ class TasksService {
       throw { status: 404, message: 'Daily task not found' };
     }
 
+    if (this.db.prepare('SELECT 1 FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(taskId)) {
+      throw { status: 409, message: '请先结束本次学习，再完成作业' };
+    }
+    if (duration_seconds !== undefined && duration_seconds !== null && this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId)) {
+      throw { status: 409, message: '请在单次学习记录中填写用时' };
+    }
     // A long-term task's daily row is completed by logging progress, never directly.
     if (task.origin === 'study') throw { status: 409, message: '请在字词学习中逐项练习，不能直接打卡或撤销' };
     if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里记录今天的进度' };
@@ -894,6 +900,7 @@ class TasksService {
           timer_elapsed_seconds = ?, timer_started_at = NULL, completion_source = ?, is_extra_completion = ?, earned_points = ?
         WHERE id = ?
       `).run(now, duration.seconds, duration.source, timerSeconds(task), completionSource, isExtra ? 1 : 0, earned, taskId);
+      this.db.prepare('UPDATE homework_records SET completion_requested_at = NULL WHERE daily_task_id = ?').run(taskId);
       if (completionSource === 'parent_backfill') this.recordBackfillEvent({ ...task, earned_points: earned }, 'complete', duration.seconds, now);
       cancelPendingSkips(this.db, taskId, now);
 
@@ -990,6 +997,7 @@ class TasksService {
   setDuration(taskId, durationSeconds) {
     const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
     if (!task) throw { status: 404, message: 'Daily task not found' };
+    if (this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId)) throw { status: 409, message: '请修改单次学习记录的用时' };
     if (!task.track_time) throw { status: 409, message: '这项任务不记录用时' };
     if (!task.is_completed) throw { status: 409, message: '完成任务后才能填写用时' };
     const seconds = validateDuration(durationSeconds);

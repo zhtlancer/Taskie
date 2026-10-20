@@ -1,5 +1,5 @@
 async function homeworkRoutes(fastify, options) {
-  const { homeworkService } = options;
+  const { homeworkService, homeworkStudyService: study } = options;
   const handle = fn => async (request, reply) => {
     try {
       return await fn(request, reply);
@@ -21,6 +21,19 @@ async function homeworkRoutes(fastify, options) {
     homeworkService.delete(request.params.id, { delete_task: request.query.delete_task === '1' }, actor(request))));
   fastify.post('/homework/:id/task', handle(async (request, reply) => reply.code(201).send(homeworkService.createTask(request.params.id, request.body || {}))));
   fastify.post('/homework/:id/reject-task', handle(async request => homeworkService.rejectTask(request.params.id)));
+
+  fastify.get('/homework/:id/study', handle(async r => study.details(r.params.id)));
+  fastify.post('/homework/:id/study/start', handle(async r => study.start(r.params.id)));
+  fastify.post('/homework/:id/sessions/:sid/pause', handle(async r => study.pauseSession(r.params.id, r.params.sid)));
+  fastify.post('/homework/:id/sessions/:sid/finish', handle(async r => study.finish(r.params.id, r.params.sid, r.body || {}, actor(r))));
+  fastify.post('/homework/:id/sessions', handle(async r => study.manual(r.params.id, r.body || {}, actor(r))));
+  fastify.put('/homework/:id/sessions/:sid', handle(async r => study.edit(r.params.id, r.params.sid, r.body || {}, actor(r))));
+  fastify.post('/homework/:id/complete', handle(async r => {
+    fastify.db.transaction(() => study.complete(r.params.id, actor(r)))();
+    return study.details(r.params.id);
+  }));
+  fastify.post('/homework/:id/reject-completion', handle(async r => study.reject(r.params.id)));
+  fastify.get('/homework-completion-requests', handle(async () => homeworkService.query('r.completion_requested_at IS NOT NULL AND d.is_completed = 0', [])));
 
   fastify.get('/homework-requests', handle(async () => homeworkService.listTaskRequests()));
   fastify.put('/homework-course-points', handle(async request =>

@@ -134,7 +134,7 @@
                     <span class="inline-flex items-center gap-1.5 font-chinese">
                       <span class="w-2 h-2 rounded-full shrink-0" :style="{ background: SUBJECT_COLORS[subjectOf(task.subject)] }"></span>
                       {{ task.title }}
-                      <span v-if="task.kind !== 'template'" class="px-1 rounded bg-slate-100 text-[10px] text-slate-500">{{ task.kind === 'goal' ? '长期' : '临时' }}</span>
+                      <span v-if="task.kind !== 'template'" class="px-1 rounded bg-slate-100 text-[10px] text-slate-500">{{ task.kind === 'goal' ? '长期' : task.kind === 'homework' ? '作业' : '临时' }}</span>
                     </span>
                   </td>
                   <td class="px-2 py-2.5 text-right text-slate-500">{{ task.recorded }} / {{ task.sessions }} 次</td>

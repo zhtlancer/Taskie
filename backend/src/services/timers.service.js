@@ -24,6 +24,7 @@ class TimersService {
   dailyTaskForTimer(id) {
     const row = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id);
     if (!row) throw { status: 404, message: '任务不存在' };
+    if (this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(id)) throw { status: 409, message: '请在作业学习记录中计时' };
     if (!row.track_time) throw { status: 409, message: '这项任务不记录用时' };
     if (row.is_completed) throw { status: 409, message: '这项任务已经完成了' };
     if (row.skipped_at) throw { status: 409, message: '这项任务今天已跳过' };
@@ -43,6 +44,7 @@ class TimersService {
 
   // Folds the running part of every timer of the child into its elapsed time.
   pauseRunning(childId, now) {
+    this.homeworkStudyService?.pauseChild(childId, now);
     for (const table of ['daily_tasks', 'period_tasks']) {
       const pause = this.db.prepare(`UPDATE ${table} SET timer_elapsed_seconds = ?, timer_started_at = NULL WHERE id = ?`);
       for (const row of this.db.prepare(`SELECT id, timer_started_at, timer_elapsed_seconds FROM ${table} WHERE child_id = ? AND timer_started_at IS NOT NULL`).all(childId)) {

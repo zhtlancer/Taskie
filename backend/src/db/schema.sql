@@ -500,3 +500,25 @@ CREATE TABLE IF NOT EXISTS homework_course_points (
   course_key TEXT PRIMARY KEY,
   points INTEGER NOT NULL
 );
+
+-- Individual homework learning sessions; task ownership survives deleting only the homework record.
+CREATE TABLE IF NOT EXISTS homework_sessions (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES daily_tasks(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL,
+  timer_started_at TEXT,
+  ended_at TEXT,
+  note TEXT NOT NULL DEFAULT '',
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  duration_source TEXT NOT NULL DEFAULT 'timer',
+  completion_action INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_homework_session_active ON homework_sessions(task_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_homework_sessions_child ON homework_sessions(child_id);
+CREATE TABLE IF NOT EXISTS homework_session_days (
+  session_id TEXT NOT NULL REFERENCES homework_sessions(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  seconds INTEGER NOT NULL,
+  PRIMARY KEY(session_id, date)
+);

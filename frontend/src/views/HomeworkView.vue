@@ -102,11 +102,15 @@
                 <div class="flex flex-wrap items-center gap-2 mb-1.5">
                   <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 text-violet-700' : 'bg-brand-50 text-brand-700'">{{ courseLabel(record) }}</span>
                   <span class="text-[11px] font-bold" :class="dueClass(record)">{{ dueText(record) }}</span>
-                  <span class="ml-auto px-2 py-0.5 rounded-lg text-[11px] font-black" :class="STATE[record.task_state].class">{{ STATE[record.task_state].label }}</span>
+                  <span class="ml-auto px-2 py-0.5 rounded-lg text-[11px] font-black" :class="STATE[record.task_state].class">{{ record.task_state === 'open' && record.study_count ? '进行中' : STATE[record.task_state].label }}</span>
                 </div>
                 <p class="text-sm font-bold text-slate-700 whitespace-pre-line break-words font-chinese">{{ record.content }}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
                   <span class="text-slate-400">{{ record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
+                  <span v-if="record.study_running" class="text-indigo-600">⏱ 正在计时</span>
+                  <span v-if="record.task" class="text-indigo-600">已学 {{ record.study_count || 0 }} 次 · 累计 {{ Math.round((record.study_seconds || 0) / 60) }} 分钟</span>
+                  <span v-if="record.completion_requested_at && !record.task?.is_completed" class="text-amber-600">全部完成待家长确认</span>
+                  <button v-if="record.task" type="button" class="px-3 py-2 rounded-lg bg-indigo-50 text-indigo-700" @click="studyRecord = record.id">学习 / 记录</button>
                   <span class="flex-1"></span>
                   <template v-if="asParent && record.task_state === 'pending'">
                     <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-emerald-500 text-white disabled:opacity-50" @click="createTask(record)">生成任务</button>
@@ -231,6 +235,7 @@
       </div>
     </div>
 
+    <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null" @saved="load" />
     <ChildTabBar :child-id="childId" />
   </div>
 </template>
@@ -241,6 +246,7 @@ import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
+import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
 import { WEEKDAY_NAMES, addDays, localDate, mondayOf, shortDate } from '../utils/schedule.js';
@@ -277,6 +283,7 @@ const records = ref([]);
 const courses = ref([]);
 const loading = ref(true);
 const form = ref(null);
+const studyRecord = ref(null);
 const deleteTarget = ref(null);
 const pointsOpen = ref(false);
 const pointsError = ref('');
@@ -302,7 +309,7 @@ const courseFilters = computed(() => {
 const shown = computed(() => {
   const words = search.value.trim();
   return records.value.filter(record => (courseFilter.value === 'all' || record.course_key === courseFilter.value) &&
-    (statusFilter.value === 'all' || ['open', 'pending'].includes(record.task_state) || (record.task_state === 'none' && record.due_date >= today)) &&
+    (statusFilter.value === 'all' || ['open', 'pending', 'missed'].includes(record.task_state) || (record.task_state === 'none' && record.due_date >= today)) &&
     (!words || record.content.includes(words)) &&
     (!rangeFilter.value || (record.assigned_date >= rangeFilter.value.from && (!rangeFilter.value.to || record.assigned_date <= rangeFilter.value.to))));
 });
