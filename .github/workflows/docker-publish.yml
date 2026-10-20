@@ -26,6 +26,8 @@ jobs:
             frontend/package-lock.json
       - run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
       - run: npm ci --prefix frontend
+      - name: Check repository content
+        run: npm run check:repo
       - run: npm test
 
   # Builds the image and drives the main family flows in Chromium against a throwaway container.

@@ -20,6 +20,7 @@
     "seed:backend": "npm --prefix backend run seed",
     "test:browser:midnight": "node scripts/smoke-midnight.cjs",
     "test:browser:legacy": "node scripts/smoke-legacy.cjs",
-    "test:browser:dialogs": "node scripts/smoke-dialogs.cjs"
+    "test:browser:dialogs": "node scripts/smoke-dialogs.cjs",
+    "check:repo": "node scripts/check-repo-content.cjs"
   }
 }

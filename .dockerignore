@@ -10,3 +10,4 @@ logs
 data
 backend/backups
 .multica
+.codex

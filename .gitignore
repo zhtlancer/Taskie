@@ -25,9 +25,10 @@ backend/backups/
 backend/uploads/*
 !backend/uploads/.gitkeep
 
-# Multica agent runtime metadata
+# Local agent runtime metadata
 .agents/
 .multica/
+.codex/
 
 # OS files
 .DS_Store

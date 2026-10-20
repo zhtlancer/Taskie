@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Audio-Web%20Audio%20API-FF6B6B?style=flat-square" alt="Web Audio" />
   <img src="https://img.shields.io/badge/PWA-Standalone%20Fullscreen-FFD93D?style=flat-square" alt="PWA" />
   <img src="https://img.shields.io/badge/Deploy-Docker%20%7C%20Compose-2496ED?style=flat-square&logo=docker" alt="Docker" />
-  <img src="https://img.shields.io/badge/Tests-339%20Passed-brightgreen?style=flat-square" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-Node.js%20%7C%20Playwright-brightgreen?style=flat-square" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License" />
 </p>
 
@@ -161,7 +161,7 @@ Taskie/
 │   │   ├── routes/            # REST API 路由 (auth, children, tasks, stats, rewards, redemptions, periods, characters, mistakes, backups)
 │   │   ├── services/          # 业务逻辑与激励规则
 │   │   └── utils/             # Sharp 图像流水线、加解密等
-│   └── test/                  # Node.js 原生自动化测试套件 (260 项测试)
+│   └── test/                  # Node.js 原生自动化测试套件
 │
 ├── frontend/                  # 前端 Web 应用 (Vue 3 + Vite)
 │   ├── public/
@@ -173,7 +173,7 @@ Taskie/
 │   │   ├── stores/            # Pinia 状态管理 (child, character, sound)
 │   │   ├── utils/             # Web Audio 合成器、Canvas 滤镜、拼音解析
 │   │   └── views/             # 页面视图 (看板、生字生词本、错题本、激励墙、家长端)
-│   └── test/                  # 前端工具测试套件 (40 项测试)
+│   └── test/                  # 前端工具测试套件
 │
 ├── Dockerfile                 # 多阶段容器构建定义 (前端编译 + 后端运行时)
 ├── docker-entrypoint.sh       # 容器入口：接管数据目录后以普通用户运行
@@ -340,14 +340,17 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-项目拥有严密的测试覆盖，共 **339 项自动化测试** 全部绿灯通过：
+测试分为前后端逻辑测试、浏览器专项和真实 Docker 验收。当前逻辑测试为后端 **334 项**、前端 **46 项**，合计 **380 项**；数量以实际命令输出为准。浏览器回归单独统计，不包含在这 380 项中：
 
 ```bash
-# 运行后端全量测试 (298 tests)
+# 运行后端全量测试
 npm run test:backend
 
-# 运行前端工具测试 (41 tests)
-npm --prefix frontend test
+# 运行前端工具测试
+npm run test:frontend
+
+# 检查仓库是否混入代理运行时元数据
+npm run check:repo
 ```
 
 浏览器验收会在 Chromium 中走一遍主要流程：首次登录强制修改家长 PIN、周模板保存、添加临时任务、备份下载与恢复、孩子打卡与全勤、按页记录长期任务进度、积分兑换与家长确认、照片上传、孩子权限，以及断网提示与恢复；再以 390px 手机宽度检查所有页面不超出屏幕、孩子端标签栏可用；同时确认容器以普通用户运行。每次推送到 `main` 时 CI 都会自动运行，通过后才会发布镜像。本地运行：
@@ -359,7 +362,7 @@ docker build -t taskie:reliability .
 npm run test:browser
 ```
 
-该脚本使用临时容器和临时数据库，完成后自动删除容器。已有系统 Chromium 时可设置 `CHROMIUM_PATH`。
+该脚本使用临时容器和临时数据库，完成后自动删除容器。已有系统 Chromium 时可设置 `CHROMIUM_PATH`；自定义镜像标签可设置 `TASKIE_TEST_IMAGE`。原生图片库在 Docker 构建中实际执行校验，宿主机图片保真存储回退分支通过不等于容器原生图片处理已验证。
 
 用时统计还提供独立浏览器回归，覆盖日期与孩子切换时的响应乱序、旧请求失败及加载状态、零用时图表悬停、手机布局和孩子数据隔离。安装上述 Playwright 后运行：
 
@@ -407,6 +410,8 @@ npm run test:browser:ui-refine
 ```
 
 ---
+
+本地专项检查与 CI 的范围不同：CI 当前运行仓库内容检查、前后端测试及真实 Docker 主流程验收，再构建和推送 amd64/arm64 镜像；其余浏览器专项按上述命令单独运行。本地通过不代表未推送代码已在 GitHub 验证，也不代表多架构镜像已经发布。
 
 ## 💾 数据备份与迁移
 

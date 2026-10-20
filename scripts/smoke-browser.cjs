@@ -219,7 +219,7 @@ async function main() {
   await lookup.getByRole('button', { name: /笔画要改正/ }).click();
   await lookup.getByRole('button', { name: /加入生字生词本/ }).click();
   await lookup.getByText('已在生字生词本').waitFor();
-  await lookup.getByTitle('关闭').click();
+  await lookup.getByRole('button', { name: '关闭', exact: true }).click();
   await page.locator('.font-kai', { hasText: '银' }).first().click();
   const detail = page.getByRole('dialog');
   const fixMark = detail.getByRole('button', { name: /笔画要改正/ });
@@ -229,7 +229,7 @@ async function main() {
   assert.equal(await detail.getByRole('button', { name: '移出', exact: true }).isDisabled(), true);
   await detail.getByRole('button', { name: /会写/ }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] button[aria-pressed="true"]')].map(b => b.textContent.trim()).join() .includes('会写'));
-  await detail.getByTitle('关闭弹窗').click();
+  await detail.getByRole('button', { name: '关闭', exact: true }).click();
   await page.locator('summary').filter({ hasText: '分类筛选' }).click();
   await page.getByRole('button', { name: /易错字/ }).click();
   await page.getByText('当前筛选下没有字词').waitFor();
@@ -260,7 +260,7 @@ async function main() {
   await parentDetail.getByRole('button', { name: /笔画要改正/ }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] button[aria-pressed="false"]')].some(button => button.textContent.includes('笔画要改正')));
   assert.equal(await parentDetail.getByRole('button', { name: '移出', exact: true }).isEnabled(), true);
-  await parentDetail.getByTitle('关闭弹窗').click();
+  await parentDetail.getByRole('button', { name: '关闭', exact: true }).click();
   pass('browser parent opens the word book from the console and removes a category');
 
   // --- Network failure is reported, and the app recovers.
