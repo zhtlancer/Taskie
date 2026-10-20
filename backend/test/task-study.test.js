@@ -523,6 +523,21 @@ test('unstarted empty legacy snapshots may still be removed without keeping ghos
   assert.equal(c.db.prepare('SELECT id FROM daily_tasks WHERE id = ?').get(task.id), undefined);
 });
 
+test('turning timing off leaves an unstarted task as a plain task, not a study-session one', async t => {
+  const c = await fixture(t);
+  const template = c.tasksService.createTemplate({ title: '不再计时', subject: '数学', track_time: true, points: 5 });
+  const board = () => c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  const task = board();
+  c.tasksService.updateTemplate(template.id, { track_time: false });
+  assert.equal(c.db.prepare('SELECT homework_legacy_seconds AS seconds FROM daily_tasks WHERE id = ?').get(task.id).seconds, null);
+  assert.equal(board().study_sessions, undefined);
+  assert.equal(c.db.prepare('SELECT COUNT(*) AS n FROM homework_sessions WHERE task_id = ?').get(task.id).n, 0);
+  c.tasksService.updateTemplate(template.id, { track_time: true });
+  assert.equal(board().study_sessions.managed, false, 'an unstarted task converts only when /study is opened');
+  assert.equal(c.taskStudyService.details(task.id).legacy_seconds, 0);
+  assert.equal(board().study_sessions.managed, true);
+});
+
 test('deleting a template keeps its legacy timer available for later conversion', async t => {
   const c = await fixture(t);
   const template = c.tasksService.createTemplate({ title: '保留独立任务', subject: '语文', track_time: true });

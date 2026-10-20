@@ -11,8 +11,11 @@ class TaskStudyService extends StudySessionsService {
     return this.db.transaction(() => {
       const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id);
       if (!task) return null;
+      const timed = task.duration_seconds !== null || task.timer_started_at || task.timer_elapsed_seconds > 0;
+      // Opening /study converts every timed task so new sessions can attach. Destructive edits
+      // (endActive) only save time already spent: an unstarted task keeps its plain old form.
       if (!['goal', 'study'].includes(task.origin) && task.homework_legacy_seconds === null &&
-          (task.track_time || task.duration_seconds !== null || task.timer_started_at || task.timer_elapsed_seconds > 0) &&
+          (timed || (task.track_time && !endActive)) &&
           !this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(id)) {
         const legacy = task.duration_seconds ?? task.timer_elapsed_seconds ?? 0;
         // Undo must remain compatible with old timer clients. Keep the last actual duration in
