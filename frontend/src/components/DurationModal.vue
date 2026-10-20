@@ -27,7 +27,7 @@
           <input
             v-model.number="minutes"
             :disabled="busy"
-            autofocus
+            :autofocus="typingFirst"
             type="number"
             min="1"
             max="720"
@@ -57,6 +57,7 @@
 <script setup>
 import UiDialog from './UiDialog.vue';
 import { computed, ref } from 'vue';
+import { prefersTyping } from '../utils/pointer.js';
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -68,6 +69,7 @@ const props = defineProps({
   error: { type: String, default: '' }
 });
 const emit = defineEmits(['close', 'submit']);
+const typingFirst = prefersTyping();
 
 const quickMinutes = [10, 15, 20, 30, 45, 60];
 const minutes = ref(props.initialSeconds ? Math.max(1, Math.round(props.initialSeconds / 60)) : null);

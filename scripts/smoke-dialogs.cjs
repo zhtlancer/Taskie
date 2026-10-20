@@ -48,6 +48,11 @@ async function heldSave(page, pattern, action, modal, closes = true) {
     assert.equal(await modal.isVisible(), true);
   }
 }
+// Focusing a field on a touch screen would open its keyboard over the dialog's quick choices.
+async function touchFocusCheck(page, modal) {
+  await page.waitForFunction(() => document.querySelector('[role=dialog]')?.contains(document.activeElement));
+  assert.equal(await modal.evaluate(() => ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)), false, 'touch screens keep the keyboard closed until a field is tapped');
+}
 async function signal(promise) {
   let timer;
   try { await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Request was not intercepted')), 10000); })]); }
@@ -91,6 +96,7 @@ async function main() {
   const shortHeaderButtons = await page.locator('header').first().locator('button:visible, a:visible').evaluateAll(items => items.filter(el => el.getBoundingClientRect().height < 43.9 || el.getBoundingClientRect().width < 43.9).map(el => el.textContent));
   assert.deepEqual(shortHeaderButtons, []);
   let modal = await openSkip();
+  await touchFocusCheck(page, modal);
   await modal.getByLabel('理由（必填）').fill('失败后仍保留的理由');
   await keyboardCheck(page, modal);
   await failOnce(page, '**/api/daily-tasks/*/skip', () => modal.getByRole('button', { name: '确认跳过', exact: true }).click(), modal,
@@ -104,7 +110,7 @@ async function main() {
     await page.getByRole('button', { name: '记录今天的进度', exact: true }).click();
     return page.getByRole('dialog', { name: /用了多久/ });
   };
-  modal = await openDuration(); await modal.getByRole('spinbutton').fill('12');
+  modal = await openDuration(); await touchFocusCheck(page, modal); await modal.getByRole('spinbutton').fill('12');
   await keyboardCheck(page, modal);
   await failOnce(page, '**/api/period-tasks/*/logs', () => modal.getByRole('button', { name: '完成', exact: true }).click(), modal,
     async () => assert.equal(await modal.getByRole('spinbutton').inputValue(), '12'));
@@ -118,6 +124,11 @@ async function main() {
   modal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
   await modal.getByRole('textbox').fill('春天'); await modal.getByRole('textbox').dispatchEvent('input');
   await keyboardCheck(page, modal);
+  const clearOverlap = await modal.evaluate(el => {
+    const input = el.querySelector('input[aria-label="汉字或词语"]'), clear = el.querySelector('button[title="清空"]');
+    return input.getBoundingClientRect().right - parseFloat(getComputedStyle(input).paddingRight) - clear.getBoundingClientRect().left;
+  });
+  assert.ok(clearOverlap <= 0, `the clear button covers ${clearOverlap}px of the typed text`);
   await failOnce(page, '**/api/characters', () => modal.getByRole('button', { name: /加入生字生词本/ }).click(), modal,
     async () => assert.equal(await modal.getByRole('textbox').inputValue(), '春天'));
   let release, arrive; const gate = new Promise(resolve => { release = resolve; }); const ready = new Promise(resolve => { arrive = resolve; });

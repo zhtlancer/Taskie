@@ -27,7 +27,7 @@
         <input
           v-model="reason"
           :disabled="busy"
-          autofocus
+          :autofocus="typingFirst"
           id="skip-reason"
           type="text"
           maxlength="50"
@@ -54,6 +54,7 @@
 <script setup>
 import UiDialog from './UiDialog.vue';
 import { ref } from 'vue';
+import { prefersTyping } from '../utils/pointer.js';
 
 const props = defineProps({
   task: { type: Object, required: true },
@@ -62,6 +63,7 @@ const props = defineProps({
   error: { type: String, default: '' }
 });
 const emit = defineEmits(['close', 'submit']);
+const typingFirst = prefersTyping();
 
 const quickReasons = ['老师今天没布置', '在学校已经做完了', '今天身体不舒服', '今天有活动没时间'];
 const reason = ref('');

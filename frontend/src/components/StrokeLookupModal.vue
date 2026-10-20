@@ -23,7 +23,7 @@
               type="button"
               :disabled="isSubmitting"
               @click="clearInput"
-              class="absolute right-4 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold active:scale-90"
+              class="absolute right-1.5 w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-500 dark:text-slate-400 flex items-center justify-center text-xs font-bold active:scale-90"
               title="清空"
             >
               ✕
