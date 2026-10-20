@@ -1,10 +1,12 @@
 <template>
-  <button type="button" :aria-label="`连续打卡 ${count} 天`"
+  <!-- Its text reads 连续打卡 N 天 on its own; tapping only plays the flame wiggle, so it is not a button. -->
+  <div
     class="relative inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 select-none shadow-sm cursor-pointer hover:bg-amber-100/80 dark:hover:bg-amber-950/40 transition-colors"
     @click="triggerWiggle"
   >
     <!-- Flame Icon with wiggle animation -->
     <span
+      aria-hidden="true"
       class="text-2xl transition-transform inline-block"
       :class="{ 'animate-flame-wiggle': isWiggling }"
     >
@@ -24,7 +26,7 @@
         <span class="text-xs font-bold text-amber-700 dark:text-amber-300">天</span>
       </div>
     </div>
-  </button>
+  </div>
 </template>
 
 <script setup>

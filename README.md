@@ -375,6 +375,18 @@ npm run test:browser:time-stats
 npm run test:browser:carry-over
 ```
 
+作业与分次学习的回归覆盖记作业、家长建任务、分次计时与暂停继续、任务卡片计时、跳过申请与审批、补卡和旧计时兼容：
+
+```bash
+npm run test:browser:homework
+```
+
+界面回归覆盖浅色、暗色与跟随系统的切换和刷新保留、跨标签同步、存储被禁用时的主题、确认框的键盘焦点与浏览器后退、字词练习弹窗、家长首页加载失败重试，以及手机和平板的导航与布局：
+
+```bash
+npm run test:browser:ui-refine
+```
+
 ---
 
 ## 💾 数据备份与迁移
