@@ -129,8 +129,7 @@ class TasksService {
   removeUnassignedTodayTasks(templateId = null) {
     // Assignment edits revoke pending tasks today, while completed and historical
     // snapshots (and their point logs) remain intact.
-    const revoked = this.db.prepare(`SELECT id, homework_legacy_seconds,
-        EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study FROM daily_tasks
+    const revoked = this.db.prepare(`SELECT id FROM daily_tasks
       WHERE date = ? AND is_completed = 0 AND (? IS NULL OR template_id = ?)
         AND EXISTS (SELECT 1 FROM task_templates WHERE id = daily_tasks.template_id AND assign_all = 0)
         AND NOT EXISTS (SELECT 1 FROM template_children
@@ -142,10 +141,20 @@ class TasksService {
   // Revoking a task must not erase learning time, including after undoing completion: a task with
   // any is kept, marked revoked, and no longer counts as a task on any day.
   revokeTask(row) {
-    this.taskStudyService?.endActive(row.id);
-    cancelPendingSkips(this.db, row.id);
-    if (!row.has_study && !(row.homework_legacy_seconds > 0)) this.db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(row.id);
-    else this.db.prepare('UPDATE daily_tasks SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?').run(new Date().toISOString(), row.id);
+    this.db.transaction(() => {
+      this.taskStudyService?.preserveTime(row.id, { endActive: true });
+      const saved = this.studyRetention(row.id);
+      if (!saved) return;
+      cancelPendingSkips(this.db, row.id);
+      if (!saved.has_study && !(saved.homework_legacy_seconds > 0)) this.db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(row.id);
+      else this.db.prepare('UPDATE daily_tasks SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?').run(new Date().toISOString(), row.id);
+    })();
+  }
+
+  studyRetention(id) {
+    return this.db.prepare(`SELECT id, homework_legacy_seconds,
+      EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study
+      FROM daily_tasks WHERE id = ?`).get(id);
   }
 
   isUnassignedTodayTask(task) {
@@ -261,10 +270,10 @@ class TasksService {
         WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0`)
         .run(carry ? 1 : 0, carry ? 1 : 0, id);
       if (childIds !== undefined) this.setTemplateChildren(id, childIds);
-      // Today's unfinished tasks follow the timing settings at once; turning timing off drops their timer.
+      // Today's unfinished tasks follow timing settings, after saving any old or new timer.
       if (!timing.track_time) {
         for (const row of this.db.prepare(`SELECT id FROM daily_tasks WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0`).all(id, getTodayDate())) {
-          this.taskStudyService?.endActive(row.id);
+          this.taskStudyService?.preserveTime(row.id, { endActive: true });
         }
       }
       this.db.prepare(`UPDATE daily_tasks SET track_time = ?, expected_minutes = ?,
@@ -291,14 +300,14 @@ class TasksService {
   // Calendar edits revoke only pending template tasks that no longer apply on that date.
   // Completed snapshots, one-off tasks and templates still matching keep their ids and timers.
   reconcileCalendarDay(childId, date, schedule = this.scheduleFor(childId)) {
-    for (const row of this.db.prepare(`SELECT id, COALESCE(source_template_id, template_id) AS template, homework_legacy_seconds,
-      EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study
+    for (const row of this.db.prepare(`SELECT id, COALESCE(source_template_id, template_id) AS template
       FROM daily_tasks WHERE child_id = ? AND date = ? AND origin = 'template' AND is_completed = 0`).all(childId, date)) {
       if (!row.template || schedule.allowedOn(row.template, date)) continue;
-      if (schedule.isPaused(row.template, date) && (row.has_study || row.homework_legacy_seconds > 0)) {
+      this.taskStudyService?.preserveTime(row.id, { endActive: true });
+      const saved = this.studyRetention(row.id);
+      if (schedule.isPaused(row.template, date) && (saved.has_study || saved.homework_legacy_seconds > 0)) {
         // A holiday is reversible, including on past dates. Keep its task snapshot so
         // removing the pause restores history; the calendar already hides it while paused.
-        this.taskStudyService?.endActive(row.id);
         cancelPendingSkips(this.db, row.id);
       } else this.revokeTask(row);
     }
@@ -1013,7 +1022,8 @@ class TasksService {
 
     const tx = this.db.transaction(() => {
       // 1. Revert task
-      // The timer keeps its time for when the task is done again; the recorded duration goes.
+      // Preserve a legacy duration before clearing completion; clients need not open /study first.
+      this.taskStudyService?.preserveTime(taskId, { endActive: true, convert: false });
       this.db.prepare(`
         UPDATE daily_tasks
         SET is_completed = 0, completed_at = NULL, duration_seconds = NULL, duration_source = NULL, completion_source = NULL, is_extra_completion = 0, earned_points = NULL

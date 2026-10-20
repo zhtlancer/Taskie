@@ -418,3 +418,119 @@ test('a holiday pausing a studied task cancels its pending skip request', async 
   assert.equal(c.db.prepare('SELECT revoked_at FROM daily_tasks WHERE id = ?').get(task.id).revoked_at, null);
   assert.equal(c.taskStudyService.details(task.id).total_seconds, 60);
 });
+
+test('undo preserves an unconverted manual duration without a prior study request', async t => {
+  const c = await fixture(t);
+  assert.equal((await c.call('POST', '/complete', { duration_seconds: 900 })).statusCode, 200);
+  assert.equal(c.db.prepare('SELECT homework_legacy_seconds AS seconds FROM daily_tasks WHERE id = ?').get(c.task.id).seconds, null);
+  assert.equal((await c.call('POST', '/uncomplete')).statusCode, 200);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+  assert.equal((await c.call('POST', '/uncomplete')).statusCode, 200);
+  assert.equal(c.details().legacy_seconds, 900);
+  assert.equal(c.details().sessions.length, 0, 'unknown historical runs must not become fabricated sessions');
+  assert.equal(c.stats().summary.recorded_seconds, 900);
+  assert.equal((await c.call('POST', '/complete')).statusCode, 200);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 10);
+  assert.equal(c.details().total_seconds, 900);
+});
+
+test('a failed undo rolls back legacy conversion along with completion and points', async t => {
+  const c = await fixture(t);
+  await c.call('POST', '/complete', { duration_seconds: 900 });
+  c.db.exec("CREATE TRIGGER fail_undo BEFORE DELETE ON point_logs BEGIN SELECT RAISE(ABORT, 'simulated undo failure'); END");
+  assert.throws(() => c.tasksService.uncompleteDailyTask(c.task.id), /simulated undo failure/);
+  const row = c.db.prepare('SELECT is_completed, duration_seconds, homework_legacy_seconds FROM daily_tasks WHERE id = ?').get(c.task.id);
+  assert.deepEqual(row, { is_completed: 1, duration_seconds: 900, homework_legacy_seconds: null });
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 10);
+});
+
+for (const mode of ['running', 'paused']) {
+  for (const change of ['reassign', 'disable', 'holiday', 'weekday']) {
+    test(`${change} preserves a ${mode} unconverted timer and its task id`, async t => {
+      const c = await fixture(t);
+      const other = c.childrenService.createChild({ name: '保留分配' });
+      const template = c.tasksService.createTemplate({ title: '旧计时保全', subject: '数学', track_time: true, days_of_week: [0,1,2,3,4,5,6] });
+      const board = () => c.tasksService.getDailyTasks(c.child.id);
+      const task = board().find(row => row.template_id === template.id);
+      c.db.prepare('UPDATE daily_tasks SET timer_elapsed_seconds = ?, timer_started_at = ? WHERE id = ?')
+        .run(mode === 'running' ? 300 : 900, mode === 'running' ? new Date(Date.now() - 600000).toISOString() : null, task.id);
+      let period;
+      const apply = () => {
+        if (change === 'reassign') c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+        if (change === 'disable') c.tasksService.updateTemplate(template.id, { track_time: false });
+        if (change === 'holiday' && !period) period = c.periodsService.createPeriod(c.child.id, { name: '暂停旧计时', start_date: '2026-10-20', end_date: '2026-10-20', paused_template_ids: [template.id] });
+        if (change === 'weekday') c.tasksService.updateTemplate(template.id, { days_of_week: [3] });
+        board();
+      };
+      apply(); apply();
+      const row = c.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task.id);
+      assert.ok(row, 'the original task must remain');
+      assert.equal(Boolean(row.revoked_at), ['reassign', 'weekday'].includes(change));
+      const detail = c.taskStudyService.details(task.id);
+      assert.equal(detail.active, null);
+      assert.equal(detail.total_seconds, 900);
+      assert.equal(detail.legacy_seconds, mode === 'running' ? 300 : 900);
+      assert.equal(detail.sessions.length, mode === 'running' ? 1 : 0);
+      if (mode === 'running') assert.deepEqual(detail.sessions[0].days.map(({ date, seconds }) => ({ date, seconds })), [{ date: '2026-10-20', seconds: 600 }]);
+      assert.equal(c.stats().summary.recorded_seconds, 900);
+      assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+      if (change !== 'disable') assert.equal(board().some(row => row.id === task.id), false);
+      assert.throws(() => c.taskStudyService.start(task.id), err => err.status === 409);
+      if (change === 'reassign') c.tasksService.updateTemplate(template.id, { child_ids: null });
+      if (change === 'disable') c.tasksService.updateTemplate(template.id, { track_time: true });
+      if (change === 'holiday') c.periodsService.deletePeriod(period.id);
+      if (change === 'weekday') c.tasksService.updateTemplate(template.id, { days_of_week: [0,1,2,3,4,5,6] });
+      assert.equal(board().find(row => row.id === task.id).id, task.id);
+      assert.equal(c.taskStudyService.details(task.id).total_seconds, 900);
+    });
+  }
+}
+
+test('legacy preservation keeps real cross-midnight allocations and the old 12-hour cap', async t => {
+  const c = await fixture(t, '2026-10-21T04:00:00Z');
+  const template = c.tasksService.createTemplate({ title: '跨日旧计时', subject: '语文', track_time: true, days_of_week: [0,1,2,3,4,5,6] });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.db.prepare('UPDATE daily_tasks SET timer_elapsed_seconds = 300, timer_started_at = ? WHERE id = ?')
+    .run('2026-10-20T15:50:00Z', task.id);
+  c.tasksService.updateTemplate(template.id, { track_time: false });
+  const detail = c.taskStudyService.details(task.id);
+  assert.equal(detail.total_seconds, 43200);
+  assert.equal(detail.legacy_seconds, 300);
+  assert.deepEqual(detail.sessions[0].days.map(({ date, seconds }) => ({ date, seconds })), [
+    { date: '2026-10-20', seconds: 600 }, { date: '2026-10-21', seconds: 42300 }
+  ]);
+  assert.equal(c.timeStatsService.stats(c.child.id, '2026-10-20', '2026-10-21').summary.recorded_seconds, 43200);
+});
+
+test('a failed revocation rolls back conversion, assignment and session creation together', async t => {
+  const c = await fixture(t), other = c.childrenService.createChild({ name: '另一个孩子' });
+  const template = c.tasksService.createTemplate({ title: '回滚旧计时', subject: '数学', track_time: true });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.timersService.apply('task', task.id, 'start'); c.advance(600);
+  const before = c.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task.id);
+  c.db.exec("CREATE TRIGGER fail_revocation BEFORE UPDATE OF revoked_at ON daily_tasks BEGIN SELECT RAISE(ABORT, 'simulated revoke failure'); END");
+  assert.throws(() => c.tasksService.updateTemplate(template.id, { child_ids: [other.id] }), /simulated revoke failure/);
+  assert.deepEqual(c.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(task.id), before);
+  assert.equal(c.db.prepare('SELECT COUNT(*) AS n FROM homework_sessions WHERE task_id = ?').get(task.id).n, 0);
+  assert.equal(c.tasksService.getTemplate(template.id).child_ids, null);
+});
+
+test('unstarted empty legacy snapshots may still be removed without keeping ghost tasks', async t => {
+  const c = await fixture(t), other = c.childrenService.createChild({ name: '另一个孩子' });
+  const template = c.tasksService.createTemplate({ title: '从未学习', subject: '数学', track_time: true });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+  assert.equal(c.db.prepare('SELECT id FROM daily_tasks WHERE id = ?').get(task.id), undefined);
+});
+
+test('deleting a template keeps its legacy timer available for later conversion', async t => {
+  const c = await fixture(t);
+  const template = c.tasksService.createTemplate({ title: '保留独立任务', subject: '语文', track_time: true });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.timersService.apply('task', task.id, 'start'); c.advance(600);
+  c.tasksService.deleteTemplate(template.id);
+  const detail = c.taskStudyService.details(task.id);
+  assert.equal(detail.record.task.id, task.id);
+  assert.equal(detail.active.timer_seconds, 600);
+  assert.equal(c.taskStudyService.finish(task.id, detail.active.id, {}, 'child').total_seconds, 600);
+});

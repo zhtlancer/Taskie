@@ -230,6 +230,7 @@ async function main() {
   await detail.getByRole('button', { name: /会写/ }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] button[aria-pressed="true"]')].map(b => b.textContent.trim()).join() .includes('会写'));
   await detail.getByTitle('关闭弹窗').click();
+  await page.locator('summary').filter({ hasText: '分类筛选' }).click();
   await page.getByRole('button', { name: /易错字/ }).click();
   await page.getByText('当前筛选下没有字词').waitFor();
   await page.getByRole('button', { name: /笔画要改正/ }).click();
