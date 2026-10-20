@@ -181,7 +181,7 @@ class StatsService {
     const classTasksOn = this.tasksService.classTasksOn(childId);
     const isSkipped = row => Boolean(row.skipped_at) && !row.is_completed;
     const notYetDue = row => !row.is_completed && dueDateOf(row, schedule.calendar) > asOf;
-    const rows = this.db.prepare('SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required, (SELECT plan_id FROM word_study_days WHERE id = d.study_day_id) AS study_plan_id FROM daily_tasks d WHERE child_id = ? AND date BETWEEN ? AND ? ORDER BY date, rowid')
+    const rows = this.db.prepare('SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required, (SELECT plan_id FROM word_study_days WHERE id = d.study_day_id) AS study_plan_id FROM daily_tasks d WHERE child_id = ? AND date BETWEEN ? AND ? AND revoked_at IS NULL ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
       .filter(row => (row.origin !== 'study' || row.study_required || row.is_completed) && (row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
         !schedule.isPaused(row.source_template_id ?? row.template_id, row.date))));

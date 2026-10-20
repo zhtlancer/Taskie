@@ -229,3 +229,192 @@ test('unassigning a template and then undoing completion keeps actual study hist
   assert.ok(!c.tasksService.getDailyTasks(c.child.id).some(row => row.id === task.id));
   assert.equal(c.stats().summary.recorded_seconds, 120);
 });
+
+test('a task revoked with study time stays out of later days, keeps its time and returns when assigned again', async t => {
+  const c = await fixture(t);
+  const other = c.childrenService.createChild({ name: '另一个孩子' });
+  const template = c.tasksService.createTemplate({ title: '练字', subject: '语文', track_time: true, carry_over: true, days_of_week: [0, 1, 2, 3, 4, 5, 6] });
+  const plain = c.tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6] });
+  const board = () => c.tasksService.getDailyTasks(c.child.id);
+  const task = board().find(row => row.template_id === template.id);
+  c.tasksService.completeDailyTask(board().find(row => row.template_id === plain.id).id);
+  const sid = c.taskStudyService.start(task.id).active.id; c.advance(600);
+  c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+  assert.equal(c.taskStudyService.details(task.id).active, null, 'revoking ends the running session');
+  assert.ok(c.taskStudyService.session(task.id, sid).ended_at);
+  assert.ok(!board().some(row => row.id === task.id));
+  assert.throws(() => c.taskStudyService.start(task.id), err => err.status === 409);
+  assert.throws(() => c.tasksService.completeDailyTask(task.id), err => err.status === 409);
+
+  // Assigned again the same day: the same task returns with its time.
+  c.tasksService.updateTemplate(template.id, { child_ids: [c.child.id, other.id] });
+  assert.equal(board().find(row => row.template_id === template.id).id, task.id);
+  assert.equal(c.taskStudyService.details(task.id).total_seconds, 600);
+  c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+
+  // The next days neither count it as missed nor carry it over.
+  c.advance(24 * 3600);
+  const history = c.statsService.getHistory(c.child.id, '2026-10-20', '2026-10-20')[0];
+  assert.deepEqual(history.tasks.map(row => row.title).sort(), ['口算', '阅读与练习'].sort());
+  assert.ok(!c.statsService.getWeeklyCompletion(c.child.id, '2026-10-19', '2026-10-25').items.some(item => item.template_id === template.id));
+  assert.ok(!board().some(row => row.id === task.id));
+  assert.equal(c.stats('2026-10-20').summary.recorded_seconds, 600, 'the study time still counts');
+});
+
+test('a task revoked by a calendar change with study time is not missed on later days', async t => {
+  const c = await fixture(t, '2026-10-24T04:00:00Z'); // a Saturday
+  const template = c.tasksService.createTemplate({ title: '数学练习', subject: '数学', track_time: true, days_of_week: [1, 2, 3, 4, 5] });
+  const makeup = c.periodsService.createMakeupDay(c.child.id, { date: '2026-10-24', acts_as: 1 });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.taskStudyService.start(task.id); c.advance(300);
+  c.periodsService.deleteMakeupDay(makeup.id);
+  assert.equal(c.taskStudyService.details(task.id).total_seconds, 300);
+  assert.throws(() => c.tasksService.completeDailyTask(task.id), err => err.status === 409);
+  assert.throws(() => c.taskStudyService.start(task.id), err => err.status === 409);
+  c.advance(24 * 3600);
+  assert.ok(!c.tasksService.getDailyTasks(c.child.id).some(row => row.id === task.id));
+  assert.deepEqual(c.statsService.getHistory(c.child.id, '2026-10-24', '2026-10-24')[0].tasks.map(row => row.title), ['阅读与练习']);
+  assert.equal(c.stats('2026-10-24').summary.recorded_seconds, 300);
+});
+
+test('ordinary tasks keep their finish-time rule after switching to study sessions', async t => {
+  const c = await fixture(t, '2026-10-19T04:00:00Z', { due_date: '2026-10-20' });
+  c.taskStudyService.details(c.task.id); // opening the study window switches the task to sessions
+  t.mock.timers.setTime(Date.parse('2026-10-20T13:30:00Z'));
+  c.tasksService.completeDailyTask(c.task.id, {});
+  assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-19', '2026-10-20')], [],
+    'a task of an earlier day finished later is not that later day\'s finish time');
+});
+
+test('a v22 backup without the revoked marker is rejected before restoring', async t => {
+  const c = await fixture(t);
+  const Database = require('better-sqlite3');
+  const { gzipSync, gunzipSync } = require('node:zlib');
+  const backup = c.app.backupService;
+  const packed = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath(backup.create('revoked').name))));
+  const damaged = new Database(Buffer.from(packed.database, 'base64'));
+  t.after(() => damaged.close());
+  damaged.exec('ALTER TABLE daily_tasks DROP COLUMN revoked_at');
+  const archive = () => gzipSync(JSON.stringify({ ...packed, database: damaged.serialize().toString('base64') }));
+  assert.throws(() => backup.restore(archive()), /已取消任务标记/);
+  damaged.pragma('user_version = 21');
+  backup.restore(archive());
+  assert.equal(c.db.pragma('user_version', { simple: true }), 23);
+});
+
+test('a carrying task revoked with study time is not carried over the weekend', async t => {
+  const c = await fixture(t, '2026-10-23T04:00:00Z'); // a Friday
+  const other = c.childrenService.createChild({ name: '另一个孩子' });
+  const template = c.tasksService.createTemplate({ title: '周末前练习', subject: '数学', track_time: true, carry_over: true, days_of_week: [1, 2, 3, 4, 5] });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.taskStudyService.start(task.id); c.advance(300);
+  c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+  c.advance(24 * 3600);
+  assert.ok(!c.tasksService.getDailyTasks(c.child.id).some(row => row.carried_from === '2026-10-23'));
+  assert.ok(!c.tasksService.carryDeadlines(c.child.id).has(`${template.id}|2026-10-23`));
+});
+
+for (const action of ['delete', 'unpause']) {
+  test(`past study snapshots return when a holiday is ${action === 'delete' ? 'deleted' : 'unpaused'} after midnight`, async t => {
+    const c = await fixture(t);
+    const template = c.tasksService.createTemplate({ title: '可恢复的假期任务', subject: '数学', track_time: true });
+    const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+    c.taskStudyService.start(task.id); c.advance(60);
+    const holiday = c.periodsService.createPeriod(c.child.id, { name: '误设假期', start_date: '2026-10-20', end_date: '2026-10-20', paused_template_ids: [template.id] });
+    assert.ok(!c.tasksService.getDailyTasks(c.child.id).some(row => row.id === task.id));
+    assert.equal(c.taskStudyService.details(task.id).active, null);
+    assert.equal(c.db.prepare('SELECT revoked_at FROM daily_tasks WHERE id = ?').get(task.id).revoked_at, null);
+    c.advance(86400);
+    if (action === 'delete') c.periodsService.deletePeriod(holiday.id);
+    else c.periodsService.updatePeriod(holiday.id, { paused_template_ids: [] });
+    const history = c.statsService.getHistory(c.child.id, '2026-10-20', '2026-10-20')[0];
+    assert.ok(history.tasks.some(row => row.id === task.id));
+    assert.ok(c.statsService.getWeeklyCompletion(c.child.id, '2026-10-19', '2026-10-25').items.some(item => item.template_id === template.id));
+    assert.equal(c.taskStudyService.details(task.id).total_seconds, 60);
+    assert.equal(c.stats('2026-10-20').summary.recorded_seconds, 60);
+  });
+}
+
+for (const reason of ['assignment', 'calendar']) {
+  test(`revoking a studied task through ${reason} cancels its pending skip request`, async t => {
+    const c = await fixture(t);
+    const other = c.childrenService.createChild({ name: '另一位孩子' });
+    const template = c.tasksService.createTemplate({ title: '等待跳过审批的任务', subject: '数学', track_time: true, days_of_week: [2] });
+    const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+    const sid = c.taskStudyService.start(task.id).active.id; c.advance(60);
+    c.taskStudyService.finish(task.id, sid, {}, 'child');
+    const request = c.skipsService.requestSkip(task.id, '没布置', { role: 'child' }).request;
+    let makeup;
+    if (reason === 'assignment') c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+    else makeup = c.periodsService.createMakeupDay(c.child.id, { date: '2026-10-20', acts_as: 1 });
+    assert.equal(c.skipsService.getRequest(request.id).status, 'cancelled');
+    assert.ok(c.skipsService.getRequest(request.id).resolved_at);
+    assert.ok(!c.skipsService.listRequests({ status: 'pending' }).some(row => row.id === request.id));
+    assert.equal(c.taskStudyService.details(task.id).total_seconds, 60);
+    if (reason === 'assignment') c.tasksService.updateTemplate(template.id, { child_ids: [c.child.id] });
+    else c.periodsService.deleteMakeupDay(makeup.id);
+    c.tasksService.getDailyTasks(c.child.id);
+    assert.notEqual(c.skipsService.requestSkip(task.id, '再次确认', { role: 'child' }).request.id, request.id);
+  });
+}
+
+test('deleting only a course record preserves its saved finish-time attribution through backup', async t => {
+  const c = await fixture(t);
+  const record = c.homeworkService.create(c.child.id, { subject: '语文', content: '次日写完', due_date: '2026-10-22', create_task: true }, 'parent');
+  t.mock.timers.setTime(Date.parse('2026-10-21T13:30:00Z'));
+  c.homeworkStudyService.complete(record.id, 'child');
+  const finish = () => [...c.timeStatsService.finishTimes(c.child.id, '2026-10-20', '2026-10-21')];
+  assert.deepEqual(finish(), [['2026-10-21', 1290]]);
+  c.homeworkService.delete(record.id, {}, 'parent');
+  assert.deepEqual(finish(), [['2026-10-21', 1290]]);
+  const backup = c.app.backupService;
+  backup.restore(require('node:fs').readFileSync(backup.getPath(backup.create('finish-snapshot').name)));
+  assert.deepEqual(finish(), [['2026-10-21', 1290]]);
+  c.tasksService.uncompleteDailyTask(record.task.id);
+  assert.deepEqual(finish(), []);
+  c.tasksService.completeDailyTask(record.task.id);
+  assert.deepEqual(finish(), [], 'a new ordinary-task completion uses the ordinary finish rule');
+});
+
+test('v22 finish times migrate; v23 backups missing attribution are rejected safely', async t => {
+  const c = await fixture(t);
+  const other = c.childrenService.createChild({ name: '保留分配' });
+  const template = c.tasksService.createTemplate({ title: '升级前撤销的任务', subject: '数学', track_time: true });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.taskStudyService.manual(task.id, { request_id: 'upgrade_revoked_session', duration_seconds: 60 }, 'child');
+  const request = c.skipsService.requestSkip(task.id, '未布置', { role: 'child' }).request;
+  c.tasksService.updateTemplate(template.id, { child_ids: [other.id] });
+  // Simulate the dangling pending request produced before this fix.
+  c.db.prepare("UPDATE task_skip_requests SET status = 'pending', resolved_at = NULL WHERE id = ?").run(request.id);
+  const record = c.homeworkService.create(c.child.id, { subject: '语文', content: '迁移完成时间', due_date: '2026-10-22', create_task: true }, 'parent');
+  t.mock.timers.setTime(Date.parse('2026-10-21T13:30:00Z'));
+  c.homeworkStudyService.complete(record.id, 'child');
+  const Database = require('better-sqlite3');
+  const { gzipSync, gunzipSync } = require('node:zlib');
+  const backup = c.app.backupService;
+  const packed = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath(backup.create('finish-migration').name))));
+  const old = new Database(Buffer.from(packed.database, 'base64')); t.after(() => old.close());
+  old.exec('ALTER TABLE daily_tasks DROP COLUMN finish_on_actual_date');
+  const archive = () => gzipSync(JSON.stringify({ ...packed, database: old.serialize().toString('base64') }));
+  assert.throws(() => backup.restore(archive()), /完成时间归属/);
+  assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-21', '2026-10-21')], [['2026-10-21', 1290]]);
+  old.pragma('user_version = 22');
+  backup.restore(archive());
+  assert.equal(c.db.pragma('user_version', { simple: true }), 23);
+  assert.equal(c.skipsService.getRequest(request.id).status, 'cancelled');
+  assert.equal(c.db.prepare('SELECT finish_on_actual_date AS actual FROM daily_tasks WHERE id = ?').get(c.task.id).actual, 0);
+  assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-21', '2026-10-21')], [['2026-10-21', 1290]]);
+});
+
+test('a holiday pausing a studied task cancels its pending skip request', async t => {
+  const c = await fixture(t);
+  const template = c.tasksService.createTemplate({ title: '每天阅读', subject: '语文', track_time: true });
+  const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
+  c.taskStudyService.manual(task.id, { request_id: 'paused_skip_session', duration_seconds: 60 }, 'child');
+  const request = c.skipsService.requestSkip(task.id, '老师没布置', { role: 'child' }).request;
+  c.periodsService.createPeriod(c.child.id, { name: '临时停课', start_date: '2026-10-20', end_date: '2026-10-20', paused_template_ids: [template.id] });
+  c.tasksService.getDailyTasks(c.child.id); // the board (or the minute timer) applies the pause
+  assert.equal(c.skipsService.getRequest(request.id).status, 'cancelled');
+  assert.equal(c.db.prepare('SELECT revoked_at FROM daily_tasks WHERE id = ?').get(task.id).revoked_at, null);
+  assert.equal(c.taskStudyService.details(task.id).total_seconds, 60);
+});

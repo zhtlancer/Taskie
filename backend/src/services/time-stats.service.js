@@ -104,12 +104,13 @@ class TimeStatsService {
   // progress entry made on its own day (later corrections and backfills are left out).
   finishTimes(childId, from, to) {
     const rows = [
-      ...this.db.prepare("SELECT date, completed_at AS at FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill' AND is_extra_completion = 0 AND homework_legacy_seconds IS NULL")
+      ...this.db.prepare("SELECT date, completed_at AS at FROM daily_tasks WHERE child_id = ? AND date BETWEEN ? AND ? AND is_completed = 1 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill' AND is_extra_completion = 0 AND finish_on_actual_date = 0")
         .all(childId, from, to),
       ...this.db.prepare(`SELECT l.date, l.created_at AS at FROM period_task_logs l JOIN period_tasks t ON t.id = l.period_task_id
         WHERE t.child_id = ? AND l.date BETWEEN ? AND ?`).all(childId, from, to)
     ];
-    for (const row of this.db.prepare(`SELECT completed_at AS at FROM daily_tasks WHERE child_id = ? AND homework_legacy_seconds IS NOT NULL
+    // Course homework may be done on any day until its due date, so it counts on the day it was finished.
+    for (const row of this.db.prepare(`SELECT completed_at AS at FROM daily_tasks WHERE child_id = ? AND finish_on_actual_date = 1
       AND is_completed = 1 AND is_extra_completion = 0 AND completed_at IS NOT NULL AND COALESCE(completion_source, '') != 'parent_backfill'`).all(childId)) {
       const date = eveningMinutes(row.at) >= 24 * 60 ? shiftDate(formatDate(new Date(row.at)), -1) : formatDate(new Date(row.at));
       if (date >= from && date <= to) rows.push({ date, at: row.at });

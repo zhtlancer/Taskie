@@ -66,7 +66,7 @@ test('v19 homework backups gain stable course keys; damaged v20 backups are reje
   assert.deepEqual(homework.list(child.id), before);
   legacy.pragma('user_version = 19');
   backup.restore(pack());
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 21);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 23);
   assert.deepEqual(homework.summary(child.id).courses.map(row => [row.course_key, row.total]).sort(),
     [[`class:${live.id}`, 1], ['class:archived:游泳课', 2], ['school:科学', 1]].sort());
   schedule.deleteClass(live.id);

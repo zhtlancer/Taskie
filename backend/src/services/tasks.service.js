@@ -136,14 +136,20 @@ class TasksService {
         AND NOT EXISTS (SELECT 1 FROM template_children
           WHERE template_id = daily_tasks.template_id AND child_id = daily_tasks.child_id)`)
       .all(getTodayDate(), templateId, templateId);
-    for (const row of revoked) {
-      this.taskStudyService?.endActive(row.id);
-      // Revoking a task must not erase learning time, including after undoing completion.
-      if (!row.has_study && !(row.homework_legacy_seconds > 0)) this.db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(row.id);
-    }
+    for (const row of revoked) this.revokeTask(row);
+  }
+
+  // Revoking a task must not erase learning time, including after undoing completion: a task with
+  // any is kept, marked revoked, and no longer counts as a task on any day.
+  revokeTask(row) {
+    this.taskStudyService?.endActive(row.id);
+    cancelPendingSkips(this.db, row.id);
+    if (!row.has_study && !(row.homework_legacy_seconds > 0)) this.db.prepare('DELETE FROM daily_tasks WHERE id = ?').run(row.id);
+    else this.db.prepare('UPDATE daily_tasks SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?').run(new Date().toISOString(), row.id);
   }
 
   isUnassignedTodayTask(task) {
+    if (task.revoked_at) return true;
     if (task.date !== getTodayDate()) return false;
     const template = this.getTemplate(task.template_id);
     return template && template.child_ids !== null && !template.child_ids.includes(task.child_id);
@@ -285,14 +291,16 @@ class TasksService {
   // Calendar edits revoke only pending template tasks that no longer apply on that date.
   // Completed snapshots, one-off tasks and templates still matching keep their ids and timers.
   reconcileCalendarDay(childId, date, schedule = this.scheduleFor(childId)) {
-    const remove = this.db.prepare('DELETE FROM daily_tasks WHERE id = ?');
     for (const row of this.db.prepare(`SELECT id, COALESCE(source_template_id, template_id) AS template, homework_legacy_seconds,
       EXISTS (SELECT 1 FROM homework_sessions s WHERE s.task_id = daily_tasks.id) AS has_study
       FROM daily_tasks WHERE child_id = ? AND date = ? AND origin = 'template' AND is_completed = 0`).all(childId, date)) {
-      if (row.template && !schedule.allowedOn(row.template, date)) {
+      if (!row.template || schedule.allowedOn(row.template, date)) continue;
+      if (schedule.isPaused(row.template, date) && (row.has_study || row.homework_legacy_seconds > 0)) {
+        // A holiday is reversible, including on past dates. Keep its task snapshot so
+        // removing the pause restores history; the calendar already hides it while paused.
         this.taskStudyService?.endActive(row.id);
-        if (!row.has_study && !(row.homework_legacy_seconds > 0)) remove.run(row.id);
-      }
+        cancelPendingSkips(this.db, row.id);
+      } else this.revokeTask(row);
     }
   }
 
@@ -303,7 +311,10 @@ class TasksService {
       (id, child_id, template_id, title, subject, points, date, is_completed, completed_at, schedule_type,
         weekly_target_times, source_template_id, template_created_at, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`);
+    const restore = this.db.prepare('UPDATE daily_tasks SET revoked_at = NULL WHERE id = ?');
     for (const template of templates) {
+      // Assigned to the child and due on the date again: a revoked task comes back with its time.
+      if (rows.get(template.id)?.revoked_at) restore.run(rows.get(template.id).id);
       if (rows.has(template.id) || (template.schedule_type === 'weekly_times' && !template.allow_extra && this.weeklyCount(childId, template.id, date) >= template.weekly_target_times)) continue;
       rows.set(template.id, insert.get(generateId(), childId, template.id, template.title, template.subject, template.points,
         date, template.schedule_type, template.weekly_target_times, template.id, template.created_at,
@@ -431,7 +442,7 @@ class TasksService {
     const rows = this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND date < ? AND date >= ? ORDER BY date, rowid')
       .all(childId, today, first);
     // Completed and skipped cards still use their deadlines for today's display and corrections.
-    const unpinned = rows.filter(row => row.carry_over && !row.due_date);
+    const unpinned = rows.filter(row => row.carry_over && !row.due_date && !row.revoked_at);
     return new Map([...unpinned, ...this.unopenedCarries(childId, first, today, rows, schedule)]
       .map(row => [`${row.source_template_id ?? row.template_id}|${row.date}`, { row, due: schedule.calendar.carryUntil(row.date) }]));
   }
@@ -476,7 +487,7 @@ class TasksService {
     }));
     // Match ordinary history: a pause excuses unfinished saved rows too. Keep completed
     // snapshots visible, and keep the saved rows intact so removing the pause restores them.
-    return rows.filter(row => (row.carry_over || row.due_date) &&
+    return rows.filter(row => (row.carry_over || row.due_date) && !row.revoked_at &&
       (row.is_completed || !schedule.isPaused(row.source_template_id ?? row.template_id, row.date)))
       .map(row => ({ row, due: dueDateOf(row, calendar) }))
       .filter(({ row, due }) => due >= from && due > row.date);
@@ -532,7 +543,7 @@ class TasksService {
   // Times a weekly task was done or skipped this week: both use up its weekly target.
   weeklyCount(childId, templateId, date) {
     const { startDate, endDate } = getWeekRange(date);
-    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND is_extra_completion = 0 AND (is_completed = 1 OR skipped_at IS NOT NULL)")
+    return this.db.prepare("SELECT COUNT(*) AS n FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ? AND schedule_type = 'weekly_times' AND date BETWEEN ? AND ? AND is_extra_completion = 0 AND revoked_at IS NULL AND (is_completed = 1 OR skipped_at IS NOT NULL)")
       .get(childId, templateId, startDate, endDate).n;
   }
 
@@ -574,15 +585,13 @@ class TasksService {
   // in the week including that day; once there is no slack it is required that day. A skipped
   // time takes one off the target, so skipping on a day without slack still keeps the week whole.
   describeTasksBetween(childId, fromDate, toDate, { includePaused = false, schedule = this.scheduleFor(childId), includeStudy = true, studyOf = includeStudy ? this.studyByTask(childId) : null } = {}) {
-    const assigned = new Set(schedule.assigned.map(template => template.id));
-    const today = getTodayDate();
     const weekStarts = new Map();
     const weekOf = date => {
       if (!weekStarts.has(date)) weekStarts.set(date, getWeekRange(date).startDate);
       return weekStarts.get(date);
     };
     // Filter obsolete pending goal rows in this query, keeping history reads at a constant cost.
-    const rows = this.db.prepare(`SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required FROM daily_tasks d WHERE d.child_id = ? AND d.date BETWEEN ? AND ?
+    const rows = this.db.prepare(`SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required FROM daily_tasks d WHERE d.child_id = ? AND d.date BETWEEN ? AND ? AND d.revoked_at IS NULL
       AND (d.is_completed = 1 OR d.goal_id IS NULL OR EXISTS (
         SELECT 1 FROM period_tasks g WHERE g.id = d.goal_id AND g.daily_required = 1
         AND g.start_date <= d.date AND (g.end_date IS NULL OR g.end_date >= d.date)
@@ -605,9 +614,7 @@ class TasksService {
     }
 
     return rows.filter(row => row.date >= fromDate && row.date <= toDate &&
-      (includePaused || row.is_completed || (!schedule.isPaused(sourceOf(row), row.date) &&
-        (row.origin !== 'template' || row.date !== today ||
-          ((!schedule.byId.has(sourceOf(row)) || assigned.has(sourceOf(row))) && schedule.allowedOn(sourceOf(row), row.date)))))).map(row => {
+      (includePaused || row.is_completed || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
       const task = studyOf ? this.describeStudy(describeRow(row), studyOf) : describeRow(row);
       // A task that may wait out a break (or a one-off task due later) is optional until its deadline.
       if (row.schedule_type !== 'weekly_times') {
@@ -925,7 +932,7 @@ class TasksService {
     if (task.schedule_type === 'weekly_times') {
       const source = task.source_template_id ?? task.template_id;
       const another = this.db.prepare(`SELECT id FROM daily_tasks WHERE child_id = ? AND COALESCE(source_template_id, template_id) = ?
-        AND date = ? AND id != ? AND (is_completed = 1 OR skipped_at IS NOT NULL)`).get(task.child_id, source, task.date, task.id);
+        AND date = ? AND id != ? AND revoked_at IS NULL AND (is_completed = 1 OR skipped_at IS NOT NULL)`).get(task.child_id, source, task.date, task.id);
       if (another) throw { status: 409, message: '同一任务每天最多完成一次' };
       isExtra = this.weeklyCount(task.child_id, source, task.date) >= task.weekly_target_times;
       if (isExtra && !task.allow_extra) throw { status: 409, message: '本周目标已完成' };
@@ -941,9 +948,9 @@ class TasksService {
       this.db.prepare(`
         UPDATE daily_tasks
         SET is_completed = 1, completed_at = ?, duration_seconds = ?, duration_source = ?,
-          timer_elapsed_seconds = ?, timer_started_at = NULL, completion_source = ?, is_extra_completion = ?, earned_points = ?
+          timer_elapsed_seconds = ?, timer_started_at = NULL, completion_source = ?, is_extra_completion = ?, earned_points = ?, finish_on_actual_date = ?
         WHERE id = ?
-      `).run(now, duration.seconds, duration.source, timerSeconds(task), completionSource, isExtra ? 1 : 0, earned, taskId);
+      `).run(now, duration.seconds, duration.source, timerSeconds(task), completionSource, isExtra ? 1 : 0, earned, courseHomework ? 1 : 0, taskId);
       this.db.prepare('UPDATE homework_records SET completion_requested_at = NULL WHERE daily_task_id = ?').run(taskId);
       if (completionSource === 'parent_backfill') this.recordBackfillEvent({ ...task, earned_points: earned }, 'complete', duration.seconds, now);
       cancelPendingSkips(this.db, taskId, now);

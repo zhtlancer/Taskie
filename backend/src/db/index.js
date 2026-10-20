@@ -402,6 +402,25 @@ function initDb(db) {
       db.pragma('user_version = 21');
     })();
   }
+  // v22: a revoked task kept only for its learning time (revoked_at) no longer counts as a task.
+  if (db.pragma('user_version', { simple: true }) < 22) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'revoked_at')) db.exec('ALTER TABLE daily_tasks ADD COLUMN revoked_at TEXT');
+      db.pragma('user_version = 22');
+    })();
+  }
+  // Freeze finish-time attribution on the task, so deleting its homework record cannot rewrite it.
+  if (db.pragma('user_version', { simple: true }) < 23) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'finish_on_actual_date')) db.exec('ALTER TABLE daily_tasks ADD COLUMN finish_on_actual_date INTEGER NOT NULL DEFAULT 0');
+      db.exec(`UPDATE daily_tasks SET finish_on_actual_date = 1 WHERE is_completed = 1
+        AND EXISTS (SELECT 1 FROM homework_records r WHERE r.daily_task_id = daily_tasks.id)`);
+      db.prepare(`UPDATE task_skip_requests SET status = 'cancelled', resolved_at = ? WHERE status = 'pending'
+        AND daily_task_id IN (SELECT id FROM daily_tasks WHERE revoked_at IS NOT NULL)`)
+        .run(new Date().toISOString());
+      db.pragma('user_version = 23');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

@@ -20,11 +20,11 @@ function describeSchema(db) {
 test('a database upgraded from v14 ends with the same schema as a fresh one', () => {
   const fresh = getDb(':memory:');
   const legacy = getDb(':memory:');
-  // Undo what v15–v21 and their schema.sql tables add, as a v14 database would look.
+  // Undo what v15–v23 and their schema.sql tables add, as a v14 database would look.
   legacy.exec(`DROP INDEX idx_point_logs_study_batch; DROP INDEX idx_daily_tasks_study_day; DROP INDEX idx_point_logs_daily_task;
     ALTER TABLE point_logs DROP COLUMN study_batch_id; ALTER TABLE daily_tasks DROP COLUMN study_day_id;
     ALTER TABLE daily_tasks DROP COLUMN completion_source; DROP TABLE task_backfill_events; DROP TABLE task_day_snapshots;
-    DROP TABLE homework_session_days; DROP TABLE homework_sessions; ALTER TABLE daily_tasks DROP COLUMN homework_legacy_seconds; DROP TABLE homework_records; DROP TABLE homework_course_points;`);
+    DROP TABLE homework_session_days; DROP TABLE homework_sessions; ALTER TABLE daily_tasks DROP COLUMN homework_legacy_seconds; ALTER TABLE daily_tasks DROP COLUMN revoked_at; ALTER TABLE daily_tasks DROP COLUMN finish_on_actual_date; DROP TABLE homework_records; DROP TABLE homework_course_points;`);
   for (const table of ['word_study_attempts', 'word_study_items', 'word_study_batches', 'word_study_days', 'word_study_states', 'word_study_plans']) {
     legacy.exec(`DROP TABLE ${table}`);
   }
