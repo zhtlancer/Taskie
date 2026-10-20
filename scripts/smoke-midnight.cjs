@@ -38,6 +38,7 @@ async function main() {
   const child = await api('POST', '/children', { name: '跨日验收' });
   await api('POST', '/task-templates', { title: '每日练习', subject: '数学', track_time: true, days_of_week: [0,1,2,3,4,5,6] });
   const old = await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '昨天的练习', subject: '其他', track_time: true, points: 7 });
+  await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '截止前的练习', subject: '语文', track_time: true, points: 3, due_date: '2026-10-22' });
   const childToken = app.jwt.sign({ role: 'child', child_id: child.id, epoch: app.sessionEpoch() }, { expiresIn: '7d' });
   const base = await app.listen({ host: '127.0.0.1', port: 0 });
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
@@ -53,8 +54,14 @@ async function main() {
   await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   await page.goto(`${base}/child/${child.id}/today`, { waitUntil: 'domcontentloaded' });
   const card = title => page.locator('div.select-none.border-2').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
-  await card('昨天的练习').getByRole('button', { name: '学习 / 记录', exact: true }).click();
   const modal = page.getByRole('dialog', { name: '分次学习', exact: true });
+  // A paused session on a task still due tomorrow stays on its card, not in the unfinished list.
+  await card('截止前的练习').getByRole('button', { name: '学习 / 记录', exact: true }).click();
+  await modal.getByRole('button', { name: '开始本次', exact: true }).click();
+  await modal.getByRole('button', { name: '暂停', exact: true }).click();
+  await modal.getByRole('button', { name: '继续本次', exact: true }).waitFor();
+  await modal.getByRole('button', { name: '关闭', exact: true }).click();
+  await card('昨天的练习').getByRole('button', { name: '学习 / 记录', exact: true }).click();
   await modal.getByRole('button', { name: '开始本次', exact: true }).click();
   await modal.getByRole('button', { name: '暂停', exact: true }).waitFor();
   await modal.getByPlaceholder(/例如：写完第一部分/).fill('跨日仍保留的进展');
@@ -66,6 +73,8 @@ async function main() {
   const unfinished = page.getByRole('region', { name: '未结束的学习' });
   await unfinished.getByText(/昨天的练习/).waitFor();
   assert.equal(await card('昨天的练习').count(), 0);
+  assert.equal(await card('截止前的练习').count(), 1);
+  assert.equal(await unfinished.getByText(/截止前的练习/).count(), 0);
   await card('每日练习').getByRole('button', { name: '学习 / 记录', exact: true }).click();
   await modal.getByRole('button', { name: '开始本次', exact: true }).click();
   await modal.getByRole('button', { name: '暂停', exact: true }).waitFor();
