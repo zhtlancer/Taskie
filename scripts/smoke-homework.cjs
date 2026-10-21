@@ -101,7 +101,7 @@ async function main() {
   await study.getByRole('button', { name: '暂停', exact: true }).click();
   await study.getByRole('button', { name: '关闭', exact: true }).click();
   await childPage.getByRole('timer', { name: '本次学习用时', exact: true }).waitFor();
-  await childPage.getByText('已暂停', { exact: true }).waitFor();
+  await childPage.getByRole('main').getByText('已暂停', { exact: true }).waitFor();
   await childPage.getByRole('button', { name: '学习 / 记录', exact: true }).click();
   await study.getByRole('button', { name: '继续本次', exact: true }).click();
   await study.getByPlaceholder(/例如：写完第一部分/).fill('第一部分已完成');

@@ -541,8 +541,8 @@ watch([focusId, loading], async ([id, busy]) => {
   document.querySelector(`[data-timer-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   focusId.value = null;
 });
-// The bar paused a timer: show it paused on the cards too.
-watch(() => timerStore.pausedAt, () => refreshGoals());
+// The bar paused or resumed a timer: show the change on the cards too.
+watch(() => timerStore.changedAt, () => refreshGoals());
 async function handleTaskToggle(task, durationBody = null) {
   if (task.homework) { studyRecord.value = task.homework.id; return; }
   if (task.origin === 'study') { router.push(`/child/${childId.value}/word-study`); return; }

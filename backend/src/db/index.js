@@ -432,6 +432,20 @@ function initDb(db) {
       db.pragma('user_version = 25');
     })();
   }
+  // v26: the timer each child used last, so a paused one stays on the timer bar and can resume.
+  if (db.pragma('user_version', { simple: true }) < 26) {
+    db.transaction(() => {
+      for (const column of ['last_timer_kind', 'last_timer_id']) {
+        if (!db.pragma('table_info(children)').some(c => c.name === column)) db.exec(`ALTER TABLE children ADD COLUMN ${column} TEXT`);
+      }
+      // Timers running during the upgrade; ones already paused show again once restarted.
+      for (const [kind, sql] of [['task', 'SELECT child_id, task_id AS id FROM homework_sessions WHERE ended_at IS NULL AND timer_started_at IS NOT NULL'],
+        ['task', 'SELECT child_id, id FROM daily_tasks WHERE timer_started_at IS NOT NULL'], ['goal', 'SELECT child_id, id FROM period_tasks WHERE timer_started_at IS NOT NULL']]) {
+        for (const row of db.prepare(sql).all()) db.prepare('UPDATE children SET last_timer_kind = ?, last_timer_id = ? WHERE id = ?').run(kind, row.id, row.child_id);
+      }
+      db.pragma('user_version = 26');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

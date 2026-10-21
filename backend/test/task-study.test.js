@@ -299,7 +299,7 @@ test('a v22 backup without the revoked marker is rejected before restoring', asy
   assert.throws(() => backup.restore(archive()), /已取消任务标记/);
   damaged.pragma('user_version = 21');
   backup.restore(archive());
-  assert.equal(c.db.pragma('user_version', { simple: true }), 25);
+  assert.equal(c.db.pragma('user_version', { simple: true }), 26);
 });
 
 test('a carrying task revoked with study time is not carried over the weekend', async t => {
@@ -400,7 +400,7 @@ test('v22 finish times migrate; v23 backups missing attribution are rejected saf
   assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-21', '2026-10-21')], [['2026-10-21', 1290]]);
   old.pragma('user_version = 22');
   backup.restore(archive());
-  assert.equal(c.db.pragma('user_version', { simple: true }), 25);
+  assert.equal(c.db.pragma('user_version', { simple: true }), 26);
   assert.equal(c.skipsService.getRequest(request.id).status, 'cancelled');
   assert.equal(c.db.prepare('SELECT finish_on_actual_date AS actual FROM daily_tasks WHERE id = ?').get(c.task.id).actual, 0);
   assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-21', '2026-10-21')], [['2026-10-21', 1290]]);

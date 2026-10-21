@@ -1,5 +1,6 @@
-// Run npm run build first. Verifies the board keeps its scroll position when a timer starts, and the
-// running-timer bar on phones and the sidebar card on tablets, against a real in-memory API.
+// Run npm run build first. Verifies the board keeps its scroll position when a timer starts, the
+// timer bar on phones, the sidebar card on tablets and the parent's child cards, against a real
+// in-memory API.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -84,12 +85,22 @@ async function main() {
   console.log('PASS the phone bar ticks above the tab bar, follows other pages and reopens its study session');
 
   await bar.getByRole('button', { name: '⏸ 暂停', exact: true }).click();
+  const pausedBar = page.getByRole('region', { name: '计时已暂停', exact: true });
+  await pausedBar.getByText('数学 · 最后的口算').waitFor();
   await bar.waitFor({ state: 'detached' });
   const active = taskStudyService.details(timed.id).active;
   assert.equal(active.timer_started_at, null);
   assert.ok(active.duration_seconds >= 1);
   assert.equal(timersService.running(child.id), null);
-  console.log('PASS pausing from the bar banks the session time and hides the bar');
+  const pausedClock = await pausedBar.locator('[data-running-clock]').textContent();
+  await page.waitForTimeout(1500);
+  assert.equal(await pausedBar.locator('[data-running-clock]').textContent(), pausedClock, 'a paused clock stands still');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await pausedBar.getByRole('button', { name: '▶ 继续', exact: true }).click();
+  await bar.getByText('数学 · 最后的口算').waitFor();
+  assert.equal(taskStudyService.details(timed.id).active.id, active.id, 'resuming continues the same session');
+  assert.equal(timersService.running(child.id).session_id, active.id);
+  console.log('PASS pausing from the bar keeps it, paused with the time banked, across a reload; resuming continues the session');
   await page.context().close();
 
   // Tablet: the sidebar card brings a long-term task back into view and pauses it.
@@ -113,10 +124,11 @@ async function main() {
   }, goal.id);
   await sidebar.getByRole('button', { name: '⏸ 暂停', exact: true }).click();
   await sidebar.waitFor({ state: 'detached' });
+  await page.getByRole('complementary', { name: '学习导航' }).getByRole('region', { name: '计时已暂停', exact: true }).getByText('语文 · 验收阅读').waitFor();
   await goalRow.getByRole('button', { name: '▶ 继续', exact: true }).waitFor();
   assert.equal(timersService.running(child.id), null);
   assert.deepEqual(errors, []);
-  console.log('PASS the tablet sidebar card shows a long-term timer on other pages, returns to it and pauses it');
+  console.log('PASS the tablet sidebar card shows a long-term timer on other pages, returns to it and keeps it once paused');
   await page.context().close();
 
   // A polling read during a slow pause must not make the successful mutation disappear.
@@ -129,24 +141,25 @@ async function main() {
   let releasePause, pauseArrived;
   const pauseGate = new Promise(resolve => { releasePause = resolve; });
   const pauseSeen = new Promise(resolve => { pauseArrived = resolve; });
-  await page.route('**/running-timer/pause', async route => {
+  await page.route('**/current-timer/pause', async route => {
     pauseArrived();
     await pauseGate;
     await route.continue();
   });
   await raceBar.getByRole('button', { name: '⏸ 暂停', exact: true }).click();
   await pauseSeen;
-  const poll = page.waitForResponse(response => response.url().endsWith('/running-timer'));
+  const poll = page.waitForResponse(response => response.url().endsWith('/current-timer'));
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await poll;
   // Wait until the poll has written its running timer into the store (a new load time), rather than
   // just arriving at the browser, so the pause response is the one that lands last.
   await page.waitForFunction(before => {
     const s = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('runningTimer');
-    return s.pausing && s.timer && s.timer.timer_loaded_at !== before;
+    return s.busy && s.timer && s.timer.timer_loaded_at !== before;
   }, loadedAt);
   releasePause();
   await raceBar.waitFor({ state: 'detached' });
+  await page.getByRole('region', { name: '计时已暂停', exact: true }).getByText('语文 · 验收阅读').waitFor();
   assert.equal(timersService.running(child.id), null);
   console.log('PASS a refresh during pause cannot keep the stopped timer visible on another page');
   await page.context().close();
@@ -161,7 +174,7 @@ async function main() {
   let releaseOldPause, oldPauseArrived;
   const oldPauseGate = new Promise(resolve => { releaseOldPause = resolve; });
   const oldPauseSeen = new Promise(resolve => { oldPauseArrived = resolve; });
-  await page.route('**/running-timer/pause', async route => {
+  await page.route('**/current-timer/pause', async route => {
     const response = await route.fetch();
     oldPauseArrived();
     await oldPauseGate;
@@ -174,7 +187,7 @@ async function main() {
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await newerBar.getByText('数学 · 最后的口算').waitFor();
   releaseOldPause();
-  await page.waitForFunction(() => !document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('runningTimer').pausing);
+  await page.waitForFunction(() => !document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('runningTimer').busy);
   assert.equal(await page.evaluate(() => document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('runningTimer').timer?.id), timed.id);
   await newerBar.getByText('数学 · 最后的口算').waitFor();
   assert.equal(timersService.running(child.id).id, timed.id);
@@ -209,6 +222,27 @@ async function main() {
   await page.getByRole('region', { name: '正在计时', exact: true }).getByText('数学 · 另一个计时').waitFor();
   assert.deepEqual(errors, []);
   console.log('PASS a stale board response cannot replace the new child’s running timer');
+  await page.context().close();
+
+  // Parent: each child's card shows the running or paused timer and opens it on the child's board.
+  page = await open({ width: 1180, height: 820 }, true);
+  await page.goto(`${base}/parent/dashboard`, { waitUntil: 'domcontentloaded' });
+  const childCard = name => page.locator('div.rounded-3xl').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  const strip = childCard('计时条验收').locator('[data-child-timer]');
+  await strip.getByText('数学 · 最后的口算').waitFor();
+  await strip.getByText('计时中', { exact: true }).waitFor();
+  await childCard('另一个孩子').locator('[data-child-timer]').getByText('数学 · 另一个计时').waitFor();
+  const shown = await strip.locator('.tabular-nums').textContent();
+  await page.waitForFunction(([el, text]) => el.textContent !== text, [await strip.locator('.tabular-nums').elementHandle(), shown]);
+  timersService.pauseCurrent(child.id);
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await strip.getByText('⏸ 已暂停', { exact: true }).waitFor();
+  assert.ok((await strip.boundingBox()).height >= 44);
+  await strip.click();
+  await page.waitForURL(url => url.pathname === `/child/${child.id}/today` && !url.search);
+  await page.getByRole('dialog', { name: '分次学习', exact: true }).waitFor();
+  assert.deepEqual(errors, []);
+  console.log('PASS parent child cards show running and paused timers, tick, and open the task on the board');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();

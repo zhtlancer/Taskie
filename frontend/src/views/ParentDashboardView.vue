@@ -158,6 +158,20 @@
             </div>
           </div>
 
+          <!-- The child's current timer, running or paused; opens it on the child's board -->
+          <router-link
+            v-if="item.timer"
+            data-child-timer
+            :to="{ path: `/child/${item.child.id}/today`, query: timerTarget(item.timer) }"
+            class="flex items-center gap-2 min-h-[44px] mb-4 px-3 py-2 rounded-2xl text-sm font-bold"
+            :class="timerTone(item.timer)"
+          >
+            <span v-if="item.timer.timer_running" class="shrink-0 w-2 h-2 rounded-full bg-current motion-safe:animate-pulse"></span>
+            <span class="shrink-0">{{ !item.timer.timer_running ? '⏸ 已暂停' : timerSeconds(item.timer) > LONG_TIMER_SECONDS ? '计时很久了' : '计时中' }}</span>
+            <span class="min-w-0 flex-1 truncate font-chinese">{{ item.timer.subject }} · {{ item.timer.title }}</span>
+            <span class="shrink-0 font-black tabular-nums">{{ formatClock(timerSeconds(item.timer)) }}</span>
+          </router-link>
+
           <!-- Progress Bar & Count -->
           <div class="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700 mb-4">
             <div class="flex items-center justify-between text-xs font-bold mb-1.5">
@@ -305,14 +319,36 @@
 
 <script setup>
 import { confirmAction } from '../utils/confirmation';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { formatMinutes } from '../utils/timeStats.js';
 import TimingFields from '../components/TimingFields.vue';
 import { courseLabel } from '../utils/homework.js';
+import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerTarget, withClock } from '../utils/taskTimer.js';
 
 const childrenStats = ref([]);
+
+// Each child's current timer ticks locally and is reloaded now and then, and on returning to the page.
+const now = ref(Date.now());
+const loadTimer = id => api.getCurrentTimer(id).then(result => result.timer && withClock(result.timer)).catch(() => null);
+const timerSeconds = timer => Math.min(MAX_TIMER_SECONDS, liveSeconds(timer, now.value));
+const timerTone = timer => !timer.timer_running ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+  : timerSeconds(timer) > LONG_TIMER_SECONDS ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' : 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300';
+let timerSerial = 0;
+async function reloadTimers() {
+  if (document.hidden) return;
+  const items = childrenStats.value, serial = ++timerSerial;
+  const timers = await Promise.all(items.map(item => loadTimer(item.child.id)));
+  if (serial === timerSerial) items.forEach((item, index) => { item.timer = timers[index]; });
+}
+const clock = setInterval(() => { now.value = Date.now(); }, 1000);
+const poll = setInterval(reloadTimers, 60000);
+document.addEventListener('visibilitychange', reloadTimers);
+onUnmounted(() => {
+  clearInterval(clock); clearInterval(poll);
+  document.removeEventListener('visibilitychange', reloadTimers);
+});
 const loading = ref(true);
 const dashboardError = ref('');
 const adhocForm = ref(null);
@@ -462,9 +498,9 @@ async function loadDashboard() {
   try {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
-      const [stats, week, adhoc, goals, time] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
-        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null)]);
-      return { child, stats, week, adhoc, goals: activeGoals(goals), time };
+      const [stats, week, adhoc, goals, time, timer] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null), loadTimer(child.id)]);
+      return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer };
     });
     [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests(), loadCompletionRequests()]);
   } catch (err) {

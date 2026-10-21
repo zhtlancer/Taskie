@@ -84,6 +84,7 @@ class StudySessionsService {
       this.checkStart(task);
       if (task.is_completed || task.skipped_at) throw fail(409, '已完成或已跳过的作业不能开始学习');
       if (task.date > getTodayDate()) throw fail(409, '作业尚未开始');
+      this.timers.remember(task.child_id, 'task', task.id);
       const active = this.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(task.id);
       if (active?.timer_started_at) return;
       const now = Date.now();

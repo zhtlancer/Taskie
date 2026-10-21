@@ -1,6 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const { gzipSync, gunzipSync } = require('node:zlib');
+const Database = require('better-sqlite3');
 const { createTestApp, cleanupTestApp } = require('./helper');
+const { initDb } = require('../src/db');
 const { getTodayDate, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -295,41 +299,117 @@ test('backfilling the final progress pauses the current session without assignin
   near(undone.timer_seconds, 600);
 });
 
-test("the child's running timer covers plain tasks, long-term tasks and study sessions, and can be paused", async t => {
+test("the child's current timer covers plain tasks, long-term tasks and study sessions; a paused one stays and resumes", async t => {
   const { ctx, child, createChild, loginAs, asChild, asParent, template, todayTask, timer, runFor, near } = await fixture(t);
-  const running = async () => (await asChild('GET', `/api/children/${child.id}/running-timer`)).json().timer;
+  const current = async () => (await asChild('GET', `/api/children/${child.id}/current-timer`)).json().timer;
+  const act = async (action, h) => asChild('POST', `/api/children/${child.id}/current-timer/${action}`, undefined, h);
   await template({ title: '口算', track_time: true });
   await template({ title: '听写', subject: '语文', track_time: true });
   const book = (await asParent('POST', `/api/children/${child.id}/goals`, { title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, track_time: true })).json();
   const oral = await todayTask('口算');
   const dictation = await todayTask('听写');
-  assert.equal(await running(), null);
+  assert.equal(await current(), null);
+  assert.equal((await act('resume')).statusCode, 409);
 
   await timer(oral.id, 'start');
   runFor('daily_tasks', oral.id, 120);
-  const plain = await running();
-  assert.deepEqual([plain.kind, plain.id, plain.title, plain.subject], ['task', oral.id, '口算', '数学']);
+  const plain = await current();
+  assert.deepEqual([plain.kind, plain.id, plain.title, plain.subject, plain.timer_running], ['task', oral.id, '口算', '数学', true]);
   near(plain.timer_seconds, 120);
 
   await timer(book.id, 'start', 'period-tasks');
-  assert.deepEqual([(await running()).kind, (await running()).id, (await running()).date], ['goal', book.id, null]);
+  assert.deepEqual([(await current()).kind, (await current()).id, (await current()).date], ['goal', book.id, null]);
+  // The latest timer, not an earlier one that also holds time, is the paused one shown.
+  runFor('period_tasks', book.id, 60);
+  const pausedGoal = (await act('pause')).json().timer;
+  assert.deepEqual([pausedGoal.kind, pausedGoal.id, pausedGoal.timer_running, pausedGoal.started_at], ['goal', book.id, false, null]);
+  near(pausedGoal.timer_seconds, 60);
+  assert.equal((await act('resume')).json().timer.timer_running, true);
+  assert.equal(ctx.db.prepare('SELECT timer_started_at FROM period_tasks WHERE id = ?').get(book.id).timer_started_at !== null, true);
 
   assert.equal((await asChild('POST', `/api/daily-tasks/${dictation.id}/study/start`)).statusCode, 200);
   const session = ctx.db.prepare('SELECT id FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(dictation.id);
   runFor('homework_sessions', session.id, 300);
-  const study = await running();
-  assert.deepEqual([study.kind, study.id, study.session_id, study.record_id], ['session', dictation.id, session.id, null]);
+  const study = await current();
+  assert.deepEqual([study.kind, study.id, study.session_id, study.record_id, study.timer_running], ['session', dictation.id, session.id, null, true]);
   near(study.timer_seconds, 300);
 
-  // Pausing banks the session's time; nothing keeps running.
-  assert.equal((await asChild('POST', `/api/children/${child.id}/running-timer/pause`)).json().timer, null);
+  // Pausing banks the session's time and keeps it on the bar; resuming continues the same session.
+  const paused = (await act('pause')).json().timer;
+  assert.deepEqual([paused.kind, paused.id, paused.session_id, paused.timer_running], ['session', dictation.id, session.id, false]);
+  near(paused.timer_seconds, 300);
   const active = (await asChild('GET', `/api/daily-tasks/${dictation.id}/study`)).json().active;
   assert.equal(active.timer_started_at, null);
   near(active.duration_seconds, 300);
-  assert.equal(await running(), null);
+  assert.equal((await act('pause')).json().timer.timer_running, false, 'pausing twice changes nothing');
+  const resumed = (await act('resume')).json().timer;
+  assert.deepEqual([resumed.kind, resumed.session_id, resumed.timer_running], ['session', session.id, true]);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM homework_sessions WHERE task_id = ?').get(dictation.id).n, 1);
+
+  // Ending the session takes it off the bar, even though other paused timers still hold time.
+  await act('pause');
+  assert.equal((await asChild('POST', `/api/daily-tasks/${dictation.id}/sessions/${session.id}/finish`, { note: '' })).statusCode, 200);
+  assert.equal(await current(), null);
+  assert.equal((await act('resume')).statusCode, 409);
 
   const other = await loginAs(await createChild('小红'));
-  assert.equal((await asChild('GET', `/api/children/${child.id}/running-timer`, undefined, other)).statusCode, 403);
-  assert.equal((await asChild('POST', `/api/children/${child.id}/running-timer/pause`, undefined, other)).statusCode, 403);
-  assert.equal((await asParent('GET', '/api/children/missing/running-timer')).statusCode, 404);
+  assert.equal((await asChild('GET', `/api/children/${child.id}/current-timer`, undefined, other)).statusCode, 403);
+  for (const action of ['pause', 'resume']) assert.equal((await act(action, other)).statusCode, 403);
+  assert.equal((await asParent('GET', '/api/children/missing/current-timer')).statusCode, 404);
+});
+
+test('a paused timer leaves the bar once it can no longer resume or holds no time', async t => {
+  const { ctx, child, asChild, asParent, template, todayTask, timer, runFor } = await fixture(t);
+  const current = async () => (await asChild('GET', `/api/children/${child.id}/current-timer`)).json().timer;
+  await template({ title: '口算', track_time: true });
+  const oral = await todayTask('口算');
+  assert.equal((await asChild('POST', `/api/daily-tasks/${oral.id}/study/start`)).statusCode, 200);
+  await asChild('POST', `/api/children/${child.id}/current-timer/pause`);
+  assert.equal((await current()).timer_running, false);
+  // Past its day the task cannot be timed again; the board's unfinished-study list handles it.
+  ctx.db.prepare('UPDATE daily_tasks SET date = ? WHERE id = ?').run(shiftDate(getTodayDate(), -1), oral.id);
+  assert.equal(await current(), null);
+
+  const book = (await asParent('POST', `/api/children/${child.id}/goals`, { title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, track_time: true })).json();
+  await timer(book.id, 'start', 'period-tasks');
+  runFor('period_tasks', book.id, 90);
+  await timer(book.id, 'pause', 'period-tasks');
+  assert.equal((await current()).kind, 'goal');
+  // Logging progress records the session and clears the timer.
+  assert.equal((await asChild('POST', `/api/period-tasks/${book.id}/logs`, { amount: 5 })).statusCode, 201);
+  assert.equal(await current(), null);
+  await timer(book.id, 'start', 'period-tasks');
+  await timer(book.id, 'reset', 'period-tasks');
+  assert.equal(await current(), null);
+});
+
+test('v26 migration remembers timers running during the upgrade; backups keep the latest timer', async t => {
+  const { ctx, child, asChild, template, todayTask } = await fixture(t);
+  await template({ title: '口算', track_time: true });
+  const oral = await todayTask('口算');
+  assert.equal((await asChild('POST', `/api/daily-tasks/${oral.id}/study/start`)).statusCode, 200);
+  const latest = () => ctx.db.prepare('SELECT last_timer_kind AS kind, last_timer_id AS id FROM children WHERE id = ?').get(child.id);
+  ctx.db.exec('ALTER TABLE children DROP COLUMN last_timer_kind; ALTER TABLE children DROP COLUMN last_timer_id');
+  ctx.db.pragma('user_version = 25');
+  initDb(ctx.db);
+  assert.deepEqual({ ...latest() }, { kind: 'task', id: oral.id });
+
+  await asChild('POST', `/api/children/${child.id}/current-timer/pause`);
+  const backup = ctx.app.backupService;
+  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  ctx.db.prepare('UPDATE children SET last_timer_kind = NULL, last_timer_id = NULL').run();
+  backup.restore(archive);
+  assert.deepEqual({ ...latest() }, { kind: 'task', id: oral.id });
+  const packed = JSON.parse(gunzipSync(archive));
+  const candidate = new Database(Buffer.from(packed.database, 'base64'));
+  candidate.exec('ALTER TABLE children DROP COLUMN last_timer_id');
+  const pack = () => gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') }));
+  assert.throws(() => backup.restore(pack()), /最近计时记录/);
+  candidate.exec('ALTER TABLE children DROP COLUMN last_timer_kind');
+  candidate.pragma('user_version = 25');
+  backup.restore(pack());
+  candidate.close();
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 26);
+  // An older backup has no latest timer: the paused session simply shows again once restarted.
+  assert.deepEqual({ ...latest() }, { kind: null, id: null });
 });

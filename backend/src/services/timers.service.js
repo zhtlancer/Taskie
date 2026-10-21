@@ -1,4 +1,5 @@
 const { timerSeconds } = require('../utils/timer');
+const { getTodayDate } = require('../utils/date');
 
 // Timers for timed tasks: today's daily tasks and running long-term tasks. Homework is done one
 // thing at a time, so starting a timer pauses whatever else the child was timing.
@@ -56,7 +57,6 @@ class TimersService {
   // The child's running timer, or null. Starting a timer pauses the others, so at most one of a
   // study session, a plain timed task and a long-term task runs; the latest start wins otherwise.
   running(childId) {
-    if (!this.db.prepare('SELECT 1 FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
     const now = Date.now();
     const sessions = this.db.prepare(`SELECT s.id AS session_id, s.task_id, s.timer_started_at, s.duration_seconds, d.title, d.subject, d.date, r.id AS record_id
       FROM homework_sessions s JOIN daily_tasks d ON d.id = s.task_id LEFT JOIN homework_records r ON r.daily_task_id = d.id
@@ -66,14 +66,68 @@ class TimersService {
     const timers = [['task', 'daily_tasks', 'date'], ['goal', 'period_tasks', 'NULL AS date']].flatMap(([kind, table, date]) => this.db
       .prepare(`SELECT id, title, subject, ${date}, timer_started_at, timer_elapsed_seconds FROM ${table} WHERE child_id = ? AND timer_started_at IS NOT NULL`).all(childId)
       .map(row => ({ kind, id: row.id, title: row.title, subject: row.subject, date: row.date, started_at: row.timer_started_at, timer_seconds: timerSeconds(row, now) })));
-    return [...sessions, ...timers].sort((a, b) => b.started_at.localeCompare(a.started_at))[0] || null;
+    const timer = [...sessions, ...timers].sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+    return timer ? { ...timer, timer_running: true } : null;
+  }
+
+  // Every start records the child's latest timer: a daily task (its study session or its plain
+  // timer) or a long-term task.
+  remember(childId, kind, id) {
+    this.db.prepare('UPDATE children SET last_timer_kind = ?, last_timer_id = ? WHERE id = ?').run(kind, id, childId);
+  }
+
+  // The latest timer once paused, while it can still go on: an unfinished study session, or a plain
+  // or long-term timer holding time. Finished, cleared or no longer allowed timers drop off.
+  paused(childId) {
+    const child = this.db.prepare('SELECT last_timer_kind AS kind, last_timer_id AS id FROM children WHERE id = ?').get(childId);
+    const allowed = check => { try { check(); return true; } catch { return false; } };
+    if (child.kind === 'goal') {
+      const goal = this.db.prepare('SELECT * FROM period_tasks WHERE id = ? AND child_id = ?').get(child.id, childId);
+      if (!goal || !(goal.timer_elapsed_seconds > 0) || !allowed(() => this.goalForTimer(goal.id))) return null;
+      return { kind: 'goal', id: goal.id, title: goal.title, subject: goal.subject, date: null, timer_seconds: timerSeconds(goal) };
+    }
+    if (child.kind !== 'task') return null;
+    const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ? AND child_id = ?').get(child.id, childId);
+    if (!task) return null;
+    const base = { id: task.id, title: task.title, subject: task.subject, date: task.date };
+    const session = this.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(task.id);
+    if (session) {
+      const record = this.db.prepare('SELECT id FROM homework_records WHERE daily_task_id = ?').get(task.id);
+      const service = record ? this.homeworkStudyService : this.taskStudyService;
+      if (task.is_completed || task.skipped_at || task.date > getTodayDate() || !allowed(() => service.checkStart(task))) return null;
+      return { ...base, kind: 'session', session_id: session.id, record_id: record?.id ?? null, timer_seconds: session.duration_seconds };
+    }
+    if (task.homework_legacy_seconds !== null || !(task.timer_elapsed_seconds > 0) || !allowed(() => this.dailyTaskForTimer(task.id))) return null;
+    return { ...base, kind: 'task', timer_seconds: timerSeconds(task) };
+  }
+
+  // What the timer bar shows: the running timer, else the latest one paused.
+  current(childId) {
+    if (!this.db.prepare('SELECT 1 FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
+    const running = this.running(childId);
+    if (running) return running;
+    const paused = this.paused(childId);
+    return paused ? { ...paused, started_at: null, timer_running: false } : null;
   }
 
   // Pausing only banks the time already spent, as starting another timer does, so it needs no
   // task-level checks: an overdue task's running session can be stopped too.
-  pauseChildTimer(childId) {
-    this.running(childId);
+  pauseCurrent(childId) {
+    this.current(childId);
     this.db.transaction(() => this.pauseRunning(childId, Date.now()))();
+    return this.current(childId);
+  }
+
+  // Resuming goes through the timer's own start, with all of its checks.
+  resumeCurrent(childId) {
+    const timer = this.current(childId);
+    if (!timer) throw { status: 409, message: '没有可以继续的计时' };
+    if (!timer.timer_running) {
+      if (timer.kind !== 'session') this.apply(timer.kind, timer.id, 'start');
+      else if (timer.record_id) this.homeworkStudyService.start(timer.record_id);
+      else this.taskStudyService.start(timer.id);
+    }
+    return this.current(childId);
   }
 
   // action: start, pause or reset; kind: task (a daily task) or goal (a long-term task).
@@ -97,6 +151,7 @@ class TimersService {
       row = spec.load(id);
       const now = Date.now();
       if (action === 'start') {
+        this.remember(row.child_id, kind, row.id);
         if (row.timer_started_at) return;
         this.pauseRunning(row.child_id, now);
         this.db.prepare(`UPDATE ${spec.table} SET timer_started_at = ? WHERE id = ?`).run(new Date(now).toISOString(), row.id);

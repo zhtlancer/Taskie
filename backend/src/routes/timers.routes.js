@@ -8,11 +8,9 @@ async function timersRoutes(fastify, options) {
     }
   };
 
-  fastify.get('/children/:id/running-timer', handle(async request => ({ timer: timersService.running(request.params.id) })));
-  fastify.post('/children/:id/running-timer/pause', handle(async request => {
-    timersService.pauseChildTimer(request.params.id);
-    return { timer: timersService.running(request.params.id) };
-  }));
+  fastify.get('/children/:id/current-timer', handle(async request => ({ timer: timersService.current(request.params.id) })));
+  fastify.post('/children/:id/current-timer/pause', handle(async request => ({ timer: timersService.pauseCurrent(request.params.id) })));
+  fastify.post('/children/:id/current-timer/resume', handle(async request => ({ timer: timersService.resumeCurrent(request.params.id) })));
   fastify.post('/daily-tasks/:id/timer/:action', handle(async request =>
     timersService.apply('task', request.params.id, request.params.action)));
   fastify.post('/period-tasks/:id/timer/:action', handle(async request =>
