@@ -22,6 +22,7 @@
       <div
         v-for="goal in goals"
         :key="goal.id"
+        :data-timer-id="goal.id"
         class="bg-white dark:bg-slate-900 rounded-2xl p-3 border"
         :class="goal.is_completed ? 'border-emerald-200 dark:border-emerald-800' : owesToday(goal) ? 'border-rose-200 dark:border-rose-800' : 'border-slate-200 dark:border-slate-700'"
       >

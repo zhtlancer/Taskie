@@ -166,6 +166,7 @@
             <TaskCard
               v-for="task in filteredTasks"
               :key="task.id"
+              :data-timer-id="task.id"
               :task="task"
               :as-parent="asParent"
               :now="now"
@@ -181,7 +182,7 @@
               <p class="text-xs font-bold text-slate-400">自愿完成，不增加应做次数，不影响完成率、全勤和连续打卡。</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <TaskCard v-for="task in extraTasks" :key="task.id" :task="task" :as-parent="asParent" :now="now"
+              <TaskCard v-for="task in extraTasks" :key="task.id" :data-timer-id="task.id" :task="task" :as-parent="asParent" :now="now"
                 @toggle="handleTaskToggle" @timer="handleTimer" @edit-duration="openDurationEdit" />
             </div>
           </section>
@@ -286,11 +287,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import confetti from 'canvas-confetti';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
+import { useRunningTimerStore } from '../stores/runningTimer.js';
 import TaskCard from '../components/TaskCard.vue';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import StudySessionsModal from '../components/StudySessionsModal.vue';
@@ -312,6 +314,7 @@ import { businessDate, businessClock, businessDayLabel, DEFAULT_TIME_ZONE } from
 const route = useRoute();
 const router = useRouter();
 const childStore = useChildStore();
+const timerStore = useRunningTimerStore();
 const isLookupModalOpen = ref(false);
 
 function openStrokeLookup() {
@@ -326,7 +329,10 @@ const childAvatar = computed(() => childStore.childAvatar);
 const asParent = currentRole() === 'parent';
 
 const tasks = ref([]);
+// The placeholder only covers a board that has nothing to show yet. Later refreshes update the
+// cards in place: swapping them for the placeholder shrinks the page and loses the scroll position.
 const loading = ref(true);
+let boardLoaded = false;
 const periods = ref([]);
 const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
@@ -351,8 +357,11 @@ onUnmounted(() => {
 async function fetchTasks() {
   const serial = ++taskSerial, id = childId.value, date = todayString.value;
   const list = (await api.getDailyTasks(id)).map(task => withClock(task));
+  if (serial !== taskSerial || id !== childId.value || date !== todayString.value) return;
   now.value = Date.now();
-  if (serial === taskSerial && id === childId.value && date === todayString.value) tasks.value = list;
+  tasks.value = list;
+  // Every timer change reloads the board's tasks, so the running-timer bar follows here.
+  timerStore.refresh(id);
 }
 
 async function loadGoals() {
@@ -481,6 +490,7 @@ function onResume() {
 }
 watch([todayString, childId], () => {
   tasks.value = []; goals.value = []; periods.value = []; unfinished.value = [];
+  boardLoaded = false;
   childStore.statsRequestId++;
   childStore.stats = { ...childStore.stats, today_points: 0, today_total_tasks: 0, today_completed_tasks: 0, today_completion_rate: 0 };
   todaySchedule.value = null; tomorrowSchedule.value = null;
@@ -494,7 +504,7 @@ onMounted(() => {
 
 async function loadTasks() {
   const serial = ++loadSerial, id = childId.value;
-  loading.value = true;
+  if (!boardLoaded) loading.value = true;
   try {
     if (childStore.childId !== childId.value && childId.value) {
       // Restore child info
@@ -507,7 +517,7 @@ async function loadTasks() {
   } catch (err) {
     console.error('Failed to load daily tasks:', err);
   } finally {
-    if (serial === loadSerial) loading.value = false;
+    if (serial === loadSerial) { loading.value = false; boardLoaded = true; }
   }
 }
 
@@ -515,6 +525,24 @@ async function loadTasks() {
 // checked off; durationBody carries the answer.
 const studyRecord = ref(null);
 const studyTask = ref(null);
+
+// The running-timer bar links here: a study session reopens its record, other timers scroll their card into view.
+const focusId = ref(null);
+watch(() => route.query, query => {
+  if (query.homework) studyRecord.value = String(query.homework);
+  else if (query.study) studyTask.value = String(query.study);
+  else if (query.focus) focusId.value = String(query.focus);
+  else return;
+  router.replace({ query: {} });
+}, { immediate: true });
+watch([focusId, loading], async ([id, busy]) => {
+  if (!id || busy) return;
+  await nextTick();
+  document.querySelector(`[data-timer-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  focusId.value = null;
+});
+// The bar paused a timer: show it paused on the cards too.
+watch(() => timerStore.pausedAt, () => refreshGoals());
 async function handleTaskToggle(task, durationBody = null) {
   if (task.homework) { studyRecord.value = task.homework.id; return; }
   if (task.origin === 'study') { router.push(`/child/${childId.value}/word-study`); return; }

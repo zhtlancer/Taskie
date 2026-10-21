@@ -80,6 +80,7 @@
 import UiDialog from './UiDialog.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
+import { useRunningTimerStore } from '../stores/runningTimer.js';
 import { formatDuration, formatClock, paceLabel } from '../utils/taskTimer.js';
 import { localDate } from '../utils/schedule.js';
 import { businessDate, businessClock } from '../utils/businessDate.js';
@@ -126,6 +127,8 @@ async function load() {
     if (!manualOpen.value) manualDate.value = today.value;
   }
 }
+// Starting, pausing or finishing here changes what the running-timer bar shows on any page.
+const timerStore = useRunningTimerStore();
 async function act(fn) {
   if (busy.value) return;
   busy.value = true; requestSerial += 1; error.value = ''; notice.value = '';
@@ -142,7 +145,7 @@ async function act(fn) {
     // A save may have committed before the response was lost or completion failed.
     try { study.value = hydrate(await studyApi.get()); emit('saved'); } catch { /* Keep input for retry. */ }
   }
-  finally { busy.value = false; }
+  finally { busy.value = false; timerStore.refresh(); }
 }
 function openLegacy() {
   legacyEdit.value = { minutes: study.value.legacy_seconds / 60, expected: study.value.legacy_seconds, reason: '' };

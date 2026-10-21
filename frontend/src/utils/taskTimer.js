@@ -1,5 +1,6 @@
 // Task timers count on the server; the board keeps a running one ticking from when it was loaded.
 export const LONG_TIMER_SECONDS = 3 * 3600;
+export const MAX_TIMER_SECONDS = 12 * 3600;
 export const usesStudySessions = task => Boolean(task.homework ||
   (!['goal', 'study'].includes(task.origin) && (task.track_time || task.study_sessions)));
 
@@ -9,6 +10,13 @@ export function liveSeconds(item, now = Date.now()) {
   const base = item.timer_seconds || 0;
   if (!item.timer_running) return base;
   return base + Math.max(0, Math.floor((now - (item.timer_loaded_at ?? now)) / 1000));
+}
+
+// The running-timer bar's link back to its task: a study session reopens its record, a plain or
+// long-term timer brings its card into view.
+export function timerTarget(timer) {
+  if (timer.kind !== 'session') return { focus: timer.id };
+  return timer.record_id ? { homework: timer.record_id } : { study: timer.id };
 }
 
 // 12:34, or 1:02:03 past an hour.

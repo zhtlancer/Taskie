@@ -53,6 +53,29 @@ class TimersService {
     }
   }
 
+  // The child's running timer, or null. Starting a timer pauses the others, so at most one of a
+  // study session, a plain timed task and a long-term task runs; the latest start wins otherwise.
+  running(childId) {
+    if (!this.db.prepare('SELECT 1 FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
+    const now = Date.now();
+    const sessions = this.db.prepare(`SELECT s.id AS session_id, s.task_id, s.timer_started_at, s.duration_seconds, d.title, d.subject, d.date, r.id AS record_id
+      FROM homework_sessions s JOIN daily_tasks d ON d.id = s.task_id LEFT JOIN homework_records r ON r.daily_task_id = d.id
+      WHERE s.child_id = ? AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL`).all(childId)
+      .map(row => ({ kind: 'session', id: row.task_id, session_id: row.session_id, record_id: row.record_id, title: row.title, subject: row.subject, date: row.date,
+        started_at: row.timer_started_at, timer_seconds: timerSeconds({ timer_started_at: row.timer_started_at, timer_elapsed_seconds: row.duration_seconds }, now) }));
+    const timers = [['task', 'daily_tasks', 'date'], ['goal', 'period_tasks', 'NULL AS date']].flatMap(([kind, table, date]) => this.db
+      .prepare(`SELECT id, title, subject, ${date}, timer_started_at, timer_elapsed_seconds FROM ${table} WHERE child_id = ? AND timer_started_at IS NOT NULL`).all(childId)
+      .map(row => ({ kind, id: row.id, title: row.title, subject: row.subject, date: row.date, started_at: row.timer_started_at, timer_seconds: timerSeconds(row, now) })));
+    return [...sessions, ...timers].sort((a, b) => b.started_at.localeCompare(a.started_at))[0] || null;
+  }
+
+  // Pausing only banks the time already spent, as starting another timer does, so it needs no
+  // task-level checks: an overdue task's running session can be stopped too.
+  pauseChildTimer(childId) {
+    this.running(childId);
+    this.db.transaction(() => this.pauseRunning(childId, Date.now()))();
+  }
+
   // action: start, pause or reset; kind: task (a daily task) or goal (a long-term task).
   apply(kind, id, action) {
     const spec = this.kinds[kind];

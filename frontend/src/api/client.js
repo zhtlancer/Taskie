@@ -54,6 +54,8 @@ export const api = {
   deleteTaskTemplate: id => remove(`/task-templates/${id}`),
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
   getUnfinishedStudy: id => get(`/children/${id}/unfinished-study`),
+  getRunningTimer: id => get(`/children/${id}/running-timer`),
+  pauseRunningTimer: id => post(`/children/${id}/running-timer/pause`),
   // data.duration_seconds: the time a timed task took (null for none); left out, the timer's time counts.
   getBackfillTasks: (id, date) => get('/daily-tasks/backfill', { child_id: id, date }),
   materializeBackfillDay: (id, date) => post('/daily-tasks/backfill/day', { child_id: id, date }),

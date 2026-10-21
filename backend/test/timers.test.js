@@ -294,3 +294,42 @@ test('backfilling the final progress pauses the current session without assignin
   assert.deepEqual([undone.status, undone.timer_running], ['active', false]);
   near(undone.timer_seconds, 600);
 });
+
+test("the child's running timer covers plain tasks, long-term tasks and study sessions, and can be paused", async t => {
+  const { ctx, child, createChild, loginAs, asChild, asParent, template, todayTask, timer, runFor, near } = await fixture(t);
+  const running = async () => (await asChild('GET', `/api/children/${child.id}/running-timer`)).json().timer;
+  await template({ title: '口算', track_time: true });
+  await template({ title: '听写', subject: '语文', track_time: true });
+  const book = (await asParent('POST', `/api/children/${child.id}/goals`, { title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, track_time: true })).json();
+  const oral = await todayTask('口算');
+  const dictation = await todayTask('听写');
+  assert.equal(await running(), null);
+
+  await timer(oral.id, 'start');
+  runFor('daily_tasks', oral.id, 120);
+  const plain = await running();
+  assert.deepEqual([plain.kind, plain.id, plain.title, plain.subject], ['task', oral.id, '口算', '数学']);
+  near(plain.timer_seconds, 120);
+
+  await timer(book.id, 'start', 'period-tasks');
+  assert.deepEqual([(await running()).kind, (await running()).id, (await running()).date], ['goal', book.id, null]);
+
+  assert.equal((await asChild('POST', `/api/daily-tasks/${dictation.id}/study/start`)).statusCode, 200);
+  const session = ctx.db.prepare('SELECT id FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(dictation.id);
+  runFor('homework_sessions', session.id, 300);
+  const study = await running();
+  assert.deepEqual([study.kind, study.id, study.session_id, study.record_id], ['session', dictation.id, session.id, null]);
+  near(study.timer_seconds, 300);
+
+  // Pausing banks the session's time; nothing keeps running.
+  assert.equal((await asChild('POST', `/api/children/${child.id}/running-timer/pause`)).json().timer, null);
+  const active = (await asChild('GET', `/api/daily-tasks/${dictation.id}/study`)).json().active;
+  assert.equal(active.timer_started_at, null);
+  near(active.duration_seconds, 300);
+  assert.equal(await running(), null);
+
+  const other = await loginAs(await createChild('小红'));
+  assert.equal((await asChild('GET', `/api/children/${child.id}/running-timer`, undefined, other)).statusCode, 403);
+  assert.equal((await asChild('POST', `/api/children/${child.id}/running-timer/pause`, undefined, other)).statusCode, 403);
+  assert.equal((await asParent('GET', '/api/children/missing/running-timer')).statusCode, 404);
+});

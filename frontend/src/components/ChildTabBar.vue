@@ -1,6 +1,7 @@
 <template>
   <aside class="hidden lg:flex fixed left-0 top-0 bottom-0 w-52 z-30 border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-5 flex-col gap-5 overflow-y-auto" aria-label="学习导航">
     <router-link :to="link('today')" class="px-3 py-2 text-lg font-black text-brand-700 dark:text-brand-300">🎒 学习空间</router-link>
+    <RunningTimer variant="sidebar" :child-id="childId" :now="now" />
     <nav class="space-y-1">
       <router-link v-for="tab in allTabs" :key="tab.path" :to="link(tab.path)" class="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold min-h-[44px]" :class="active(tab.path) ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" :aria-current="active(tab.path) ? 'page' : undefined">{{ tab.icon }} {{ tab.label }}</router-link>
     </nav>
@@ -17,6 +18,9 @@
       <button type="button" class="flex flex-col items-center justify-center gap-1 py-2 min-h-[60px] text-xs font-bold" :class="secondaryActive ? 'text-brand-600 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400'" aria-label="更多学习功能" :aria-expanded="moreOpen" @click="moreOpen = true"><span class="text-xl leading-none">⋯</span><span>更多</span></button>
     </div>
   </nav>
+  <RunningTimer variant="bar" :child-id="childId" :now="now" />
+  <!-- Room at the end of the page, so the bar above the tab bar never covers the last content. -->
+  <div v-if="timerStore.childId === childId && timerStore.timer" class="lg:hidden h-14 shrink-0" aria-hidden="true"></div>
   <UiDialog v-if="moreOpen" title="更多学习功能" @close="moreOpen = false">
     <nav class="grid grid-cols-2 gap-2 mb-5" aria-label="更多学习功能">
       <router-link v-for="tab in secondaryTabs" :key="tab.path" :to="link(tab.path)" class="min-h-[56px] rounded-xl bg-slate-50 dark:bg-slate-800 p-3 text-sm font-bold text-slate-700 dark:text-slate-200" @click="moreOpen = false">{{ tab.icon }} {{ tab.label }}</router-link>
@@ -26,11 +30,13 @@
   </UiDialog>
 </template>
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { playClick } from '../utils/sound';
 import ThemeSelect from './ThemeSelect.vue';
 import UiDialog from './UiDialog.vue';
+import RunningTimer from './RunningTimer.vue';
+import { useRunningTimerStore } from '../stores/runningTimer.js';
 const props = defineProps({ childId: { type: String, required: true } });
 const route = useRoute(), moreOpen = ref(false);
 const primaryTabs = [{path:'today',icon:'📋',label:'今日'}, {path:'homework',icon:'📒',label:'作业'}, {path:'word-study',icon:'📚',label:'学习'}, {path:'rewards',icon:'🏆',label:'积分'}];
@@ -40,4 +46,20 @@ const link = path => `/child/${props.childId}/${path}`;
 const active = path => route.path === link(path);
 const secondaryActive = computed(() => secondaryTabs.some(tab => active(tab.path)));
 watch(() => route.fullPath, () => { moreOpen.value = false; });
+
+// The running timer ticks locally and is reloaded now and then, since a parent may stop it elsewhere.
+const timerStore = useRunningTimerStore(), now = ref(Date.now());
+const reloadTimer = () => { if (!document.hidden) timerStore.refresh(props.childId); };
+let clock, poll;
+watch(() => props.childId, reloadTimer);
+onMounted(() => {
+  reloadTimer();
+  clock = setInterval(() => { now.value = Date.now(); }, 1000);
+  poll = setInterval(reloadTimer, 60000);
+  document.addEventListener('visibilitychange', reloadTimer);
+});
+onUnmounted(() => {
+  clearInterval(clock); clearInterval(poll);
+  document.removeEventListener('visibilitychange', reloadTimer);
+});
 </script>
