@@ -259,3 +259,68 @@ test('cancelling one of multiple same-day lessons removes only its unfinished ch
   await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: sources[1], kind: 'leave' });
   assert.deepEqual(tasks().map(row => [row.id, row.is_completed]), [[kept.id, true]], 'completed history is retained');
 });
+
+test('weekly classes stop at the requested count; leave and moves keep lesson numbers', async t => {
+  const { ctx, child, asParent, asChild, day, schedule } = await fixture(t);
+  const base = { title: '课次钢琴', start_date: day(0), days_of_week: [3, 6], start_time: '16:30', end_time: '17:30', total_lessons: 3, create_task: true };
+  for (const count of [0, 521, 1.5, '3', false]) assert.equal((await asParent('POST', '/api/outside-classes', { ...base, total_lessons: count })).statusCode, 400);
+  assert.equal((await asChild('POST', '/api/outside-classes', base)).statusCode, 403);
+  const result = await asParent('POST', '/api/outside-classes', { ...base, end_date: day(1) });
+  assert.equal(result.statusCode, 201, result.body);
+  const cls = result.json();
+  assert.deepEqual([cls.total_lessons, cls.end_date], [3, day(9)], 'server derives the end from the count');
+  const lessons = (await schedule(day(0), day(20))).flatMap(d => d.outside);
+  assert.deepEqual(lessons.map(l => [l.date, l.lesson_number]), [[day(2), 1], [day(5), 2], [day(9), 3]]);
+  assert.equal((await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: day(12), kind: 'leave' })).statusCode, 400);
+  await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: day(2), kind: 'leave' });
+  const move = await asParent('PUT', `/api/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: day(9), kind: 'moved', new_date: day(16), new_start_time: '09:00', new_end_time: '10:00' });
+  assert.equal(move.statusCode, 200, move.body);
+  assert.equal(ctx.app.services.homeworkService.classesOf(child.id).find(c => c.id === cls.id).end_date, day(16), 'homework keeps the moved final lesson available');
+  const moved = (await schedule(day(0), day(20))).flatMap(d => d.outside);
+  assert.deepEqual(moved.map(l => [l.date, l.lesson_number, l.status]), [[day(2), 1, 'leave'], [day(5), 2, 'scheduled'], [day(9), 3, 'moved_out'], [day(16), 3, 'moved_in']]);
+  // Make these fixtures old enough for the check-in generation boundary.
+  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(`${day(-7)}T00:00:00Z`, child.id);
+  ctx.db.prepare('UPDATE outside_classes SET created_at = ? WHERE id = ?').run(`${day(-7)}T00:00:00Z`, cls.id);
+  const taskDays = ctx.app.services.scheduleService.classTaskSchedule(child.id);
+  assert.equal(taskDays(day(2)).length, 0);
+  assert.equal(taskDays(day(12)).length, 0);
+  assert.equal(taskDays(day(16))[0].lesson_number, 3);
+  const shortened = await asParent('PUT', `/api/outside-classes/${cls.id}`, { total_lessons: 2 });
+  assert.equal(shortened.json().end_date, day(5));
+  assert.equal(ctx.app.services.homeworkService.classesOf(child.id).find(c => c.id === cls.id).end_date, day(5));
+  assert.equal((await schedule(day(16)))[0].outside.length, 0, 'removed source lessons cannot leave ghost moves');
+  const dateBased = await asParent('PUT', `/api/outside-classes/${cls.id}`, { total_lessons: null, end_date: day(20) });
+  assert.equal(dateBased.json().total_lessons, null);
+  assert.equal((await schedule(day(19)))[0].outside[0].lesson_number, null);
+});
+
+test('v27 upgrades old classes without changing their dates; backups preserve counts and reject missing data', async t => {
+  const { ctx, asParent, day } = await fixture(t);
+  const { initDb } = require('../src/db');
+  const Database = require('better-sqlite3');
+  const fs = require('node:fs');
+  const { gzipSync, gunzipSync } = require('node:zlib');
+  const cls = (await asParent('POST', '/api/outside-classes', { title: '旧钢琴', start_date: day(0), end_date: day(30), days_of_week: [1], start_time: '16:00', end_time: '17:00' })).json();
+  ctx.db.exec('ALTER TABLE outside_classes DROP COLUMN total_lessons');
+  ctx.db.pragma('user_version = 26');
+  initDb(ctx.db);
+  const row = () => ctx.db.prepare('SELECT total_lessons, end_date FROM outside_classes WHERE id = ?').get(cls.id);
+  assert.deepEqual({ ...row() }, { total_lessons: null, end_date: day(30) });
+  await asParent('PUT', `/api/outside-classes/${cls.id}`, { total_lessons: 3 });
+  const backup = ctx.app.backupService;
+  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  await asParent('PUT', `/api/outside-classes/${cls.id}`, { total_lessons: 1 });
+  backup.restore(archive);
+  assert.deepEqual({ ...row() }, { total_lessons: 3, end_date: day(14) });
+  const packed = JSON.parse(gunzipSync(archive));
+  const candidate = new Database(Buffer.from(packed.database, 'base64'));
+  try {
+    candidate.exec('ALTER TABLE outside_classes DROP COLUMN total_lessons');
+    const pack = () => gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') }));
+    assert.throws(() => backup.restore(pack()), /总课次/);
+    candidate.pragma('user_version = 26');
+    backup.restore(pack());
+    assert.deepEqual({ ...row() }, { total_lessons: null, end_date: day(14) });
+    assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  } finally { candidate.close(); }
+});

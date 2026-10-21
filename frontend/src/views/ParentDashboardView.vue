@@ -172,6 +172,12 @@
             <span class="shrink-0 font-black tabular-nums">{{ formatClock(timerSeconds(item.timer)) }}</span>
           </router-link>
 
+          <router-link v-if="item.classOverview?.count" data-class-overview :to="{ path: '/parent/schedule', query: { child: item.child.id } }"
+            class="block min-h-[44px] mb-4 px-3 py-2 rounded-2xl bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 text-xs font-bold">
+            <span class="block">课外班 {{ item.classOverview.count }} 门 · 已上 {{ item.classOverview.attended }} 次 · 待确认 {{ item.classOverview.pending }} 次</span>
+            <span v-if="item.classOverview.next" class="block mt-1">下次 {{ item.classOverview.next.actual_date }} {{ item.classOverview.next.start_time }} · {{ item.classOverview.next.title }}</span>
+          </router-link>
+
           <!-- Progress Bar & Count -->
           <div class="bg-slate-50 dark:bg-slate-800 rounded-2xl p-4 border border-slate-100 dark:border-slate-700 mb-4">
             <div class="flex items-center justify-between text-xs font-bold mb-1.5">
@@ -332,6 +338,11 @@ const childrenStats = ref([]);
 // Each child's current timer ticks locally and is reloaded now and then, and on returning to the page.
 const now = ref(Date.now());
 const loadTimer = id => api.getCurrentTimer(id).then(result => result.timer && withClock(result.timer)).catch(() => null);
+const loadClassOverview = id => api.getOutsideClassStats(id).then(rows => ({ count: rows.length,
+  attended: rows.reduce((n, row) => n + row.attended, 0), pending: rows.reduce((n, row) => n + row.pending, 0),
+  next: rows.filter(row => row.next_lesson).map(row => ({ ...row.next_lesson, title: row.title }))
+    .sort((a, b) => a.actual_date.localeCompare(b.actual_date) || a.start_time.localeCompare(b.start_time))[0] ?? null
+})).catch(() => null);
 const timerSeconds = timer => Math.min(MAX_TIMER_SECONDS, liveSeconds(timer, now.value));
 const timerTone = timer => !timer.timer_running ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
   : timerSeconds(timer) > LONG_TIMER_SECONDS ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' : 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300';
@@ -339,8 +350,8 @@ let timerSerial = 0;
 async function reloadTimers() {
   if (document.hidden) return;
   const items = childrenStats.value, serial = ++timerSerial;
-  const timers = await Promise.all(items.map(item => loadTimer(item.child.id)));
-  if (serial === timerSerial) items.forEach((item, index) => { item.timer = timers[index]; });
+  const timers = await Promise.all(items.map(item => Promise.all([loadTimer(item.child.id), loadClassOverview(item.child.id)])));
+  if (serial === timerSerial) items.forEach((item, index) => { [item.timer, item.classOverview] = timers[index]; });
 }
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 const poll = setInterval(reloadTimers, 60000);
@@ -498,9 +509,9 @@ async function loadDashboard() {
   try {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
-      const [stats, week, adhoc, goals, time, timer] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
-        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null), loadTimer(child.id)]);
-      return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer };
+      const [stats, week, adhoc, goals, time, timer, classOverview] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null), loadTimer(child.id), loadClassOverview(child.id)]);
+      return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer, classOverview };
     });
     [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests(), loadCompletionRequests()]);
   } catch (err) {

@@ -14,6 +14,18 @@ export function addDays(date, days) {
   return d.toISOString().slice(0, 10);
 }
 
+export function lessonDates(start, days, count) {
+  const parsed = new Date(`${start}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== start ||
+      !Array.isArray(days) || !days.length || !days.every(d => Number.isInteger(d) && d >= 0 && d <= 6) ||
+      !Number.isSafeInteger(count) || count < 1 || count > 520) return [];
+  const dates = [];
+  for (let date = start; dates.length < count; date = addDays(date, 1)) {
+    if (days.includes(new Date(`${date}T00:00:00Z`).getUTCDay())) dates.push(date);
+  }
+  return dates;
+}
+
 export function mondayOf(date) {
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   return addDays(date, weekday === 0 ? -6 : 1 - weekday);

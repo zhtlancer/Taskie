@@ -965,6 +965,9 @@ class TasksService {
       if (completionSource === 'parent_backfill') this.recordBackfillEvent({ ...task, earned_points: earned }, 'complete', duration.seconds, now);
       cancelPendingSkips(this.db, taskId, now);
 
+      // Explicit class check-ins confirm attendance once; parent corrections remain independent.
+      this.classStatsService?.syncCheckin(task);
+
       // 2. Insert point log
       this.db.prepare(`
         INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at, activity_date, activity_title)
@@ -1025,6 +1028,7 @@ class TasksService {
       // 1. Revert task
       // Preserve a legacy duration before clearing completion; clients need not open /study first.
       this.taskStudyService?.preserveTime(taskId, { endActive: true, convert: false });
+      this.classStatsService?.undoCheckin(taskId);
       this.db.prepare(`
         UPDATE daily_tasks
         SET is_completed = 0, completed_at = NULL, duration_seconds = NULL, duration_source = NULL, completion_source = NULL, is_extra_completion = 0, earned_points = NULL

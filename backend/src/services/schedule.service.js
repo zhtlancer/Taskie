@@ -1,6 +1,6 @@
 const { generateId } = require('../utils/crypto');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate } = require('../utils/date');
-const { classLessonKey } = require('../utils/schedule');
+const { classLessonKey, lessonDates } = require('../utils/schedule');
 const { schoolCalendar } = require('./calendar');
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -223,10 +223,10 @@ class ScheduleService {
     const id = generateId();
     this.db.transaction(() => {
       this.db.prepare(`INSERT INTO outside_classes (id, title, institution, location, teacher, days_of_week, start_time, end_time,
-          start_date, end_date, bring, note, create_task, points, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          start_date, end_date, bring, note, create_task, points, created_at, total_lessons)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(id, fields.title, fields.institution, fields.location, fields.teacher, JSON.stringify(fields.days_of_week), fields.start_time,
-          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, new Date().toISOString());
+          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, new Date().toISOString(), fields.total_lessons);
       this.setClassChildren(id, fields.child_ids);
     })();
     return this.getClass(id);
@@ -238,9 +238,9 @@ class ScheduleService {
     const fields = this.validateClass({ ...existing, ...body });
     this.db.transaction(() => {
       this.db.prepare(`UPDATE outside_classes SET title = ?, institution = ?, location = ?, teacher = ?, days_of_week = ?, start_time = ?,
-          end_time = ?, start_date = ?, end_date = ?, bring = ?, note = ?, create_task = ?, points = ? WHERE id = ?`)
+          end_time = ?, start_date = ?, end_date = ?, bring = ?, note = ?, create_task = ?, points = ?, total_lessons = ? WHERE id = ?`)
         .run(fields.title, fields.institution, fields.location, fields.teacher, JSON.stringify(fields.days_of_week), fields.start_time,
-          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, id);
+          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, fields.total_lessons, id);
       this.setClassChildren(id, fields.child_ids);
       this.pruneClassTasks(id);
     })();
@@ -273,7 +273,9 @@ class ScheduleService {
     const days = validateDays(body.days_of_week);
     validateTimes(body.start_time, body.end_time);
     const start = validateDate(body.start_date ?? getTodayDate(), '开始日期');
-    const end = body.end_date ? validateDate(body.end_date, '结束日期') : null;
+    const total = body.total_lessons ?? null;
+    if (total !== null && (!Number.isSafeInteger(total) || total < 1 || total > 520)) throw fail(400, '总课次须为 1 至 520 的整数');
+    const end = total !== null ? lessonDates(start, days, total).at(-1) : body.end_date ? validateDate(body.end_date, '结束日期') : null;
     if (end && end < start) throw fail(400, '结束日期不能早于开始日期');
     const createTask = body.create_task ?? false;
     if (typeof createTask !== 'boolean') throw fail(400, '“生成打卡任务”设置无效');
@@ -284,7 +286,7 @@ class ScheduleService {
       throw fail(400, '请至少选择一个孩子，或设为全部孩子');
     }
     return {
-      title, days_of_week: days, start_time: body.start_time, end_time: body.end_time, start_date: start, end_date: end,
+      title, days_of_week: days, start_time: body.start_time, end_time: body.end_time, start_date: start, end_date: end, total_lessons: total,
       institution: text(body.institution, '机构', 30),
       location: text(body.location, '地点', 50),
       teacher: text(body.teacher, '老师', 10),
@@ -306,6 +308,9 @@ class ScheduleService {
       throw fail(400, '这个孩子没有这门课');
     }
     const date = validateDate(body.date, '日期');
+    if (this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, date)) {
+      throw fail(409, '这次课已确认出勤，请先在出勤统计中恢复未确认，再请假或调课');
+    }
     if (date < cls.start_date || (cls.end_date && date > cls.end_date) || !cls.days_of_week.includes(getDayOfWeek(date))) {
       throw fail(400, '这天没有这门课');
     }
@@ -332,6 +337,9 @@ class ScheduleService {
   deleteException(id) {
     const exception = this.db.prepare('SELECT * FROM outside_class_exceptions WHERE id = ?').get(id);
     if (!exception) throw fail(404, '请假或调课记录不存在');
+    if (this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(exception.class_id, exception.child_id, exception.date)) {
+      throw fail(409, '这次课已确认出勤，请先在出勤统计中恢复未确认，再撤销请假或调课');
+    }
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM outside_class_exceptions WHERE id = ?').run(id);
       this.pruneClassTasks(exception.class_id);
@@ -358,10 +366,15 @@ class ScheduleService {
   outsideLessons(childId) {
     const classes = this.db.prepare(`SELECT * FROM outside_classes c WHERE c.assign_all = 1
         OR EXISTS (SELECT 1 FROM outside_class_children WHERE class_id = c.id AND child_id = ?)`).all(childId)
-      .map(row => ({ ...row, days: JSON.parse(row.days_of_week) }));
+      .map(row => ({ ...row, days: JSON.parse(row.days_of_week), lessonDates: row.total_lessons ? lessonDates(row.start_date, JSON.parse(row.days_of_week), row.total_lessons) : null }));
     const byId = new Map(classes.map(row => [row.id, row]));
-    const exceptions = this.db.prepare('SELECT * FROM outside_class_exceptions WHERE child_id = ?').all(childId).filter(e => byId.has(e.class_id));
+    const exceptions = this.db.prepare('SELECT * FROM outside_class_exceptions WHERE child_id = ?').all(childId).filter(e => {
+      const row = byId.get(e.class_id);
+      return row && (!row.lessonDates || row.lessonDates.includes(e.date));
+    });
     const exceptionAt = new Map(exceptions.map(e => [`${e.class_id}|${e.date}`, e]));
+    const attendance = new Map(this.db.prepare('SELECT class_id, lesson_date, status FROM outside_class_attendance WHERE child_id = ?').all(childId)
+      .map(r => [`${r.class_id}|${r.lesson_date}`, r]));
     const movedInto = new Map();
     for (const e of exceptions.filter(e => e.kind === 'moved')) {
       if (!movedInto.has(e.new_date)) movedInto.set(e.new_date, []);
@@ -369,6 +382,7 @@ class ScheduleService {
     }
     const lesson = (row, date, startTime, endTime, status, e = null) => ({
       class_id: row.id, class_lesson_date: e?.date ?? date, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
+      lesson_number: row.lessonDates ? row.lessonDates.indexOf(e?.date ?? date) + 1 : null, total_lessons: row.total_lessons,
       bring: row.bring, note: row.note, start_time: startTime, end_time: endTime, status,
       exception_id: e?.id ?? null, exception_note: e?.note ?? null,
       moved_to: status === 'moved_out' ? { date: e.new_date, start_time: e.new_start_time, end_time: e.new_end_time } : null,
@@ -384,6 +398,11 @@ class ScheduleService {
         list.push(lesson(row, date, row.start_time, row.end_time, !e ? 'scheduled' : e.kind === 'leave' ? 'leave' : 'moved_out', e));
       }
       for (const e of movedInto.get(date) || []) list.push(lesson(byId.get(e.class_id), date, e.new_start_time, e.new_end_time, 'moved_in', e));
+      for (const item of list) {
+        const record = attendance.get(`${item.class_id}|${item.class_lesson_date}`);
+        if (record?.status === 'leave' && item.status !== 'moved_out') item.status = 'leave';
+        else if (record?.status === 'attended' && item.status === 'leave') item.status = 'scheduled';
+      }
       return list.sort((a, b) => a.start_time.localeCompare(b.start_time));
     };
   }

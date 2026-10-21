@@ -409,7 +409,7 @@ test('v26 migration remembers timers running during the upgrade; backups keep th
   candidate.pragma('user_version = 25');
   backup.restore(pack());
   candidate.close();
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 26);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
   // An older backup has no latest timer: the paused session simply shows again once restarted.
   assert.deepEqual({ ...latest() }, { kind: null, id: null });
 });

@@ -89,8 +89,11 @@
                   👶 {{ cls.child_ids === null ? '全部孩子' : children.filter(c => cls.child_ids.includes(c.id)).map(c => c.name).join('、') }}
                   <span v-if="cls.create_task" class="ml-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">打卡 ★{{ cls.points }}</span>
                   <span class="ml-1 text-slate-400">{{ cls.start_date }} 起{{ cls.end_date ? `，到 ${cls.end_date}` : '' }}</span>
+                  <span v-if="cls.total_lessons" class="ml-1">共 {{ cls.total_lessons }} 次</span>
                 </div>
               </div>
+
+              <ClassStatsPanel v-if="statsFor(cls)" :key="`${cls.id}:${selectedChild.id}`" :summary="statsFor(cls)" :child="selectedChild" @changed="refreshClassStats" />
 
               <!-- The selected child's next four weeks: tap a lesson to ask for leave or move it -->
               <div class="mt-3 pt-2 border-t border-violet-100 dark:border-violet-800">
@@ -106,7 +109,7 @@
                     :class="lesson.status === 'scheduled' ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'"
                     @click="exceptionModal = { cls, lesson }"
                   >
-                    {{ shortDate(lesson.date) }} {{ WEEKDAY_NAMES[weekdayOf(lesson.date)] }}<template v-if="lesson.status !== 'scheduled'"> · {{ lessonNote(lesson) }}</template>
+                    <span v-if="lesson.lesson_number">第 {{ lesson.lesson_number }} 次 · </span>{{ shortDate(lesson.date) }} {{ WEEKDAY_NAMES[weekdayOf(lesson.date)] }}<template v-if="lesson.status !== 'scheduled'"> · {{ lessonNote(lesson) }}</template>
                   </button>
                 </div>
               </div>
@@ -146,18 +149,24 @@
 <script setup>
 import { confirmAction } from '../utils/confirmation';
 import { onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import TimetableEditor from '../components/TimetableEditor.vue';
 import OutsideClassModal from '../components/OutsideClassModal.vue';
 import ClassExceptionModal from '../components/ClassExceptionModal.vue';
+import ClassStatsPanel from '../components/ClassStatsPanel.vue';
 import { WEEKDAY_NAMES, WEEK_ORDER, addDays, lessonNote, localDate, shortDate, timeRange } from '../utils/schedule.js';
 
 const today = localDate();
+const route = useRoute();
 const children = ref([]);
 const selectedChild = ref(null);
 const timetables = ref([]);
 const classes = ref([]);
+const classStats = ref([]);
+const statsFor = cls => classStats.value.find(item => item.class_id === cls.id);
+let childSerial = 0;
 const upcoming = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -182,15 +191,17 @@ function showError(err) {
 }
 
 async function loadChild() {
-  const id = selectedChild.value.id;
-  const [list, days] = await Promise.all([api.getTimetables(id), api.getChildSchedule(id, today, addDays(today, 27))]);
-  if (selectedChild.value?.id !== id) return;
+  const id = selectedChild.value.id, serial = ++childSerial;
+  const [list, days, stats] = await Promise.all([api.getTimetables(id), api.getChildSchedule(id, today, addDays(today, 27)), api.getOutsideClassStats(id)]);
+  if (selectedChild.value?.id !== id || serial !== childSerial) return;
   timetables.value = list;
   upcoming.value = days;
+  classStats.value = stats;
 }
 
 async function selectChild(child) {
   selectedChild.value = child;
+  classStats.value = [];
   error.value = '';
   try {
     await loadChild();
@@ -201,6 +212,9 @@ async function selectChild(child) {
 
 async function reload() {
   [classes.value] = await Promise.all([api.getOutsideClasses(), loadChild()]);
+}
+async function refreshClassStats() {
+  try { await reload(); } catch (err) { showError(err); }
 }
 
 async function afterSave(close) {
@@ -228,7 +242,7 @@ async function removeTimetable(timetable) {
 }
 
 async function removeClass(cls) {
-  if (!await confirmAction(`确定删除课外班「${cls.title}」吗？还没完成的打卡任务会一起删除，已完成的记录和积分保留。`)) return;
+  if (!await confirmAction(`确定删除课外班「${cls.title}」吗？本班的出勤、学费和未完成打卡任务会一起删除；已完成的打卡、作业记录和积分保留。`)) return;
   try {
     await api.deleteOutsideClass(cls.id);
     await reload();
@@ -241,7 +255,7 @@ onMounted(async () => {
   try {
     children.value = await api.getChildren();
     if (children.value.length) {
-      selectedChild.value = children.value[0];
+      selectedChild.value = children.value.find(child => child.id === route.query.child) || children.value[0];
       await reload();
     }
   } catch (err) {

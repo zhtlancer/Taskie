@@ -327,6 +327,33 @@ CREATE TABLE IF NOT EXISTS outside_class_exceptions (
   FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
 );
 
+-- Attendance and tuition are per child, separate from check-in points and task completion.
+-- A moved lesson keeps its original date as its identity; actual times are historical snapshots.
+CREATE TABLE IF NOT EXISTS outside_class_attendance (
+  class_id TEXT NOT NULL REFERENCES outside_classes(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  lesson_date TEXT NOT NULL,
+  actual_date TEXT NOT NULL,
+  start_time TEXT,
+  end_time TEXT,
+  duration_minutes INTEGER,
+  status TEXT NOT NULL CHECK(status IN ('attended', 'leave', 'absent')),
+  charged INTEGER NOT NULL CHECK(charged IN (0, 1)),
+  source TEXT NOT NULL CHECK(source IN ('parent', 'checkin')),
+  task_id TEXT REFERENCES daily_tasks(id) ON DELETE SET NULL,
+  note TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (class_id, child_id, lesson_date)
+);
+CREATE INDEX IF NOT EXISTS idx_class_attendance_child ON outside_class_attendance(child_id, actual_date);
+CREATE TABLE IF NOT EXISTS outside_class_fees (
+  class_id TEXT NOT NULL REFERENCES outside_classes(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  total_fee_cents INTEGER CHECK(total_fee_cents IS NULL OR total_fee_cents >= 0),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (class_id, child_id)
+);
+
 -- Make-up school days (调休上学日): a day a child goes to school following another weekday's tasks
 -- and timetable, even on a weekend or inside a holiday period.
 CREATE TABLE IF NOT EXISTS makeup_days (

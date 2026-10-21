@@ -60,9 +60,17 @@ class HomeworkService {
   // --- Courses and their lessons ---
 
   classesOf(childId) {
-    return this.db.prepare(`SELECT id, title, start_date, end_date FROM outside_classes c
+    // The final lesson may be moved beyond the nominal end of a counted course. Keep it
+    // selectable for homework through that moved lesson, using only still-valid source dates.
+    return this.db.prepare(`SELECT id, title, start_date,
+      CASE WHEN end_date IS NULL THEN NULL ELSE MAX(end_date, COALESCE((
+        SELECT MAX(e.new_date) FROM outside_class_exceptions e
+        WHERE e.class_id = c.id AND e.child_id = ? AND e.kind = 'moved'
+          AND e.date >= c.start_date AND e.date <= c.end_date
+          AND CAST(strftime('%w', e.date) AS INTEGER) IN (SELECT value FROM json_each(c.days_of_week))
+      ), end_date)) END AS end_date FROM outside_classes c
       WHERE c.assign_all = 1 OR EXISTS (SELECT 1 FROM outside_class_children WHERE class_id = c.id AND child_id = ?)
-      ORDER BY c.start_time, c.title`).all(childId);
+      ORDER BY c.start_time, c.title`).all(childId, childId);
   }
 
   // Tells whether a course has a lesson on a date: school lessons follow the timetable of the date

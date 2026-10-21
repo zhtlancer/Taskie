@@ -44,6 +44,7 @@
       <div v-if="lesson.location || lesson.institution" class="mt-0.5 text-xs font-bold text-slate-500 dark:text-slate-400 truncate">
         📍 {{ [lesson.institution, lesson.location].filter(Boolean).join(' · ') }}
       </div>
+      <div v-if="lesson.lesson_number" class="mt-0.5 text-xs font-bold text-violet-600 dark:text-violet-300">第 {{ lesson.lesson_number }} / {{ lesson.total_lessons }} 次</div>
       <div v-if="!compact && lesson.teacher" class="text-xs font-bold text-slate-400">{{ lesson.teacher }}</div>
       <div v-if="lessonNote(lesson)" class="mt-0.5 text-xs font-black" :class="lesson.status === 'moved_in' ? 'text-violet-600 dark:text-violet-300' : 'text-amber-600 dark:text-amber-300'">
         {{ lessonNote(lesson) }}

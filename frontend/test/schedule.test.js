@@ -36,3 +36,11 @@ test('deadlines read as the day carried from and the last day to finish', async 
   assert.equal(deadlineText({ date: '2026-09-30', carried_from: '2026-09-30', due_date: '2026-10-08' }, '2026-10-01'), '周三的作业 · 周四 10/8前完成');
   assert.equal(deadlineText({ date: today, due_date: null }, today), '');
 });
+
+test('count-based weekly preview matches dates across months, years and leap days', async () => {
+  const { lessonDates } = await import('../src/utils/schedule.js');
+  assert.deepEqual(lessonDates('2026-10-19', [3, 6], 3), ['2026-10-21', '2026-10-24', '2026-10-28']);
+  assert.deepEqual(lessonDates('2026-12-31', [0, 4], 3), ['2026-12-31', '2027-01-03', '2027-01-07']);
+  assert.deepEqual(lessonDates('2028-02-28', [2, 3], 2), ['2028-02-29', '2028-03-01']);
+  for (const [start, days, count] of [['2026-02-30', [1], 2], ['', [1], 2], ['2026-01-01', [], 2], ['2026-01-01', [1], 0], ['2026-01-01', [1], 521]]) assert.deepEqual(lessonDates(start, days, count), []);
+});

@@ -446,6 +446,26 @@ function initDb(db) {
       db.pragma('user_version = 26');
     })();
   }
+  // v27: optional fixed number of weekly outside-class lessons; existing classes remain date-based.
+  if (db.pragma('user_version', { simple: true }) < 27) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(outside_classes)').some(c => c.name === 'total_lessons')) db.exec('ALTER TABLE outside_classes ADD COLUMN total_lessons INTEGER');
+      db.pragma('user_version = 27');
+    })();
+  }
+  // v28: import explicit completed class check-ins, never infer attendance just from a past date.
+  // Old check-ins lack reliable scheduled-time snapshots, so their duration stays unknown.
+  if (db.pragma('user_version', { simple: true }) < 28) {
+    db.transaction(() => {
+      db.exec(`INSERT OR IGNORE INTO outside_class_attendance
+        (class_id, child_id, lesson_date, actual_date, status, charged, source, task_id, updated_at)
+        SELECT d.class_id, d.child_id, COALESCE(d.class_lesson_date, d.date), d.date,
+          'attended', 1, 'checkin', d.id, COALESCE(d.completed_at, datetime('now'))
+        FROM daily_tasks d JOIN outside_classes c ON c.id = d.class_id
+        WHERE d.origin = 'class' AND d.is_completed = 1 ORDER BY d.completed_at DESC, d.rowid DESC`);
+      db.pragma('user_version = 28');
+    })();
+  }
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

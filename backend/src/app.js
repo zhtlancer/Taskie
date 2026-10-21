@@ -80,6 +80,9 @@ function buildApp(opts = {}) {
   const skipsService = new SkipsService(db, tasksService, rewardsService);
   const timersService = new TimersService(db, tasksService, periodsService);
   const scheduleService = new ScheduleService(db);
+  const ClassStatsService = require('./services/class-stats.service');
+  const classStatsService = new ClassStatsService(db, scheduleService);
+  tasksService.classStatsService = classStatsService;
   tasksService.scheduleService = scheduleService;
   const timeStatsService = new TimeStatsService(db);
   const wordStudyService = new WordStudyService(db, rewardsService);
@@ -110,6 +113,7 @@ function buildApp(opts = {}) {
     skipsService,
     timersService,
     scheduleService,
+    classStatsService,
     timeStatsService,
     wordStudyService,
     homeworkService,
@@ -215,7 +219,7 @@ function buildApp(opts = {}) {
   fastify.register(skipsRoutes, { prefix: '/api', skipsService });
   fastify.register(timersRoutes, { prefix: '/api', timersService, tasksService, periodsService });
   fastify.register(taskStudyRoutes, { prefix: '/api', taskStudyService });
-  fastify.register(scheduleRoutes, { prefix: '/api', scheduleService });
+  fastify.register(scheduleRoutes, { prefix: '/api', scheduleService, classStatsService });
   fastify.register(wordStudyRoutes, { prefix: '/api', wordStudyService });
   fastify.register(homeworkRoutes, { prefix: '/api', homeworkService, homeworkStudyService });
 

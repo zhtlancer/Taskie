@@ -1,5 +1,5 @@
 async function scheduleRoutes(fastify, options) {
-  const { scheduleService } = options;
+  const { scheduleService, classStatsService } = options;
   const handle = fn => async (request, reply) => {
     try {
       return await fn(request, reply);
@@ -19,6 +19,10 @@ async function scheduleRoutes(fastify, options) {
   fastify.delete('/timetables/:id', handle(async request => scheduleService.deleteTimetable(request.params.id)));
 
   fastify.get('/outside-classes', handle(async () => scheduleService.listClasses()));
+  fastify.get('/outside-classes/stats', handle(async request => classStatsService.list(request.query.child_id)));
+  fastify.get('/outside-classes/:id/stats', handle(async request => classStatsService.details(request.params.id, request.query.child_id, request.query.from, request.query.to)));
+  fastify.put('/outside-classes/:id/attendance', handle(async request => classStatsService.setAttendance(request.params.id, request.body?.child_id, request.body?.lesson_date, request.body || {})));
+  fastify.put('/outside-classes/:id/fee', handle(async request => classStatsService.setFee(request.params.id, request.body?.child_id, request.body || {})));
   fastify.post('/outside-classes', handle(async (request, reply) => reply.code(201).send(scheduleService.createClass(request.body || {}))));
   fastify.put('/outside-classes/:id', handle(async request => scheduleService.updateClass(request.params.id, request.body || {})));
   fastify.delete('/outside-classes/:id', handle(async request => scheduleService.deleteClass(request.params.id)));
