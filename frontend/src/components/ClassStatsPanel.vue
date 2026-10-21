@@ -23,7 +23,7 @@
         <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-3"><b class="block text-xl">{{ details.summary.pending }}</b>待确认</div>
         <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-3"><b class="block text-xl">{{ details.summary.attendance_rate === null ? '—' : `${details.summary.attendance_rate}%` }}</b>出勤率</div>
       </div>
-      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">请假 {{ details.summary.leave }} 次 · 缺席 {{ details.summary.absent }} 次 · 本月已上 {{ details.summary.month_attended }} 次。出勤率按已上课与缺席计算，不含请假及未确认。</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">请假 {{ details.summary.leave }} 次 · 缺席 {{ details.summary.absent }} 次 · 本月已上 {{ details.summary.month_attended }} 次。出勤率按已上课与缺席计算，不含请假及未确认。<template v-if="details.summary.enrolled">待确认从 {{ details.summary.pending_since }} 起计算，更早的课仍可在下方补记。</template></p>
       <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">累计上课 {{ details.summary.attended_minutes }} 分钟（按课表时长）<template v-if="details.summary.unknown_duration_lessons">，另 {{ details.summary.unknown_duration_lessons }} 次时长未知</template>。<template v-if="details.summary.estimated_end_date">预计结课 {{ details.summary.estimated_end_date }}。</template></p>
 
       <form class="p-3 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2 mb-4" @submit.prevent="saveFee">
@@ -45,7 +45,7 @@
         <span class="text-xs flex-1">{{ details.from }} 至 {{ details.to }}</span>
         <button type="button" :disabled="busy || fetching" class="min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold" @click="changeRange(30)">往后 30 天</button>
       </div>
-      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">过去的课程不会自动算作出勤。上课打卡默认同步确认，家长更正优先；这里的更正不改变打卡状态或积分。请假、缺席是否消课可单独确认。</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">过去的课程不会自动算作出勤。上课打卡默认同步确认，家长更正优先。这里的更正只用于出勤统计，不改变打卡、全勤或积分；只有把今天的课记为请假，会取消今天的上课打卡。请假、缺席是否消课可单独确认。</p>
       <p v-if="!details.lessons.length" class="py-4 text-sm text-slate-500">这段时间没有课程记录。</p>
       <div class="space-y-2">
         <div v-for="lesson in details.lessons" :key="lesson.lesson_date" class="rounded-2xl border border-slate-200 dark:border-slate-700 p-3 text-sm" :data-lesson-date="lesson.lesson_date">

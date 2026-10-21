@@ -466,6 +466,9 @@ function initDb(db) {
       db.pragma('user_version = 28');
     })();
   }
+  // Pending outside-class attendance counts from the day tracking began (this upgrade, a new
+  // install or restoring an older backup), not from lessons nobody could record before it.
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('class_attendance_since', ?)").run(formatDate());
   console.log('    [SQLite] 数据表结构校验完成，检查默认成就徽章...');
 
   // Seed default badge definitions if not existing

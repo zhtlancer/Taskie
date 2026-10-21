@@ -1,4 +1,4 @@
-const { getTodayDate, getDayOfWeek, parseDate, shiftDate } = require('../utils/date');
+const { formatDate, getTodayDate, getDayOfWeek, parseDate, shiftDate } = require('../utils/date');
 const { timeZone } = require('../config');
 const fail = (status, message) => ({ status, message });
 const minutes = (start, end) => start && end ? (Number(end.slice(0, 2)) * 60 + Number(end.slice(3))) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3))) : null;
@@ -11,14 +11,19 @@ class ClassStatsService {
   context(classId, childId, allowEmpty = false) {
     const cls = this.schedule.getClass(classId);
     if (!cls) throw fail(404, '课外班不存在');
-    if (!this.db.prepare('SELECT 1 FROM children WHERE id = ?').get(childId)) throw fail(404, '孩子不存在');
+    const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
+    if (!child) throw fail(404, '孩子不存在');
     const records = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ?').all(classId, childId);
     const fee = this.db.prepare('SELECT total_fee_cents FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(classId, childId);
     const enrolled = cls.child_ids === null || cls.child_ids.includes(childId);
     if (!allowEmpty && !enrolled && !records.length && !fee) throw fail(400, '这个孩子没有这门课');
     const exceptions = new Map(this.db.prepare('SELECT * FROM outside_class_exceptions WHERE class_id = ? AND child_id = ?').all(classId, childId)
       .filter(e => this.validSource(cls, e.date)).map(e => [e.date, e]));
-    return { cls, childId, enrolled, hasFeeRow: Boolean(fee), records: new Map(records.map(r => [r.lesson_date, r])), fee: fee?.total_fee_cents ?? null, exceptions };
+    // Like check-in tasks, lessons before the child or the class existed are never owed; nor are
+    // lessons before attendance tracking began. They can still be recorded, just not counted pending.
+    const tracking = this.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get()?.value;
+    const since = [cls.start_date, formatDate(new Date(child.created_at)), formatDate(new Date(cls.created_at)), tracking].filter(Boolean).sort().at(-1);
+    return { cls, childId, enrolled, since, hasFeeRow: Boolean(fee), records: new Map(records.map(r => [r.lesson_date, r])), fee: fee?.total_fee_cents ?? null, exceptions };
   }
   validSource(cls, date) {
     return date >= cls.start_date && (!cls.end_date || date <= cls.end_date) && cls.days_of_week.includes(getDayOfWeek(date));
@@ -65,18 +70,20 @@ class ClassStatsService {
     return { today: getTodayDate(), clock: new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()) };
   }
   summary(ctx) {
-    const { cls, childId, records, exceptions } = ctx;
+    const { cls, childId, records, exceptions, since } = ctx;
     const { today, clock } = this.now();
-    let due = this.countThrough(cls, shiftDate(today, -1));
-    if (this.validSource(cls, today) && cls.end_time <= clock) due++;
+    let due = Math.max(0, this.countThrough(cls, shiftDate(today, -1)) - this.countThrough(cls, shiftDate(since, -1)));
+    if (this.validSource(cls, today) && today >= since && cls.end_time <= clock) due++;
     let confirmedDue = 0, attended = 0, absent = 0, leave = 0, charged = 0, knownMinutes = 0, unknownDuration = 0, monthAttended = 0;
     // Only overrides need special handling; all other past scheduled dates stay unconfirmed.
     for (const source of new Set([...exceptions.keys(), ...records.keys()])) {
-      if (this.validSource(cls, source) && isDue(source, cls.end_time, today, clock)) due--;
+      // Remove the original date only if it was in the base count, then place the lesson by its
+      // actual date. Its original date remains the identity even when a move crosses `since`.
+      if (source >= since && this.validSource(cls, source) && isDue(source, cls.end_time, today, clock)) due--;
       const lesson = this.lesson(ctx, source);
       const elapsed = isDue(lesson.actual_date, lesson.end_time, today, clock);
       if (lesson.status === 'leave') leave++;
-      else if (elapsed) { due++; if (lesson.status !== 'pending') confirmedDue++; }
+      else if (elapsed && lesson.actual_date >= since) { due++; if (lesson.status !== 'pending') confirmedDue++; }
       if (lesson.status === 'attended') {
         attended++;
         if (lesson.actual_date.slice(0, 7) === today.slice(0, 7)) monthAttended++;
@@ -103,7 +110,7 @@ class ClassStatsService {
     const consumed = total && ctx.fee !== null ? Math.round(ctx.fee * charged / total) : null;
     return { class_id: cls.id, child_id: childId, title: cls.title, enrolled: ctx.enrolled,
       available: Boolean(ctx.enrolled || records.size || ctx.hasFeeRow), total_lessons: total,
-      attended, absent, leave, pending: ctx.enrolled ? Math.max(0, due - confirmedDue) : 0, charged_lessons: charged,
+      attended, absent, leave, pending: ctx.enrolled ? Math.max(0, due - confirmedDue) : 0, pending_since: since, charged_lessons: charged,
       remaining_credits: total === null ? null : Math.max(0, total - charged),
       attendance_rate: attended + absent ? Math.round(attended * 100 / (attended + absent)) : null,
       attended_minutes: knownMinutes, unknown_duration_lessons: unknownDuration, month_attended: monthAttended,

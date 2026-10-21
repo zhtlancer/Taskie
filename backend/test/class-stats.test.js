@@ -14,6 +14,10 @@ async function fixture(t, overrides = {}) {
   const other = (await parent('POST', '/api/children', { name: '另一个孩子' })).json();
   const today = getTodayDate(), day = n => shiftDate(today, n);
   const cls = (await parent('POST', '/api/outside-classes', { title: '钢琴统计', start_date: day(-5), days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00', total_lessons: 12, ...overrides })).json();
+  // Children, the class and attendance tracking exist from long before the class starts, so
+  // pending counts the whole course; the tracking-start test sets these dates itself.
+  ctx.db.exec(`UPDATE children SET created_at = '1900-01-01T00:00:00.000Z'; UPDATE outside_classes SET created_at = '1900-01-01T00:00:00.000Z';
+    UPDATE settings SET value = '1900-01-01' WHERE key = 'class_attendance_since'`);
   const service = ctx.app.services.classStatsService;
   service.now = () => ({ today, clock: '00:00' });
   const stats = async (who = child) => (await parent('GET', `/api/outside-classes/${cls.id}/stats?child_id=${who.id}`)).json();
@@ -174,4 +178,91 @@ test('legacy duplicate check-ins consume once and undo retains any still-complet
   assert.deepEqual([(await stats()).summary.attended, (await stats()).summary.charged_lessons], [1, 1]);
   await parent('POST', `/api/daily-tasks/${task.id}/uncomplete`);
   assert.equal((await stats()).summary.attended, 0);
+});
+
+test('pending starts once the child, the class and attendance tracking all exist; earlier lessons may still be recorded', async t => {
+  const { ctx, parent, child, cls, day, stats, attendance } = await fixture(t, { start_date: shiftDate(getTodayDate(), -10), total_lessons: 30 });
+  const setDates = (childAt, classAt, tracking) => ctx.db.exec(`UPDATE children SET created_at = '${childAt}T12:00:00.000Z' WHERE id = '${child.id}';
+    UPDATE outside_classes SET created_at = '${classAt}T12:00:00.000Z'; UPDATE settings SET value = '${tracking}' WHERE key = 'class_attendance_since'`);
+  setDates(day(-6), day(-20), day(-20));
+  assert.deepEqual([(await stats()).summary.pending, (await stats()).summary.pending_since], [6, day(-6)]);
+  setDates(day(-6), day(-4), day(-20));
+  assert.deepEqual([(await stats()).summary.pending, (await stats()).summary.pending_since], [4, day(-4)]);
+  setDates(day(-6), day(-4), day(-2));
+  assert.deepEqual([(await stats()).summary.pending, (await stats()).summary.pending_since], [2, day(-2)]);
+  assert.equal((await attendance(-8, { status: 'attended' })).statusCode, 200);
+  assert.deepEqual([(await stats()).summary.attended, (await stats()).summary.pending], [1, 2], 'an earlier lesson counts once recorded');
+  await attendance(-1, { status: 'absent' });
+  assert.equal((await stats()).summary.pending, 1);
+  const list = (await parent('GET', `/api/outside-classes/stats?child_id=${child.id}`)).json();
+  assert.deepEqual([list[0].class_id, list[0].pending], [cls.id, 1]);
+
+  initDb(ctx.db);
+  assert.equal(ctx.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get().value, day(-2), 'restarting keeps the start');
+  const backup = ctx.app.backupService;
+  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  ctx.db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(day(-30));
+  backup.restore(archive);
+  assert.equal(ctx.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get().value, day(-2), 'a current backup keeps its start');
+  const packed = JSON.parse(gunzipSync(archive));
+  const candidate = new Database(Buffer.from(packed.database, 'base64'));
+  try {
+    candidate.exec("DELETE FROM settings WHERE key = 'class_attendance_since'; DROP TABLE outside_class_attendance; DROP TABLE outside_class_fees");
+    candidate.pragma('user_version = 27');
+    backup.restore(gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') })));
+  } finally { candidate.close(); }
+  assert.equal(ctx.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get().value, getTodayDate(), 'an older backup starts tracking on restore');
+  assert.equal((await stats()).summary.pending, 0);
+});
+
+test('past attendance corrections keep that day’s check-in; a leave today cancels it until restored', async t => {
+  const { ctx, parent, child, cls, day, attendance } = await fixture(t, { create_task: true });
+  const checkins = async date => (await parent('GET', `/api/daily-tasks?child_id=${child.id}&date=${date}`)).json().filter(row => row.class_id === cls.id && !row.projected);
+  assert.equal((await checkins(day(-1))).length, 1);
+  assert.equal((await attendance(-1, { status: 'leave' })).statusCode, 200);
+  assert.equal((await checkins(day(-1))).length, 1, 'a past correction never removes a recorded check-in');
+  await attendance(-1, { status: 'pending' });
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) AS n FROM daily_tasks WHERE class_id = ? AND date = ?').get(cls.id, day(-1)).n, 1);
+  assert.equal((await checkins(day(0))).length, 1);
+  await attendance(0, { status: 'leave' });
+  assert.equal((await checkins(day(0))).length, 0);
+  await attendance(0, { status: 'pending' });
+  assert.equal((await checkins(day(0))).length, 1, 'restoring today brings its check-in back');
+});
+
+test('a lesson moved into the tracking window is pending on its actual date and confirms only once', async t => {
+  const { ctx, parent, child, cls, day, stats, attendance } = await fixture(t);
+  ctx.db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(day(-2));
+  assert.equal((await stats()).summary.pending, 2);
+  const moved = await parent('PUT', `/api/outside-classes/${cls.id}/exceptions`, {
+    child_id: child.id, date: day(-5), kind: 'moved', new_date: day(-2), new_start_time: '16:00', new_end_time: '17:00'
+  });
+  assert.equal(moved.statusCode, 200, moved.body);
+  const details = await stats();
+  assert.equal(details.summary.pending, 3, 'actual date on the tracking boundary is included');
+  const lesson = details.lessons.find(row => row.lesson_date === day(-5));
+  assert.deepEqual([lesson.actual_date, lesson.lesson_number], [day(-2), 1], 'moving keeps the original lesson identity');
+  for (let n = 0; n < 2; n++) assert.equal((await attendance(-5, { status: 'attended' })).statusCode, 200);
+  assert.deepEqual([(await stats()).summary.pending, (await stats()).summary.attended, (await stats()).summary.charged_lessons], [2, 1, 1]);
+  await attendance(-5, { status: 'pending' });
+  assert.equal((await stats()).summary.pending, 3);
+  await parent('DELETE', `/api/outside-class-exceptions/${moved.json().exceptions.find(e => e.date === day(-5)).id}`);
+  assert.equal((await stats()).summary.pending, 2);
+});
+
+test('a lesson moved before tracking is not pending, while explicit earlier attendance still counts', async t => {
+  const { ctx, parent, child, cls, day, stats, attendance } = await fixture(t);
+  ctx.db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(day(-2));
+  assert.equal((await stats()).summary.pending, 2);
+  const moved = await parent('PUT', `/api/outside-classes/${cls.id}/exceptions`, {
+    child_id: child.id, date: day(-2), kind: 'moved', new_date: day(-5), new_start_time: '16:00', new_end_time: '17:00'
+  });
+  assert.equal(moved.statusCode, 200, moved.body);
+  assert.equal((await stats()).summary.pending, 1, 'the original in-window date is removed without adding the earlier date');
+  assert.equal((await attendance(-2, { status: 'attended' })).statusCode, 200);
+  assert.deepEqual([(await stats()).summary.pending, (await stats()).summary.attended, (await stats()).summary.charged_lessons], [1, 1, 1]);
+  await attendance(-2, { status: 'pending' });
+  assert.equal((await stats()).summary.pending, 1);
+  await parent('DELETE', `/api/outside-class-exceptions/${moved.json().exceptions.find(e => e.date === day(-2)).id}`);
+  assert.equal((await stats()).summary.pending, 2);
 });

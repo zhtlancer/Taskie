@@ -335,7 +335,8 @@ import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerT
 
 const childrenStats = ref([]);
 
-// Each child's current timer ticks locally and is reloaded now and then, and on returning to the page.
+// Each child's current timer ticks locally; it and the outside-class overview are reloaded now and
+// then, and on returning to the page.
 const now = ref(Date.now());
 const loadTimer = id => api.getCurrentTimer(id).then(result => result.timer && withClock(result.timer)).catch(() => null);
 const loadClassOverview = id => api.getOutsideClassStats(id).then(rows => ({ count: rows.length,
@@ -346,19 +347,19 @@ const loadClassOverview = id => api.getOutsideClassStats(id).then(rows => ({ cou
 const timerSeconds = timer => Math.min(MAX_TIMER_SECONDS, liveSeconds(timer, now.value));
 const timerTone = timer => !timer.timer_running ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
   : timerSeconds(timer) > LONG_TIMER_SECONDS ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' : 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300';
-let timerSerial = 0;
-async function reloadTimers() {
+let liveSerial = 0;
+async function reloadLive() {
   if (document.hidden) return;
-  const items = childrenStats.value, serial = ++timerSerial;
-  const timers = await Promise.all(items.map(item => Promise.all([loadTimer(item.child.id), loadClassOverview(item.child.id)])));
-  if (serial === timerSerial) items.forEach((item, index) => { [item.timer, item.classOverview] = timers[index]; });
+  const items = childrenStats.value, serial = ++liveSerial;
+  const live = await Promise.all(items.map(item => Promise.all([loadTimer(item.child.id), loadClassOverview(item.child.id)])));
+  if (serial === liveSerial) items.forEach((item, index) => { [item.timer, item.classOverview] = live[index]; });
 }
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
-const poll = setInterval(reloadTimers, 60000);
-document.addEventListener('visibilitychange', reloadTimers);
+const poll = setInterval(reloadLive, 60000);
+document.addEventListener('visibilitychange', reloadLive);
 onUnmounted(() => {
   clearInterval(clock); clearInterval(poll);
-  document.removeEventListener('visibilitychange', reloadTimers);
+  document.removeEventListener('visibilitychange', reloadLive);
 });
 const loading = ref(true);
 const dashboardError = ref('');

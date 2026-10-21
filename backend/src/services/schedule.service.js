@@ -398,7 +398,9 @@ class ScheduleService {
         list.push(lesson(row, date, row.start_time, row.end_time, !e ? 'scheduled' : e.kind === 'leave' ? 'leave' : 'moved_out', e));
       }
       for (const e of movedInto.get(date) || []) list.push(lesson(byId.get(e.class_id), date, e.new_start_time, e.new_end_time, 'moved_in', e));
-      for (const item of list) {
+      // Attendance is history for statistics; past days keep the check-ins they were recorded with.
+      // Only a correction for today's lesson changes the day (a leave cancels today's check-in).
+      if (date >= getTodayDate()) for (const item of list) {
         const record = attendance.get(`${item.class_id}|${item.class_lesson_date}`);
         if (record?.status === 'leave' && item.status !== 'moved_out') item.status = 'leave';
         else if (record?.status === 'attended' && item.status === 'leave') item.status = 'scheduled';

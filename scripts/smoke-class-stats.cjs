@@ -19,6 +19,10 @@ async function main() {
   const second = app.services.childrenService.createChild({ name: '出勤乙' });
   const today = getTodayDate(), yesterday = shiftDate(today, -1), past = shiftDate(today, -2);
   app.services.classStatsService.now = () => ({ today, clock: '00:00' });
+  // The children, the classes and attendance tracking predate the lessons, so past ones are pending.
+  const before = shiftDate(today, -30);
+  db.prepare('UPDATE children SET created_at = ?').run(`${before}T00:00:00.000Z`);
+  db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(before);
   const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
   const base = await app.listen({ host: '127.0.0.1', port: 0 });
   browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
@@ -26,6 +30,7 @@ async function main() {
   for (const width of [390, 1180]) for (const colorScheme of ['light', 'dark']) {
     const title = `统计钢琴-${width}-${colorScheme}`;
     const cls = app.services.scheduleService.createClass({ title, start_date: past, days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00', total_lessons: 5, create_task: true });
+    db.prepare('UPDATE outside_classes SET created_at = ? WHERE id = ?').run(`${before}T00:00:00.000Z`, cls.id);
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 820 }, colorScheme, timezoneId: 'America/Los_Angeles' });
     await context.addInitScript(value => sessionStorage.setItem('taskie_parent_token', value), token);
     const page = await context.newPage(); page.setDefaultTimeout(10000);
@@ -37,6 +42,7 @@ async function main() {
     await card.getByRole('button', { name: '出勤与学费', exact: true }).click();
     let modal = page.getByRole('dialog', { name: `${first.name} · ${title}`, exact: true });
     await modal.getByText('未确认 · 未消课', { exact: true }).first().waitFor();
+    await modal.getByText(`待确认从 ${past} 起计算`).waitFor();
     let row = modal.locator(`[data-lesson-date="${past}"]`);
     await row.getByRole('button', { name: '记录出勤', exact: true }).click();
     await row.getByLabel('出勤备注').fill('家长核实到课');
