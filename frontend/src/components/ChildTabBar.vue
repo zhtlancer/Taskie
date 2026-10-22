@@ -19,6 +19,7 @@
     </div>
   </nav>
   <RunningTimer variant="bar" :child-id="childId" :now="now" />
+  <RestCountdown :child-id="childId" :now="now" />
   <!-- Room at the end of the page, so the bar above the tab bar never covers the last content. -->
   <div v-if="timerStore.childId === childId && timerStore.timer" class="lg:hidden h-14 shrink-0" aria-hidden="true"></div>
   <UiDialog v-if="moreOpen" title="更多学习功能" @close="moreOpen = false">
@@ -36,6 +37,7 @@ import { playClick } from '../utils/sound';
 import ThemeSelect from './ThemeSelect.vue';
 import UiDialog from './UiDialog.vue';
 import RunningTimer from './RunningTimer.vue';
+import RestCountdown from './RestCountdown.vue';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
 const props = defineProps({ childId: { type: String, required: true } });
 const route = useRoute(), moreOpen = ref(false);

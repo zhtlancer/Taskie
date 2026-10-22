@@ -241,6 +241,33 @@ export function playAllDone() {
 }
 
 /**
+ * 休息结束提示音
+ * 柔和的三声上行钟音 G5 → C6 → E6，重复两遍，叫孩子回来继续学习
+ */
+export function playRestEnd() {
+  const ctx = preparePlay();
+  if (!ctx) return;
+
+  const now = ctx.currentTime;
+  [0, 1.1].forEach(offset => {
+    [{ freq: 783.99, time: 0 }, { freq: 1046.5, time: 0.22 }, { freq: 1318.51, time: 0.44 }].forEach(({ freq, time }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const start = now + offset + time;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.24, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.62);
+    });
+  });
+}
+
+/**
  * 4. 解锁成就徽章音
  * 清脆闪亮 chime 魔法升华音（高音八音盒/木琴琶音）
  */

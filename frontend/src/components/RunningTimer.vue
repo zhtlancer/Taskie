@@ -12,6 +12,7 @@
     <p v-if="long" class="text-xs font-bold">已经计时很久了，是不是忘了暂停？</p>
     <p v-if="store.error" role="alert" class="text-xs font-bold" :class="running ? '' : 'text-rose-600 dark:text-rose-300'">{{ store.error }}</p>
     <button type="button" class="w-full min-h-[44px] rounded-xl text-sm font-bold disabled:opacity-60" :class="actionTone" :disabled="store.busy" @click="toggle">{{ action }}</button>
+    <button type="button" class="w-full min-h-[44px] rounded-xl text-sm font-bold disabled:opacity-60" :class="restTone" :disabled="store.busy" :aria-label="restLabel" @click="rest">☕ {{ resting ? restClock : '休息一下' }}</button>
   </section>
   <div v-else-if="timer" class="lg:hidden fixed inset-x-0 z-40 bottom-[calc(61px+env(safe-area-inset-bottom))] px-3 pb-2 pointer-events-none">
     <p v-if="store.error" role="alert" class="pointer-events-auto max-w-xl mx-auto mb-1 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 text-xs font-bold shadow">{{ store.error }}</p>
@@ -23,6 +24,7 @@
         <span data-running-clock class="shrink-0 text-base font-black tabular-nums">{{ clock }}</span>
       </button>
       <button type="button" class="shrink-0 min-h-[44px] px-3 rounded-xl text-sm font-bold disabled:opacity-60" :class="actionTone" :disabled="store.busy" @click="toggle">{{ action }}</button>
+      <button type="button" class="shrink-0 min-h-[44px] min-w-[44px] px-2 rounded-xl text-sm font-bold tabular-nums disabled:opacity-60" :class="restTone" :disabled="store.busy" :aria-label="restLabel" @click="rest">☕<template v-if="resting"> {{ restClock }}</template></button>
     </section>
   </div>
 </template>
@@ -31,6 +33,8 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
+import { useRestStore } from '../stores/rest.js';
+import { restSecondsLeft } from '../utils/rest.js';
 import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerTarget } from '../utils/taskTimer.js';
 import { playClick } from '../utils/sound';
 
@@ -53,6 +57,18 @@ const action = computed(() => running.value ? '⏸ 暂停' : '▶ 继续');
 const tone = computed(() => !running.value
   ? 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
   : long.value ? 'bg-amber-500 dark:bg-amber-600 text-white' : 'bg-violet-500 dark:bg-violet-600 text-white');
+// A rest started on this device shows its countdown here; tapping reopens it, or picks a length.
+const restStore = useRestStore();
+const resting = computed(() => restStore.childId === props.childId && Boolean(restStore.rest));
+const restClock = computed(() => formatClock(restSecondsLeft(restStore.rest, props.now)));
+const restLabel = computed(() => resting.value ? `休息还剩 ${restClock.value}，查看休息倒计时` : '休息一下');
+const restTone = computed(() => resting.value ? 'bg-emerald-500 text-white'
+  : running.value ? 'bg-white/20 hover:bg-white/30' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300');
+function rest() {
+  playClick();
+  if (resting.value) restStore.minimized = false;
+  else restStore.picking = true;
+}
 const actionTone = computed(() => running.value ? 'bg-white/20 hover:bg-white/30' : 'bg-violet-500 hover:bg-violet-600 text-white');
 
 function open() {
@@ -62,6 +78,7 @@ function open() {
 function toggle() {
   playClick();
   if (running.value) store.pause();
-  else store.resume();
+  // Going back to study ends a rest early.
+  else store.resume().then(() => { if (resting.value && store.timer?.timer_running) restStore.end(); });
 }
 </script>

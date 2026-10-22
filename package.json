@@ -24,6 +24,7 @@
     "test:browser:class-stats": "node scripts/smoke-class-stats.cjs",
     "test:browser:class-count": "node scripts/smoke-class-count.cjs",
     "test:browser:running-timer": "node scripts/smoke-running-timer.cjs",
+    "test:browser:rest": "node scripts/smoke-rest.cjs",
     "check:repo": "node scripts/check-repo-content.cjs"
   }
 }
