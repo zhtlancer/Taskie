@@ -48,6 +48,26 @@ jobs:
       - name: Data directory checks
         run: npm run test:docker-data
 
+  # Upgrade regression: the backend of 0b4128c (v28, v1 backups) taken from git history writes data
+  # and a v1 backup; this backend upgrades it and restores both backup formats. Needs full history.
+  upgrade:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
+      - name: Upgrade and restore from real old code
+        run: npm run test:upgrade
+
   # The local browser suites run against an in-memory API and the production build, in the
   # runner's Google Chrome; each suite is its own job so one failure names the suite.
   browser-suites:
