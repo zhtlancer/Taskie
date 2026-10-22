@@ -576,3 +576,19 @@ CREATE TABLE IF NOT EXISTS study_legacy_corrections (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_study_legacy_corrections_task ON study_legacy_corrections(task_id);
+
+-- Independent write versions survive clearing a fee or attendance record.
+CREATE TABLE IF NOT EXISTS outside_class_revisions (
+  class_id TEXT NOT NULL REFERENCES outside_classes(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('attendance', 'fee')),
+  lesson_date TEXT NOT NULL,
+  revision TEXT NOT NULL,
+  PRIMARY KEY (class_id, child_id, kind, lesson_date)
+);
+-- Restore expectations belong to the database snapshot, including on a new server.
+CREATE TABLE IF NOT EXISTS photo_expectations (
+  name TEXT PRIMARY KEY,
+  size INTEGER NOT NULL,
+  sha256 TEXT NOT NULL
+);

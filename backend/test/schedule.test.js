@@ -321,6 +321,6 @@ test('v27 upgrades old classes without changing their dates; backups preserve co
     candidate.pragma('user_version = 26');
     backup.restore(pack());
     assert.deepEqual({ ...row() }, { total_lessons: null, end_date: day(14) });
-    assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
+    assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
   } finally { candidate.close(); }
 });

@@ -1,10 +1,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
 const { initDb, TIMING_COLUMNS, WEEKLY_EXTRA_COLUMNS } = require('../db');
 const { PhotoStore, hashFile, cloneFile } = require('./photo-store');
+const { readManifest } = require('../utils/backup-manifest');
+const { MAX_PHOTO_SIZE } = require('../utils/photo-limits');
 const { tarStream, TarReader } = require('../utils/tar');
 
 // Only genuine older schemas may have their newer tables created by initDb.
@@ -13,7 +15,7 @@ const PERIOD_TABLES = ['periods', 'period_paused_templates', 'period_tasks', 'pe
 const SCHEDULE_TABLES = ['timetables', 'timetable_slots', 'timetable_lessons', 'outside_classes', 'outside_class_children', 'outside_class_exceptions'];
 const STUDY_TABLES = ['word_study_plans', 'word_study_states', 'word_study_days', 'word_study_batches', 'word_study_items', 'word_study_attempts'];
 const HOMEWORK_TABLES = ['homework_records', 'homework_course_points', 'homework_sessions', 'homework_session_days'];
-const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees', 'outside_class_changes'];
+const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees', 'outside_class_changes', 'outside_class_revisions', 'photo_expectations'];
 // Backups (format v2) hold the database and a manifest of its photos; the photos themselves are kept
 // once in backups/photos and move between servers as separate photo packages. This limit therefore
 // applies to the database alone. Older v1 archives with embedded photos still restore under it.
@@ -23,7 +25,6 @@ const MAX_SIZE = 256 * 1024 * 1024;
 const MAX_UPLOAD_SIZE = MAX_SIZE;
 // Photo packages are streamed, so they have no practical size limit; one photo is at most 10 MiB.
 const MAX_PHOTO_PACKAGE_SIZE = 64 * 1024 * 1024 * 1024;
-const MAX_PHOTO_SIZE = 20 * 1024 * 1024;
 const fail = message => Object.assign(new Error(message), { statusCode: 400 });
 const safeName = name => typeof name === 'string' && /^[\w-]+\.(?:jpg|jpeg|png|webp)$/i.test(name);
 
@@ -45,14 +46,37 @@ class BackupService {
       .map(({ photo_path }) => photo_path.slice('/uploads/'.length));
   }
 
-  // Photos the current records refer to whose files are not in the upload directory, e.g. after
-  // restoring a backup on a new server before its photo package was imported.
-  missingPhotos() {
-    return this.referencedPhotos().filter(name => safeName(name) && !fs.existsSync(path.join(this.uploadDir, name)));
+  expectations() {
+    return new Map(this.db.prepare('SELECT name, size, sha256 FROM photo_expectations').all().map(p => [p.name, p]));
   }
 
-  readArchive(file) {
-    return JSON.parse(gunzipSync(fs.readFileSync(file), { maxOutputLength: MAX_SIZE }).toString());
+  matches(file, photo) {
+    try { return fs.statSync(file).size === photo.size && hashFile(file) === photo.sha256; } catch { return false; }
+  }
+
+  missingPhotos() {
+    const expected = this.expectations(), seen = new Set();
+    return this.db.prepare("SELECT photo_path, subject, description, created_at FROM mistake_records WHERE photo_path LIKE '/uploads/%' ORDER BY created_at, id").all()
+      .flatMap(row => {
+        const name = row.photo_path.slice('/uploads/'.length), file = path.join(this.uploadDir, name);
+        if (seen.has(name)) return [];
+        seen.add(name);
+        const reason = !safeName(name) || !fs.existsSync(file) ? 'absent' : expected.has(name) && !this.matches(file, expected.get(name)) ? 'mismatch' : null;
+        return reason ? [{ name, subject: row.subject, description: row.description, created_at: row.created_at, reason }] : [];
+      });
+  }
+
+  retainedManifest(name) {
+    const file = path.join(this.backupDir, name), stat = fs.statSync(file);
+    const cache = `${file}.manifest.json`;
+    try {
+      const data = JSON.parse(fs.readFileSync(cache, 'utf8'));
+      if (data.size === stat.size && data.mtime === stat.mtimeMs) return data;
+    } catch { /* Old archives are scanned once with bounded memory. */ }
+    const data = { ...readManifest(file, MAX_SIZE), size: stat.size, mtime: stat.mtimeMs };
+    fs.writeFileSync(`${cache}.tmp`, JSON.stringify(data), { mode: 0o600 });
+    fs.renameSync(`${cache}.tmp`, cache);
+    return data;
   }
 
   get journalPath() { return path.join(this.backupDir, '.restore-journal.json'); }
@@ -99,27 +123,35 @@ class BackupService {
 
   create(reason = 'manual') {
     // Synchronous throughout: application writes cannot interleave with the database snapshot and
-    // the photos it refers to. Only photos new since the last backup are read (to hash them).
+    // the photos it refers to. Recheck stored bytes before trusting or repairing a photo copy.
     const manifest = [];
     const missing = [];
+    const expected = this.expectations();
     for (const name of this.referencedPhotos()) {
       if (!safeName(name)) throw fail('照片路径无效，无法备份');
       const file = path.join(this.uploadDir, name);
       // A photo already lost on disk must not stop every later backup of the remaining data.
+      const known = expected.get(name);
+      if (known && !this.matches(file, known)) { manifest.push(known); missing.push(name); continue; }
       if (!fs.existsSync(file)) { missing.push(name); continue; }
-      manifest.push(this.photos.add(name, file));
+      const photo = this.photos.add(name, file);
+      manifest.push(photo);
+      this.db.prepare('INSERT OR REPLACE INTO photo_expectations VALUES (?, ?, ?)').run(name, photo.size, photo.sha256);
     }
     this.photos.save();
     const database = this.db.serialize().toString('base64');
-    const data = Buffer.from(JSON.stringify({ format: 'taskie-backup', version: 2, created_at: new Date().toISOString(), reason, database, photo_manifest: manifest, missing_photos: missing }));
+    const data = Buffer.from(JSON.stringify({ format: 'taskie-backup', version: 2, created_at: new Date().toISOString(), reason, database, photo_manifest: manifest, missing_photos: missing.filter(name => !manifest.some(p => p.name === name)) }));
     if (data.length > MAX_SIZE) throw fail('备份数据超过 256 MiB，请使用 NAS 文件备份');
     const name = `backup-${new Date().toISOString().replace(/[:.Z]/g, '-')}-${randomUUID()}.taskie.gz`;
     const target = path.join(this.backupDir, name);
     fs.writeFileSync(`${target}.tmp`, gzipSync(data), { mode: 0o600 });
     fs.renameSync(`${target}.tmp`, target);
     this.lastError = null;
-    this.lastWarning = missing.length ? `${missing.length} 张错题照片文件已丢失，备份中只保留了它们的记录：${missing.slice(0, 5).join('、')}${missing.length > 5 ? ' 等' : ''}` : null;
-    for (const old of this.list().filter(item => item.name !== name).slice(this.retention - 1)) fs.unlinkSync(this.getPath(old.name));
+    this.lastWarning = missing.length ? `${missing.length} 张错题照片文件已丢失或校验不一致，备份保留了它们的记录和已有校验清单：${missing.slice(0, 5).join('、')}${missing.length > 5 ? ' 等' : ''}` : null;
+    for (const old of this.list().filter(item => item.name !== name).slice(this.retention - 1)) {
+      fs.unlinkSync(this.getPath(old.name));
+      fs.rmSync(path.join(this.backupDir, `${old.name}.manifest.json`), { force: true });
+    }
     this.prunePhotos();
     return this.list().find(item => item.name === name);
   }
@@ -129,7 +161,7 @@ class BackupService {
     const keep = new Set(this.referencedPhotos());
     for (const item of this.list()) {
       try {
-        for (const photo of this.readArchive(path.join(this.backupDir, item.name)).photo_manifest || []) keep.add(photo.name);
+        for (const name of this.retainedManifest(item.name).photos) keep.add(name);
       } catch (error) {
         console.error('    [Backup] 读取备份清单失败，本次不清理照片:', item.name, error.message);
         return;
@@ -139,39 +171,86 @@ class BackupService {
     this.photos.save();
   }
 
-  // A tar of the photos the current records refer to, optionally only those added since a time,
-  // streamed straight from disk.
-  exportPhotos(since = null) {
-    const after = since ? Date.parse(since) : null;
-    const entries = this.referencedPhotos().filter(safeName).map(name => ({ name, file: path.join(this.uploadDir, name) }))
-      .filter(({ file }) => { try { return after === null || fs.statSync(file).mtimeMs > after; } catch { return false; } })
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return tarStream(entries);
+  exportState() {
+    try { return JSON.parse(fs.readFileSync(path.join(this.backupDir, '.photo-export.json'), 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; return { last_complete_at: null, names: [] }; }
   }
 
-  // Adds photos from a package that the current records refer to but are missing. Existing photos are
-  // never replaced, so importing an old or unrelated package is harmless.
+  exportEntries(scope = 'all') {
+    if (!['all', 'new'].includes(scope)) throw fail('照片范围无效');
+    const expected = this.expectations(), names = new Set(this.referencedPhotos());
+    for (const item of this.list()) {
+      const retained = this.retainedManifest(item.name);
+      for (const name of retained.photos) names.add(name);
+      for (const photo of retained.manifest) {
+        const previous = expected.get(photo.name);
+        if (previous && (previous.size !== photo.size || previous.sha256 !== photo.sha256)) throw fail('照片清单存在同名不同内容，请检查备份');
+        expected.set(photo.name, photo);
+      }
+    }
+    const exported = new Set(scope === 'new' ? this.exportState().names : []), entries = [];
+    for (const name of [...names].filter(safeName).sort()) {
+      if (exported.has(name)) continue;
+      const photo = expected.get(name);
+      let file = this.photos.path(name);
+      if (!fs.existsSync(file)) file = path.join(this.uploadDir, name);
+      if (!fs.existsSync(file)) continue; // No bytes to export; this name is never marked exported.
+      if (photo && !this.matches(file, photo)) throw fail(`照片 ${name} 校验不一致，请先补齐正确的照片`);
+      const entry = this.photos.add(name, file);
+      if (photo && (entry.size !== photo.size || entry.sha256 !== photo.sha256)) throw fail(`照片 ${name} 校验不一致`);
+      entries.push({ name, file: this.photos.path(name), sha256: entry.sha256 });
+    }
+    this.photos.save();
+    return entries;
+  }
+
+  photoExportStatus() {
+    const state = this.exportState(), exported = new Set(state.names);
+    const names = new Set(this.referencedPhotos().filter(safeName));
+    for (const item of this.list()) for (const name of this.retainedManifest(item.name).photos) names.add(name);
+    return { last_complete_at: state.last_complete_at, exported_count: [...names].filter(name => exported.has(name)).length,
+      pending_count: [...names].filter(name => !exported.has(name)).length };
+  }
+
+  recordPhotoExport(names) {
+    const state = this.exportState();
+    const target = path.join(this.backupDir, '.photo-export.json');
+    fs.writeFileSync(`${target}.tmp`, JSON.stringify({ last_complete_at: new Date().toISOString(), names: [...new Set([...state.names, ...names])] }), { mode: 0o600 });
+    fs.renameSync(`${target}.tmp`, target);
+  }
+
+  exportPhotos(scope = 'all') {
+    const entries = this.exportEntries(scope);
+    const stream = tarStream(entries);
+    stream.photoNames = entries.map(e => e.name);
+    return stream;
+  }
+
   async importPhotos(stream) {
-    const result = { imported: 0, present: 0, unused: 0, skipped: 0 };
-    const referenced = new Set(this.referencedPhotos());
+    const result = { imported: 0, present: 0, unused: 0, skipped: 0, mismatch: 0, unverified: 0 };
+    const referenced = new Set(this.referencedPhotos()), expected = this.expectations();
     const reader = new TarReader((name, content) => {
       if (!safeName(name)) { result.skipped++; return; }
       if (!referenced.has(name)) { result.unused++; return; }
+      const photo = expected.get(name);
+      // A legacy missing_photos entry has no trusted bytes or digest. Never guess by filename.
+      if (!photo) { result.unverified++; return; }
+      if (content.length !== photo.size || createHash('sha256').update(content).digest('hex') !== photo.sha256) { result.mismatch++; return; }
       const file = path.join(this.uploadDir, name);
-      if (fs.existsSync(file)) { result.present++; return; }
+      if (this.matches(file, photo)) { this.photos.add(name, file); result.present++; return; }
       const temp = path.join(this.uploadDir, `.import-${randomUUID()}`);
-      fs.writeFileSync(temp, content, { mode: 0o600 });
-      fs.renameSync(temp, file);
-      this.photos.add(name, file);
+      try {
+        fs.writeFileSync(temp, content, { mode: 0o600 });
+        fs.renameSync(temp, file);
+        this.photos.add(name, file);
+      } finally { fs.rmSync(temp, { force: true }); }
       result.imported++;
     }, { maxFileSize: MAX_PHOTO_SIZE });
     try {
       for await (const chunk of stream) reader.push(chunk);
       if (stream.truncated) throw Object.assign(new Error('照片包过大'), { statusCode: 413 });
       reader.end();
-    } finally {
-      this.photos.save();
-    }
+    } finally { this.photos.save(); }
     result.skipped += reader.skipped;
     return { ...result, missing: this.missingPhotos().length };
   }
@@ -180,10 +259,13 @@ class BackupService {
     let data, candidate;
     try {
       data = JSON.parse(gunzipSync(buffer, { maxOutputLength: MAX_SIZE }).toString());
-      const validManifest = list => Array.isArray(list) && list.every(p => p && safeName(p.name) && Number.isSafeInteger(p.size) && p.size >= 0 && /^[0-9a-f]{64}$/.test(p.sha256));
+      const validManifest = list => Array.isArray(list) && list.every(p => p && safeName(p.name) && Number.isSafeInteger(p.size) && p.size >= 0 && p.size <= MAX_PHOTO_SIZE && /^[0-9a-f]{64}$/.test(p.sha256));
       if (data.format !== 'taskie-backup' || ![1, 2].includes(data.version) || typeof data.database !== 'string' ||
-        (data.version === 1 && (!data.photos || Array.isArray(data.photos))) || (data.version === 2 && !validManifest(data.photo_manifest)) ||
+        (data.version === 1 && (!data.photos || Array.isArray(data.photos))) || (data.version === 2 && (Object.hasOwn(data, 'photos') || !validManifest(data.photo_manifest) || new Set(data.photo_manifest.map(p => p.name)).size !== data.photo_manifest.length)) ||
         (data.missing_photos !== undefined && (!Array.isArray(data.missing_photos) || !data.missing_photos.every(safeName)))) throw fail('不是有效的 Taskie 备份包');
+      if (data.version === 1 && (typeof data.photos !== 'object' || Object.hasOwn(data, 'photo_manifest'))) throw fail('备份照片格式混用');
+      const photoNames = new Set(data.version === 2 ? data.photo_manifest.map(p => p.name) : Object.keys(data.photos));
+      if ((data.missing_photos || []).some(name => photoNames.has(name)) || new Set(data.missing_photos || []).size !== (data.missing_photos || []).length) throw fail('备份照片清单重复或冲突');
       const database = Buffer.from(data.database, 'base64');
       if (database.subarray(0, 16).toString() !== 'SQLite format 3\0') throw fail('备份数据库无效');
       candidate = new Database(database);
@@ -262,10 +344,21 @@ class BackupService {
         !['class_id', 'child_id', 'total_fee_cents', 'updated_at'].every(name => hasColumn('outside_class_fees', name)))) throw fail('备份缺少课外班出勤或学费记录，无法恢复');
       if (schemaVersion >= 29 && (!hasColumn('children', 'session_epoch') || !tables.includes('outside_class_changes') ||
         !['id', 'class_id', 'child_id', 'kind', 'lesson_date', 'old_value', 'new_value', 'created_at'].every(name => hasColumn('outside_class_changes', name)))) throw fail('备份缺少出勤学费修改记录或孩子会话版本，无法恢复');
+      if (schemaVersion >= 30 && (!['photo_expectations', 'outside_class_revisions'].every(t => tables.includes(t)) ||
+        !['name', 'size', 'sha256'].every(name => hasColumn('photo_expectations', name)) ||
+        !['class_id', 'child_id', 'kind', 'lesson_date', 'revision'].every(name => hasColumn('outside_class_revisions', name)) || !hasColumn('period_task_logs', 'request_fingerprint'))) throw fail('备份缺少照片校验或独立版本数据，无法恢复');
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos || {})) {
         if (!safeName(name) || typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw fail('备份照片路径或内容无效');
+      }
+      candidate.prepare('DELETE FROM photo_expectations').run();
+      const expectation = candidate.prepare('INSERT INTO photo_expectations VALUES (?, ?, ?)');
+      for (const photo of data.photo_manifest || []) expectation.run(photo.name, photo.size, photo.sha256);
+      for (const [name, value] of Object.entries(data.photos || {})) {
+        const content = Buffer.from(value, 'base64');
+        if (content.length > MAX_PHOTO_SIZE) throw fail('备份单张照片超过 10 MiB');
+        expectation.run(name, content.length, createHash('sha256').update(content).digest('hex'));
       }
       const listed = new Set([...Object.keys(data.photos || {}), ...(data.photo_manifest || []).map(p => p.name), ...(data.missing_photos || [])]);
       for (const name of this.referencedPhotos(candidate)) {

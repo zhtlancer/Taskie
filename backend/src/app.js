@@ -125,10 +125,10 @@ function buildApp(opts = {}) {
   console.log('  4/4 正在挂载路由与静态资源中间件...');
 
 
-  // Multipart upload support (limits: 10MB per file)
+  // Multipart upload support: the shared 10 MiB per-photo limit.
   fastify.register(multipart, {
     limits: {
-      fileSize: 10 * 1024 * 1024
+      fileSize: require('./utils/photo-limits').MAX_PHOTO_SIZE
     }
   });
 

@@ -26,8 +26,7 @@ class PhotoStore {
     const file = this.path(name);
     let stat;
     try { stat = fs.statSync(file); } catch { return null; }
-    const known = this.index[name];
-    if (known && known.size === stat.size) return { name, ...known };
+    // Recheck bytes when using a stored object; a same-size external edit is still corruption.
     this.index[name] = { size: stat.size, sha256: hashFile(file) };
     this.dirty = true;
     return { name, ...this.index[name] };
@@ -35,7 +34,7 @@ class PhotoStore {
 
   add(name, source) {
     const existing = this.entry(name);
-    if (existing && existing.size === fs.statSync(source).size) return existing;
+    if (existing && existing.size === fs.statSync(source).size && existing.sha256 === hashFile(source)) return existing;
     const temp = path.join(this.dir, `.${randomUUID()}.tmp`);
     cloneFile(source, temp);
     fs.renameSync(temp, this.path(name));

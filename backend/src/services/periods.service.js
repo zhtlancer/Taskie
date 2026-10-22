@@ -349,10 +349,13 @@ class PeriodsService {
     const task = this.getTask(taskId);
     if (!task) throw { status: 404, message: '长期任务不存在' };
     if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw { status: 400, message: '记录标识无效' };
+    const fingerprint = JSON.stringify({ date: date ?? null, amount: task.mode === 'check' ? null : task.input_mode === 'position' ? position : amount, duration: duration_seconds === undefined ? 'auto' : duration_seconds });
     const replayed = requestId && this.db.prepare('SELECT * FROM period_task_logs WHERE id = ?').get(requestId);
     if (replayed) {
-      const same = replayed.period_task_id === taskId && (date === undefined || replayed.date === date) &&
-        (task.mode === 'check' || (task.input_mode === 'position' ? replayed.position === position : replayed.amount === amount));
+      const same = replayed.period_task_id === taskId && (replayed.request_fingerprint !== null
+        ? replayed.request_fingerprint === fingerprint
+        : (date === undefined || replayed.date === date) && (duration_seconds === undefined || replayed.duration_seconds === duration_seconds) &&
+          (task.mode === 'check' || (task.input_mode === 'position' ? replayed.position === position : replayed.amount === amount)));
       if (!same) throw { status: 409, message: '记录标识已使用' };
       const earned = this.db.prepare('SELECT COALESCE(SUM(points), 0) AS points FROM point_logs WHERE period_log_id = ?').get(requestId).points;
       return {
@@ -393,8 +396,8 @@ class PeriodsService {
       }
       logId = requestId || generateId();
       const now = new Date().toISOString();
-      this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at, duration_seconds, duration_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now, duration.seconds, duration.source);
+      this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at, duration_seconds, duration_source, request_fingerprint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now, duration.seconds, duration.source, requestId ? fingerprint : null);
       if (task.track_time) {
         if (isToday) this.db.prepare('UPDATE period_tasks SET timer_started_at = NULL, timer_elapsed_seconds = 0 WHERE id = ?').run(taskId);
         else if (logAmount === remaining && task.timer_started_at) {
