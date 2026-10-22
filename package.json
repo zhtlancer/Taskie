@@ -14,6 +14,7 @@
     "test": "npm run test:backend && npm run test:frontend",
     "test:browser": "node scripts/smoke-browser.cjs",
     "test:docker-data": "node scripts/smoke-docker-data.cjs",
+    "test:upgrade": "node scripts/test-upgrade.cjs",
     "test:browser:time-stats": "node scripts/smoke-time-stats.cjs",
     "test:browser:carry-over": "node scripts/smoke-carry-over.cjs",
     "test:browser:homework": "node scripts/smoke-homework.cjs",
