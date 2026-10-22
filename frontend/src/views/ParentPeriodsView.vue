@@ -314,14 +314,12 @@
 
 <script setup>
 import { confirmAction } from '../utils/confirmation';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
 import TimingFields from '../components/TimingFields.vue';
-import { pendingRequests } from '../utils/requestId.js';
 
-const backfillRequests = pendingRequests();
 const children = ref([]);
 const templates = ref([]);
 const selectedChild = ref(null);
@@ -478,12 +476,12 @@ function openBackfill(task) {
   backfill.value = { task, amount: 1, position: task.done_amount + 1, date: maxDate, maxDate };
 }
 
+onMounted(() => window.addEventListener('taskie:write-confirmed', loadPeriods));
+onBeforeUnmount(() => window.removeEventListener('taskie:write-confirmed', loadPeriods));
 async function saveBackfill() {
   const { task, amount, position, date } = backfill.value;
   const payload = task.input_mode === 'position' ? { position, date } : { amount, date };
-  const key = `${task.id}:${JSON.stringify(payload)}`;
-  if (await run(() => api.logPeriodProgress(task.id, { ...payload, request_id: backfillRequests.idFor(key) }))) {
-    backfillRequests.done(key);
+  if (await run(() => api.logPeriodProgress(task.id, payload, { childId: selectedChild.value.id, childName: selectedChild.value.name, title: task.title, backfill: true }))) {
     backfill.value = null;
   }
 }

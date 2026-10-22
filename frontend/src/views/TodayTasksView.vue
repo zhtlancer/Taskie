@@ -133,6 +133,7 @@
 
           <!-- Long-term tasks (reading a book, holiday homework), with the holiday banner during a period -->
           <GoalTasksPanel
+            :child-name="childStore.childName"
             v-if="!loading && (activePeriod || activeGoals.length)"
             :goals="activeGoals"
             :period="activePeriod"

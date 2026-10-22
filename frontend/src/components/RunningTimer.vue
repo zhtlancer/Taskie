@@ -78,7 +78,10 @@ function open() {
 function toggle() {
   playClick();
   if (running.value) store.pause();
-  // Going back to study ends a rest early.
-  else store.resume().then(() => { if (resting.value && store.timer?.timer_running) restStore.end(); });
+  else if (resting.value) {
+    restStore.minimized = false;
+    restStore.resumeRequested++;
+  }
+  else store.resume();
 }
 </script>

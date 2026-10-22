@@ -52,18 +52,18 @@
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label for="homework-assigned" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">布置日期</label>
-          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
+          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="min-h-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
           <div class="flex flex-wrap gap-1.5 mt-1.5">
-            <button type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(today)">今天</button>
-            <button v-if="selected?.last_lesson_date && selected.last_lesson_date !== today" type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(selected.last_lesson_date)">
+            <button type="button" class="min-h-[44px] min-w-[44px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(today)">今天</button>
+            <button v-if="selected?.last_lesson_date && selected.last_lesson_date !== today" type="button" class="min-h-[44px] min-w-[44px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(selected.last_lesson_date)">
               上次课 {{ dayName(selected.last_lesson_date) }}
             </button>
           </div>
         </div>
         <div>
           <label for="homework-due" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期</label>
-          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
-          <button v-if="dueTouched && suggestion?.due_date && form.due_date !== suggestion.due_date" type="button" class="mt-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="resetDue">
+          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="min-h-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
+          <button v-if="dueTouched && suggestion?.due_date && form.due_date !== suggestion.due_date" type="button" class="min-h-[44px] min-w-[44px] mt-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="resetDue">
             恢复默认 {{ dayName(suggestion.due_date) }}
           </button>
         </div>
@@ -88,7 +88,7 @@
       <div v-if="asParent && (record || form.create_task)" class="grid grid-cols-2 gap-3 items-start">
         <div>
           <label for="homework-points" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">奖励积分</label>
-          <input id="homework-points" v-model.number="form.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" @input="pointsTouched = true" />
+          <input id="homework-points" v-model.number="form.points" type="number" min="0" max="10000" class="min-h-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" @input="pointsTouched = true" />
           <p class="mt-1 text-xs font-bold text-slate-400">默认按课程，可以在「课程默认积分」里设置</p>
         </div>
       </div>
@@ -125,7 +125,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['close', 'saved']);
 
-const today = props.today;
+const today = computed(() => props.today);
 const dayName = date => `${WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${shortDate(date)}`;
 
 const selected = ref(null);
@@ -138,22 +138,22 @@ const pointsTouched = ref(false);
 const createTouched = ref(false);
 const form = reactive(props.record
   ? { content: props.record.content, assigned_date: props.record.assigned_date, due_date: props.record.due_date || '', points: props.record.points, create_task: false }
-  : { content: '', assigned_date: today, due_date: '', points: 10, create_task: false, track_time: false, expected_minutes: null });
+  : { content: '', assigned_date: today.value, due_date: '', points: 10, create_task: false, track_time: false, expected_minutes: null });
 
 const otherSubjects = computed(() => SCHOOL_SUBJECTS.filter(subject => !props.courses.some(c => c.kind === 'school' && c.subject === subject)));
-const canCreateTask = computed(() => Boolean(form.due_date) && form.due_date >= today);
+const canCreateTask = computed(() => Boolean(form.due_date) && form.due_date >= today.value);
 
 const dueHint = computed(() => {
-  if (props.record) return form.due_date && form.due_date < today ? { text: '截止日期已过', warn: true } : null;
+  if (props.record) return form.due_date && form.due_date < today.value ? { text: '截止日期已过', warn: true } : null;
   if (!suggestion.value) return null;
   const { next_lesson_date: next } = suggestion.value;
   if (!next) return { text: '课程表里找不到下一次课，请自己选截止日期', warn: !form.due_date };
-  return { text: `下次课是${dayName(next)}，默认前一天截止${form.due_date && form.due_date < today ? '（已过）' : ''}`, warn: form.due_date < today };
+  return { text: `下次课是${dayName(next)}，默认前一天截止${form.due_date && form.due_date < today.value ? '（已过）' : ''}`, warn: form.due_date < today.value };
 });
 
 function selectCourse(course) {
   selected.value = course;
-  form.assigned_date = course.last_lesson_date ?? today;
+  form.assigned_date = course.last_lesson_date ?? today.value;
   dueTouched.value = false;
   refresh();
 }
