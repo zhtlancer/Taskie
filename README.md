@@ -425,6 +425,25 @@ npm run test:browser:running-timer
 npm run test:browser:rest
 ```
 
+错题照片备份的回归覆盖设置页下载全部照片、只下载新照片、在另一台服务器恢复后列出缺失照片并上传照片包补齐；照片包导出回归覆盖服务端导出记录（只有完整发送后才记为已导出）、“全部照片”包含保留备份引用的照片，以及截断或内容不符的照片包被拒绝：
+
+```bash
+npm run test:browser:photo-backup
+npm run test:browser:photo-export
+```
+
+前端异常恢复回归覆盖学费草稿版本、休息后继续原计时、作业表单跨午夜、响应丢失后刷新重试不重复记账，以及设置页提示和上传进度：
+
+```bash
+npm run test:browser:frontend-recovery
+```
+
+升级回归使用 `0b4128c` 的真实旧代码生成数据库、照片和 v1 备份，再用当前代码升级、恢复 v1 备份、恢复 v2 备份并用照片包补齐，逐行和逐字节核对数据。它通过 `git archive` 取出旧代码，因此需要完整的 git 历史（浅克隆会提示改用 `fetch-depth: 0`）；默认使用端口 4191–4194，可用 `UPGRADE_PORT` 调整：
+
+```bash
+npm run test:upgrade
+```
+
 课外班按课次排课的手机／平板浅暗色创建、预览、编辑与日期模式兼容回归：
 
 ```bash
