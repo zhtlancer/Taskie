@@ -215,7 +215,7 @@ test('current-schema backups missing assignment data are rejected before changin
     const damaged = JSON.parse(gunzipSync(archive));
     const db = new Database(Buffer.from(damaged.database, 'base64'));
     db.exec(corruption);
-    assert.equal(db.pragma('user_version', { simple: true }), 28);
+    assert.equal(db.pragma('user_version', { simple: true }), 29);
     damaged.database = db.serialize().toString('base64');
     db.close();
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(damaged))) });
@@ -255,7 +255,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   const rows = ctx.db.prepare('SELECT source_template_id, template_created_at FROM daily_tasks').all();
   assert.ok(rows.every(row => row.source_template_id === template.id && row.template_created_at === template.created_at));
   tasks.deleteTemplate(template.id);
@@ -311,7 +311,7 @@ test('old schema migrates without losing existing children and fixed-day templat
     assert.equal(db.prepare('SELECT name FROM children').get().name, '保留账号');
     assert.equal(db.prepare('SELECT schedule_type FROM task_templates').get().schedule_type, 'fixed_days');
     assert.equal(db.prepare('SELECT assign_all FROM task_templates').get().assign_all, 1);
-    assert.equal(db.pragma('user_version', { simple: true }), 28);
+    assert.equal(db.pragma('user_version', { simple: true }), 29);
   } finally { db.close(); }
 });
 
@@ -333,7 +333,7 @@ test('v8 character books restore with empty categories; a v9 backup without them
   db.close();
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   assert.deepEqual(ctx.app.services.charactersService.listCharacters({ child_id: child.id }).map(c => [c.char, c.categories]), [['春', []]]);
 });
 
@@ -382,7 +382,7 @@ test('skipped tasks and their requests survive restore; v9 backups restore witho
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   assert.deepEqual([skipsService.listRequests().length, tasksService.getDailyTasks(child.id)[0].is_skipped], [0, false]);
 });
 
@@ -419,7 +419,7 @@ test('task durations survive restore; v10 backups restore without timing and a v
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   const legacyTask = tasksService.getDailyTasks(child.id)[0];
   assert.deepEqual([legacyTask.track_time, legacyTask.duration_seconds, legacyTask.timer_seconds], [false, null, 0]);
   assert.equal(tasksService.listTemplates()[0].track_time, false);
@@ -458,7 +458,7 @@ test('timetables and outside classes survive restore; v11 backups restore withou
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   assert.deepEqual([scheduleService.listClasses(), scheduleService.listTimetables(child.id)], [[], []]);
 });
 
@@ -497,7 +497,7 @@ test('lesson identities migrate from v12 without losing check-ins; v13 backups r
 
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(older) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   const rows = tasksService.getDailyTasks(child.id);
   assert.equal(rows.length, 3);
   assert.deepEqual([rows.find(row => row.id === regular.id).class_lesson_date, rows.find(row => row.id === regular.id).is_completed], [today, true]);
@@ -545,7 +545,7 @@ test('carry-over, due dates and make-up days survive restore; v13 backups restor
   db.close();
   const older = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify(legacy))) });
   assert.equal(older.statusCode, 200, older.body);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   assert.deepEqual([tasksService.listTemplates()[0].carry_over, tasksService.listAdhocTasks(child.id)[0].due_date, periodsService.listMakeupDays(child.id)], [false, null, []]);
 });
 
@@ -596,4 +596,86 @@ test('a photo file lost on disk does not block backups; its record survives and 
   fs.writeFileSync(path.join(ctx.tempUploadDir, 'lost.jpg'), 'found again');
   assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups' })).statusCode, 200);
   assert.equal((await ctx.app.inject({ method: 'GET', url: '/api/backups' })).json().last_warning, null);
+});
+
+test("changing a child's PIN signs out only that child's existing sessions", async t => {
+  const ctx = await fixture(t);
+  const create = async (name, pin) => (await ctx.app.inject({ method: 'POST', url: '/api/children', payload: { name, pin } })).json();
+  const login = async (child, pin) => (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id, pin } })).json().token;
+  const statsAs = (child, token) => ctx.rawInject({ method: 'GET', url: `/api/children/${child.id}/stats`, headers: { authorization: `Bearer ${token}` } });
+  const ming = await create('小明', '1111');
+  const hong = await create('小红', '2222');
+  const mingToken = await login(ming, '1111');
+  const hongToken = await login(hong, '2222');
+  // A session from before this version (no child_epoch) keeps working until the PIN changes.
+  const oldToken = ctx.app.jwt.sign({ role: 'child', child_id: ming.id, epoch: ctx.app.sessionEpoch() });
+  assert.equal((await statsAs(ming, oldToken)).statusCode, 200);
+
+  assert.equal((await ctx.app.inject({ method: 'PUT', url: `/api/children/${ming.id}`, payload: { name: '小明', pin: '3333' } })).statusCode, 200);
+  for (const token of [mingToken, oldToken]) {
+    const res = await statsAs(ming, token);
+    assert.equal(res.statusCode, 401);
+    assert.match(res.json().error, /PIN 已更改/);
+  }
+  assert.equal((await statsAs(hong, hongToken)).statusCode, 200, 'another child stays signed in');
+  assert.equal((await ctx.app.inject({ method: 'GET', url: `/api/children/${ming.id}/stats` })).statusCode, 200, 'the parent stays signed in');
+  assert.equal((await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: ming.id, pin: '1111' } })).statusCode, 401);
+  assert.equal((await statsAs(ming, await login(ming, '3333'))).statusCode, 200);
+  // Renaming without touching the PIN keeps sessions.
+  const fresh = await login(ming, '3333');
+  await ctx.app.inject({ method: 'PUT', url: `/api/children/${ming.id}`, payload: { name: '大明' } });
+  assert.equal((await statsAs(ming, fresh)).statusCode, 200);
+});
+
+test('a restore killed mid-way leaves records and photos from the same side after a restart', async t => {
+  const os = require('node:os');
+  const { getDb } = require('../src/db');
+  const BackupService = require('../src/services/backup.service');
+  // The child process dies with SIGKILL at the chosen point; no catch or finally runs.
+  const killer = `
+    const fs = require('node:fs');
+    const { getDb } = require('./src/db');
+    const BackupService = require('./src/services/backup.service');
+    const { DIR, KILL_AT } = process.env;
+    const db = getDb(DIR + '/data.sqlite');
+    const service = new BackupService(db, DIR + '/uploads', DIR + '/backups');
+    const rename = fs.renameSync, rm = fs.rmSync;
+    fs.renameSync = (from, to) => { rename(from, to); if (KILL_AT === 'photos-swapped' && from.includes('.restore-')) process.kill(process.pid, 'SIGKILL'); };
+    fs.rmSync = (target, options) => { if (KILL_AT === 'committed' && String(target).includes('.previous-')) process.kill(process.pid, 'SIGKILL'); return rm(target, options); };
+    service.restore(fs.readFileSync(DIR + '/backup.taskie.gz'));
+    console.log('restore finished without being killed');
+  `;
+  for (const killAt of ['photos-swapped', 'committed']) {
+    await t.test(killAt, () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-restore-crash-'));
+      t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+      const uploads = path.join(dir, 'uploads'), backups = path.join(dir, 'backups');
+      fs.mkdirSync(uploads);
+      let db = getDb(path.join(dir, 'data.sqlite'));
+      let service = new BackupService(db, uploads, backups);
+      const addChild = name => db.prepare("INSERT INTO children (id, name, avatar_emoji, created_at) VALUES (?, ?, '🐱', datetime('now'))").run(name, name);
+      addChild('backup-child');
+      fs.writeFileSync(path.join(uploads, 'p.jpg'), 'backup photo');
+      db.prepare("INSERT INTO mistake_records (id, child_id, subject, description, photo_path, created_at) VALUES ('m', 'backup-child', '数学', 'x', '/uploads/p.jpg', datetime('now'))").run();
+      fs.copyFileSync(service.getPath(service.create().name), path.join(dir, 'backup.taskie.gz'));
+      // The current data differs from the backup in both records and photo bytes.
+      addChild('current-child');
+      fs.writeFileSync(path.join(uploads, 'p.jpg'), 'current photo');
+      db.close();
+
+      const run = spawnSync(process.execPath, ['-e', killer], { cwd: path.resolve(__dirname, '..'), env: { ...process.env, DIR: dir, KILL_AT: killAt }, encoding: 'utf8' });
+      assert.equal(run.signal, 'SIGKILL', run.stdout + run.stderr);
+      assert.ok(fs.existsSync(path.join(backups, '.restore-journal.json')), 'the journal outlives the crash');
+
+      db = getDb(path.join(dir, 'data.sqlite'));
+      service = new BackupService(db, uploads, backups);
+      const children = db.prepare('SELECT id FROM children ORDER BY id').all().map(r => r.id);
+      const photo = fs.readFileSync(path.join(uploads, 'p.jpg'), 'utf8');
+      if (killAt === 'photos-swapped') assert.deepEqual([children, photo], [['backup-child', 'current-child'], 'current photo'], 'an uncommitted restore is undone');
+      else assert.deepEqual([children, photo], [['backup-child'], 'backup photo'], 'a committed restore is kept');
+      assert.deepEqual(fs.readdirSync(dir).filter(name => /\.(?:previous|restore)-/.test(name)), [], 'no leftover photo directories');
+      assert.equal(fs.existsSync(path.join(backups, '.restore-journal.json')), false);
+      db.close();
+    });
+  }
 });

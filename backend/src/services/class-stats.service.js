@@ -1,5 +1,6 @@
 const { formatDate, getTodayDate, getDayOfWeek, parseDate, shiftDate } = require('../utils/date');
 const { timeZone } = require('../config');
+const { generateId } = require('../utils/crypto');
 const fail = (status, message) => ({ status, message });
 const minutes = (start, end) => start && end ? (Number(end.slice(0, 2)) * 60 + Number(end.slice(3))) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3))) : null;
 const isDue = (date, end, today, clock) => date < today || date === today && (!end || end <= clock);
@@ -14,7 +15,7 @@ class ClassStatsService {
     const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
     if (!child) throw fail(404, '孩子不存在');
     const records = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ?').all(classId, childId);
-    const fee = this.db.prepare('SELECT total_fee_cents FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(classId, childId);
+    const fee = this.db.prepare('SELECT total_fee_cents, updated_at FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(classId, childId);
     const enrolled = cls.child_ids === null || cls.child_ids.includes(childId);
     if (!allowEmpty && !enrolled && !records.length && !fee) throw fail(400, '这个孩子没有这门课');
     const exceptions = new Map(this.db.prepare('SELECT * FROM outside_class_exceptions WHERE class_id = ? AND child_id = ?').all(classId, childId)
@@ -23,7 +24,7 @@ class ClassStatsService {
     // lessons before attendance tracking began. They can still be recorded, just not counted pending.
     const tracking = this.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get()?.value;
     const since = [cls.start_date, formatDate(new Date(child.created_at)), formatDate(new Date(cls.created_at)), tracking].filter(Boolean).sort().at(-1);
-    return { cls, childId, enrolled, since, hasFeeRow: Boolean(fee), records: new Map(records.map(r => [r.lesson_date, r])), fee: fee?.total_fee_cents ?? null, exceptions };
+    return { cls, childId, enrolled, since, hasFeeRow: Boolean(fee), records: new Map(records.map(r => [r.lesson_date, r])), fee: fee?.total_fee_cents ?? null, feeUpdatedAt: fee?.updated_at ?? null, exceptions };
   }
   validSource(cls, date) {
     return date >= cls.start_date && (!cls.end_date || date <= cls.end_date) && cls.days_of_week.includes(getDayOfWeek(date));
@@ -52,7 +53,9 @@ class ClassStatsService {
       charged: Boolean(record?.charged), source: record?.source ?? null,
       note: record?.note ?? e?.note ?? '',
       lesson_number: cls.total_lessons && this.validSource(cls, source) ? this.countThrough(cls, source) : null,
-      historical: !this.validSource(cls, source), confirmed: Boolean(record)
+      historical: !this.validSource(cls, source), confirmed: Boolean(record),
+      // The version a parent edits; a save based on an older one is refused.
+      updated_at: record?.updated_at ?? null
     };
   }
   datesIn(cls, from, to) {
@@ -114,7 +117,7 @@ class ClassStatsService {
       remaining_credits: total === null ? null : Math.max(0, total - charged),
       attendance_rate: attended + absent ? Math.round(attended * 100 / (attended + absent)) : null,
       attended_minutes: knownMinutes, unknown_duration_lessons: unknownDuration, month_attended: monthAttended,
-      next_lesson: ctx.enrolled ? next : null, estimated_end_date: estimatedEnd, total_fee_cents: ctx.fee,
+      next_lesson: ctx.enrolled ? next : null, estimated_end_date: estimatedEnd, total_fee_cents: ctx.fee, fee_updated_at: ctx.feeUpdatedAt,
       per_lesson_cents: total && ctx.fee !== null ? ctx.fee / total : null,
       consumed_cents: consumed, remaining_cents: consumed === null ? null : Math.max(0, ctx.fee - consumed),
       overdrawn_lessons: total === null ? 0 : Math.max(0, charged - total), today, time_zone: timeZone };
@@ -135,7 +138,20 @@ class ClassStatsService {
     for (const [source, r] of ctx.records) if (r.actual_date >= from && r.actual_date <= to) sources.add(source);
     const lessons = [...sources].map(source => this.lesson(ctx, source)).filter(l => l.actual_date >= from && l.actual_date <= to)
       .sort((a, b) => a.actual_date.localeCompare(b.actual_date) || (a.start_time ?? '').localeCompare(b.start_time ?? '') || a.lesson_date.localeCompare(b.lesson_date));
-    return { summary, from, to, lessons };
+    const changes = this.db.prepare(`SELECT kind, lesson_date, old_value, new_value, created_at FROM outside_class_changes
+      WHERE class_id = ? AND child_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 20`).all(classId, childId)
+      .map(row => ({ ...row, old_value: JSON.parse(row.old_value), new_value: JSON.parse(row.new_value) }));
+    return { summary, from, to, lessons, changes };
+  }
+  // Saves carry the updated_at they were based on (null for no record yet). Two parents editing
+  // the same lesson or fee cannot silently replace each other: the later save gets a 409.
+  checkVersion(current, expected, message) {
+    if (expected !== undefined && (current ?? null) !== expected) throw fail(409, message);
+  }
+  recordChange(classId, childId, kind, lessonDate, before, after) {
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    this.db.prepare(`INSERT INTO outside_class_changes(id, class_id, child_id, kind, lesson_date, old_value, new_value, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(generateId(), classId, childId, kind, lessonDate, JSON.stringify(before), JSON.stringify(after), new Date().toISOString());
   }
   setAttendance(classId, childId, source, body) {
     parseDate(source);
@@ -146,7 +162,10 @@ class ClassStatsService {
     if (body.status !== 'pending' && lesson.actual_date > getTodayDate()) throw fail(400, '未来的课程请通过请假或调课安排，不能提前确认出勤');
     if (body.charged !== undefined && typeof body.charged !== 'boolean') throw fail(400, '是否消课必须为是或否');
     if (body.note !== undefined && (typeof body.note !== 'string' || body.note.trim().length > 200)) throw fail(400, '备注不超过 200 个字');
+    const attendanceOf = row => (row ? { status: row.status, charged: Boolean(row.charged), note: row.note } : null);
     this.db.transaction(() => {
+      const before = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, source);
+      this.checkVersion(before?.updated_at, body.expected_updated_at, '这节课的出勤刚被其他设备修改过，请看最新记录后再改');
       if (body.status === 'pending') this.db.prepare('DELETE FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').run(classId, childId, source);
       else this.db.prepare(`INSERT INTO outside_class_attendance
         (class_id, child_id, lesson_date, actual_date, start_time, end_time, duration_minutes, status, charged, source, note, updated_at)
@@ -155,6 +174,8 @@ class ClassStatsService {
           source = 'parent', task_id = NULL, note = excluded.note, updated_at = excluded.updated_at`)
         .run(classId, childId, source, lesson.actual_date, lesson.start_time, lesson.end_time, lesson.duration_minutes,
           body.status, (body.charged ?? body.status === 'attended') ? 1 : 0, body.note?.trim() ?? '', new Date().toISOString());
+      const after = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, source);
+      this.recordChange(classId, childId, 'attendance', source, attendanceOf(before), attendanceOf(after));
       this.schedule.pruneClassTasks(classId);
     })();
     return this.summary(this.context(classId, childId, true));
@@ -163,10 +184,15 @@ class ClassStatsService {
     this.context(classId, childId);
     const amount = body.total_fee_cents;
     if (amount !== null && (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000000)) throw fail(400, '学费须为 0 至 1000 万元，最多两位小数；不填时传 null');
-    if (amount === null) this.db.prepare('DELETE FROM outside_class_fees WHERE class_id = ? AND child_id = ?').run(classId, childId);
-    else this.db.prepare(`INSERT INTO outside_class_fees(class_id, child_id, total_fee_cents, updated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(class_id, child_id) DO UPDATE SET total_fee_cents = excluded.total_fee_cents, updated_at = excluded.updated_at`)
-      .run(classId, childId, amount, new Date().toISOString());
+    this.db.transaction(() => {
+      const before = this.db.prepare('SELECT total_fee_cents, updated_at FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(classId, childId);
+      this.checkVersion(before?.updated_at, body.expected_updated_at, '学费刚被其他设备修改过，请看最新金额后再改');
+      if (amount === null) this.db.prepare('DELETE FROM outside_class_fees WHERE class_id = ? AND child_id = ?').run(classId, childId);
+      else this.db.prepare(`INSERT INTO outside_class_fees(class_id, child_id, total_fee_cents, updated_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(class_id, child_id) DO UPDATE SET total_fee_cents = excluded.total_fee_cents, updated_at = excluded.updated_at`)
+        .run(classId, childId, amount, new Date().toISOString());
+      this.recordChange(classId, childId, 'fee', null, before?.total_fee_cents ?? null, amount);
+    })();
     return this.summary(this.context(classId, childId, true));
   }
   syncCheckin(task) {

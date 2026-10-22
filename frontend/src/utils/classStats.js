@@ -1,5 +1,15 @@
 export const attendanceLabels = { pending: '未确认', attended: '已上课', leave: '请假', absent: '缺席' };
 export const feeText = cents => cents === null || cents === undefined ? '—' : `¥${(cents / 100).toFixed(2)}`;
+
+// One line of the correction history: what a lesson's attendance or the fee was, and became.
+const attendanceText = value => (value ? `${attendanceLabels[value.status]}·${value.charged ? '消课' : '未消课'}${value.note ? `（${value.note}）` : ''}` : '未确认');
+export function changeText(change) {
+  if (change.kind === 'fee') {
+    const text = cents => (cents === null ? '未设置' : feeText(cents));
+    return `学费 ${text(change.old_value)} → ${text(change.new_value)}`;
+  }
+  return `${change.lesson_date} 出勤 ${attendanceText(change.old_value)} → ${attendanceText(change.new_value)}`;
+}
 export function parseFee(value) {
   const text = String(value).trim();
   if (!text) return null;

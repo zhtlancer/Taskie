@@ -40,6 +40,13 @@
         <p v-if="details.summary.overdrawn_lessons" class="text-xs font-bold text-amber-700 dark:text-amber-300">消课已超过总课次 {{ details.summary.overdrawn_lessons }} 次，请核对本期课次和出勤记录。</p>
       </form>
 
+      <details v-if="details.changes?.length" class="mb-4 rounded-2xl border border-slate-200 dark:border-slate-700 p-3 text-sm">
+        <summary class="min-h-[44px] flex items-center font-bold cursor-pointer">修改记录（最近 {{ details.changes.length }} 条）</summary>
+        <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+          <li v-for="change in details.changes" :key="`${change.created_at}-${change.kind}-${change.lesson_date}`">{{ new Date(change.created_at).toLocaleString('zh-CN', { timeZone: details.summary.time_zone }) }} · {{ changeText(change) }}</li>
+        </ul>
+      </details>
+
       <div class="flex flex-wrap items-center gap-2 mb-3">
         <button type="button" :disabled="busy || fetching" class="min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold" @click="changeRange(-30)">往前 30 天</button>
         <span class="text-xs flex-1">{{ details.from }} 至 {{ details.to }}</span>
@@ -79,7 +86,7 @@ import { ref } from 'vue';
 import UiDialog from './UiDialog.vue';
 import api from '../api/client';
 import { addDays } from '../utils/schedule.js';
-import { attendanceLabels, feeText, parseFee } from '../utils/classStats.js';
+import { attendanceLabels, changeText, feeText, parseFee } from '../utils/classStats.js';
 const props = defineProps({ summary: { type: Object, required: true }, child: { type: Object, required: true } });
 const emit = defineEmits(['changed']);
 const opened = ref(false), details = ref(null), draft = ref(null), fee = ref(''), error = ref(''), busy = ref(false), fetching = ref(false);
@@ -113,20 +120,35 @@ async function saveFee() {
   if (busy.value) return;
   busy.value = true; error.value = '';
   try {
-    details.value.summary = await api.setClassFee(props.summary.class_id, { child_id: props.child.id, total_fee_cents: parseFee(fee.value) });
-    if (!details.value.summary.available) opened.value = false;
+    const summary = await api.setClassFee(props.summary.class_id, { child_id: props.child.id, total_fee_cents: parseFee(fee.value), expected_updated_at: details.value.summary.fee_updated_at ?? null });
     emit('changed');
-  } catch (err) { showError(err); } finally { busy.value = false; }
+    if (!summary.available) { opened.value = false; return; }
+    // Reload rather than patch the summary, so the history shows this change too.
+    await load(details.value.from, details.value.to);
+  } catch (err) {
+    showError(err);
+    // Another device may have changed the fee: show its amount and keep what this parent typed.
+    await reloadQuietly();
+  } finally { busy.value = false; }
+}
+async function reloadQuietly() {
+  try { await load(details.value.from, details.value.to); } catch { /* the error above is already shown */ }
 }
 async function saveAttendance() {
   if (busy.value) return;
   busy.value = true; error.value = '';
   try {
-    const summary = await api.setClassAttendance(props.summary.class_id, { child_id: props.child.id, lesson_date: draft.value.lesson_date, status: draft.value.status, charged: draft.value.charged, note: draft.value.note });
+    const summary = await api.setClassAttendance(props.summary.class_id, { child_id: props.child.id, lesson_date: draft.value.lesson_date, status: draft.value.status, charged: draft.value.charged, note: draft.value.note, expected_updated_at: draft.value.updated_at ?? null });
     draft.value = null;
     if (!summary.available) { opened.value = false; emit('changed'); return; }
     emit('changed');
     await load(details.value.from, details.value.to);
-  } catch (err) { showError(err); } finally { busy.value = false; }
+  } catch (err) {
+    showError(err);
+    // Show the record as it is now; the draft stays, and saving again replaces what is shown.
+    await reloadQuietly();
+    const fresh = draft.value && details.value?.lessons.find(lesson => lesson.lesson_date === draft.value.lesson_date);
+    if (fresh) draft.value.updated_at = fresh.updated_at;
+  } finally { busy.value = false; }
 }
 </script>

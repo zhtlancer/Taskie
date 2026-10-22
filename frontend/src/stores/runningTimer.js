@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import api from '../api/client';
 import { withClock } from '../utils/taskTimer.js';
 
+const timerTarget = timer => ({ kind: timer.kind, id: timer.id, session_id: timer.session_id ?? null });
+
 // The child's current timer (running, or the latest one paused), shown on every page of the child's
 // space. Pages that start or stop timers refresh it; changedAt tells the today board to reload after
 // the bar paused or resumed a timer.
@@ -46,7 +48,7 @@ export const useRunningTimerStore = defineStore('runningTimer', {
       }
     },
 
-    pause() { return this.change(api.pauseCurrentTimer); },
-    resume() { return this.change(api.resumeCurrentTimer); }
+    pause() { return this.change(childId => api.pauseCurrentTimer(childId, timerTarget(this.timer))); },
+    resume() { return this.change(childId => api.resumeCurrentTimer(childId, timerTarget(this.timer))); }
   }
 });

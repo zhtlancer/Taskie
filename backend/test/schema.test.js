@@ -20,8 +20,8 @@ function describeSchema(db) {
 test('a database upgraded from v14 ends with the same schema as a fresh one', () => {
   const fresh = getDb(':memory:');
   const legacy = getDb(':memory:');
-  // Undo what v15–v28 and their schema.sql tables add, as a v14 database would look.
-  legacy.exec(`DROP TABLE outside_class_fees; DROP TABLE outside_class_attendance; DROP INDEX idx_point_logs_study_batch; DROP INDEX idx_daily_tasks_study_day; DROP INDEX idx_point_logs_daily_task;
+  // Undo what v15–v29 and their schema.sql tables add, as a v14 database would look.
+  legacy.exec(`DROP TABLE outside_class_changes; ALTER TABLE children DROP COLUMN session_epoch; DROP TABLE outside_class_fees; DROP TABLE outside_class_attendance; DROP INDEX idx_point_logs_study_batch; DROP INDEX idx_daily_tasks_study_day; DROP INDEX idx_point_logs_daily_task;
     ALTER TABLE point_logs DROP COLUMN study_batch_id; ALTER TABLE daily_tasks DROP COLUMN study_day_id;
     ALTER TABLE daily_tasks DROP COLUMN completion_source; DROP TABLE task_backfill_events; DROP TABLE task_day_snapshots; DROP TABLE study_legacy_corrections;
     DROP TABLE homework_session_days; DROP TABLE homework_sessions; ALTER TABLE daily_tasks DROP COLUMN homework_legacy_seconds; ALTER TABLE daily_tasks DROP COLUMN revoked_at; ALTER TABLE daily_tasks DROP COLUMN finish_on_actual_date; ALTER TABLE daily_tasks DROP COLUMN is_course_homework; ALTER TABLE children DROP COLUMN last_timer_kind; ALTER TABLE children DROP COLUMN last_timer_id; ALTER TABLE outside_classes DROP COLUMN total_lessons; DROP TABLE homework_records; DROP TABLE homework_course_points;`);
@@ -38,4 +38,13 @@ test('a database upgraded from v14 ends with the same schema as a fresh one', ()
   assert.deepEqual(describeSchema(legacy), describeSchema(fresh));
   fresh.close();
   legacy.close();
+});
+
+test('a database upgraded by a newer version is refused rather than misread after a rollback', () => {
+  const { SCHEMA_VERSION } = require('../src/db');
+  const fresh = getDb(':memory:');
+  assert.equal(fresh.pragma('user_version', { simple: true }), SCHEMA_VERSION, 'SCHEMA_VERSION follows the last upgrade');
+  fresh.pragma(`user_version = ${SCHEMA_VERSION + 1}`);
+  assert.throws(() => initDb(fresh), /高于当前程序支持/);
+  fresh.close();
 });

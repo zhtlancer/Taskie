@@ -11,7 +11,7 @@ class AuthService {
       return { success: false, status: 400, error: 'child_id is required' };
     }
 
-    const child = this.db.prepare('SELECT id, name, avatar_emoji, pin_hash FROM children WHERE id = ?').get(childId);
+    const child = this.db.prepare('SELECT id, name, avatar_emoji, pin_hash, session_epoch FROM children WHERE id = ?').get(childId);
     if (!child) {
       return { success: false, status: 404, error: 'Child not found' };
     }
@@ -31,7 +31,8 @@ class AuthService {
         id: child.id,
         name: child.name,
         avatar_emoji: child.avatar_emoji
-      }
+      },
+      sessionEpoch: child.session_epoch ?? null
     };
   }
 

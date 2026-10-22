@@ -11,7 +11,7 @@ const PERIOD_TABLES = ['periods', 'period_paused_templates', 'period_tasks', 'pe
 const SCHEDULE_TABLES = ['timetables', 'timetable_slots', 'timetable_lessons', 'outside_classes', 'outside_class_children', 'outside_class_exceptions'];
 const STUDY_TABLES = ['word_study_plans', 'word_study_states', 'word_study_days', 'word_study_batches', 'word_study_items', 'word_study_attempts'];
 const HOMEWORK_TABLES = ['homework_records', 'homework_course_points', 'homework_sessions', 'homework_session_days'];
-const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees'];
+const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees', 'outside_class_changes'];
 const MAX_SIZE = 256 * 1024 * 1024;
 // A gzip archive is never larger than its JSON, so accepting MAX_SIZE uploads lets every backup this
 // service creates be restored through the app.
@@ -28,6 +28,37 @@ class BackupService {
     this.lastError = null;
     this.lastWarning = null;
     fs.mkdirSync(this.backupDir, { recursive: true, mode: 0o700 });
+    this.recoverInterruptedRestore();
+  }
+
+  get journalPath() { return path.join(this.backupDir, '.restore-journal.json'); }
+
+  // A restore swaps the photo directory and then commits the database. If the process died in
+  // between (power cut, SIGKILL), the journal left behind tells this start which side to keep, so
+  // records and photos always come from the same backup: a committed restore keeps the restored
+  // photos, anything earlier puts the previous photos back.
+  recoverInterruptedRestore() {
+    let journal;
+    try { journal = JSON.parse(fs.readFileSync(this.journalPath, 'utf8')); } catch (error) {
+      if (error.code === 'ENOENT') return;
+      console.error('    [Backup] 恢复日志无法读取，保留原样待人工检查:', this.journalPath);
+      return;
+    }
+    const committed = this.db.prepare("SELECT value FROM settings WHERE key = 'last_restore_id'").get()?.value === journal.id;
+    if (!committed && fs.existsSync(journal.previous)) {
+      fs.rmSync(this.uploadDir, { recursive: true, force: true });
+      fs.renameSync(journal.previous, this.uploadDir);
+    }
+    for (const leftover of [journal.previous, journal.staging, journal.saved]) fs.rmSync(leftover, { recursive: true, force: true });
+    fs.rmSync(this.journalPath, { force: true });
+    console.warn(committed
+      ? '    [Backup] 上次恢复已写入数据库但未清理完，已保留恢复后的照片并清理临时文件'
+      : '    [Backup] 上次恢复在写入数据库前中断，已放回恢复前的照片，数据库保持恢复前的内容');
+  }
+
+  writeJournal(journal) {
+    const fd = fs.openSync(this.journalPath, 'w', 0o600);
+    try { fs.writeSync(fd, JSON.stringify(journal)); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   }
 
   list() {
@@ -153,6 +184,8 @@ class BackupService {
       if (schemaVersion >= 27 && !hasColumn('outside_classes', 'total_lessons')) throw fail('备份缺少课外班总课次，无法恢复');
       if (schemaVersion >= 28 && (!['class_id', 'child_id', 'lesson_date', 'actual_date', 'start_time', 'end_time', 'duration_minutes', 'status', 'charged', 'source', 'task_id', 'note', 'updated_at'].every(name => hasColumn('outside_class_attendance', name)) ||
         !['class_id', 'child_id', 'total_fee_cents', 'updated_at'].every(name => hasColumn('outside_class_fees', name)))) throw fail('备份缺少课外班出勤或学费记录，无法恢复');
+      if (schemaVersion >= 29 && (!hasColumn('children', 'session_epoch') || !tables.includes('outside_class_changes') ||
+        !['id', 'class_id', 'child_id', 'kind', 'lesson_date', 'old_value', 'new_value', 'created_at'].every(name => hasColumn('outside_class_changes', name)))) throw fail('备份缺少出勤学费修改记录或孩子会话版本，无法恢复');
       if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
       initDb(candidate);
       for (const [name, value] of Object.entries(data.photos)) {
@@ -168,10 +201,11 @@ class BackupService {
       throw fail(error.statusCode ? error.message : '备份包损坏或无法读取');
     }
 
-    const staging = `${this.uploadDir}.restore-${randomUUID()}`;
-    const previous = `${this.uploadDir}.previous-${randomUUID()}`;
-    const saved = path.join(this.backupDir, `.restore-${randomUUID()}.sqlite`);
-    let moved = false, installed = false, attached = false;
+    const restoreId = randomUUID();
+    const staging = `${this.uploadDir}.restore-${restoreId}`;
+    const previous = `${this.uploadDir}.previous-${restoreId}`;
+    const saved = path.join(this.backupDir, `.restore-${restoreId}.sqlite`);
+    let moved = false, installed = false, attached = false, journaled = false;
     try {
       fs.mkdirSync(staging, { recursive: true });
       for (const [name, content] of Object.entries(data.photos)) fs.writeFileSync(path.join(staging, name), Buffer.from(content, 'base64'), { mode: 0o600 });
@@ -183,6 +217,8 @@ class BackupService {
       this.db.prepare('ATTACH DATABASE ? AS recovery').run(saved);
       attached = true;
       this.db.pragma('foreign_keys = OFF');
+      this.writeJournal({ id: restoreId, previous, staging, saved });
+      journaled = true;
       fs.renameSync(this.uploadDir, previous);
       moved = true;
       fs.renameSync(staging, this.uploadDir);
@@ -194,6 +230,8 @@ class BackupService {
         }
         for (const { key, value } of secrets) this.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)').run(key, value);
         this.db.prepare("INSERT OR REPLACE INTO settings(key,value) VALUES ('auth_epoch',?)").run(randomUUID());
+        // Marks this restore as committed for recoverInterruptedRestore.
+        this.db.prepare("INSERT OR REPLACE INTO settings(key,value) VALUES ('last_restore_id',?)").run(restoreId);
         if (this.db.pragma('foreign_key_check').length) throw fail('恢复数据关联检查失败');
       })();
       moved = false;
@@ -202,6 +240,7 @@ class BackupService {
       if (moved) {
         if (installed) fs.renameSync(this.uploadDir, staging);
         fs.renameSync(previous, this.uploadDir);
+        moved = false;
       }
       throw error;
     } finally {
@@ -211,6 +250,8 @@ class BackupService {
       fs.rmSync(staging, { recursive: true, force: true });
       if (!moved) fs.rmSync(previous, { recursive: true, force: true });
       fs.rmSync(saved, { force: true });
+      // Done or rolled back: nothing is left for a restart to finish.
+      if (journaled && !moved) fs.rmSync(this.journalPath, { force: true });
     }
   }
 }

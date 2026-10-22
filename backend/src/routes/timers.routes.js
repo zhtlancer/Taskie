@@ -1,3 +1,10 @@
+// The timer a client showed when the child tapped pause or resume; older clients send none.
+const target = body => {
+  const t = body?.target;
+  if (!t || typeof t.kind !== 'string' || typeof t.id !== 'string') return undefined;
+  return { kind: t.kind, id: t.id, session_id: typeof t.session_id === 'string' ? t.session_id : null };
+};
+
 async function timersRoutes(fastify, options) {
   const { timersService, tasksService, periodsService } = options;
   const handle = fn => async (request, reply) => {
@@ -9,8 +16,8 @@ async function timersRoutes(fastify, options) {
   };
 
   fastify.get('/children/:id/current-timer', handle(async request => ({ timer: timersService.current(request.params.id) })));
-  fastify.post('/children/:id/current-timer/pause', handle(async request => ({ timer: timersService.pauseCurrent(request.params.id) })));
-  fastify.post('/children/:id/current-timer/resume', handle(async request => ({ timer: timersService.resumeCurrent(request.params.id) })));
+  fastify.post('/children/:id/current-timer/pause', handle(async request => ({ timer: timersService.pauseCurrent(request.params.id, target(request.body)) })));
+  fastify.post('/children/:id/current-timer/resume', handle(async request => ({ timer: timersService.resumeCurrent(request.params.id, target(request.body)) })));
   fastify.post('/daily-tasks/:id/timer/:action', handle(async request =>
     timersService.apply('task', request.params.id, request.params.action)));
   fastify.post('/period-tasks/:id/timer/:action', handle(async request =>

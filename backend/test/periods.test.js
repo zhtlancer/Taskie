@@ -252,7 +252,7 @@ test('backups keep periods and progress, restore older backups and reject incomp
   assert.throws(() => restore(rewrite(withoutPeriods, 5)), /备份缺少假期数据/);
   restore(rewrite(withoutPeriods, 4));
   assert.deepEqual(ctx.app.services.periodsService.listPeriods(child.id), []);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
 });
 
 test('v5 point histories migrate to durable snapshots; incomplete v6 backups fail before altering live data', async t => {

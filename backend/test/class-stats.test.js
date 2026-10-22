@@ -133,7 +133,7 @@ test('v28 imports only explicit old check-ins with unknown durations; attendance
     backup.restore(pack());
     summary = (await stats()).summary;
     assert.deepEqual([summary.attended, summary.absent, summary.total_fee_cents, summary.unknown_duration_lessons], [1, 0, null, 1]);
-    assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+    assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   } finally { candidate.close(); }
 });
 
@@ -265,4 +265,52 @@ test('a lesson moved before tracking is not pending, while explicit earlier atte
   assert.equal((await stats()).summary.pending, 1);
   await parent('DELETE', `/api/outside-class-exceptions/${moved.json().exceptions.find(e => e.date === day(-2)).id}`);
   assert.equal((await stats()).summary.pending, 2);
+});
+
+test('a save based on an older attendance or fee is refused, and every correction is kept in the history', async t => {
+  const { ctx, parent, cls, child, day, stats, attendance, fee } = await fixture(t);
+  const lesson = async n => (await stats()).lessons.find(l => l.lesson_date === day(n));
+  // Two parents open the same unconfirmed lesson; the first saves "absent".
+  assert.equal((await lesson(-2)).updated_at, null);
+  assert.equal((await attendance(-2, { status: 'absent', charged: false, expected_updated_at: null })).statusCode, 200);
+  const stale = await attendance(-2, { status: 'attended', charged: true, expected_updated_at: null });
+  assert.equal(stale.statusCode, 409);
+  assert.match(stale.json().error, /其他设备/);
+  assert.equal((await lesson(-2)).status, 'absent', 'the first correction stands');
+  // Having seen it, the second parent may still change it.
+  assert.equal((await attendance(-2, { status: 'attended', charged: true, expected_updated_at: (await lesson(-2)).updated_at })).statusCode, 200);
+  assert.equal((await attendance(-2, { status: 'pending', expected_updated_at: (await lesson(-2)).updated_at })).statusCode, 200);
+
+  // Fees work the same way, including clearing one; old clients without a version still save.
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 10000, expected_updated_at: null })).statusCode, 200);
+  const version = (await stats()).summary.fee_updated_at;
+  assert.ok(version);
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000, expected_updated_at: null })).statusCode, 409);
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: null, expected_updated_at: 'older' })).statusCode, 409);
+  assert.equal((await stats()).summary.total_fee_cents, 10000);
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000, expected_updated_at: version })).statusCode, 200);
+  assert.equal((await fee(20000)).statusCode, 200, 'an unchanged save adds no history');
+
+  const { changes } = await stats();
+  assert.deepEqual(changes.map(c => [c.kind, c.lesson_date, c.old_value, c.new_value]), [
+    ['fee', null, 10000, 20000],
+    ['fee', null, null, 10000],
+    ['attendance', day(-2), { status: 'attended', charged: true, note: '' }, null],
+    ['attendance', day(-2), { status: 'absent', charged: false, note: '' }, { status: 'attended', charged: true, note: '' }],
+    ['attendance', day(-2), null, { status: 'absent', charged: false, note: '' }]
+  ]);
+
+  // The history goes with backups and with the class.
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  ctx.db.prepare('DELETE FROM outside_class_changes').run();
+  ctx.app.backupService.restore(archive);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM outside_class_changes').get().n, 5);
+  const data = JSON.parse(gunzipSync(archive));
+  const db = new Database(Buffer.from(data.database, 'base64'));
+  db.exec('DROP TABLE outside_class_changes');
+  data.database = db.serialize().toString('base64');
+  db.close();
+  assert.throws(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /修改记录/);
+  await parent('DELETE', `/api/outside-classes/${cls.id}`);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM outside_class_changes').get().n, 0);
 });

@@ -346,6 +346,19 @@ CREATE TABLE IF NOT EXISTS outside_class_attendance (
   PRIMARY KEY (class_id, child_id, lesson_date)
 );
 CREATE INDEX IF NOT EXISTS idx_class_attendance_child ON outside_class_attendance(child_id, actual_date);
+-- Every parent correction of attendance or fee: what it was and what it became (JSON, NULL when
+-- there was no record), so a silently replaced value can still be traced.
+CREATE TABLE IF NOT EXISTS outside_class_changes (
+  id TEXT PRIMARY KEY,
+  class_id TEXT NOT NULL REFERENCES outside_classes(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK(kind IN ('attendance', 'fee')),
+  lesson_date TEXT,
+  old_value TEXT,
+  new_value TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_class_changes ON outside_class_changes(class_id, child_id, created_at);
 CREATE TABLE IF NOT EXISTS outside_class_fees (
   class_id TEXT NOT NULL REFERENCES outside_classes(id) ON DELETE CASCADE,
   child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,

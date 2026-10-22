@@ -35,7 +35,9 @@ async function authRoutes(fastify, options) {
       role: 'child',
       child_id: result.child.id,
       name: result.child.name,
-      epoch: fastify.sessionEpoch()
+      epoch: fastify.sessionEpoch(),
+      // Changing this child's PIN changes it, signing out only this child's devices.
+      child_epoch: result.sessionEpoch
     });
 
     return reply.send({

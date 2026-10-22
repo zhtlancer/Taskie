@@ -109,7 +109,15 @@ const WEEKLY_EXTRA_COLUMNS = {
 
 let globalDb = null;
 
+// The newest database version this code knows. A rollback must not run an older image on a data
+// directory that a newer one already upgraded: refuse to start instead of misreading it.
+const SCHEMA_VERSION = 29;
+
 function initDb(db) {
+  const found = db.pragma('user_version', { simple: true });
+  if (found > SCHEMA_VERSION) {
+    throw new Error(`数据库版本 v${found} 高于当前程序支持的 v${SCHEMA_VERSION}：它已被更新的版本升级过。请改用更新的镜像，或恢复升级前备份的数据目录后再回退。`);
+  }
   console.log('    [SQLite] 正在执行 schema.sql 初始化/校验数据表结构...');
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
@@ -466,6 +474,14 @@ function initDb(db) {
       db.pragma('user_version = 28');
     })();
   }
+  // v29: a per-child session version (changing a child's PIN signs out that child's devices) and the
+  // outside_class_changes history of attendance and fee corrections (a new table in schema.sql).
+  if (db.pragma('user_version', { simple: true }) < 29) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(children)').some(c => c.name === 'session_epoch')) db.exec('ALTER TABLE children ADD COLUMN session_epoch TEXT');
+      db.pragma('user_version = 29');
+    })();
+  }
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new
   // install or restoring an older backup), not from lessons nobody could record before it.
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('class_attendance_since', ?)").run(formatDate());
@@ -548,6 +564,7 @@ function getDb(customPath) {
 }
 
 module.exports = {
+  SCHEMA_VERSION,
   getDb,
   initDb,
   defaultBadges,

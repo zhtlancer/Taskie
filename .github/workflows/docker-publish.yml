@@ -11,28 +11,15 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  # Unit tests and every local browser suite; a failure blocks the image.
+  checks:
+    uses: ./.github/workflows/checks.yml
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
-      - run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
-      - run: npm ci --prefix frontend
-      - name: Check repository content
-        run: npm run check:repo
-      - run: npm test
 
   # Builds the image and drives the main family flows in Chromium against a throwaway container.
   browser-smoke:
-    needs: test
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,7 +38,7 @@ jobs:
         run: npm run test:browser
 
   build-and-push:
-    needs: [test, browser-smoke]
+    needs: [checks, browser-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read

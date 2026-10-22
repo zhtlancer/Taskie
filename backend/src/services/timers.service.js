@@ -124,10 +124,19 @@ class TimersService {
     }
   }
 
+  // The bar sends the timer it showed. If another device has since started, stopped or switched
+  // timers, act on nothing and let the bar show the latest state instead of guessing for the child.
+  checkTarget(timer, expected) {
+    if (!expected) return;
+    const same = timer && timer.kind === expected.kind && timer.id === expected.id &&
+      (timer.kind !== 'session' || timer.session_id === expected.session_id);
+    if (!same) throw { status: 409, message: '计时已在其他设备上变化，请看最新的计时状态' };
+  }
+
   // Pausing only banks the time already spent, as starting another timer does, so it needs no
   // task-level checks: an overdue task's running session can be stopped too.
-  pauseCurrent(childId) {
-    this.current(childId);
+  pauseCurrent(childId, expected) {
+    this.checkTarget(this.current(childId), expected);
     this.db.transaction(() => {
       this.convertStaleLegacy(childId);
       this.pauseRunning(childId, Date.now());
@@ -136,9 +145,10 @@ class TimersService {
   }
 
   // Resuming goes through the timer's own start, with all of its checks.
-  resumeCurrent(childId) {
+  resumeCurrent(childId, expected) {
     const timer = this.current(childId);
     if (!timer) throw { status: 409, message: '没有可以继续的计时' };
+    this.checkTarget(timer, expected);
     if (!timer.timer_running) {
       if (timer.kind !== 'session') this.apply(timer.kind, timer.id, 'start');
       else if (timer.record_id) this.homeworkStudyService.start(timer.record_id);

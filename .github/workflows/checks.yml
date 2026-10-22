@@ -1,0 +1,79 @@
+name: Checks
+
+# Unit tests and every local browser suite, for pull requests and branches before they reach main.
+# The publish workflow calls this too, so a failing suite also blocks a release.
+on:
+  pull_request:
+  push:
+    branches-ignore: [ "main" ]
+  workflow_call:
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
+      - run: npm ci --prefix frontend
+      - name: Check repository content
+        run: npm run check:repo
+      - run: npm test
+
+  # A NAS-style bind-mounted data directory against the real image: ownership, persistence across
+  # container replacement, clear refusal of unwritable directories and of newer databases.
+  docker-data:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Build test image
+        run: docker build -t taskie:reliability .
+      - name: Data directory checks
+        run: npm run test:docker-data
+
+  # The local browser suites run against an in-memory API and the production build, in the
+  # runner's Google Chrome; each suite is its own job so one failure names the suite.
+  browser-suites:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [ time-stats, carry-over, homework, ui-refine, midnight, legacy, dialogs, class-stats, class-count, running-timer, rest ]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci --prefix backend --omit=dev --engine-strict
+      - run: npm ci --prefix frontend
+      - run: npm run build
+      - name: Install Playwright (using the runner's Chrome)
+        run: npm install --no-save --package-lock=false playwright@1.64.0
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Browser suite ${{ matrix.suite }}
+        run: npm run test:browser:${{ matrix.suite }}
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome

@@ -30,8 +30,10 @@ function installAuthorization(app, db) {
     if (!['parent', 'child'].includes(request.user.role) || request.user.epoch !== app.sessionEpoch()) {
       return reply.code(401).send({ error: '会话已失效，请重新登录' });
     }
-    if (request.user.role === 'child' && !db.prepare('SELECT id FROM children WHERE id = ?').get(request.user.child_id)) {
-      return reply.code(401).send({ error: '孩子账号已删除，请重新选择账号' });
+    if (request.user.role === 'child') {
+      const child = db.prepare('SELECT session_epoch FROM children WHERE id = ?').get(request.user.child_id);
+      if (!child) return reply.code(401).send({ error: '孩子账号已删除，请重新选择账号' });
+      if ((child.session_epoch ?? null) !== (request.user.child_epoch ?? null)) return reply.code(401).send({ error: '孩子的 PIN 已更改，请重新登录' });
     }
     // Until the default PIN is replaced, a parent session may only change it.
     if (request.user.role === 'parent' && url !== '/api/auth/parent-pin' &&

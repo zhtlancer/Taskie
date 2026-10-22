@@ -1,3 +1,4 @@
+const { randomUUID } = require('node:crypto');
 const { generateId, hashPin } = require('../utils/crypto');
 
 class ChildrenService {
@@ -75,11 +76,12 @@ class ChildrenService {
 
     if (pin !== undefined) {
       const newPinHash = (pin && String(pin).trim() !== '') ? hashPin(pin) : null;
+      // Setting, changing or removing the PIN signs out this child's existing sessions.
       this.db.prepare(`
         UPDATE children
-        SET name = ?, avatar_emoji = ?, pin_hash = ?
+        SET name = ?, avatar_emoji = ?, pin_hash = ?, session_epoch = ?
         WHERE id = ?
-      `).run(newName, newEmoji, newPinHash, id);
+      `).run(newName, newEmoji, newPinHash, randomUUID(), id);
     } else {
       this.db.prepare(`
         UPDATE children

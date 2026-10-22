@@ -409,7 +409,40 @@ test('v26 migration remembers timers running during the upgrade; backups keep th
   candidate.pragma('user_version = 25');
   backup.restore(pack());
   candidate.close();
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
   // An older backup has no latest timer: the paused session simply shows again once restarted.
   assert.deepEqual({ ...latest() }, { kind: null, id: null });
+});
+
+test('pausing or resuming from a stale bar does not act on a timer another device has switched to', async t => {
+  const { ctx, child, asChild, asParent, template, todayTask, timer, runFor } = await fixture(t);
+  const act = (action, target) => asChild('POST', `/api/children/${child.id}/current-timer/${action}`, target ? { target } : undefined);
+  await template({ title: '口算', track_time: true });
+  const oral = await todayTask('口算');
+  const book = (await asParent('POST', `/api/children/${child.id}/goals`, { title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, track_time: true })).json();
+
+  // Device A shows 口算 running; device B then starts the book.
+  await timer(oral.id, 'start');
+  const shownOnA = { kind: 'task', id: oral.id };
+  await timer(book.id, 'start', 'period-tasks');
+  const stale = await act('pause', shownOnA);
+  assert.equal(stale.statusCode, 409);
+  assert.match(stale.json().error, /其他设备/);
+  assert.notEqual(ctx.db.prepare('SELECT timer_started_at FROM period_tasks WHERE id = ?').get(book.id).timer_started_at, null, 'the book keeps running');
+
+  runFor('period_tasks', book.id, 60);
+  const paused = await act('pause', { kind: 'goal', id: book.id });
+  assert.equal(paused.statusCode, 200);
+  assert.equal(paused.json().timer.timer_running, false);
+  // Resume is checked the same way, and old clients without a target still work.
+  assert.equal((await act('resume', shownOnA)).statusCode, 409);
+  assert.equal(ctx.db.prepare('SELECT timer_started_at FROM period_tasks WHERE id = ?').get(book.id).timer_started_at, null);
+  assert.equal((await act('resume')).json().timer.timer_running, true);
+
+  // A study session must match its session id too.
+  assert.equal((await asChild('POST', `/api/daily-tasks/${oral.id}/study/start`)).statusCode, 200);
+  const session = (await asChild('GET', `/api/children/${child.id}/current-timer`)).json().timer;
+  assert.equal(session.kind, 'session');
+  assert.equal((await act('pause', { kind: 'session', id: oral.id, session_id: 'another-session' })).statusCode, 409);
+  assert.equal((await act('pause', { kind: 'session', id: oral.id, session_id: session.session_id })).statusCode, 200);
 });

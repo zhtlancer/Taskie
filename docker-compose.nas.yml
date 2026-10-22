@@ -1,7 +1,8 @@
 # 群晖 NAS (Synology) 极简 Compose 配置（无需源码，直接拉取预构建镜像）
 services:
   taskie:
-    image: ghcr.io/zhtlancer/taskie:latest
+    # 固定版本：在同目录 .env 写 TASKIE_TAG=sha-xxxxxxx（发布记录中的镜像标签），升级和回退都只改这一行
+    image: ghcr.io/zhtlancer/taskie:${TASKIE_TAG:-latest}
     container_name: taskie-app
     restart: unless-stopped
     ports:

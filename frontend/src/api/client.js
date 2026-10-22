@@ -57,8 +57,9 @@ export const api = {
   getCalendar: () => get('/calendar'),
   // The running timer, else the latest one paused; pausing keeps it, resuming starts it again.
   getCurrentTimer: id => get(`/children/${id}/current-timer`),
-  pauseCurrentTimer: id => post(`/children/${id}/current-timer/pause`),
-  resumeCurrentTimer: id => post(`/children/${id}/current-timer/resume`),
+  // target: the timer the bar showed, so a change made meanwhile on another device is not overridden.
+  pauseCurrentTimer: (id, target) => post(`/children/${id}/current-timer/pause`, { target }),
+  resumeCurrentTimer: (id, target) => post(`/children/${id}/current-timer/resume`, { target }),
   // data.duration_seconds: the time a timed task took (null for none); left out, the timer's time counts.
   getBackfillTasks: (id, date) => get('/daily-tasks/backfill', { child_id: id, date }),
   materializeBackfillDay: (id, date) => post('/daily-tasks/backfill/day', { child_id: id, date }),

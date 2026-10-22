@@ -9,7 +9,20 @@
 # already be writable by that user.
 set -eu
 
+DATA_DIRS="/app/data $(dirname "${DATABASE_PATH:-/app/data/data.sqlite}") ${UPLOAD_DIR:-} ${BACKUP_DIR:-}"
+
+# Fail at start with a clear message instead of a database or upload error later on.
+unwritable() {
+  echo "数据目录 $1 不可写（运行用户 uid $2）。请检查挂载是否为只读、NAS 共享文件夹权限，或调整 PUID/PGID / compose 的 user: 设置。" >&2
+  echo "Data directory $1 is not writable by uid $2: check for a read-only mount, the NAS share permissions, or PUID/PGID / user:." >&2
+  exit 1
+}
+
 if [ "$(id -u)" != "0" ]; then
+  for dir in $DATA_DIRS; do
+    mkdir -p "$dir" 2>/dev/null || true
+    [ -w "$dir" ] || unwritable "$dir" "$(id -u)"
+  done
   exec "$@"
 fi
 
@@ -24,14 +37,13 @@ if [ "$PUID" = "0" ]; then
 fi
 
 # Only touch what is not already owned, so restarts stay fast with many photos and backups.
+# A read-only or root-squashed share cannot be chowned; the writability check below explains it.
 own_dir() {
   [ -n "$1" ] || return 0
-  mkdir -p "$1"
-  find "$1" \( ! -user "$PUID" -o ! -group "$PGID" \) -exec chown "$PUID:$PGID" {} +
+  mkdir -p "$1" 2>/dev/null || true
+  find "$1" \( ! -user "$PUID" -o ! -group "$PGID" \) -exec chown "$PUID:$PGID" {} + 2>/dev/null || true
+  setpriv --reuid="$PUID" --regid="$PGID" --clear-groups -- test -w "$1" || unwritable "$1" "$PUID"
 }
-own_dir /app/data
-own_dir "$(dirname "${DATABASE_PATH:-/app/data/data.sqlite}")"
-own_dir "${UPLOAD_DIR:-}"
-own_dir "${BACKUP_DIR:-}"
+for dir in $DATA_DIRS; do own_dir "$dir"; done
 
 exec setpriv --reuid="$PUID" --regid="$PGID" --clear-groups -- "$@"

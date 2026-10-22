@@ -94,7 +94,7 @@ test('legacy corrections and zero totals survive restore; v23 backups upgrade; i
   old.pragma('user_version = 23');
   backup.restore(pack());
   old.close();
-  assert.equal(c.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(c.db.pragma('user_version', { simple: true }), 29);
   assert.equal(c.service.details(c.id).legacy_seconds, 0);
   assert.deepEqual(c.service.details(c.id).legacy_corrections, []);
 });
@@ -232,6 +232,6 @@ test('v25 migration backfills course provenance from records or completion evide
   candidate.pragma('user_version = 24');
   backup.restore(pack());
   candidate.close();
-  assert.equal(c.db.pragma('user_version', { simple: true }), 28);
+  assert.equal(c.db.pragma('user_version', { simple: true }), 29);
   assert.equal(provenance(previous.id), 1);
 });
