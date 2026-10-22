@@ -133,7 +133,7 @@ test('v28 imports only explicit old check-ins with unknown durations; attendance
     backup.restore(pack());
     summary = (await stats()).summary;
     assert.deepEqual([summary.attended, summary.absent, summary.total_fee_cents, summary.unknown_duration_lessons], [1, 0, null, 1]);
-    assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
+    assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
   } finally { candidate.close(); }
 });
 
@@ -271,24 +271,24 @@ test('a save based on an older attendance or fee is refused, and every correctio
   const { ctx, parent, cls, child, day, stats, attendance, fee } = await fixture(t);
   const lesson = async n => (await stats()).lessons.find(l => l.lesson_date === day(n));
   // Two parents open the same unconfirmed lesson; the first saves "absent".
-  assert.equal((await lesson(-2)).updated_at, null);
-  assert.equal((await attendance(-2, { status: 'absent', charged: false, expected_updated_at: null })).statusCode, 200);
-  const stale = await attendance(-2, { status: 'attended', charged: true, expected_updated_at: null });
+  assert.equal((await lesson(-2)).revision, null);
+  assert.equal((await attendance(-2, { status: 'absent', charged: false, expected_revision: null })).statusCode, 200);
+  const stale = await attendance(-2, { status: 'attended', charged: true, expected_revision: null });
   assert.equal(stale.statusCode, 409);
   assert.match(stale.json().error, /其他设备/);
   assert.equal((await lesson(-2)).status, 'absent', 'the first correction stands');
   // Having seen it, the second parent may still change it.
-  assert.equal((await attendance(-2, { status: 'attended', charged: true, expected_updated_at: (await lesson(-2)).updated_at })).statusCode, 200);
-  assert.equal((await attendance(-2, { status: 'pending', expected_updated_at: (await lesson(-2)).updated_at })).statusCode, 200);
+  assert.equal((await attendance(-2, { status: 'attended', charged: true, expected_revision: (await lesson(-2)).revision })).statusCode, 200);
+  assert.equal((await attendance(-2, { status: 'pending', expected_revision: (await lesson(-2)).revision })).statusCode, 200);
 
   // Fees work the same way, including clearing one; old clients without a version still save.
-  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 10000, expected_updated_at: null })).statusCode, 200);
-  const version = (await stats()).summary.fee_updated_at;
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 10000, expected_revision: null })).statusCode, 200);
+  const version = (await stats()).summary.fee_revision;
   assert.ok(version);
-  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000, expected_updated_at: null })).statusCode, 409);
-  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: null, expected_updated_at: 'older' })).statusCode, 409);
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000, expected_revision: null })).statusCode, 409);
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: null, expected_revision: 'older' })).statusCode, 409);
   assert.equal((await stats()).summary.total_fee_cents, 10000);
-  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000, expected_updated_at: version })).statusCode, 200);
+  assert.equal((await parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000, expected_revision: version })).statusCode, 200);
   assert.equal((await fee(20000)).statusCode, 200, 'an unchanged save adds no history');
 
   const { changes } = await stats();
@@ -313,4 +313,37 @@ test('a save based on an older attendance or fee is refused, and every correctio
   assert.throws(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /修改记录/);
   await parent('DELETE', `/api/outside-classes/${cls.id}`);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM outside_class_changes').get().n, 0);
+});
+
+
+test('independent revisions change under a frozen clock and survive clearing attendance and fees', async t => {
+  const { ctx, parent, cls, child, day, stats, attendance } = await fixture(t);
+  const NativeDate = Date;
+  const FrozenDate = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : ['2026-10-22T12:00:00Z'])); }
+    static now() { return new NativeDate('2026-10-22T12:00:00Z').getTime(); }
+  };
+  global.Date = FrozenDate;
+  t.after(() => { global.Date = NativeDate; });
+  const fee = body => parent('PUT', `/api/outside-classes/${cls.id}/fee`, { child_id: child.id, ...body });
+  assert.equal((await fee({ total_fee_cents: 100, expected_revision: null })).statusCode, 200);
+  const first = (await stats()).summary.fee_revision;
+  assert.equal((await fee({ total_fee_cents: 200, expected_revision: first })).statusCode, 200);
+  const second = (await stats()).summary.fee_revision;
+  assert.notEqual(first, second);
+  assert.equal((await fee({ total_fee_cents: 300, expected_revision: first })).statusCode, 409);
+  assert.equal((await fee({ total_fee_cents: null, expected_revision: second })).statusCode, 200);
+  const tombstone = (await stats()).summary.fee_revision;
+  assert.ok(tombstone); assert.notEqual(tombstone, second);
+  assert.equal((await fee({ total_fee_cents: 300, expected_revision: null })).statusCode, 409);
+  assert.equal((await attendance(-2, { status: 'attended', expected_revision: null })).statusCode, 200);
+  const revision = () => ctx.app.services.classStatsService.revision(cls.id, child.id, 'attendance', day(-2));
+  const a = revision();
+  assert.equal((await attendance(-2, { status: 'pending', expected_revision: a })).statusCode, 200);
+  assert.ok(revision()); assert.notEqual(revision(), a);
+  assert.equal((await attendance(-2, { status: 'absent', expected_revision: null })).statusCode, 409);
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  ctx.app.backupService.restore(archive);
+  assert.equal((await stats()).summary.fee_revision, tombstone);
+  assert.equal((await fee({ total_fee_cents: 300, expected_revision: null })).statusCode, 409);
 });

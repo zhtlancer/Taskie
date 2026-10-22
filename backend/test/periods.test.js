@@ -252,7 +252,7 @@ test('backups keep periods and progress, restore older backups and reject incomp
   assert.throws(() => restore(rewrite(withoutPeriods, 5)), /备份缺少假期数据/);
   restore(rewrite(withoutPeriods, 4));
   assert.deepEqual(ctx.app.services.periodsService.listPeriods(child.id), []);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 29);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
 });
 
 test('v5 point histories migrate to durable snapshots; incomplete v6 backups fail before altering live data', async t => {
@@ -321,4 +321,23 @@ test('retrying a progress entry with the same request id records it and its poin
   // An id cannot be replayed against another child's task.
   const other = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '口算', subject: '数学', mode: 'progress', total_amount: 10, unit: '页', points: 1 })).json();
   assert.equal((await asParent('POST', `/api/period-tasks/${other.id}/logs`, { amount: 5, request_id: 'progress-request-1' })).statusCode, 409);
+});
+
+
+test('progress request fingerprints include explicit duration and survive later duration corrections', async t => {
+  const { ctx, today, asParent, createPeriod } = await fixture(t);
+  const period = (await createPeriod({ name: '用时重试', start_date: today, end_date: shiftDate(today, 30) })).json();
+  const task = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '阅读', subject: '语文', mode: 'progress', total_amount: 10, unit: '页', points: 2, track_time: true })).json();
+  const payload = { amount: 2, duration_seconds: 60, request_id: 'duration-request-1' };
+  const log = body => asParent('POST', `/api/period-tasks/${task.id}/logs`, body);
+  const first = await log(payload);
+  assert.equal(first.statusCode, 201, first.body);
+  assert.equal((await log(payload)).statusCode, 201);
+  assert.equal((await log({ ...payload, duration_seconds: 120 })).statusCode, 409);
+  assert.equal((await log({ ...payload, duration_seconds: null })).statusCode, 409);
+  const { duration_seconds, ...automatic } = payload;
+  assert.equal((await log(automatic)).statusCode, 409);
+  ctx.db.prepare('UPDATE period_task_logs SET duration_seconds = 90 WHERE id = ?').run(first.json().log_id);
+  assert.equal((await log(payload)).statusCode, 201, 'retries compare original input, not edited output');
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM period_task_logs WHERE period_task_id = ?').get(task.id).n, 1);
 });

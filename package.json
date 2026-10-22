@@ -27,6 +27,7 @@
     "test:browser:running-timer": "node scripts/smoke-running-timer.cjs",
     "test:browser:rest": "node scripts/smoke-rest.cjs",
     "test:browser:photo-backup": "node scripts/smoke-photo-backup.cjs",
+    "test:browser:photo-export": "node scripts/smoke-photo-export.cjs",
     "check:repo": "node scripts/check-repo-content.cjs"
   }
 }

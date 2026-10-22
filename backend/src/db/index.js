@@ -111,7 +111,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -480,6 +480,32 @@ function initDb(db) {
     db.transaction(() => {
       if (!db.pragma('table_info(children)').some(c => c.name === 'session_epoch')) db.exec('ALTER TABLE children ADD COLUMN session_epoch TEXT');
       db.pragma('user_version = 29');
+    })();
+  }
+  // v30: database triggers cover parent saves, check-ins, undo and direct SQL writes alike.
+  // DELETE writes a tombstone, so an old null revision never becomes valid again.
+  if (db.pragma('user_version', { simple: true }) < 30) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(period_task_logs)').some(c => c.name === 'request_fingerprint')) db.exec('ALTER TABLE period_task_logs ADD COLUMN request_fingerprint TEXT');
+      for (const [table, kind] of [['outside_class_attendance', 'attendance'], ['outside_class_fees', 'fee']]) {
+        const date = kind === 'attendance' ? 'lesson_date' : "''";
+        db.exec(`INSERT OR IGNORE INTO outside_class_revisions
+          SELECT class_id, child_id, '${kind}', ${date}, lower(hex(randomblob(16))) FROM ${table}`);
+        for (const event of ['INSERT', 'UPDATE', 'DELETE']) {
+          const row = event === 'DELETE' ? 'OLD' : 'NEW';
+          const lesson = kind === 'attendance' ? `${row}.lesson_date` : "''";
+          db.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_revision_${event.toLowerCase()}
+            AFTER ${event} ON ${table}
+            WHEN EXISTS (SELECT 1 FROM outside_classes WHERE id = ${row}.class_id)
+              AND EXISTS (SELECT 1 FROM children WHERE id = ${row}.child_id)
+            BEGIN
+              INSERT INTO outside_class_revisions(class_id, child_id, kind, lesson_date, revision)
+              VALUES (${row}.class_id, ${row}.child_id, '${kind}', ${lesson}, lower(hex(randomblob(16))))
+              ON CONFLICT(class_id, child_id, kind, lesson_date) DO UPDATE SET revision = excluded.revision;
+            END`);
+        }
+      }
+      db.pragma('user_version = 30');
     })();
   }
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new
