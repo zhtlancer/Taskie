@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { getToken, saveToken, clearTokens } from '../utils/session.js';
+import { getToken, saveToken, clearTokens, currentRole } from '../utils/session.js';
+import { pendingWriteStore, activeWrites, notifyPendingWrites } from '../utils/requestId.js';
 
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api', timeout: 15000 });
 client.interceptors.request.use(config => {
@@ -16,7 +17,7 @@ client.interceptors.response.use(response => response, error => {
   }
   const login = error.config?.url?.includes('-login');
   if (error.response?.status === 401 && !login) clearTokens();
-  const message = !error.response ? '无法连接服务器，操作未确认。请检查网络并刷新重试。'
+  const message = !error.response ? '无法连接服务器，操作未确认。请检查网络后，在原处重试，或到“待确认请求”核对。'
     : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
   const code = error.response?.data?.code;
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
@@ -28,6 +29,23 @@ const get = (url, params, signal) => request('get', url, undefined, params, sign
 const post = (url, data) => request('post', url, data);
 const put = (url, data) => request('put', url, data);
 const remove = url => request('delete', url);
+
+async function sendPendingWrite(entry) {
+  if (activeWrites.has(entry.request_id)) throw '请求正在确认，请稍候';
+  activeWrites.add(entry.request_id);
+  notifyPendingWrites();
+  try {
+    const url = entry.kind === 'redemption' ? `/children/${entry.child_id}/redemptions` : `/period-tasks/${entry.task_id}/logs`;
+    const result = await post(url, { ...entry.payload, request_id: entry.request_id });
+    pendingWriteStore.done(entry.request_id);
+    return result;
+  } finally { activeWrites.delete(entry.request_id); notifyPendingWrites(); }
+}
+
+function pendingWrite(action) {
+  try { return sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole() })); }
+  catch (err) { return Promise.reject(err.message || '无法保存待确认请求，请允许会话存储后重试'); }
+}
 
 export const api = {
   async loginParent({ pin }) {
@@ -124,7 +142,8 @@ export const api = {
   updateRewardItem: (id, data) => put(`/reward-items/${id}`, data),
   deleteRewardItem: id => remove(`/reward-items/${id}`),
   getChildRedemptions: (id, params = {}) => get(`/children/${id}/redemptions`, params),
-  requestRedemption: (id, rewardId, requestId) => post(`/children/${id}/redemptions`, { reward_id: rewardId, request_id: requestId }),
+  requestRedemption: (id, rewardId, title, childName) => pendingWrite({ kind: 'redemption', child_id: id, child_name: childName, task_id: rewardId, title, payload: { reward_id: rewardId } }),
+  retryPendingWrite: entry => sendPendingWrite(entry),
   getRedemptions: (status, params = {}) => get('/redemptions', { ...params, status }),
   approveRedemption: id => post(`/redemptions/${id}/approve`),
   rejectRedemption: id => post(`/redemptions/${id}/reject`),
@@ -162,7 +181,7 @@ export const api = {
   createPeriodTask: (periodId, data) => post(`/periods/${periodId}/tasks`, data),
   updatePeriodTask: (id, data) => put(`/period-tasks/${id}`, data),
   deletePeriodTask: id => remove(`/period-tasks/${id}`),
-  logPeriodProgress: (taskId, data) => post(`/period-tasks/${taskId}/logs`, data),
+  logPeriodProgress: (taskId, data, { childId, childName, title, backfill = false }) => pendingWrite({ kind: backfill ? 'backfill' : 'progress', child_id: childId, child_name: childName, task_id: taskId, title, payload: data }),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
   getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
   getTimeStats: (id, from, to, signal) => get(`/children/${id}/time-stats`, { from, to }, signal),
@@ -196,9 +215,9 @@ export const api = {
   },
   // A direct link with a short-lived ticket, so a large photo package is not held in page memory.
   async photoPackageUrl(since) { return (await post('/backups/photos/export-ticket', since ? { since } : {})).url; },
-  async importPhotos(file) {
+  async importPhotos(file, onUploadProgress) {
     const data = new FormData(); data.append('file', file);
-    return (await client.post('/backups/photos/import', data, { timeout: 0 })).data;
+    return (await client.post('/backups/photos/import', data, { timeout: 0, onUploadProgress })).data;
   },
   changeParentPin: (oldPin, newPin) => put('/auth/parent-pin', { old_pin: oldPin, new_pin: newPin })
 };

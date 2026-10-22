@@ -27,10 +27,14 @@
       <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">累计上课 {{ details.summary.attended_minutes }} 分钟（按课表时长）<template v-if="details.summary.unknown_duration_lessons">，另 {{ details.summary.unknown_duration_lessons }} 次时长未知</template>。<template v-if="details.summary.estimated_end_date">预计结课 {{ details.summary.estimated_end_date }}。</template></p>
 
       <form class="p-3 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-2 mb-4" @submit.prevent="saveFee">
+        <p v-if="feeConflict" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">
+          学费已变化，请核对下方最新金额。输入的学费已保留。
+          <button type="button" :disabled="busy || fetching" class="min-h-[44px] px-3 font-bold underline" @click="acknowledgeFee">已看过最新金额，保留输入继续修改</button>
+        </p>
         <label class="block text-sm font-bold" for="class-fee">本期总学费（元，选填）</label>
         <div class="flex gap-2">
           <input id="class-fee" v-model="fee" :disabled="busy" inputmode="decimal" placeholder="未设置" class="min-w-0 flex-1 min-h-[44px] px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700" />
-          <button type="submit" :disabled="busy" class="min-h-[44px] px-3 rounded-xl bg-violet-500 text-white font-bold disabled:opacity-50">保存学费</button>
+          <button type="submit" :disabled="busy || fetching || feeConflict" class="min-h-[44px] px-3 rounded-xl bg-violet-500 text-white font-bold disabled:opacity-50">保存学费</button>
         </div>
         <div v-if="details.summary.total_fee_cents !== null" class="text-sm space-y-1">
           <p>总学费 {{ feeText(details.summary.total_fee_cents) }}</p>
@@ -90,6 +94,7 @@ import { attendanceLabels, changeText, feeText, parseFee } from '../utils/classS
 const props = defineProps({ summary: { type: Object, required: true }, child: { type: Object, required: true } });
 const emit = defineEmits(['changed']);
 const opened = ref(false), details = ref(null), draft = ref(null), fee = ref(''), error = ref(''), busy = ref(false), fetching = ref(false);
+const feeVersion = ref(null), feeConflict = ref(false);
 let serial = 0;
 const showError = err => { error.value = typeof err === 'string' ? err : err.message || '操作失败，请重试'; };
 async function load(from, to) {
@@ -104,10 +109,13 @@ const feeInput = cents => (cents === null ? '' : (cents / 100).toFixed(2));
 // The fee form appears with the details, so it starts from their fresh fee rather than the card's,
 // which another device may have changed since; later range changes keep what the parent typed.
 async function open() {
-  opened.value = true; details.value = null; draft.value = null; error.value = '';
+  opened.value = true; details.value = null; draft.value = null; error.value = ''; feeConflict.value = false;
   try {
     await load();
-    if (details.value) fee.value = feeInput(details.value.summary.total_fee_cents);
+    if (details.value) {
+      fee.value = feeInput(details.value.summary.total_fee_cents);
+      feeVersion.value = details.value.summary.fee_updated_at ?? null;
+    }
   } catch (err) { showError(err); }
 }
 async function changeRange(days) {
@@ -117,19 +125,26 @@ async function changeRange(days) {
 }
 function edit(lesson) { error.value = ''; draft.value = { ...lesson, status: lesson.status === 'pending' ? 'attended' : lesson.status, charged: lesson.status === 'pending' ? true : lesson.charged }; }
 async function saveFee() {
-  if (busy.value) return;
+  if (busy.value || fetching.value || feeConflict.value) return;
   busy.value = true; error.value = '';
   try {
-    const summary = await api.setClassFee(props.summary.class_id, { child_id: props.child.id, total_fee_cents: parseFee(fee.value), expected_updated_at: details.value.summary.fee_updated_at ?? null });
+    const summary = await api.setClassFee(props.summary.class_id, { child_id: props.child.id, total_fee_cents: parseFee(fee.value), expected_updated_at: feeVersion.value });
     emit('changed');
     if (!summary.available) { opened.value = false; return; }
+    feeVersion.value = summary.fee_updated_at ?? null;
     // Reload rather than patch the summary, so the history shows this change too.
     await load(details.value.from, details.value.to);
   } catch (err) {
     showError(err);
     // Another device may have changed the fee: show its amount and keep what this parent typed.
     await reloadQuietly();
+    if (feeVersion.value !== (details.value.summary.fee_updated_at ?? null)) feeConflict.value = true;
   } finally { busy.value = false; }
+}
+function acknowledgeFee() {
+  feeVersion.value = details.value.summary.fee_updated_at ?? null;
+  feeConflict.value = false;
+  error.value = '';
 }
 async function reloadQuietly() {
   try { await load(details.value.from, details.value.to); } catch { /* the error above is already shown */ }

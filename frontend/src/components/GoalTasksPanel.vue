@@ -150,15 +150,15 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
 import { playTaskComplete, playAllDone, playClick } from '../utils/sound';
 import TaskTimer from './TaskTimer.vue';
 import DurationModal from './DurationModal.vue';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt } from '../utils/taskTimer.js';
-import { pendingRequests } from '../utils/requestId.js';
 
 const props = defineProps({
+  childName: { type: String, default: '孩子' },
   goals: { type: Array, required: true },
   period: { type: Object, default: null },
   today: { type: String, required: true },
@@ -169,6 +169,9 @@ const props = defineProps({
   now: { type: Number, default: () => Date.now() }
 });
 const emit = defineEmits(['changed', 'skip', 'cancel-skip', 'approve-skip', 'reject-skip', 'unskip']);
+const refreshConfirmed = () => emit('changed');
+onMounted(() => window.addEventListener('taskie:write-confirmed', refreshConfirmed));
+onBeforeUnmount(() => window.removeEventListener('taskie:write-confirmed', refreshConfirmed));
 
 const dailyRow = goal => props.dailyRows[goal.id] || null;
 const owesToday = goal => goal.daily_required && !goal.today_logged && !dailyRow(goal)?.is_skipped;
@@ -256,12 +259,8 @@ function record(goal) {
   return run(() => logProgress(goal, payload));
 }
 
-const progressRequests = pendingRequests();
 async function logProgress(goal, payload) {
-  const { duration_seconds: _, ...entry } = payload;
-  const key = `${goal.id}:${JSON.stringify(entry)}`;
-  const result = await api.logPeriodProgress(goal.id, { ...payload, request_id: progressRequests.idFor(key) });
-  progressRequests.done(key);
+  const result = await api.logPeriodProgress(goal.id, { ...payload, date: props.today }, { childId: goal.child_id, childName: props.childName, title: goal.title });
   if (result.task?.is_completed) playAllDone();
   else playTaskComplete();
 }

@@ -192,7 +192,7 @@
 
 <script setup>
 import ChildTabBar from '../components/ChildTabBar.vue';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
@@ -201,7 +201,6 @@ import PointsLog from '../components/PointsLog.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick, playBadgeUnlocked } from '../utils/sound';
 import { getPendingRedemptions } from '../api/redemptions';
-import { pendingRequests } from '../utils/requestId.js';
 
 const route = useRoute();
 const childStore = useChildStore();
@@ -273,18 +272,19 @@ async function loadShop() {
   redemptions.value = [...pending, ...history];
 }
 
+const refreshConfirmed = () => refreshAfterShopChange().catch(err => { shopError.value = String(err); });
+onMounted(() => window.addEventListener('taskie:write-confirmed', refreshConfirmed));
+onBeforeUnmount(() => window.removeEventListener('taskie:write-confirmed', refreshConfirmed));
 async function refreshAfterShopChange() {
   confirmingId.value = null;
   await Promise.all([childStore.fetchStats(), loadShop()]);
 }
 
-const redemptionRequests = pendingRequests();
 async function redeem(item) {
   redeeming.value = true;
   shopError.value = '';
   try {
-    await api.requestRedemption(childId.value, item.id, redemptionRequests.idFor(item.id));
-    redemptionRequests.done(item.id);
+    await api.requestRedemption(childId.value, item.id, item.title, childStore.childName);
     playBadgeUnlocked();
   } catch (err) {
     shopError.value = typeof err === 'string' ? err : '兑换失败，请重试';

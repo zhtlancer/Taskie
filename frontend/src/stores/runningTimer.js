@@ -18,8 +18,10 @@ export const useRunningTimerStore = defineStore('runningTimer', {
       try {
         const { timer } = await api.getCurrentTimer(childId);
         if (serial === this.serial && childId === this.childId) this.timer = timer && withClock(timer);
+        return serial === this.serial && childId === this.childId;
       } catch (err) {
         console.error('Failed to load the current timer:', err);
+        return false;
       }
     },
 

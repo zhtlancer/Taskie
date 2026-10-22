@@ -3,17 +3,17 @@
     <ParentNavBar />
     <main class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
       <h2 class="text-2xl font-bold">数据备份与账号设置</h2>
-      <p v-if="message" role="status" class="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200">{{ message }}</p>
+      <p v-if="message" :role="failed ? 'alert' : 'status'" class="p-4 rounded-xl" :class="failed ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'">{{ message }}</p>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">备份学习记录</h3>
         <p class="text-sm text-slate-600 dark:text-slate-300">{{ info.interval_hours > 0 ? `每 ${info.interval_hours} 小时自动备份，保留最近 ${info.retention} 份。` : '自动备份已关闭。' }} 备份包包含账号、任务、积分、生字等全部记录，体积很小；错题照片不在其中，见下方「错题照片」。请妥善保管。</p>
-        <p v-if="info.last_error" class="text-rose-700 dark:text-rose-300">最近自动备份失败：{{ info.last_error }}</p>
+        <p v-if="info.last_error" role="alert" class="text-rose-700 dark:text-rose-300">最近自动备份失败：{{ info.last_error }}</p>
         <p v-if="info.last_warning" class="text-amber-700 dark:text-amber-300">最近备份已完成，但{{ info.last_warning }}</p>
         <button :disabled="busy" @click="createBackup" class="px-5 py-3 bg-brand-500 text-white rounded-xl disabled:opacity-50">{{ busy ? '处理中…' : '立即创建备份' }}</button>
         <p v-if="!info.backups.length" class="text-slate-500 dark:text-slate-400">暂无备份</p>
         <ul class="divide-y">
           <li v-for="item in info.backups" :key="item.name" class="py-3 flex items-center justify-between gap-4">
-            <span>{{ new Date(item.created_at).toLocaleString('zh-CN') }} · {{ (item.size / 1048576).toFixed(1) }} MiB</span>
+            <span>{{ new Date(item.created_at).toLocaleString('zh-CN') }} · {{ backupSize(item.size) }}</span>
             <button :disabled="busy" @click="download(item)" class="min-h-[44px] text-brand-600 dark:text-brand-300 font-bold">下载备份</button>
           </li>
         </ul>
@@ -32,6 +32,10 @@
             <label class="block text-sm">照片包 <input type="file" accept=".tar,application/x-tar" required @change="photoFile = $event.target.files[0]" class="block mt-2" /></label>
             <button :disabled="busy || !photoFile" class="min-h-[44px] px-5 py-3 bg-amber-600 text-white rounded-xl font-bold disabled:opacity-50">上传照片包</button>
           </form>
+          <div v-if="uploading" role="status" class="text-sm space-y-2">
+            <p>{{ uploadPercent === null ? '正在上传照片包…' : uploadPercent < 100 ? `正在上传照片包 ${uploadPercent}%` : '上传完成，正在核对并补齐照片…' }}</p>
+            <progress aria-label="照片包上传进度" :value="uploadPercent ?? undefined" max="100" class="block w-full h-3 accent-amber-600"></progress>
+          </div>
         </div>
       </section>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
@@ -103,6 +107,8 @@ import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.
 const router = useRouter();
 const info = ref({ backups: [], interval_hours: 0, retention: 7 });
 const busy = ref(false), message = ref(''), file = ref(null), restorePin = ref(''), confirmed = ref(false), oldPin = ref(''), newPin = ref('');
+const failed = ref(false), uploading = ref(false), uploadPercent = ref(null);
+const backupSize = size => size < 1048576 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1048576).toFixed(1)} MiB`;
 const PHOTO_EXPORT_KEY = 'taskie_photo_export_at';
 const photoFile = ref(null), lastPhotoExport = ref(localStorage.getItem(PHOTO_EXPORT_KEY));
 const devices = ref([]), pairCode = ref(''), pairLabel = ref(''), deviceEvents = ref([]), showAllEvents = ref(false);
@@ -122,8 +128,8 @@ async function revokeDevice(device) {
   return run(async () => { await api.revokeDevice(device.id); await loadDevices(); message.value = `已撤销「${device.label}」。`; });
 }
 async function run(action) {
-  busy.value = true; message.value = '';
-  try { await action(); } catch (error) { message.value = String(error); } finally { busy.value = false; }
+  busy.value = true; message.value = ''; failed.value = false;
+  try { await action(); } catch (error) { failed.value = true; message.value = String(error); } finally { busy.value = false; }
 }
 function createBackup() { return run(async () => { await api.createBackup(); await load(); message.value = '备份已保存，可以下载到另一台设备。'; }); }
 function download(item) { return run(async () => {
@@ -141,7 +147,13 @@ function downloadPhotos(onlyNew) { return run(async () => {
   message.value = onlyNew ? '新照片的照片包开始下载。' : '全部照片的照片包开始下载，照片多时需要一些时间。';
 }); }
 function importPhotos() { return run(async () => {
-  const result = await api.importPhotos(photoFile.value);
+  uploading.value = true; uploadPercent.value = null;
+  let result;
+  try {
+    result = await api.importPhotos(photoFile.value, event => {
+      uploadPercent.value = event.total ? Math.min(100, Math.floor(event.loaded * 100 / event.total)) : null;
+    });
+  } finally { uploading.value = false; }
   photoFile.value = null;
   await load();
   message.value = `已补齐 ${result.imported} 张照片${result.present ? `，${result.present} 张原本就在` : ''}${result.unused ? `，${result.unused} 张已不需要` : ''}。${result.missing ? `还缺 ${result.missing} 张。` : '照片已全部齐全。'}`;
