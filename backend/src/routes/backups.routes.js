@@ -1,8 +1,34 @@
 const fs = require('node:fs');
-const { MAX_UPLOAD_SIZE } = require('../services/backup.service');
+const { MAX_UPLOAD_SIZE, MAX_PHOTO_PACKAGE_SIZE } = require('../services/backup.service');
 
 async function backupRoutes(app, { backupService, authService, intervalHours }) {
-  app.get('/', async () => ({ backups: backupService.list(), interval_hours: intervalHours, retention: backupService.retention, last_error: backupService.lastError, last_warning: backupService.lastWarning }));
+  app.get('/', async () => {
+    const missing = backupService.missingPhotos();
+    return { backups: backupService.list(), interval_hours: intervalHours, retention: backupService.retention, last_error: backupService.lastError,
+      last_warning: backupService.lastWarning, missing_photos: { count: missing.length, sample: missing.slice(0, 5) } };
+  });
+  // A photo package can be large, so the browser downloads it directly rather than through script.
+  // A five-minute ticket stands in for the session header that a plain link cannot send.
+  app.post('/photos/export-ticket', async (request, reply) => {
+    const since = request.body?.since ?? null;
+    if (since !== null && (typeof since !== 'string' || Number.isNaN(Date.parse(since)))) return reply.code(400).send({ error: '时间格式不正确' });
+    const ticket = app.jwt.sign({ purpose: 'photo-export', since, epoch: app.sessionEpoch() }, { expiresIn: '5m' });
+    return { url: `/api/backups/photos/export?ticket=${encodeURIComponent(ticket)}` };
+  });
+  app.get('/photos/export', async (request, reply) => {
+    let ticket;
+    try { ticket = app.jwt.verify(String(request.query.ticket || '')); } catch { ticket = null; }
+    if (ticket?.purpose !== 'photo-export' || ticket.epoch !== app.sessionEpoch()) return reply.code(401).send({ error: '下载链接已失效，请回到设置页重新下载' });
+    const stamp = new Date().toISOString().slice(0, 10);
+    return reply.header('Content-Disposition', `attachment; filename="taskie-photos-${stamp}${ticket.since ? '-new' : ''}.tar"`)
+      .type('application/x-tar').send(backupService.exportPhotos(ticket.since));
+  });
+  app.post('/photos/import', async (request, reply) => {
+    if (!request.isMultipart()) return reply.code(400).send({ error: '请选择照片包（.tar）' });
+    const file = await request.file({ limits: { files: 1, fileSize: MAX_PHOTO_PACKAGE_SIZE } });
+    if (!file) return reply.code(400).send({ error: '请选择照片包（.tar）' });
+    return backupService.importPhotos(file.file);
+  });
   app.post('/', async () => backupService.create());
   app.get('/:name/download', async (request, reply) => {
     const file = backupService.getPath(request.params.name);

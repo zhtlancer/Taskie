@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ time-stats, carry-over, homework, ui-refine, midnight, legacy, dialogs, class-stats, class-count, running-timer, rest ]
+        suite: [ time-stats, carry-over, homework, ui-refine, midnight, legacy, dialogs, class-stats, class-count, running-timer, rest, photo-backup ]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

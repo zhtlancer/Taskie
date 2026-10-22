@@ -269,8 +269,12 @@ test('corrupt backups, unsafe photo paths and wrong PIN do not alter current dat
   const ctx = await fixture(t), child = await createChild(ctx);
   const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
   const unsafe = JSON.parse(gunzipSync(archive));
-  unsafe.photos['../../escape.jpg'] = Buffer.from('unsafe').toString('base64');
-  for (const [buffer, pin, status] of [[Buffer.from('broken'), '1234', 400], [archive, '0000', 403], [gzipSync(JSON.stringify(unsafe)), '1234', 400], [gzipSync(JSON.stringify({ format: 'other' })), '1234', 400]]) {
+  unsafe.photo_manifest.push({ name: '../../escape.jpg', size: 6, sha256: 'a'.repeat(64) });
+  // The older v1 format with embedded photos is checked the same way.
+  const unsafeV1 = { ...JSON.parse(gunzipSync(archive)), version: 1, photo_manifest: undefined, photos: { '../../escape.jpg': Buffer.from('unsafe').toString('base64') } };
+  const badManifest = { ...JSON.parse(gunzipSync(archive)), photo_manifest: [{ name: 'ok.jpg', size: -1, sha256: 'x' }] };
+  for (const [buffer, pin, status] of [[Buffer.from('broken'), '1234', 400], [archive, '0000', 403], [gzipSync(JSON.stringify(unsafe)), '1234', 400],
+    [gzipSync(JSON.stringify(unsafeV1)), '1234', 400], [gzipSync(JSON.stringify(badManifest)), '1234', 400], [gzipSync(JSON.stringify({ format: 'other' })), '1234', 400]]) {
     const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(buffer, pin) });
     assert.equal(res.statusCode, status, res.body);
     assert.equal(ctx.db.prepare('SELECT id FROM children').get().id, child.id);
@@ -549,7 +553,7 @@ test('carry-over, due dates and make-up days survive restore; v13 backups restor
   assert.deepEqual([tasksService.listTemplates()[0].carry_over, tasksService.listAdhocTasks(child.id)[0].due_date, periodsService.listMakeupDays(child.id)], [false, null, []]);
 });
 
-test('a backup larger than 64 MiB that the app created can still be restored through the upload route', async t => {
+test('photo-heavy data makes small daily backups; restore takes the photos from the photo store', async t => {
   const ctx = await fixture(t);
   const child = await createChild(ctx);
   // Photos are already compressed, so random bytes model how little gzip saves on them.
@@ -559,12 +563,25 @@ test('a backup larger than 64 MiB that the app created can still be restored thr
     ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: `大图${i}`, photo_path: `/uploads/big-${i}.jpg` });
   }
   const created = (await ctx.app.inject({ method: 'POST', url: '/api/backups' })).json();
-  assert.ok(created.size > 64 * 1024 * 1024, `archive is ${created.size} bytes`);
+  assert.ok(created.size < 1024 * 1024, `the data backup holds no photos (${created.size} bytes)`);
+  const store = ctx.app.backupService.photos;
+  assert.equal(fs.readdirSync(store.dir).filter(name => name.endsWith('.jpg')).length, 9, 'each photo is kept once in the store');
+  // A second backup adds no copies.
+  await ctx.app.inject({ method: 'POST', url: '/api/backups' });
+  assert.equal(fs.readdirSync(store.dir).filter(name => name.endsWith('.jpg')).length, 9);
+
   const archive = fs.readFileSync(ctx.app.backupService.getPath(created.name));
+  const data = JSON.parse(gunzipSync(archive));
+  assert.equal(data.version, 2);
+  assert.deepEqual(data.photo_manifest.map(p => p.name).sort(), [...Array(9).keys()].map(i => `big-${i}.jpg`));
+  const original = fs.readFileSync(path.join(ctx.tempUploadDir, 'big-3.jpg'));
   fs.rmSync(path.join(ctx.tempUploadDir, 'big-3.jpg'));
+  fs.writeFileSync(path.join(ctx.tempUploadDir, 'big-4.jpg'), 'edited in place');
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
   assert.equal(restored.statusCode, 200, restored.body);
-  assert.equal(fs.statSync(path.join(ctx.tempUploadDir, 'big-3.jpg')).size, 7.5 * 1024 * 1024);
+  assert.deepEqual(restored.json().missing_photos, []);
+  assert.deepEqual(fs.readFileSync(path.join(ctx.tempUploadDir, 'big-3.jpg')), original);
+  assert.equal(fs.statSync(path.join(ctx.tempUploadDir, 'big-4.jpg')).size, 7.5 * 1024 * 1024, 'a photo edited in place comes back from the store');
 });
 
 test('a photo file lost on disk does not block backups; its record survives and the loss is reported', async t => {

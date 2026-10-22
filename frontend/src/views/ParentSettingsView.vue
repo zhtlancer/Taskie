@@ -5,8 +5,8 @@
       <h2 class="text-2xl font-bold">数据备份与账号设置</h2>
       <p v-if="message" role="status" class="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200">{{ message }}</p>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
-        <h3 class="text-lg font-bold">备份学习记录和照片</h3>
-        <p class="text-sm text-slate-600 dark:text-slate-300">{{ info.interval_hours > 0 ? `每 ${info.interval_hours} 小时自动备份，保留最近 ${info.retention} 份。` : '自动备份已关闭。' }} 备份包包含账号、任务、积分、生字和错题照片，请妥善保管。</p>
+        <h3 class="text-lg font-bold">备份学习记录</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-300">{{ info.interval_hours > 0 ? `每 ${info.interval_hours} 小时自动备份，保留最近 ${info.retention} 份。` : '自动备份已关闭。' }} 备份包包含账号、任务、积分、生字等全部记录，体积很小；错题照片不在其中，见下方「错题照片」。请妥善保管。</p>
         <p v-if="info.last_error" class="text-rose-700 dark:text-rose-300">最近自动备份失败：{{ info.last_error }}</p>
         <p v-if="info.last_warning" class="text-amber-700 dark:text-amber-300">最近备份已完成，但{{ info.last_warning }}</p>
         <button :disabled="busy" @click="createBackup" class="px-5 py-3 bg-brand-500 text-white rounded-xl disabled:opacity-50">{{ busy ? '处理中…' : '立即创建备份' }}</button>
@@ -14,13 +14,29 @@
         <ul class="divide-y">
           <li v-for="item in info.backups" :key="item.name" class="py-3 flex items-center justify-between gap-4">
             <span>{{ new Date(item.created_at).toLocaleString('zh-CN') }} · {{ (item.size / 1048576).toFixed(1) }} MiB</span>
-            <button :disabled="busy" @click="download(item)" class="text-brand-600 dark:text-brand-300 font-bold">下载备份</button>
+            <button :disabled="busy" @click="download(item)" class="min-h-[44px] text-brand-600 dark:text-brand-300 font-bold">下载备份</button>
           </li>
         </ul>
       </section>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
+        <h3 class="text-lg font-bold">错题照片</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-300">照片拍好后不会再改，每张只在 NAS 的备份目录里保存一份，不随每天的备份重复复制。要在别的设备上留一份，请下载照片包（.tar，常见解压软件都能打开）：第一次下载全部，之后只下载新照片即可。</p>
+        <div class="flex flex-wrap gap-3">
+          <button :disabled="busy" @click="downloadPhotos(false)" class="min-h-[44px] px-5 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold disabled:opacity-50">下载全部照片</button>
+          <button v-if="lastPhotoExport" :disabled="busy" @click="downloadPhotos(true)" class="min-h-[44px] px-5 py-3 bg-brand-500 text-white rounded-xl font-bold disabled:opacity-50">下载新照片（{{ formatTime(lastPhotoExport) }} 之后）</button>
+        </div>
+        <div v-if="info.missing_photos?.count" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
+          <p class="font-bold">有 {{ info.missing_photos.count }} 张错题照片不在这台服务器上（{{ info.missing_photos.sample.join('、') }}{{ info.missing_photos.count > info.missing_photos.sample.length ? ' 等' : '' }}）。</p>
+          <p class="text-sm">从别的服务器恢复备份后会这样。上传当时下载的照片包即可补齐；已有的照片不会被替换，可以多次上传、上传多个照片包。</p>
+          <form @submit.prevent="importPhotos" class="flex flex-wrap items-end gap-3">
+            <label class="block text-sm">照片包 <input type="file" accept=".tar,application/x-tar" required @change="photoFile = $event.target.files[0]" class="block mt-2" /></label>
+            <button :disabled="busy || !photoFile" class="min-h-[44px] px-5 py-3 bg-amber-600 text-white rounded-xl font-bold disabled:opacity-50">上传照片包</button>
+          </form>
+        </div>
+      </section>
+      <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">从备份恢复</h3>
-        <p class="text-sm text-slate-600 dark:text-slate-300">恢复会替换当前学习记录和照片。系统会先保存当前数据的恢复前备份；完成后需要重新登录。本应用创建的备份都可以在这里恢复；备份数据最大 256 MiB。</p>
+        <p class="text-sm text-slate-600 dark:text-slate-300">恢复会替换当前学习记录和照片。系统会先保存当前数据的恢复前备份；完成后需要重新登录。照片从本机保存的照片中取回；在新服务器上恢复时，照片需要再上传照片包补齐（恢复后会在上方提示）。旧版本带照片的备份也可以直接恢复。</p>
         <form @submit.prevent="restore" class="space-y-4">
           <label class="block">备份文件 <input type="file" accept=".gz" required @change="file = $event.target.files[0]" class="block mt-2" /></label>
           <label class="block">当前家长 PIN <input v-model="restorePin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required class="block border rounded-xl p-3 mt-2" autocomplete="current-password" /></label>
@@ -87,6 +103,8 @@ import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.
 const router = useRouter();
 const info = ref({ backups: [], interval_hours: 0, retention: 7 });
 const busy = ref(false), message = ref(''), file = ref(null), restorePin = ref(''), confirmed = ref(false), oldPin = ref(''), newPin = ref('');
+const PHOTO_EXPORT_KEY = 'taskie_photo_export_at';
+const photoFile = ref(null), lastPhotoExport = ref(localStorage.getItem(PHOTO_EXPORT_KEY));
 const devices = ref([]), pairCode = ref(''), pairLabel = ref(''), deviceEvents = ref([]), showAllEvents = ref(false);
 const shownEvents = computed(() => (showAllEvents.value ? deviceEvents.value : deviceEvents.value.slice(0, 10)));
 async function load() { [info.value, devices.value, deviceEvents.value] = await Promise.all([api.getBackups(), api.getDevices(), api.getDeviceEvents()]); }
@@ -112,6 +130,21 @@ function download(item) { return run(async () => {
   const blob = await api.downloadBackup(item.name), url = URL.createObjectURL(blob);
   const link = document.createElement('a'); link.href = url; link.download = item.name; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}); }
+// The browser downloads the package itself; the time is remembered on this device for "new photos".
+function downloadPhotos(onlyNew) { return run(async () => {
+  const startedAt = new Date().toISOString();
+  const url = await api.photoPackageUrl(onlyNew ? lastPhotoExport.value : null);
+  const link = document.createElement('a'); link.href = url; link.download = ''; link.click();
+  localStorage.setItem(PHOTO_EXPORT_KEY, startedAt);
+  lastPhotoExport.value = startedAt;
+  message.value = onlyNew ? '新照片的照片包开始下载。' : '全部照片的照片包开始下载，照片多时需要一些时间。';
+}); }
+function importPhotos() { return run(async () => {
+  const result = await api.importPhotos(photoFile.value);
+  photoFile.value = null;
+  await load();
+  message.value = `已补齐 ${result.imported} 张照片${result.present ? `，${result.present} 张原本就在` : ''}${result.unused ? `，${result.unused} 张已不需要` : ''}。${result.missing ? `还缺 ${result.missing} 张。` : '照片已全部齐全。'}`;
 }); }
 function restore() { return run(async () => { await api.restoreBackup(file.value, restorePin.value); clearTokens(); sessionStorage.removeItem('current_child'); await router.replace('/parent/login'); }); }
 function changePin() { return run(async () => { await api.changeParentPin(oldPin.value, newPin.value); clearTokens(); await router.replace('/parent/login'); }); }

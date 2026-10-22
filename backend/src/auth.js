@@ -24,6 +24,8 @@ function installAuthorization(app, db) {
     const url = authorizationPath(request);
     if (request.method === 'OPTIONS' || !url.startsWith('/api/') && !url.startsWith('/uploads/')) return;
     // Device pairing comes before signing in; the device gate already protects everything else.
+    // The photo package download checks its own short-lived ticket (see backups.routes.js).
+    if (request.method === 'GET' && url === '/api/backups/photos/export') return;
     if (url === '/api/health' || url.startsWith('/api/device/') || request.method === 'GET' && ['/api/children', '/api/auth/setup'].includes(url.replace(/\/$/, '')) ||
       request.method === 'POST' && ['/api/auth/parent-login', '/api/auth/child-login', '/api/auth/logout'].includes(url)) return;
     try { await request.jwtVerify(); } catch { return reply.code(401).send({ error: '请先登录，或重新登录已过期的会话' }); }

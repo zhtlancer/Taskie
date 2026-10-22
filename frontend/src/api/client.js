@@ -194,6 +194,12 @@ export const api = {
     const data = new FormData(); data.append('pin', pin); data.append('file', file);
     return post('/backups/restore', data);
   },
+  // A direct link with a short-lived ticket, so a large photo package is not held in page memory.
+  async photoPackageUrl(since) { return (await post('/backups/photos/export-ticket', since ? { since } : {})).url; },
+  async importPhotos(file) {
+    const data = new FormData(); data.append('file', file);
+    return (await client.post('/backups/photos/import', data, { timeout: 0 })).data;
+  },
   changeParentPin: (oldPin, newPin) => put('/auth/parent-pin', { old_pin: oldPin, new_pin: newPin })
 };
 export default api;
