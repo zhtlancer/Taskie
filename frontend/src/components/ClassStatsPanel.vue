@@ -114,7 +114,7 @@ async function open() {
     await load();
     if (details.value) {
       fee.value = feeInput(details.value.summary.total_fee_cents);
-      feeVersion.value = details.value.summary.fee_updated_at ?? null;
+      feeVersion.value = details.value.summary.fee_revision ?? null;
     }
   } catch (err) { showError(err); }
 }
@@ -128,21 +128,21 @@ async function saveFee() {
   if (busy.value || fetching.value || feeConflict.value) return;
   busy.value = true; error.value = '';
   try {
-    const summary = await api.setClassFee(props.summary.class_id, { child_id: props.child.id, total_fee_cents: parseFee(fee.value), expected_updated_at: feeVersion.value });
+    const summary = await api.setClassFee(props.summary.class_id, { child_id: props.child.id, total_fee_cents: parseFee(fee.value), expected_revision: feeVersion.value });
     emit('changed');
     if (!summary.available) { opened.value = false; return; }
-    feeVersion.value = summary.fee_updated_at ?? null;
+    feeVersion.value = summary.fee_revision ?? null;
     // Reload rather than patch the summary, so the history shows this change too.
     await load(details.value.from, details.value.to);
   } catch (err) {
     showError(err);
     // Another device may have changed the fee: show its amount and keep what this parent typed.
     await reloadQuietly();
-    if (feeVersion.value !== (details.value.summary.fee_updated_at ?? null)) feeConflict.value = true;
+    if (feeVersion.value !== (details.value.summary.fee_revision ?? null)) feeConflict.value = true;
   } finally { busy.value = false; }
 }
 function acknowledgeFee() {
-  feeVersion.value = details.value.summary.fee_updated_at ?? null;
+  feeVersion.value = details.value.summary.fee_revision ?? null;
   feeConflict.value = false;
   error.value = '';
 }
@@ -153,7 +153,7 @@ async function saveAttendance() {
   if (busy.value) return;
   busy.value = true; error.value = '';
   try {
-    const summary = await api.setClassAttendance(props.summary.class_id, { child_id: props.child.id, lesson_date: draft.value.lesson_date, status: draft.value.status, charged: draft.value.charged, note: draft.value.note, expected_updated_at: draft.value.updated_at ?? null });
+    const summary = await api.setClassAttendance(props.summary.class_id, { child_id: props.child.id, lesson_date: draft.value.lesson_date, status: draft.value.status, charged: draft.value.charged, note: draft.value.note, expected_revision: draft.value.revision ?? null });
     draft.value = null;
     if (!summary.available) { opened.value = false; emit('changed'); return; }
     emit('changed');
@@ -163,7 +163,7 @@ async function saveAttendance() {
     // Show the record as it is now; the draft stays, and saving again replaces what is shown.
     await reloadQuietly();
     const fresh = draft.value && details.value?.lessons.find(lesson => lesson.lesson_date === draft.value.lesson_date);
-    if (fresh) draft.value.updated_at = fresh.updated_at;
+    if (fresh) draft.value.revision = fresh.revision;
   } finally { busy.value = false; }
 }
 </script>

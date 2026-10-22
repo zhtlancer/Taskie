@@ -214,7 +214,7 @@ export const api = {
     return post('/backups/restore', data);
   },
   // A direct link with a short-lived ticket, so a large photo package is not held in page memory.
-  async photoPackageUrl(since) { return (await post('/backups/photos/export-ticket', since ? { since } : {})).url; },
+  async photoPackageUrl(scope = 'all') { return (await post('/backups/photos/export-ticket', { scope })).url; },
   async importPhotos(file, onUploadProgress) {
     const data = new FormData(); data.append('file', file);
     return (await client.post('/backups/photos/import', data, { timeout: 0, onUploadProgress })).data;
