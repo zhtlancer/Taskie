@@ -12,9 +12,11 @@ export function liveSeconds(item, now = Date.now()) {
   return base + Math.max(0, Math.floor((now - (item.timer_loaded_at ?? now)) / 1000));
 }
 
-// The running-timer bar's link back to its task: a study session reopens its record, a plain or
-// long-term timer brings its card into view.
+// The running-timer bar's link back to its task: a study session reopens its record, and so does an
+// old client's plain daily-task timer (opening the record converts it, even once the task has left
+// the board after midnight); a long-term timer brings its card into view.
 export function timerTarget(timer) {
+  if (timer.kind === 'task') return { study: timer.id };
   if (timer.kind !== 'session') return { focus: timer.id };
   return timer.record_id ? { homework: timer.record_id } : { study: timer.id };
 }

@@ -204,3 +204,26 @@ test('pending requests remain discoverable beyond 200 newer history records and 
   assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/redemptions/pending-000/reject' })).statusCode, 200);
   assert.equal(ctx.app.services.rewardsService.getAvailablePoints(a.id), available + 1);
 });
+
+test('retrying a redemption with the same request id holds the points once', async t => {
+  const { ctx, createChild, childHeaders, earn, stats } = await fixture(t);
+  const child = await createChild('小明');
+  const headers = await childHeaders(child);
+  await earn(child, 100);
+  const reward = (await ctx.app.inject({ method: 'POST', url: '/api/reward-items', payload: { title: '贴纸', cost: 10 } })).json();
+  const redeem = (payload, h = headers) => ctx.rawInject({ method: 'POST', url: `/api/children/${child.id}/redemptions`, headers: h, payload });
+
+  const first = await redeem({ reward_id: reward.id, request_id: 'redeem-request-1' });
+  const retry = await redeem({ reward_id: reward.id, request_id: 'redeem-request-1' });
+  assert.deepEqual([first.statusCode, retry.statusCode], [201, 201]);
+  assert.equal(retry.json().id, first.json().id);
+  assert.equal((await stats(child)).available_points, 90);
+  assert.equal((await redeem({ reward_id: reward.id, request_id: 'redeem-request-2' })).statusCode, 201, 'a new id is a new redemption');
+  assert.equal((await stats(child)).available_points, 80);
+
+  const sister = await createChild('小红');
+  await earn(sister, 50);
+  const replayAsSister = await ctx.rawInject({ method: 'POST', url: `/api/children/${sister.id}/redemptions`, headers: await childHeaders(sister), payload: { reward_id: reward.id, request_id: 'redeem-request-1' } });
+  assert.equal(replayAsSister.statusCode, 409);
+  assert.equal((await redeem({ reward_id: reward.id, request_id: '短' })).statusCode, 400);
+});

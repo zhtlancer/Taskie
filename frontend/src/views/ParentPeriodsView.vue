@@ -319,7 +319,9 @@ import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
 import TimingFields from '../components/TimingFields.vue';
+import { pendingRequests } from '../utils/requestId.js';
 
+const backfillRequests = pendingRequests();
 const children = ref([]);
 const templates = ref([]);
 const selectedChild = ref(null);
@@ -479,7 +481,11 @@ function openBackfill(task) {
 async function saveBackfill() {
   const { task, amount, position, date } = backfill.value;
   const payload = task.input_mode === 'position' ? { position, date } : { amount, date };
-  if (await run(() => api.logPeriodProgress(task.id, payload))) backfill.value = null;
+  const key = `${task.id}:${JSON.stringify(payload)}`;
+  if (await run(() => api.logPeriodProgress(task.id, { ...payload, request_id: backfillRequests.idFor(key) }))) {
+    backfillRequests.done(key);
+    backfill.value = null;
+  }
 }
 
 async function removeLog(entry) {

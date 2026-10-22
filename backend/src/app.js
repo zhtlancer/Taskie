@@ -6,6 +6,7 @@ const fastifyStatic = require('@fastify/static');
 const fastifyJwt = require('@fastify/jwt');
 
 const config = require('./config');
+const { getTodayDate } = require('./utils/date');
 const { getDb } = require('./db');
 
 const AuthService = require('./services/auth.service');
@@ -203,6 +204,8 @@ function buildApp(opts = {}) {
   // Health check
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
   fastify.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+  // The family calendar for pages that show dates: devices may use another time zone.
+  fastify.get('/api/calendar', async () => ({ time_zone: config.timeZone, today: getTodayDate() }));
 
   // Register API routes
   fastify.register(authRoutes, { prefix: '/api/auth', authService });

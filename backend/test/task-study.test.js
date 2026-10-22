@@ -638,3 +638,28 @@ test('unfinished study includes homework identifiers and enforces sibling and an
   assert.equal((await c.rawInject({ method: 'GET', url })).statusCode, 401);
   assert.equal((await c.app.inject({ method: 'GET', url: '/api/children/missing/unfinished-study' })).statusCode, 404);
 });
+
+test('an old client timer running past midnight pauses into an unfinished record the child can end', async t => {
+  for (const pauseWith of ['bar', 'old-button']) {
+    await t.test(pauseWith, async t => {
+      const c = await fixture(t, '2026-10-20T15:30:00Z');
+      assert.equal((await c.call('POST', '/timer/start')).statusCode, 200);
+      c.advance(3600);
+      const unfinished = () => c.taskStudyService.unfinished(c.child.id).items;
+      const bar = (await c.rawInject({ method: 'GET', url: `/api/children/${c.child.id}/current-timer`, headers: c.headers() })).json().timer;
+      assert.deepEqual([bar.kind, bar.id, bar.timer_seconds], ['task', c.task.id, 3600]);
+      const paused = pauseWith === 'bar'
+        ? await c.rawInject({ method: 'POST', url: `/api/children/${c.child.id}/current-timer/pause`, headers: c.headers() })
+        : await c.call('POST', '/timer/pause');
+      assert.equal(paused.statusCode, 200, paused.body);
+      const found = unfinished().find(item => item.task_id === c.task.id);
+      assert.ok(found, 'the paused time stays reachable from the unfinished list');
+      assert.deepEqual([found.session.timer_started_at, found.session.timer_seconds], [null, 3600]);
+      assert.deepEqual(found.session.days, [{ date: '2026-10-20', seconds: 1800 }, { date: '2026-10-21', seconds: 1800 }]);
+      assert.equal((await c.call('POST', `/sessions/${found.session.id}/finish`)).statusCode, 200);
+      assert.equal(c.details().total_seconds, 3600, 'no time counted twice');
+      assert.equal(unfinished().length, 0);
+      assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0, 'an overdue task earns nothing');
+    });
+  }
+});

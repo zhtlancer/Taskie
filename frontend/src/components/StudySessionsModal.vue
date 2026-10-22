@@ -13,7 +13,7 @@
           <button v-if="!legacyEdit" type="button" :disabled="busy" class="min-h-[44px] text-indigo-600 dark:text-indigo-300 disabled:opacity-50" @click="openLegacy">更正旧累计用时</button>
           <form v-if="legacyEdit" class="space-y-3" @submit.prevent="saveLegacy">
             <p class="text-xs text-slate-500 dark:text-slate-400">当前旧累计 {{ formatDuration(study.legacy_seconds) }}。仅更正旧累计，不修改分次学习、积分或完成状态；允许归零。</p>
-            <label class="block">旧累计用时（分钟）<input v-model.number="legacyEdit.minutes" type="number" min="0" max="720" step="any" required :disabled="busy" class="ml-2 w-28 rounded-lg border p-2" /></label>
+            <label class="block">旧累计用时（分钟）<input v-model.number="legacyEdit.minutes" type="number" min="0" max="720" step="any" required :disabled="busy" class="ml-2 w-28 min-h-[44px] rounded-lg border p-2" /></label>
             <label class="block">更正原因<textarea v-model="legacyEdit.reason" maxlength="500" required :disabled="busy" rows="2" class="mt-1 w-full rounded-xl border p-3" /></label>
             <button :disabled="busy" class="rounded-xl bg-indigo-600 px-4 py-3 text-white disabled:opacity-50">保存旧累计更正</button>
             <button type="button" :disabled="busy" class="px-4 py-3" @click="legacyEdit = null">取消</button>

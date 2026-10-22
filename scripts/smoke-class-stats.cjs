@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
 const buildApp = require('../backend/src/app');
@@ -24,8 +24,8 @@ async function main() {
   db.prepare('UPDATE children SET created_at = ?').run(`${before}T00:00:00.000Z`);
   db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(before);
   const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const errors = [];
   for (const width of [390, 1180]) for (const colorScheme of ['light', 'dark']) {
     const title = `统计钢琴-${width}-${colorScheme}`;

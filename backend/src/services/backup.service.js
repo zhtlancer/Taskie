@@ -13,6 +13,9 @@ const STUDY_TABLES = ['word_study_plans', 'word_study_states', 'word_study_days'
 const HOMEWORK_TABLES = ['homework_records', 'homework_course_points', 'homework_sessions', 'homework_session_days'];
 const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees'];
 const MAX_SIZE = 256 * 1024 * 1024;
+// A gzip archive is never larger than its JSON, so accepting MAX_SIZE uploads lets every backup this
+// service creates be restored through the app.
+const MAX_UPLOAD_SIZE = MAX_SIZE;
 const fail = message => Object.assign(new Error(message), { statusCode: 400 });
 const safeName = name => typeof name === 'string' && /^[\w-]+\.(?:jpg|jpeg|png|webp)$/i.test(name);
 
@@ -23,6 +26,7 @@ class BackupService {
     this.backupDir = path.resolve(backupDir);
     this.retention = Math.max(1, Math.min(100, Math.floor(Number(retention) || 7)));
     this.lastError = null;
+    this.lastWarning = null;
     fs.mkdirSync(this.backupDir, { recursive: true, mode: 0o700 });
   }
 
@@ -42,24 +46,27 @@ class BackupService {
     // Serialization and file reads are synchronous: application writes cannot
     // interleave with the database snapshot and its referenced photos.
     const photos = {};
+    const missing = [];
     let size = 0;
     for (const { photo_path } of this.db.prepare("SELECT DISTINCT photo_path FROM mistake_records WHERE photo_path LIKE '/uploads/%'").all()) {
       const name = photo_path.slice('/uploads/'.length);
       if (!safeName(name)) throw fail('照片路径无效，无法备份');
       const file = path.join(this.uploadDir, name);
-      if (!fs.existsSync(file)) throw fail(`照片 ${name} 不存在，备份未创建`);
+      // A photo already lost on disk must not stop every later backup of the remaining data.
+      if (!fs.existsSync(file)) { missing.push(name); continue; }
       size += fs.statSync(file).size;
       if (size > MAX_SIZE / 1.5) throw fail('备份数据超过 256 MiB，请使用 NAS 文件备份');
       photos[name] = fs.readFileSync(file).toString('base64');
     }
     const database = this.db.serialize().toString('base64');
-    const data = Buffer.from(JSON.stringify({ format: 'taskie-backup', version: 1, created_at: new Date().toISOString(), reason, database, photos }));
+    const data = Buffer.from(JSON.stringify({ format: 'taskie-backup', version: 1, created_at: new Date().toISOString(), reason, database, photos, missing_photos: missing }));
     if (data.length > MAX_SIZE) throw fail('备份数据超过 256 MiB，请使用 NAS 文件备份');
     const name = `backup-${new Date().toISOString().replace(/[:.Z]/g, '-')}-${randomUUID()}.taskie.gz`;
     const target = path.join(this.backupDir, name);
     fs.writeFileSync(`${target}.tmp`, gzipSync(data), { mode: 0o600 });
     fs.renameSync(`${target}.tmp`, target);
     this.lastError = null;
+    this.lastWarning = missing.length ? `${missing.length} 张错题照片文件已丢失，备份中只保留了它们的记录：${missing.slice(0, 5).join('、')}${missing.length > 5 ? ' 等' : ''}` : null;
     for (const old of this.list().filter(item => item.name !== name).slice(this.retention - 1)) fs.unlinkSync(this.getPath(old.name));
     return this.list().find(item => item.name === name);
   }
@@ -68,7 +75,8 @@ class BackupService {
     let data, candidate;
     try {
       data = JSON.parse(gunzipSync(buffer, { maxOutputLength: MAX_SIZE }).toString());
-      if (data.format !== 'taskie-backup' || data.version !== 1 || typeof data.database !== 'string' || !data.photos || Array.isArray(data.photos)) throw fail('不是有效的 Taskie 备份包');
+      if (data.format !== 'taskie-backup' || data.version !== 1 || typeof data.database !== 'string' || !data.photos || Array.isArray(data.photos) ||
+        (data.missing_photos !== undefined && (!Array.isArray(data.missing_photos) || !data.missing_photos.every(safeName)))) throw fail('不是有效的 Taskie 备份包');
       const database = Buffer.from(data.database, 'base64');
       if (database.subarray(0, 16).toString() !== 'SQLite format 3\0') throw fail('备份数据库无效');
       candidate = new Database(database);
@@ -150,8 +158,10 @@ class BackupService {
       for (const [name, value] of Object.entries(data.photos)) {
         if (!safeName(name) || typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw fail('备份照片路径或内容无效');
       }
+      const missing = new Set(data.missing_photos || []);
       for (const { photo_path } of candidate.prepare("SELECT photo_path FROM mistake_records WHERE photo_path LIKE '/uploads/%'").all()) {
-        if (!Object.hasOwn(data.photos, photo_path.slice('/uploads/'.length))) throw fail('备份缺少关联照片');
+        const name = photo_path.slice('/uploads/'.length);
+        if (!Object.hasOwn(data.photos, name) && !missing.has(name)) throw fail('备份缺少关联照片');
       }
     } catch (error) {
       if (candidate) candidate.close();
@@ -206,3 +216,4 @@ class BackupService {
 }
 
 module.exports = BackupService;
+module.exports.MAX_UPLOAD_SIZE = MAX_UPLOAD_SIZE;

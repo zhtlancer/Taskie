@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
 const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
 const c = createTestApp();
@@ -28,8 +28,8 @@ async function main() {
   const tasks = await api('GET', `/daily-tasks?child_id=${child.id}`);
   const timed = tasks.find(task => task.title === '界面计时练习');
   c.app.services.taskStudyService.start(timed.id);
-  const base = await c.app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox'], ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
+  const base = await c.app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: 'dark', timezoneId: 'Asia/Shanghai' });
   await context.addInitScript(value => { if (location.protocol === 'http:') sessionStorage.setItem('taskie_parent_token', value); }, token);
   await context.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());

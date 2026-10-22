@@ -32,6 +32,6 @@ test('finishing asks for the time when the timer barely ran or ran too long', ()
 test('the running-timer bar reopens a study session and brings other timers into view', () => {
   assert.deepEqual(timerTarget({ kind: 'session', id: 't1', record_id: null }), { study: 't1' });
   assert.deepEqual(timerTarget({ kind: 'session', id: 't1', record_id: 'r1' }), { homework: 'r1' });
-  assert.deepEqual(timerTarget({ kind: 'task', id: 't2' }), { focus: 't2' });
+  assert.deepEqual(timerTarget({ kind: 'task', id: 't2' }), { study: 't2' });
   assert.deepEqual(timerTarget({ kind: 'goal', id: 'g1' }), { focus: 'g1' });
 });

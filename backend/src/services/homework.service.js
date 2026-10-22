@@ -127,7 +127,7 @@ class HomeworkService {
       FROM timetable_lessons l JOIN timetables t ON t.id = l.timetable_id WHERE t.child_id = ? GROUP BY l.subject`).all(today, today, childId);
     const current = subjects.filter(row => row.current);
     const courses = [
-      ...(current.length ? current : subjects).sort((a, b) => b.lessons - a.lessons || a.subject.localeCompare(b.subject))
+      ...(current.length ? current : subjects).sort((a, b) => b.lessons - a.lessons || a.subject.localeCompare(b.subject, 'zh-Hans-CN'))
         .map(row => ({ kind: 'school', subject: row.subject, class_id: null })),
       ...this.classesOf(childId).filter(row => !row.end_date || row.end_date >= today)
         .map(row => ({ kind: 'class', subject: row.title, class_id: row.id }))
@@ -238,7 +238,7 @@ class HomeworkService {
       course[record.task_state] += 1;
     }
     const rate = row => (row.done + row.missed ? row.done / (row.done + row.missed) : null);
-    const rows = [...courses.values()].sort((a, b) => b.total - a.total || a.subject.localeCompare(b.subject))
+    const rows = [...courses.values()].sort((a, b) => b.total - a.total || a.subject.localeCompare(b.subject, 'zh-Hans-CN'))
       .map(row => ({ ...row, completion_rate: rate(row) }));
     const totals = { total: 0, done: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0 };
     for (const row of rows) for (const key of Object.keys(totals)) totals[key] += row[key];

@@ -156,6 +156,7 @@ import { playTaskComplete, playAllDone, playClick } from '../utils/sound';
 import TaskTimer from './TaskTimer.vue';
 import DurationModal from './DurationModal.vue';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt } from '../utils/taskTimer.js';
+import { pendingRequests } from '../utils/requestId.js';
 
 const props = defineProps({
   goals: { type: Array, required: true },
@@ -255,8 +256,12 @@ function record(goal) {
   return run(() => logProgress(goal, payload));
 }
 
+const progressRequests = pendingRequests();
 async function logProgress(goal, payload) {
-  const result = await api.logPeriodProgress(goal.id, payload);
+  const { duration_seconds: _, ...entry } = payload;
+  const key = `${goal.id}:${JSON.stringify(entry)}`;
+  const result = await api.logPeriodProgress(goal.id, { ...payload, request_id: progressRequests.idFor(key) });
+  progressRequests.done(key);
   if (result.task?.is_completed) playAllDone();
   else playTaskComplete();
 }

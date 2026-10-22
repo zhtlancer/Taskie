@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require('playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const RealDate = Date;
 let now = RealDate.parse('2026-10-20T15:59:50Z');
 global.Date = class extends RealDate {
@@ -40,8 +40,8 @@ async function main() {
   const old = await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '昨天的练习', subject: '其他', track_time: true, points: 7 });
   await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '截止前的练习', subject: '语文', track_time: true, points: 3, due_date: '2026-10-22' });
   const childToken = app.jwt.sign({ role: 'child', child_id: child.id, epoch: app.sessionEpoch() }, { expiresIn: '7d' });
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   // Device timezone deliberately differs from the server business timezone.
   const context = await browser.newContext({ timezoneId: 'UTC', viewport: { width: 390, height: 844 } });
   await context.addInitScript(value => sessionStorage.setItem('taskie_child_token', value), childToken);

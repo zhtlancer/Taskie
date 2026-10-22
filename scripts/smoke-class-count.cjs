@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-class-count-'));
@@ -16,8 +16,8 @@ async function main() {
   await app.ready();
   app.services.childrenService.createChild({ name: '排课验收' });
   const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const errors = [];
   for (const width of [390, 1180]) for (const colorScheme of ['light', 'dark']) {
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 820 }, colorScheme, timezoneId: 'America/Los_Angeles' });

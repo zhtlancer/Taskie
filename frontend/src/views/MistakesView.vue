@@ -156,6 +156,11 @@
           <span class="animate-spin mr-2">⏳</span> 正在整理错题...
         </div>
 
+        <div v-else-if="loadError && !mistakes.length" role="alert" class="bg-white dark:bg-slate-900 rounded-3xl p-12 border border-rose-200 dark:border-rose-800 text-center max-w-lg mx-auto space-y-3">
+          <p class="text-sm font-bold text-rose-600 dark:text-rose-300">错题没有读取成功，这不代表没有错题。</p>
+          <button type="button" class="min-h-[44px] px-4 rounded-xl bg-brand-500 text-white text-xs font-bold" @click="loadMistakes">重新读取</button>
+        </div>
+
         <div
           v-else-if="filteredMistakes.length === 0"
           class="bg-white dark:bg-slate-900 rounded-3xl p-12 border border-slate-200 dark:border-slate-700 text-center shadow-card max-w-lg mx-auto"
@@ -362,11 +367,14 @@ onMounted(async () => {
   await loadMistakes();
 });
 
+const loadError = ref(false);
 async function loadMistakes() {
   loading.value = true;
   try {
     mistakes.value = await api.getMistakes(childId.value);
+    loadError.value = false;
   } catch (err) {
+    loadError.value = true;
     console.error('Failed to load mistakes:', err);
   } finally {
     loading.value = false;

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
@@ -36,8 +36,8 @@ async function main() {
   for (const [child, acts_as] of [[children[0], 1], [children[2], 3]]) {
     existing.push(await api('POST', `/children/${child.id}/makeup-days`, { date: duplicateDate, acts_as, note: '保留原设置' }));
   }
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox'], ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const context = await browser.newContext({ viewport: { width: 1180, height: 820 }, timezoneId: 'Asia/Shanghai' });
   await context.addInitScript(value => sessionStorage.setItem('taskie_parent_token', value), token);
   const page = await context.newPage();

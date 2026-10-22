@@ -93,10 +93,15 @@ async function load(from, to) {
     if (request === serial) details.value = data;
   } finally { if (request === serial) fetching.value = false; }
 }
+const feeInput = cents => (cents === null ? '' : (cents / 100).toFixed(2));
+// The fee form appears with the details, so it starts from their fresh fee rather than the card's,
+// which another device may have changed since; later range changes keep what the parent typed.
 async function open() {
   opened.value = true; details.value = null; draft.value = null; error.value = '';
-  fee.value = props.summary.total_fee_cents === null ? '' : (props.summary.total_fee_cents / 100).toFixed(2);
-  try { await load(); } catch (err) { showError(err); }
+  try {
+    await load();
+    if (details.value) fee.value = feeInput(details.value.summary.total_fee_cents);
+  } catch (err) { showError(err); }
 }
 async function changeRange(days) {
   if (busy.value || fetching.value) return;

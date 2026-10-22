@@ -548,3 +548,52 @@ test('carry-over, due dates and make-up days survive restore; v13 backups restor
   assert.equal(ctx.db.pragma('user_version', { simple: true }), 28);
   assert.deepEqual([tasksService.listTemplates()[0].carry_over, tasksService.listAdhocTasks(child.id)[0].due_date, periodsService.listMakeupDays(child.id)], [false, null, []]);
 });
+
+test('a backup larger than 64 MiB that the app created can still be restored through the upload route', async t => {
+  const ctx = await fixture(t);
+  const child = await createChild(ctx);
+  // Photos are already compressed, so random bytes model how little gzip saves on them.
+  const { randomBytes } = require('node:crypto');
+  for (let i = 0; i < 9; i++) {
+    fs.writeFileSync(path.join(ctx.tempUploadDir, `big-${i}.jpg`), randomBytes(7.5 * 1024 * 1024));
+    ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: `大图${i}`, photo_path: `/uploads/big-${i}.jpg` });
+  }
+  const created = (await ctx.app.inject({ method: 'POST', url: '/api/backups' })).json();
+  assert.ok(created.size > 64 * 1024 * 1024, `archive is ${created.size} bytes`);
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(created.name));
+  fs.rmSync(path.join(ctx.tempUploadDir, 'big-3.jpg'));
+  const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
+  assert.equal(restored.statusCode, 200, restored.body);
+  assert.equal(fs.statSync(path.join(ctx.tempUploadDir, 'big-3.jpg')).size, 7.5 * 1024 * 1024);
+});
+
+test('a photo file lost on disk does not block backups; its record survives and the loss is reported', async t => {
+  const ctx = await fixture(t);
+  const child = await createChild(ctx);
+  fs.writeFileSync(path.join(ctx.tempUploadDir, 'kept.jpg'), 'kept photo');
+  for (const name of ['kept.jpg', 'lost.jpg']) {
+    ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: name, photo_path: `/uploads/${name}` });
+  }
+  const created = await ctx.app.inject({ method: 'POST', url: '/api/backups' });
+  assert.equal(created.statusCode, 200, created.body);
+  const info = (await ctx.app.inject({ method: 'GET', url: '/api/backups' })).json();
+  assert.match(info.last_warning, /1 张错题照片文件已丢失.*lost\.jpg/);
+  const archive = fs.readFileSync(ctx.app.backupService.getPath(created.json().name));
+  assert.deepEqual(JSON.parse(gunzipSync(archive)).missing_photos, ['lost.jpg']);
+
+  ctx.db.prepare('DELETE FROM mistake_records').run();
+  const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
+  assert.equal(restored.statusCode, 200, restored.body);
+  assert.deepEqual(ctx.db.prepare('SELECT description FROM mistake_records ORDER BY description').all().map(r => r.description), ['kept.jpg', 'lost.jpg']);
+  assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'kept.jpg'), 'utf8'), 'kept photo');
+
+  // Only photos the backup itself recorded as lost may be absent from it.
+  const data = JSON.parse(gunzipSync(archive));
+  for (const missing_photos of [[], ['../escape.jpg'], 'lost.jpg']) {
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(gzipSync(JSON.stringify({ ...data, missing_photos }))) });
+    assert.equal(res.statusCode, 400, JSON.stringify(missing_photos));
+  }
+  fs.writeFileSync(path.join(ctx.tempUploadDir, 'lost.jpg'), 'found again');
+  assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups' })).statusCode, 200);
+  assert.equal((await ctx.app.inject({ method: 'GET', url: '/api/backups' })).json().last_warning, null);
+});

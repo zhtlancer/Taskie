@@ -44,7 +44,8 @@
           v-for="option in [{ key: 'list', label: '📋 作业列表' }, { key: 'summary', label: '📊 按课程统计' }]"
           :key="option.key"
           type="button"
-          class="px-4 py-2 rounded-xl text-xs font-bold border"
+          class="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold border"
+          :aria-pressed="view === option.key"
           :class="view === option.key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
           @click="setView(option.key)"
         >
@@ -62,7 +63,8 @@
               v-for="option in courseFilters"
               :key="option.key"
               type="button"
-              class="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border font-chinese"
+              class="shrink-0 min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-bold border font-chinese"
+              :aria-pressed="courseFilter === option.key"
               :class="courseFilter === option.key ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
               @click="courseFilter = option.key"
             >
@@ -74,20 +76,26 @@
               v-for="option in [{ key: 'all', label: '全部' }, { key: 'todo', label: '还没完成' }]"
               :key="option.key"
               type="button"
-              class="px-3 py-1.5 rounded-xl text-xs font-bold"
+              class="min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-bold"
+              :aria-pressed="statusFilter === option.key"
               :class="statusFilter === option.key ? 'bg-slate-800 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
               @click="statusFilter = option.key"
             >
               {{ option.label }}
             </button>
-            <input v-model="search" type="search" placeholder="搜索作业内容" class="flex-1 min-w-[160px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-brand-500 font-chinese" />
+            <input v-model="search" type="search" placeholder="搜索作业内容" aria-label="搜索作业内容" class="flex-1 min-w-[160px] min-h-[44px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-brand-500 font-chinese" />
           </div>
-          <button v-if="rangeFilter" type="button" class="px-3 py-1.5 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 text-xs font-bold" @click="rangeFilter = null">
+          <button v-if="rangeFilter" type="button" class="min-h-[44px] px-3 py-1.5 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 text-xs font-bold" @click="rangeFilter = null">
             📅 只看{{ rangeFilter.label }}布置的 ✕
           </button>
         </div>
 
         <div v-if="loading" class="text-center py-16 text-brand-500 dark:text-brand-400 font-bold"><span class="animate-spin mr-2">⏳</span> 正在加载作业本...</div>
+
+        <div v-else-if="loadError && !records.length" role="alert" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-rose-200 dark:border-rose-800 space-y-3">
+          <p class="text-rose-600 dark:text-rose-300 text-sm font-bold">作业本没有读取成功，这不代表没有作业。</p>
+          <button type="button" class="min-h-[44px] px-4 rounded-xl bg-brand-500 text-white text-xs font-bold" @click="retry">重新读取</button>
+        </div>
 
         <div v-else-if="!shown.length" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
           <div class="text-5xl mb-2">📒</div>
@@ -110,16 +118,16 @@
                   <span v-if="record.study_running" class="text-indigo-600 dark:text-indigo-300">⏱ 正在计时</span>
                   <span v-if="record.task" class="text-indigo-600 dark:text-indigo-300">已学 {{ record.study_count || 0 }} 次 · 累计 {{ Math.round((record.study_seconds || 0) / 60) }} 分钟</span>
                   <span v-if="record.completion_requested_at && !record.task?.is_completed" class="text-amber-600 dark:text-amber-300">全部完成待家长确认</span>
-                  <button v-if="record.task" type="button" class="px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300" @click="studyRecord = record.id">学习 / 记录</button>
+                  <button v-if="record.task" type="button" class="min-h-[44px] px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300" @click="studyRecord = record.id">学习 / 记录</button>
                   <span class="flex-1"></span>
                   <template v-if="asParent && record.task_state === 'pending'">
-                    <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-emerald-500 text-white disabled:opacity-50" @click="createTask(record)">生成任务</button>
-                    <button type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-50" @click="rejectTask(record)">不需要</button>
+                    <button type="button" :disabled="busy" class="min-h-[44px] px-3 py-1.5 rounded-lg bg-emerald-500 text-white disabled:opacity-50" @click="createTask(record)">生成任务</button>
+                    <button type="button" :disabled="busy" class="min-h-[44px] px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-50" @click="rejectTask(record)">不需要</button>
                   </template>
-                  <button v-else-if="asParent && record.can_create_task" type="button" :disabled="busy" class="px-3 py-1.5 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 disabled:opacity-50" @click="createTask(record)">➕ 生成打卡任务</button>
+                  <button v-else-if="asParent && record.can_create_task" type="button" :disabled="busy" class="min-h-[44px] px-3 py-1.5 rounded-lg bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 disabled:opacity-50" @click="createTask(record)">➕ 生成打卡任务</button>
                   <template v-if="editable(record)">
-                    <button type="button" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300" @click="openForm(record)">修改</button>
-                    <button type="button" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="deleteTarget = record">删除</button>
+                    <button type="button" class="min-h-[44px] px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300" @click="openForm(record)">修改</button>
+                    <button type="button" class="min-h-[44px] px-3 py-1.5 rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="deleteTarget = record">删除</button>
                   </template>
                 </div>
               </li>
@@ -135,7 +143,8 @@
             v-for="option in summaryRanges"
             :key="option.key"
             type="button"
-            class="px-3 py-1.5 rounded-xl text-xs font-bold"
+            class="min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-bold"
+            :aria-pressed="summaryRange === option.key"
             :class="summaryRange === option.key ? 'bg-brand-500 text-white' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
             @click="setSummaryRange(option.key)"
           >
@@ -193,47 +202,44 @@
       :courses="courses"
       :as-parent="asParent"
       :record="form.record"
+      :today="today"
       @close="form = null"
       @saved="onSaved"
     />
 
     <!-- Deleting a record with a task: keep the task or delete it too -->
-    <div v-if="deleteTarget" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="deleteTarget = null">
-      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
-        <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 font-chinese">删除这条作业记录？</h3>
+    <UiDialog v-if="deleteTarget" title="删除这条作业记录？" :busy="busy" @close="deleteTarget = null">
+      <div class="space-y-4">
         <p class="text-xs font-bold text-slate-500 dark:text-slate-400 font-chinese whitespace-pre-line line-clamp-3">{{ courseLabel(deleteTarget) }}：{{ deleteTarget.content }}</p>
         <p v-if="deleteTarget.task" class="text-xs font-bold text-amber-600 dark:text-amber-300">它已经生成了打卡任务{{ deleteTarget.task.is_completed ? '，而且已经完成，一起删除会扣回积分' : '' }}。</p>
         <div class="flex flex-col gap-2">
-          <button v-if="deleteTarget.task" type="button" :disabled="busy" class="px-4 py-2.5 rounded-xl bg-rose-500 text-white text-xs font-bold disabled:opacity-50" @click="remove(true)">删除记录和打卡任务</button>
-          <button type="button" :disabled="busy" class="px-4 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50" :class="deleteTarget.task ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200' : 'bg-rose-500 text-white'" @click="remove(false)">
+          <button v-if="deleteTarget.task" type="button" :disabled="busy" class="min-h-[44px] px-4 py-2.5 rounded-xl bg-rose-500 text-white text-xs font-bold disabled:opacity-50" @click="remove(true)">删除记录和打卡任务</button>
+          <button type="button" :disabled="busy" class="min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold disabled:opacity-50" :class="deleteTarget.task ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200' : 'bg-rose-500 text-white'" @click="remove(false)">
             {{ deleteTarget.task ? '只删除记录，保留任务' : '删除' }}
           </button>
-          <button type="button" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400" @click="deleteTarget = null">取消</button>
+          <button type="button" :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 disabled:opacity-50" @click="deleteTarget = null">取消</button>
         </div>
       </div>
-    </div>
+    </UiDialog>
 
     <!-- Default points of each course's homework task -->
-    <div v-if="pointsOpen" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="pointsOpen = false">
-      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full max-h-[92dvh] overflow-y-auto shadow-2xl space-y-4">
-        <div>
-          <h3 class="text-lg font-black text-slate-800 dark:text-slate-100">⚙️ 课程默认积分</h3>
-          <p class="text-xs font-bold text-slate-400">记作业时按课程自动填写，每条作业还可以单独修改。所有孩子通用，没设置的课程默认 10 分。</p>
-        </div>
+    <UiDialog v-if="pointsOpen" title="⚙️ 课程默认积分" @close="pointsOpen = false">
+      <div class="space-y-4">
+        <p class="text-xs font-bold text-slate-400">记作业时按课程自动填写，每条作业还可以单独修改。所有孩子通用，没设置的课程默认 10 分。</p>
         <p v-if="pointsError" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ pointsError }}</p>
         <p v-if="!courses.length" class="text-xs font-bold text-slate-400">还没有课程表或课外班。</p>
         <ul class="space-y-2">
           <li v-for="course in courses" :key="course.course_key" class="flex items-center gap-3">
             <span class="flex-1 text-sm font-bold text-slate-700 dark:text-slate-200 font-chinese">{{ course.kind === 'class' ? '🎹 ' : '' }}{{ course.subject }}</span>
-            <input :value="course.points" type="number" min="0" max="10000" class="w-24 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-center outline-none focus:border-brand-500" @change="savePoints(course, $event.target.value)" />
+            <input :value="course.points" type="number" min="0" max="10000" :aria-label="`${course.subject} 默认积分`" class="w-24 min-h-[44px] px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold text-center outline-none focus:border-brand-500" @change="savePoints(course, $event.target.value)" />
             <span class="text-xs font-bold text-slate-400">分</span>
           </li>
         </ul>
         <div class="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-700">
-          <button type="button" class="px-5 py-2.5 rounded-xl bg-brand-500 text-white text-xs font-bold" @click="pointsOpen = false">完成</button>
+          <button type="button" class="min-h-[44px] px-5 py-2.5 rounded-xl bg-brand-500 text-white text-xs font-bold" @click="pointsOpen = false">完成</button>
         </div>
       </div>
-    </div>
+    </UiDialog>
 
     <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null" @saved="load" />
     <ChildTabBar :child-id="childId" />
@@ -241,15 +247,17 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
+import UiDialog from '../components/UiDialog.vue';
+import { DEFAULT_TIME_ZONE, businessDate } from '../utils/businessDate.js';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
-import { WEEKDAY_NAMES, addDays, localDate, mondayOf, shortDate } from '../utils/schedule.js';
+import { WEEKDAY_NAMES, addDays, mondayOf, shortDate } from '../utils/schedule.js';
 import { courseLabel } from '../utils/homework.js';
 
 // What became of a record's task.
@@ -276,12 +284,16 @@ const route = useRoute();
 const childId = computed(() => route.params.id);
 // A parent opening the child's pages records and settles homework as the parent.
 const asParent = currentRole() === 'parent';
-const today = localDate();
+// Due dates follow the family's calendar and roll over at its midnight, as the board does.
+const timeZone = ref(DEFAULT_TIME_ZONE);
+const now = ref(Date.now());
+const today = computed(() => businessDate(now.value, timeZone.value));
 const dayName = date => `${shortDate(date)} ${WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()]}`;
 
 const records = ref([]);
 const courses = ref([]);
 const loading = ref(true);
+const loadError = ref(false);
 const form = ref(null);
 const studyRecord = ref(null);
 const deleteTarget = ref(null);
@@ -309,7 +321,7 @@ const courseFilters = computed(() => {
 const shown = computed(() => {
   const words = search.value.trim();
   return records.value.filter(record => (courseFilter.value === 'all' || record.course_key === courseFilter.value) &&
-    (statusFilter.value === 'all' || ['open', 'pending', 'missed'].includes(record.task_state) || (record.task_state === 'none' && record.due_date >= today)) &&
+    (statusFilter.value === 'all' || ['open', 'pending', 'missed'].includes(record.task_state) || (record.task_state === 'none' && record.due_date >= today.value)) &&
     (!words || record.content.includes(words)) &&
     (!rangeFilter.value || (record.assigned_date >= rangeFilter.value.from && (!rangeFilter.value.to || record.assigned_date <= rangeFilter.value.to))));
 });
@@ -326,20 +338,20 @@ const groups = computed(() => {
 
 function dueText(record) {
   if (!record.due_date) return '没有截止日期';
-  if (record.due_date === today) return '今天要完成';
-  if (record.due_date === addDays(today, 1)) return '明天前完成';
-  return `${dayName(record.due_date)}${record.due_date < today ? ' 截止' : ' 前完成'}`;
+  if (record.due_date === today.value) return '今天要完成';
+  if (record.due_date === addDays(today.value, 1)) return '明天前完成';
+  return `${dayName(record.due_date)}${record.due_date < today.value ? ' 截止' : ' 前完成'}`;
 }
-const dueClass = record => !record.due_date || record.due_date < today ? 'text-slate-400'
-  : record.due_date <= addDays(today, 1) ? 'text-rose-500 dark:text-rose-400' : 'text-sky-600 dark:text-sky-300';
+const dueClass = record => !record.due_date || record.due_date < today.value ? 'text-slate-400'
+  : record.due_date <= addDays(today.value, 1) ? 'text-rose-500 dark:text-rose-400' : 'text-sky-600 dark:text-sky-300';
 
 // A child may change only what they recorded themselves, until it has a task.
 const editable = record => asParent || (record.created_by === 'child' && !record.task);
 
 // 本周 and 本月 run to today; 本学期 is today's timetable term, once the summary has told it.
 const summaryRanges = computed(() => [
-  { key: 'week', label: '本周', from: mondayOf(today), to: null },
-  { key: 'month', label: '本月', from: `${today.slice(0, 8)}01`, to: null },
+  { key: 'week', label: '本周', from: mondayOf(today.value), to: null },
+  { key: 'month', label: '本月', from: `${today.value.slice(0, 8)}01`, to: null },
   ...(summary.value?.term ? [{ key: 'term', label: '本学期', from: summary.value.term.start_date, to: summary.value.term.end_date }] : []),
   { key: 'all', label: '全部', from: '0000-01-01', to: null }
 ]);
@@ -377,15 +389,53 @@ function openCourse(row) {
   view.value = 'list';
 }
 
+// Reloads keep the filters, search and any open form; only the newest request may land.
+let loadSerial = 0;
 async function load() {
+  const serial = ++loadSerial, id = childId.value;
   try {
-    [records.value, courses.value] = await Promise.all([api.getHomework(childId.value), api.getHomeworkCourses(childId.value)]);
+    const [list, courseList] = await Promise.all([api.getHomework(id), api.getHomeworkCourses(id)]);
+    if (serial !== loadSerial) return;
+    [records.value, courses.value] = [list, courseList];
+    loadError.value = false;
   } catch (err) {
+    if (serial !== loadSerial) return;
+    loadError.value = true;
     actionError.value = typeof err === 'string' ? err : '加载失败，请刷新重试';
   } finally {
-    loading.value = false;
+    if (serial === loadSerial) loading.value = false;
   }
 }
+
+function retry() {
+  actionError.value = '';
+  loading.value = true;
+  load();
+}
+
+async function loadCalendar() {
+  try { timeZone.value = (await api.getCalendar()).time_zone || DEFAULT_TIME_ZONE; } catch { /* keep the default zone */ }
+}
+
+// Another device may have finished or approved homework while this page sat in the background.
+function onResume() {
+  if (document.hidden) return;
+  const date = today.value;
+  now.value = Date.now();
+  if (date === today.value) refresh();
+}
+function refresh() {
+  load();
+  if (view.value === 'summary') loadSummary();
+}
+watch(today, refresh);
+const clock = setInterval(() => { now.value = Date.now(); }, 30000);
+onUnmounted(() => {
+  clearInterval(clock);
+  loadSerial++;
+  document.removeEventListener('visibilitychange', onResume);
+  window.removeEventListener('pageshow', onResume);
+});
 
 function openForm(record) {
   playClick();
@@ -430,5 +480,10 @@ async function savePoints(course, value) {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  document.addEventListener('visibilitychange', onResume);
+  window.addEventListener('pageshow', onResume);
+  loadCalendar();
+  load();
+});
 </script>

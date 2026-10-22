@@ -21,7 +21,7 @@ async function redemptionsRoutes(fastify, options) {
   fastify.get('/children/:id/redemptions', handle(async request =>
     redemptionsService.listRedemptions({ childId: request.params.id, status: request.query.status, limit: request.query.limit, offset: request.query.offset })));
   fastify.post('/children/:id/redemptions', handle(async (request, reply) =>
-    reply.code(201).send(redemptionsService.requestRedemption(request.params.id, request.body?.reward_id))));
+    reply.code(201).send(redemptionsService.requestRedemption(request.params.id, request.body?.reward_id, request.body?.request_id))));
 
   fastify.get('/redemptions', handle(async request =>
     redemptionsService.listRedemptions({ status: request.query.status, limit: request.query.limit, offset: request.query.offset })));

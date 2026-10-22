@@ -201,6 +201,7 @@ import PointsLog from '../components/PointsLog.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick, playBadgeUnlocked } from '../utils/sound';
 import { getPendingRedemptions } from '../api/redemptions';
+import { pendingRequests } from '../utils/requestId.js';
 
 const route = useRoute();
 const childStore = useChildStore();
@@ -277,11 +278,13 @@ async function refreshAfterShopChange() {
   await Promise.all([childStore.fetchStats(), loadShop()]);
 }
 
+const redemptionRequests = pendingRequests();
 async function redeem(item) {
   redeeming.value = true;
   shopError.value = '';
   try {
-    await api.requestRedemption(childId.value, item.id);
+    await api.requestRedemption(childId.value, item.id, redemptionRequests.idFor(item.id));
+    redemptionRequests.done(item.id);
     playBadgeUnlocked();
   } catch (err) {
     shopError.value = typeof err === 'string' ? err : '兑换失败，请重试';

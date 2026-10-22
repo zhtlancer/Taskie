@@ -110,11 +110,28 @@ class TimersService {
     return paused ? { ...paused, started_at: null, timer_running: false } : null;
   }
 
+  // An old client's plain timer that ran past the task's last day cannot go on as a plain timer.
+  isStaleLegacy(row) {
+    return Boolean(row.timer_started_at) && row.homework_legacy_seconds === null && !['goal', 'study'].includes(row.origin) &&
+      !this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(row.id) && !this.tasksService.childMayActOn(row);
+  }
+
+  // Turn such timers into study sessions, as opening /study would, so pausing leaves an unfinished
+  // record the child can still find and end, with its time split across the days it covered.
+  convertStaleLegacy(childId) {
+    for (const row of this.db.prepare('SELECT * FROM daily_tasks WHERE child_id = ? AND timer_started_at IS NOT NULL').all(childId)) {
+      if (this.isStaleLegacy(row)) this.taskStudyService.preserveTime(row.id);
+    }
+  }
+
   // Pausing only banks the time already spent, as starting another timer does, so it needs no
   // task-level checks: an overdue task's running session can be stopped too.
   pauseCurrent(childId) {
     this.current(childId);
-    this.db.transaction(() => this.pauseRunning(childId, Date.now()))();
+    this.db.transaction(() => {
+      this.convertStaleLegacy(childId);
+      this.pauseRunning(childId, Date.now());
+    })();
     return this.current(childId);
   }
 
@@ -134,6 +151,18 @@ class TimersService {
   apply(kind, id, action) {
     const spec = this.kinds[kind];
     if (!spec || !['start', 'pause', 'reset'].includes(action)) throw { status: 404, message: 'Not found' };
+    if (kind === 'task' && action === 'pause') {
+      // The old pause button must still stop its own timer after midnight; the time moves to a study session.
+      const stale = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id);
+      if (stale && this.isStaleLegacy(stale)) {
+        this.db.transaction(() => {
+          this.taskStudyService.preserveTime(id);
+          const active = this.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL AND timer_started_at IS NOT NULL').get(id);
+          if (active) this.taskStudyService.pause(active, Date.now());
+        })();
+        return spec.describe(stale);
+      }
+    }
     if (kind === 'task') {
       const row = spec.load(id);
       if (row.homework_legacy_seconds !== null) {

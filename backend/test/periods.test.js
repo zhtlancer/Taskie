@@ -294,3 +294,31 @@ test('v5 point histories migrate to durable snapshots; incomplete v6 backups fai
   assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 10);
   assert.deepEqual(ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned), [6, 4]);
 });
+
+test('retrying a progress entry with the same request id records it and its points once', async t => {
+  const { child, login, today, asParent, asChild, createPeriod, stats } = await fixture(t);
+  const period = (await createPeriod({ name: '寒假', start_date: today, end_date: shiftDate(today, 30) })).json();
+  const book = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '阅读', subject: '语文', mode: 'progress', total_amount: 10, unit: '页', points: 2, completion_bonus: 5 })).json();
+  const headers = await login(child);
+  const log = payload => asChild(headers, 'POST', `/api/period-tasks/${book.id}/logs`, payload);
+
+  const first = await log({ amount: 5, request_id: 'progress-request-1' });
+  const retry = await log({ amount: 5, request_id: 'progress-request-1' });
+  assert.deepEqual([first.statusCode, retry.statusCode], [201, 201]);
+  assert.equal(retry.json().log_id, first.json().log_id);
+  assert.equal(retry.json().points_earned, 10);
+  assert.equal(retry.json().task.done_amount, 5);
+  assert.equal((await stats()).total_points, 10);
+
+  assert.equal((await log({ amount: 4, request_id: 'progress-request-1' })).statusCode, 409, 'same id with other content');
+  assert.equal((await log({ amount: 5, request_id: 'bad id' })).statusCode, 400);
+  // The finishing entry still replays after the task is complete, with its bonus.
+  const finish = await log({ amount: 5, request_id: 'progress-request-2' });
+  const finishRetry = await log({ amount: 5, request_id: 'progress-request-2' });
+  assert.equal(finishRetry.statusCode, 201, finishRetry.body);
+  assert.deepEqual([finishRetry.json().points_earned, finishRetry.json().completion_bonus], [finish.json().points_earned, 5]);
+  assert.equal((await stats()).total_points, 25);
+  // An id cannot be replayed against another child's task.
+  const other = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '口算', subject: '数学', mode: 'progress', total_amount: 10, unit: '页', points: 1 })).json();
+  assert.equal((await asParent('POST', `/api/period-tasks/${other.id}/logs`, { amount: 5, request_id: 'progress-request-1' })).statusCode, 409);
+});

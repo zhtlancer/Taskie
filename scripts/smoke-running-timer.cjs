@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-running-timer-'));
@@ -24,8 +24,8 @@ async function main() {
   const parentToken = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
   const goal = (await app.inject({ method: 'POST', url: `/api/children/${child.id}/goals`, headers: { authorization: `Bearer ${parentToken}` },
     payload: { title: '验收阅读', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, track_time: true } })).json();
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const errors = [];
   async function open(viewport, parent = false) {
     const context = await browser.newContext({ viewport, timezoneId: 'Asia/Shanghai' });

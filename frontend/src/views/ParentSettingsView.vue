@@ -8,6 +8,7 @@
         <h3 class="text-lg font-bold">备份学习记录和照片</h3>
         <p class="text-sm text-slate-600 dark:text-slate-300">{{ info.interval_hours > 0 ? `每 ${info.interval_hours} 小时自动备份，保留最近 ${info.retention} 份。` : '自动备份已关闭。' }} 备份包包含账号、任务、积分、生字和错题照片，请妥善保管。</p>
         <p v-if="info.last_error" class="text-rose-700 dark:text-rose-300">最近自动备份失败：{{ info.last_error }}</p>
+        <p v-if="info.last_warning" class="text-amber-700 dark:text-amber-300">最近备份已完成，但{{ info.last_warning }}</p>
         <button :disabled="busy" @click="createBackup" class="px-5 py-3 bg-brand-500 text-white rounded-xl disabled:opacity-50">{{ busy ? '处理中…' : '立即创建备份' }}</button>
         <p v-if="!info.backups.length" class="text-slate-500 dark:text-slate-400">暂无备份</p>
         <ul class="divide-y">
@@ -19,7 +20,7 @@
       </section>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">从备份恢复</h3>
-        <p class="text-sm text-slate-600 dark:text-slate-300">恢复会替换当前学习记录和照片。系统会先保存当前数据的恢复前备份；完成后需要重新登录。上传文件最大 64 MiB，解压后最大 256 MiB。</p>
+        <p class="text-sm text-slate-600 dark:text-slate-300">恢复会替换当前学习记录和照片。系统会先保存当前数据的恢复前备份；完成后需要重新登录。本应用创建的备份都可以在这里恢复；备份数据最大 256 MiB。</p>
         <form @submit.prevent="restore" class="space-y-4">
           <label class="block">备份文件 <input type="file" accept=".gz" required @change="file = $event.target.files[0]" class="block mt-2" /></label>
           <label class="block">当前家长 PIN <input v-model="restorePin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required class="block border rounded-xl p-3 mt-2" autocomplete="current-password" /></label>

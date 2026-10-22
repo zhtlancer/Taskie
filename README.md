@@ -374,7 +374,7 @@ npm run build
 npm run test:browser:time-stats
 ```
 
-该回归直接启动临时本地服务，使用内存数据库，结束后自动清理；支持 `PLAYWRIGHT_MODULE_PATH` 和 `CHROMIUM_PATH`，无需 Docker。
+该回归直接启动临时本地服务，使用内存数据库，结束后自动清理，无需 Docker。所有本地浏览器专项（`test:browser:*`）共用 `scripts/browser-env.cjs`：`PLAYWRIGHT_MODULE_PATH` 指向项目外的 Playwright 安装（绝对路径），`CHROMIUM_PATH` 指定浏览器（未设置时依次使用系统 Chromium/Chrome，再退回 Playwright 自带浏览器），`SMOKE_PORT` 指定监听端口（默认随机空闲端口）。
 
 假期延后任务与调休设置的页面回归也使用相同环境，覆盖模板保存、所有孩子批量添加、已有日期跳过与重试、保留原设置，以及手机布局：
 
@@ -444,7 +444,8 @@ npm run test:browser:class-stats
 - 默认每 24 小时自动备份，保留最近 7 份；启动时若没有备份或最近备份已过期，会立即补做。
 - 恢复需要当前家长 PIN 和确认勾选。系统先验证备份，再保存恢复前快照；数据库恢复失败会回滚数据库和照片目录。
 - 恢复完成后所有会话失效，需要重新登录。备份中的账号、PIN 和学习记录会替换当前数据。
-- 上传最大 64 MiB，解压后的备份最大 256 MiB；更大数据请使用 NAS 文件备份，并在停服后复制完整数据目录。
+- 备份数据（解压后）最大 256 MiB，应用创建成功的备份都可以通过页面上传恢复；更大数据请使用 NAS 文件备份，并在停服后复制完整数据目录。
+- 若某张错题照片的文件已在磁盘上丢失，备份仍会完成并保留该错题记录，页面会提示丢失的照片；恢复后这些错题同样没有照片。
 
 Docker 部署的自动备份位于宿主机 `./data/backups`，数据库和照片在 `./data/data.sqlite`、`./data/uploads`。请定期将备份下载到另一台设备，NAS 上的同盘副本无法覆盖磁盘故障。
 

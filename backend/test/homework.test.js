@@ -304,7 +304,7 @@ test('a summary per course counts records and how their tasks went, within a dat
   const all = await summary({});
   assert.equal(all.term.name, '本学期');
   const row = subject => all.courses.find(c => c.subject === subject);
-  assert.deepEqual(all.courses.map(c => c.subject), ['数学', '科学']);
+  assert.deepEqual(all.courses.map(c => c.subject), ['科学', '数学'], 'ties follow pinyin order whatever the host locale');
   assert.deepEqual(['total', 'done', 'missed', 'skipped', 'open', 'pending', 'none', 'completion_rate'].map(k => row('科学')[k]), [3, 1, 0, 0, 1, 0, 1, 1]);
   assert.deepEqual(['total', 'done', 'missed', 'skipped', 'open', 'pending', 'none', 'completion_rate'].map(k => row('数学')[k]), [3, 0, 1, 1, 0, 1, 0, 0]);
   assert.deepEqual([all.totals.total, all.totals.done, all.totals.missed, all.totals.completion_rate], [6, 1, 1, 0.5]);

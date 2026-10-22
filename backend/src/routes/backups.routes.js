@@ -1,7 +1,8 @@
 const fs = require('node:fs');
+const { MAX_UPLOAD_SIZE } = require('../services/backup.service');
 
 async function backupRoutes(app, { backupService, authService, intervalHours }) {
-  app.get('/', async () => ({ backups: backupService.list(), interval_hours: intervalHours, retention: backupService.retention, last_error: backupService.lastError }));
+  app.get('/', async () => ({ backups: backupService.list(), interval_hours: intervalHours, retention: backupService.retention, last_error: backupService.lastError, last_warning: backupService.lastWarning }));
   app.post('/', async () => backupService.create());
   app.get('/:name/download', async (request, reply) => {
     const file = backupService.getPath(request.params.name);
@@ -10,7 +11,7 @@ async function backupRoutes(app, { backupService, authService, intervalHours }) 
   app.post('/restore', async (request, reply) => {
     if (!request.isMultipart()) return reply.code(400).send({ error: '请选择备份文件' });
     let file, pin;
-    for await (const part of request.parts({ limits: { files: 1, fields: 1, fileSize: 64 * 1024 * 1024 } })) {
+    for await (const part of request.parts({ limits: { files: 1, fields: 1, fileSize: MAX_UPLOAD_SIZE } })) {
       if (part.type === 'file') file = await part.toBuffer();
       else if (part.fieldname === 'pin') pin = part.value;
     }

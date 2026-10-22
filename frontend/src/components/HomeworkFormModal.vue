@@ -1,12 +1,13 @@
 <template>
   <!-- Record homework (or change a record): the course, when it was set, when it is due, and what it is -->
-  <div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="$emit('close')">
-    <form class="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 max-w-lg w-full max-h-[92dvh] overflow-y-auto shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-4" @submit.prevent="save">
-      <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 font-chinese">{{ record ? '✏️ 修改作业记录' : '📒 记作业' }}</h3>
+  <UiDialog :title="record ? '✏️ 修改作业记录' : '📒 记作业'" :busy="saving" wide @close="$emit('close')">
+    <!-- While saving, the whole form is frozen so nothing typed meanwhile is silently dropped. -->
+    <form @submit.prevent="save">
+     <fieldset :disabled="saving" class="space-y-4 min-w-0">
       <p v-if="error" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
 
       <div>
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">哪门课</label>
+        <span class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">哪门课</span>
         <div v-if="record" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-sm font-bold text-slate-700 dark:text-slate-200 font-chinese">{{ courseLabel(record) }}</div>
         <template v-else>
           <div class="flex flex-wrap gap-2">
@@ -14,7 +15,8 @@
               v-for="course in courses"
               :key="course.course_key"
               type="button"
-              class="px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
+              class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
+              :aria-pressed="course.course_key === selected?.course_key"
               :class="course.course_key === selected?.course_key ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'"
               @click="selectCourse(course)"
             >
@@ -23,7 +25,8 @@
           </div>
           <select
             v-if="otherSubjects.length"
-            class="mt-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500"
+            aria-label="其他科目"
+            class="mt-2 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500"
             :value="selected && !courses.includes(selected) ? selected.subject : ''"
             @change="pickOtherSubject($event.target.value)"
           >
@@ -34,8 +37,9 @@
       </div>
 
       <div>
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">作业内容</label>
+        <label for="homework-content" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">作业内容</label>
         <textarea
+          id="homework-content"
           v-model="form.content"
           rows="4"
           maxlength="500"
@@ -47,8 +51,8 @@
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">布置日期</label>
-          <input v-model="form.assigned_date" type="date" :max="today" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
+          <label for="homework-assigned" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">布置日期</label>
+          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
           <div class="flex flex-wrap gap-1.5 mt-1.5">
             <button type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(today)">今天</button>
             <button v-if="selected?.last_lesson_date && selected.last_lesson_date !== today" type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(selected.last_lesson_date)">
@@ -57,8 +61,8 @@
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期</label>
-          <input v-model="form.due_date" type="date" :min="form.assigned_date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
+          <label for="homework-due" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期</label>
+          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
           <button v-if="dueTouched && suggestion?.due_date && form.due_date !== suggestion.due_date" type="button" class="mt-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="resetDue">
             恢复默认 {{ dayName(suggestion.due_date) }}
           </button>
@@ -83,28 +87,31 @@
 
       <div v-if="asParent && (record || form.create_task)" class="grid grid-cols-2 gap-3 items-start">
         <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">奖励积分</label>
-          <input v-model.number="form.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" @input="pointsTouched = true" />
+          <label for="homework-points" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">奖励积分</label>
+          <input id="homework-points" v-model.number="form.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" @input="pointsTouched = true" />
           <p class="mt-1 text-xs font-bold text-slate-400">默认按课程，可以在「课程默认积分」里设置</p>
         </div>
       </div>
       <TimingFields v-if="asParent && !record && form.create_task" v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-        <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
-        <button type="submit" :disabled="saving || !form.content.trim() || !(record || selected)" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
+        <button type="button" class="min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
+        <button type="submit" :disabled="saving || !form.content.trim() || !(record || selected)" class="min-h-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
           {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>
+     </fieldset>
     </form>
-  </div>
+  </UiDialog>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue';
 import api from '../api/client';
 import TimingFields from './TimingFields.vue';
-import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, localDate, shortDate } from '../utils/schedule.js';
+import UiDialog from './UiDialog.vue';
+import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, shortDate } from '../utils/schedule.js';
+import { businessDate } from '../utils/businessDate.js';
 import { courseLabel } from '../utils/homework.js';
 
 const props = defineProps({
@@ -112,11 +119,13 @@ const props = defineProps({
   courses: { type: Array, default: () => [] },
   asParent: { type: Boolean, default: false },
   // Set to change a record; left out to record new homework.
-  record: { type: Object, default: null }
+  record: { type: Object, default: null },
+  // The family's date, not the device's.
+  today: { type: String, default: () => businessDate() }
 });
 const emit = defineEmits(['close', 'saved']);
 
-const today = localDate();
+const today = props.today;
 const dayName = date => `${WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${shortDate(date)}`;
 
 const selected = ref(null);

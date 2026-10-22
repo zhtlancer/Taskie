@@ -101,7 +101,15 @@ class RedemptionsService {
     return this.db.prepare('SELECT * FROM reward_redemptions WHERE id = ?').get(id) || null;
   }
 
-  requestRedemption(childId, rewardId) {
+  // The same request_id returns the first request, so a retry after a lost response cannot hold the
+  // points twice; a new user action sends a new id.
+  requestRedemption(childId, rewardId, requestId) {
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw { status: 400, message: '兑换标识无效' };
+    const replayed = requestId && this.getRedemption(requestId);
+    if (replayed) {
+      if (replayed.child_id !== childId || replayed.reward_id !== rewardId) throw { status: 409, message: '兑换标识已使用' };
+      return replayed;
+    }
     let id;
     this.db.transaction(() => {
       if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: 'Child not found' };
@@ -109,7 +117,7 @@ class RedemptionsService {
       if (!item || !item.is_active) throw { status: 404, message: '奖励不存在或已下架' };
       const available = this.rewardsService.getAvailablePoints(childId);
       if (available < item.cost) throw { status: 409, message: `积分不足：还差 ${item.cost - available} 分` };
-      id = generateId();
+      id = requestId || generateId();
       this.db.prepare(`
         INSERT INTO reward_redemptions (id, child_id, reward_id, title, icon_emoji, cost, status, requested_at)
         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)

@@ -144,9 +144,15 @@
             v-on="skipHandlers"
           />
 
+          <!-- A failed read is not an empty day: say so, keep what was shown before, and offer a retry. -->
+          <div v-if="!loading && tasksError" role="alert" class="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-4 py-3 text-sm font-bold text-rose-700 dark:text-rose-300">
+            <span class="flex-1">{{ tasks.length ? '任务没有更新成功，下面是上次读到的内容。' : '今天的任务没有读取成功，这不代表没有任务。' }}</span>
+            <button type="button" class="min-h-[44px] px-4 rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800" @click="refreshBoard">重新读取</button>
+          </div>
+
           <!-- Empty state -->
           <div
-            v-if="!loading && filteredTasks.length === 0 && extraTasks.length === 0 && !activePeriod && !activeGoals.length"
+            v-if="!loading && !tasksError && filteredTasks.length === 0 && extraTasks.length === 0 && !activePeriod && !activeGoals.length"
             class="flex flex-col items-center justify-center h-64 text-slate-400"
           >
             <span class="text-5xl mb-3">🏖️</span>
@@ -155,7 +161,7 @@
           </div>
 
           <div
-            v-if="!loading && (activePeriod || activeGoals.length) && filteredTasks.length === 0 && extraTasks.length === 0"
+            v-if="!loading && !tasksError && (activePeriod || activeGoals.length) && filteredTasks.length === 0 && extraTasks.length === 0"
             class="text-center py-6 text-sm font-bold text-slate-400"
           >
             {{ activePeriod ? '假期中，今天没有日常任务～' : '今天没有日常任务～' }}
@@ -332,6 +338,7 @@ const tasks = ref([]);
 // The placeholder only covers a board that has nothing to show yet. Later refreshes update the
 // cards in place: swapping them for the placeholder shrinks the page and loses the scroll position.
 const loading = ref(true);
+const tasksError = ref(false);
 let boardLoaded = false;
 const periods = ref([]);
 const goals = ref([]);
@@ -356,9 +363,16 @@ onUnmounted(() => {
 });
 async function fetchTasks() {
   const serial = ++taskSerial, id = childId.value, date = todayString.value;
-  const list = (await api.getDailyTasks(id)).map(task => withClock(task));
+  let list;
+  try {
+    list = (await api.getDailyTasks(id)).map(task => withClock(task));
+  } catch (err) {
+    if (serial === taskSerial) tasksError.value = true;
+    throw err;
+  }
   if (serial !== taskSerial || id !== childId.value || date !== todayString.value) return;
   now.value = Date.now();
+  tasksError.value = false;
   tasks.value = list;
   // Every timer change reloads the board's tasks, so the running-timer bar follows here.
   timerStore.refresh(id);
@@ -489,7 +503,7 @@ function onResume() {
   if (date === todayString.value) refreshBoard(); // A changed date is handled by the watcher.
 }
 watch([todayString, childId], () => {
-  tasks.value = []; goals.value = []; periods.value = []; unfinished.value = [];
+  tasks.value = []; goals.value = []; periods.value = []; unfinished.value = []; tasksError.value = false;
   boardLoaded = false;
   childStore.statsRequestId++;
   childStore.stats = { ...childStore.stats, today_points: 0, today_total_tasks: 0, today_completed_tasks: 0, today_completion_rate: 0 };

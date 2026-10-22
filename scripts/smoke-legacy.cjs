@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
@@ -28,8 +28,8 @@ async function main() {
     c.service.manual(c.id, { request_id: `smoke_legacy_${c.task.id}`, duration_seconds: 300, note: '真实分次记录' }, 'parent');
     c.service.complete(c.id, 'parent');
   }
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox'] });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const errors = [];
   async function open(role, viewport) {
     const context = await browser.newContext({ viewport, timezoneId: 'Asia/Shanghai' });

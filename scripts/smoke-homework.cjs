@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const { getTodayDate, getDayOfWeek, shiftDate } = require('../backend/src/utils/date');
@@ -45,8 +45,8 @@ async function main() {
   await api('POST', '/task-templates', { title: '数学练习册', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6] });
   const childToken = (await app.inject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json().token;
 
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox'], ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
+  const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const errors = [];
   const open = async (role, token, viewport = { width: 1180, height: 820 }) => {
     const context = await browser.newContext({ viewport, timezoneId: 'Asia/Shanghai' });

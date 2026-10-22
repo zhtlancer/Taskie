@@ -54,6 +54,7 @@ export const api = {
   deleteTaskTemplate: id => remove(`/task-templates/${id}`),
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
   getUnfinishedStudy: id => get(`/children/${id}/unfinished-study`),
+  getCalendar: () => get('/calendar'),
   // The running timer, else the latest one paused; pausing keeps it, resuming starts it again.
   getCurrentTimer: id => get(`/children/${id}/current-timer`),
   pauseCurrentTimer: id => post(`/children/${id}/current-timer/pause`),
@@ -122,7 +123,7 @@ export const api = {
   updateRewardItem: (id, data) => put(`/reward-items/${id}`, data),
   deleteRewardItem: id => remove(`/reward-items/${id}`),
   getChildRedemptions: (id, params = {}) => get(`/children/${id}/redemptions`, params),
-  requestRedemption: (id, rewardId) => post(`/children/${id}/redemptions`, { reward_id: rewardId }),
+  requestRedemption: (id, rewardId, requestId) => post(`/children/${id}/redemptions`, { reward_id: rewardId, request_id: requestId }),
   getRedemptions: (status, params = {}) => get('/redemptions', { ...params, status }),
   approveRedemption: id => post(`/redemptions/${id}/approve`),
   rejectRedemption: id => post(`/redemptions/${id}/reject`),

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
 const c = createTestApp();
 let browser;
@@ -69,8 +69,8 @@ async function main() {
   const goal = await api('POST', `/children/${child.id}/goals`, { title: '用时弹窗练习', subject: '语文', mode: 'progress', unit: '页', total_amount: 100, track_time: true });
   const character = await api('POST', '/characters', { child_id: child.id, char: '山', categories: [] });
   const token = c.app.jwt.sign({ role: 'parent', epoch: c.app.sessionEpoch() });
-  const base = await c.app.listen({ host: '127.0.0.1', port: 0 });
-  browser = await chromium.launch({ headless: true, args: ['--no-sandbox'], executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium' });
+  const base = await c.app.listen({ host: '127.0.0.1', port: smokePort() });
+  browser = await chromium.launch(launchOptions());
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark', timezoneId: 'Asia/Shanghai', hasTouch: true });
   await context.addInitScript(value => { if (location.protocol === 'http:') sessionStorage.setItem('taskie_parent_token', value); }, token);
   await context.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());

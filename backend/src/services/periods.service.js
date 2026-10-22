@@ -343,9 +343,27 @@ class PeriodsService {
   // so far. Reaching the total completes the task and awards its bonus with that entry. A timed task's
   // entry for today keeps the session's duration and starts the timer over. Historical entries only
   // keep a duration entered by hand, leaving the current session alone unless the whole task finishes.
-  logProgress(taskId, { amount, position, date, duration_seconds }, { role }) {
+  // A request_id makes the entry idempotent: retrying after a lost response returns the first entry
+  // instead of logging (and rewarding) the same progress twice.
+  logProgress(taskId, { amount, position, date, duration_seconds, request_id: requestId }, { role }) {
     const task = this.getTask(taskId);
     if (!task) throw { status: 404, message: '长期任务不存在' };
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw { status: 400, message: '记录标识无效' };
+    const replayed = requestId && this.db.prepare('SELECT * FROM period_task_logs WHERE id = ?').get(requestId);
+    if (replayed) {
+      const same = replayed.period_task_id === taskId && (date === undefined || replayed.date === date) &&
+        (task.mode === 'check' || (task.input_mode === 'position' ? replayed.position === position : replayed.amount === amount));
+      if (!same) throw { status: 409, message: '记录标识已使用' };
+      const earned = this.db.prepare('SELECT COALESCE(SUM(points), 0) AS points FROM point_logs WHERE period_log_id = ?').get(requestId).points;
+      return {
+        success: true,
+        log_id: requestId,
+        points_earned: earned,
+        completion_bonus: Math.max(0, earned - task.points * replayed.amount),
+        task: this.describeTask(task),
+        new_badges: []
+      };
+    }
     const today = getTodayDate();
     const logDate = date ?? today;
     if (role !== 'parent' && logDate !== today) throw { status: 403, message: '只能记录今天的进度' };
@@ -373,7 +391,7 @@ class PeriodsService {
         if (!Number.isSafeInteger(logAmount) || logAmount < 1) throw { status: 400, message: '进度必须为正整数' };
         if (logAmount > remaining) throw { status: 400, message: `最多还能记录 ${remaining}${task.unit || ''}` };
       }
-      logId = generateId();
+      logId = requestId || generateId();
       const now = new Date().toISOString();
       this.db.prepare('INSERT INTO period_task_logs (id, period_task_id, amount, position, date, created_at, duration_seconds, duration_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(logId, taskId, logAmount, byPosition ? done + logAmount : null, logDate, now, duration.seconds, duration.source);
