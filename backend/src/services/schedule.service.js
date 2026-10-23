@@ -329,7 +329,7 @@ class ScheduleService {
       }
       this.db.prepare(`INSERT INTO outside_class_exceptions (id, class_id, child_id, date, kind, new_date, new_start_time, new_end_time, note, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (class_id, child_id, date) DO UPDATE SET kind = excluded.kind, new_date = excluded.new_date,
+        ON CONFLICT (class_id, child_id, date) DO UPDATE SET id = excluded.id, kind = excluded.kind, new_date = excluded.new_date,
           new_start_time = excluded.new_start_time, new_end_time = excluded.new_end_time, note = excluded.note`)
         .run(generateId(), classId, childId, date, body.kind, moved.new_date, moved.new_start_time, moved.new_end_time, note, new Date().toISOString());
       this.pruneClassTasks(classId);
@@ -339,16 +339,16 @@ class ScheduleService {
 
   // Back to the usual lesson.
   deleteException(id) {
-    const exception = this.db.prepare('SELECT * FROM outside_class_exceptions WHERE id = ?').get(id);
-    if (!exception) throw fail(404, '请假或调课记录不存在');
-    if (this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(exception.class_id, exception.child_id, exception.date)) {
-      throw fail(409, '这次课已确认出勤，请先在出勤统计中恢复未确认，再撤销请假或调课');
-    }
-    this.db.transaction(() => {
+    return this.db.transaction(() => {
+      const exception = this.db.prepare('SELECT * FROM outside_class_exceptions WHERE id = ?').get(id);
+      if (!exception) throw fail(404, '这节课的请假或调课已被修改或撤销，请刷新后再操作');
+      if (this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(exception.class_id, exception.child_id, exception.date)) {
+        throw fail(409, '这次课已确认出勤，请先在出勤统计中恢复未确认，再撤销请假或调课');
+      }
       this.db.prepare('DELETE FROM outside_class_exceptions WHERE id = ?').run(id);
       this.pruneClassTasks(exception.class_id);
+      return this.getClass(exception.class_id);
     })();
-    return this.getClass(exception.class_id);
   }
 
   // Check-ins still to do whose lesson no longer happens that day (leave, moved away, schedule or
@@ -377,11 +377,12 @@ class ScheduleService {
       return row && (!row.lessonDates || row.lessonDates.includes(e.date));
     });
     const exceptionAt = new Map(exceptions.map(e => [`${e.class_id}|${e.date}`, e]));
-    // Read the same persisted revision as ClassStatsService.revision; never derive it from timestamps.
-    const attendance = new Map(this.db.prepare(`SELECT a.class_id, a.lesson_date, a.status, a.charged, a.source, r.revision
-      FROM outside_class_attendance a LEFT JOIN outside_class_revisions r
+    // Start from revisions so undo tombstones survive without an attendance row. Read both in
+    // one statement, using the same persisted version as ClassStatsService.revision.
+    const attendance = new Map(this.db.prepare(`SELECT r.class_id, r.lesson_date, a.status, a.charged, a.source, r.revision
+      FROM outside_class_revisions r LEFT JOIN outside_class_attendance a
         ON r.class_id = a.class_id AND r.child_id = a.child_id AND r.kind = 'attendance' AND r.lesson_date = a.lesson_date
-      WHERE a.child_id = ?`).all(childId)
+      WHERE r.child_id = ? AND r.kind = 'attendance'`).all(childId)
       .map(r => [`${r.class_id}|${r.lesson_date}`, r]));
     const movedInto = new Map();
     for (const e of exceptions.filter(e => e.kind === 'moved')) {
@@ -394,7 +395,8 @@ class ScheduleService {
       return {
         class_id: row.id, class_lesson_date: sourceDate, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
         source_date: sourceDate,
-        attendance: record ? {
+        attendance_revision: record?.revision ?? null,
+        attendance: record?.status ? {
           status: record.status, charged: Boolean(record.charged),
           source: record.source === 'checkin' ? 'task' : record.source, revision: record.revision ?? null
         } : null,
