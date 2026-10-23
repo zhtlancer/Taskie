@@ -50,7 +50,10 @@ test('on a new server the data restores first; missing photos are listed and fil
   assert.deepEqual(restored.json().missing_photos.sort(), ['a.jpg', 'b.webp']);
   const missing = (await away.ctx.app.inject({ method: 'GET', url: '/api/backups' })).json().missing_photos;
   assert.deepEqual([missing.count, missing.absent, missing.mismatch], [2, 2, 0]);
-  assert.deepEqual(missing.sample.map(p => [p.name, p.subject, p.description, p.reason]), [['a.jpg', '数学', 'a.jpg', 'absent'], ['b.webp', '数学', 'b.webp', 'absent']]);
+  // a.jpg and b.webp are often saved in the same millisecond, and then their order is not insertion
+  // order (CI Run 39874220129). The ordering contract is checked on its own below.
+  assert.deepEqual(missing.sample.map(p => [p.name, p.subject, p.description, p.reason]).sort((x, y) => x[0].localeCompare(y[0])),
+    [['a.jpg', '数学', 'a.jpg', 'absent'], ['b.webp', '数学', 'b.webp', 'absent']]);
 
   const imported = await away.ctx.app.inject({ method: 'POST', url: '/api/backups/photos/import', ...multipart('file', 'photos.tar', photos) });
   assert.equal(imported.statusCode, 200, imported.body);
@@ -63,6 +66,26 @@ test('on a new server the data restores first; missing photos are listed and fil
   fs.writeFileSync(path.join(away.ctx.tempUploadDir, 'a.jpg'), 'kept local version');
   await away.ctx.app.inject({ method: 'POST', url: '/api/backups/photos/import', ...multipart('file', 'photos.tar', photos) });
   assert.equal(fs.readFileSync(path.join(away.ctx.tempUploadDir, 'a.jpg'), 'utf8'), 'photo a', 'a correct package repairs a mismatched photo');
+});
+
+test('missing photos are listed oldest first, and photos saved in the same millisecond keep a stable order', async t => {
+  const { ctx, addPhoto } = await fixture(t);
+  // Reproduces CI Run 39874220129: two photos share a timestamp and the later one has the smaller id.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T15:59:59.999Z') });
+  const ids = ['ffffffff-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000000'];
+  t.mock.method(require('node:crypto'), 'randomUUID', () => ids.shift());
+  addPhoto('first.jpg', 'first');
+  addPhoto('second.jpg', 'second');
+  t.mock.timers.tick(1);
+  addPhoto('later.jpg', 'later');
+  t.mock.reset();
+  t.mock.timers.reset();
+  for (const name of ['first.jpg', 'second.jpg', 'later.jpg']) fs.rmSync(path.join(ctx.tempUploadDir, name));
+  const read = async () => (await ctx.app.inject({ method: 'GET', url: '/api/backups' })).json().missing_photos.sample.map(p => p.name);
+  const sample = await read();
+  assert.deepEqual(sample.slice(0, 2).sort(), ['first.jpg', 'second.jpg']);
+  assert.equal(sample[2], 'later.jpg', 'a later photo follows earlier ones whatever its id');
+  assert.deepEqual(await read(), sample, 'same-millisecond photos keep their order between reads');
 });
 
 test('photo packages: only new photos on request, tickets expire with the session, bad packages are refused', async t => {
@@ -297,7 +320,8 @@ test('a stream error, session invalidation or client disconnect never records a 
   t.mock.restoreAll();
   service.exportPhotos = original;
   const url = await ticket();
-  const base = await ctx.app.listen({ host: '127.0.0.1', port: 4178 });
+  // Any free port: a fixed one collides with parallel runs and with services on the shared test ports.
+  const base = await ctx.app.listen({ host: '127.0.0.1', port: 0 });
   await new Promise((resolve, reject) => {
     const req = require('node:http').get(base + url, res => {
       res.once('data', () => { res.destroy(); });

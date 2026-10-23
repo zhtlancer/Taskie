@@ -357,6 +357,8 @@ npm run test:frontend
 npm run check:repo
 ```
 
+CI 运行逻辑测试时额外启用 `scripts/test-annotations.mjs`：每个失败的测试会生成一条 GitHub 注释，包含文件、行号、断言差异，以及失败时的时钟、时区和 CPU 负载。偶发失败无需登录下载日志，也能在检查结果的注释里定位。
+
 浏览器验收会在 Chromium 中走一遍主要流程：首次登录强制修改家长 PIN、周模板保存、添加临时任务、备份下载与恢复、孩子打卡与全勤、按页记录长期任务进度、积分兑换与家长确认、照片上传、孩子权限，以及断网提示与恢复；再以 390px 手机宽度检查所有页面不超出屏幕、孩子端标签栏可用；同时确认容器以普通用户运行。每次推送到 `main` 时 CI 都会自动运行，通过后才会发布镜像。Pull Request 和推送到其他分支时，CI（`.github/workflows/checks.yml`）会运行全部单元测试、每个本地浏览器专项（使用运行器上的 Google Chrome）以及容器数据目录检查；发布前同样要求这些检查通过。本地运行：
 
 ```bash
@@ -376,6 +378,8 @@ npm run test:browser:time-stats
 ```
 
 该回归直接启动临时本地服务，使用内存数据库，结束后自动清理，无需 Docker。所有本地浏览器专项（`test:browser:*`）共用 `scripts/browser-env.cjs`：`PLAYWRIGHT_MODULE_PATH` 指向项目外的 Playwright 安装（绝对路径），`CHROMIUM_PATH` 指定浏览器（未设置时依次使用系统 Chromium/Chrome，再退回 Playwright 自带浏览器），`SMOKE_PORT` 指定监听端口（默认随机空闲端口）。
+
+浏览器专项会测量按钮和文字的实际尺寸，结果取决于系统字体。CI 在运行专项前安装中文字体 `fonts-noto-cjk`，使测量接近真实手机和平板；本地运行时也应安装中文字体（Debian/Ubuntu：`sudo apt-get install fonts-noto-cjk`），否则中文会以缺字方框排版，宽度与真实设备不同。字体不能替代控件自身的最小尺寸：专项会单独测量“美”“体”这类单字按钮，确保它们在任何字体下都不小于 44px。
 
 假期延后任务与调休设置的页面回归也使用相同环境，覆盖模板保存、所有孩子批量添加、已有日期跳过与重试、保留原设置，以及手机布局：
 

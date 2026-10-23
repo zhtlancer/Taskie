@@ -32,6 +32,12 @@ jobs:
       - name: Check repository content
         run: npm run check:repo
       - run: npm test
+        env:
+          # Each failing test also becomes an annotation with its file, line, diff and clock/time zone,
+          # readable through the public API when the job log is not at hand.
+          NODE_OPTIONS: >-
+            --test-reporter=spec --test-reporter-destination=stdout
+            --test-reporter=${{ github.workspace }}/scripts/test-annotations.mjs --test-reporter-destination=stdout
 
   # A NAS-style bind-mounted data directory against the real image: ownership, persistence across
   # container replacement, clear refusal of unwritable directories and of newer databases.
@@ -88,6 +94,13 @@ jobs:
             frontend/package-lock.json
       - run: npm ci --prefix backend --omit=dev --engine-strict
       - run: npm ci --prefix frontend
+      # Chinese fonts as on real phones and tablets, so text is measured with real glyphs. They do not
+      # stand in for minimum sizes: the suites also measure single-character labels.
+      - name: Install Chinese fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-list :lang=zh family | grep -q . || { echo 'No Chinese font installed'; exit 1; }
       - run: npm run build
       - name: Install Playwright (using the runner's Chrome)
         run: npm install --no-save --package-lock=false playwright@1.64.0
