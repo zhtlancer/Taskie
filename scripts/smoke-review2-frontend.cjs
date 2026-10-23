@@ -97,6 +97,60 @@ async function main() {
     await dialog.getByText('总学费 ¥150.00', { exact: true }).waitFor();
   });
 
+  await check('K7 fee revision survives same-clock changes and clearing', async () => {
+    const cls = await api('POST', '/outside-classes', { title: '独立版本钢琴', start_date: shiftDate(today, -2), days_of_week: [0,1,2,3,4,5,6], start_time: '16:00', end_time: '17:00', total_lessons: 5 });
+    const page = await open('parent', 1180, 'light');
+    await page.goto(`${base}/parent/schedule?child=${child.id}`, { waitUntil: 'networkidle' });
+    const card = page.locator('div.p-4.rounded-2xl').filter({ has: page.getByText(cls.title, { exact: true }) });
+    await card.getByRole('button', { name: '出勤与学费', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: `${child.name} · ${cls.title}`, exact: true });
+    const fee = dialog.locator('#class-fee');
+    await fee.fill('150');
+    // Same server millisecond, value returns to null, but the initial null version is stale.
+    await api('PUT', `/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000 });
+    await api('PUT', `/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: null });
+    let response = page.waitForResponse(r => r.url().endsWith('/fee') && r.request().method() === 'PUT');
+    await dialog.getByRole('button', { name: '保存学费', exact: true }).click();
+    let saved = await response;
+    assert.equal(saved.status(), 409);
+    assert.equal(saved.request().postDataJSON().expected_revision, null);
+    assert.equal(await fee.inputValue(), '150');
+    await dialog.getByRole('button', { name: '已看过最新金额，保留输入继续修改' }).click();
+    response = page.waitForResponse(r => r.url().endsWith('/fee') && r.request().method() === 'PUT');
+    await dialog.getByRole('button', { name: '保存学费', exact: true }).click();
+    saved = await response; assert.equal(saved.status(), 200);
+    assert.ok(saved.request().postDataJSON().expected_revision, 'fee clear retains a non-null revision');
+    await dialog.getByText('总学费 ¥150.00', { exact: true }).waitFor();
+  });
+
+  await check('K7 attendance revision survives same-clock changes and clearing', async () => {
+    const cls = await api('POST', '/outside-classes', { title: '出勤版本钢琴', start_date: shiftDate(today, -2), days_of_week: [0,1,2,3,4,5,6], start_time: '16:00', end_time: '17:00', total_lessons: 5 });
+    const page = await open('parent', 1180, 'light');
+    await page.goto(`${base}/parent/schedule?child=${child.id}`, { waitUntil: 'networkidle' });
+    const card = page.locator('div.p-4.rounded-2xl').filter({ has: page.getByText(cls.title, { exact: true }) });
+    await card.getByRole('button', { name: '出勤与学费', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: `${child.name} · ${cls.title}`, exact: true });
+    const lessonDate = shiftDate(today, -1);
+    const row = dialog.locator(`[data-lesson-date="${lessonDate}"]`);
+    await row.getByRole('button', { name: '记录出勤', exact: true }).click();
+    await row.getByLabel('出勤备注').fill('保留的出勤草稿');
+    await api('PUT', `/outside-classes/${cls.id}/attendance`, { child_id: child.id, lesson_date: lessonDate, status: 'leave', charged: false });
+    await api('PUT', `/outside-classes/${cls.id}/attendance`, { child_id: child.id, lesson_date: lessonDate, status: 'pending' });
+    let response = page.waitForResponse(r => r.url().endsWith('/attendance') && r.request().method() === 'PUT');
+    await row.getByRole('button', { name: '保存出勤', exact: true }).click();
+    let saved = await response; assert.equal(saved.status(), 409);
+    assert.equal(saved.request().postDataJSON().expected_revision, null);
+    assert.equal(await row.getByLabel('出勤备注').inputValue(), '保留的出勤草稿');
+    // Conflict reload shows the current record and adopts its tombstone for an explicit retry.
+    await dialog.getByRole('alert').waitFor();
+    await page.waitForFunction(() => !document.querySelector('[role=dialog] button[type=submit]:disabled'));
+    response = page.waitForResponse(r => r.url().endsWith('/attendance') && r.request().method() === 'PUT');
+    await row.getByRole('button', { name: '保存出勤', exact: true }).click();
+    saved = await response; assert.equal(saved.status(), 200);
+    assert.ok(saved.request().postDataJSON().expected_revision, 'attendance clear retains a non-null revision');
+    await row.getByText('保留的出勤草稿', { exact: true }).waitFor();
+  });
+
   for (const viaBar of [false, true]) await check(`K9 changed rest target ${viaBar ? 'via bar' : 'at rest end'}`, async () => {
     const first = app.services.tasksService.createAdhocTask(child.id, { title: '休息前的任务', subject: '数学', track_time: true });
     app.services.taskStudyService.start(first.id);
@@ -239,6 +293,8 @@ async function main() {
     assert.deepEqual(await pending(page), before);
     lose = false;
     await recovery.getByRole('button', { name: '确认这次操作', exact: true }).click();
+    // The panel also hides while a retry is in flight; wait for confirmed success first.
+    await page.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
     await recovery.waitFor({ state: 'detached' });
     assert.equal((await pending(page)).length, 0);
     assert.equal(bodies.length, 3);
@@ -254,7 +310,9 @@ async function main() {
       const page = await open('parent', width, theme);
       await page.route('**/api/backups', async route => {
         if (route.request().method() === 'POST') return route.fulfill({ status: 503, json: { error: '合成备份失败' } });
-        return route.fulfill({ json: { backups: [{ name: 'tiny.gz', created_at: `${today}T00:00:00Z`, size: 2048 }, { name: 'large.gz', created_at: `${today}T00:00:00Z`, size: 2097152 }], interval_hours: 0, retention: 7, missing_photos: { count: 1, sample: ['missing.webp'] } } });
+        return route.fulfill({ json: { backups: [{ name: 'tiny.gz', created_at: `${today}T00:00:00Z`, size: 2048 }, { name: 'large.gz', created_at: `${today}T00:00:00Z`, size: 2097152 }], interval_hours: 0, retention: 7,
+          photo_export: { last_complete_at: null, exported_count: 0, pending_count: 1 },
+          missing_photos: { count: 1, absent: 1, mismatch: 0, sample: [{ name: 'missing.webp', subject: '数学', description: '合成错题', created_at: `${today}T00:00:00Z`, reason: 'absent' }] } } });
       });
       await page.goto(`${base}/parent/settings`, { waitUntil: 'networkidle' });
       if (setting === 'error') {
@@ -282,7 +340,7 @@ async function main() {
           await progress.scrollIntoViewIfNeeded();
           await snapshot(page, `upload-${width}-${theme}`);
         } finally { release(); }
-        await page.getByRole('status').filter({ hasText: '已补齐 1 张照片' }).waitFor();
+        await page.getByRole('status').filter({ hasText: '已补齐或修复 1 张照片' }).waitFor();
         assert.equal(await page.getByRole('progressbar').count(), 0);
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
