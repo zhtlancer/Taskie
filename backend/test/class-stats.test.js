@@ -118,9 +118,9 @@ test('v28 imports only explicit old check-ins with unknown durations; attendance
   assert.deepEqual([summary.attended, summary.attended_minutes, summary.unknown_duration_lessons, summary.pending], [1, 0, 1, 4]);
   await attendance(-1, { status: 'absent', charged: true }); await fee(12000);
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   await attendance(-1, { status: 'pending' }); await fee(null);
-  backup.restore(archive);
+  await backup.restore(archive);
   summary = (await stats()).summary;
   assert.deepEqual([summary.attended, summary.absent, summary.total_fee_cents, summary.charged_lessons], [1, 1, 12000, 2]);
   const packed = JSON.parse(gunzipSync(archive));
@@ -128,9 +128,9 @@ test('v28 imports only explicit old check-ins with unknown durations; attendance
   try {
     candidate.exec('DROP TABLE outside_class_fees');
     const pack = () => gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') }));
-    assert.throws(() => backup.restore(pack()), /出勤或学费/);
+    await assert.rejects(() => backup.restore(pack()), /出勤或学费/);
     candidate.exec('DROP TABLE outside_class_attendance'); candidate.pragma('user_version = 27');
-    backup.restore(pack());
+    await backup.restore(pack());
     summary = (await stats()).summary;
     assert.deepEqual([summary.attended, summary.absent, summary.total_fee_cents, summary.unknown_duration_lessons], [1, 0, null, 1]);
     assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
@@ -200,16 +200,16 @@ test('pending starts once the child, the class and attendance tracking all exist
   initDb(ctx.db);
   assert.equal(ctx.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get().value, day(-2), 'restarting keeps the start');
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   ctx.db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(day(-30));
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.equal(ctx.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get().value, day(-2), 'a current backup keeps its start');
   const packed = JSON.parse(gunzipSync(archive));
   const candidate = new Database(Buffer.from(packed.database, 'base64'));
   try {
     candidate.exec("DELETE FROM settings WHERE key = 'class_attendance_since'; DROP TABLE outside_class_attendance; DROP TABLE outside_class_fees");
     candidate.pragma('user_version = 27');
-    backup.restore(gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') })));
+    await backup.restore(gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') })));
   } finally { candidate.close(); }
   assert.equal(ctx.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get().value, getTodayDate(), 'an older backup starts tracking on restore');
   assert.equal((await stats()).summary.pending, 0);
@@ -301,16 +301,16 @@ test('a save based on an older attendance or fee is refused, and every correctio
   ]);
 
   // The history goes with backups and with the class.
-  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   ctx.db.prepare('DELETE FROM outside_class_changes').run();
-  ctx.app.backupService.restore(archive);
+  await ctx.app.backupService.restore(archive);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM outside_class_changes').get().n, 5);
   const data = JSON.parse(gunzipSync(archive));
   const db = new Database(Buffer.from(data.database, 'base64'));
   db.exec('DROP TABLE outside_class_changes');
   data.database = db.serialize().toString('base64');
   db.close();
-  assert.throws(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /修改记录/);
+  await assert.rejects(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /修改记录/);
   await parent('DELETE', `/api/outside-classes/${cls.id}`);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM outside_class_changes').get().n, 0);
 });
@@ -342,8 +342,8 @@ test('independent revisions change under a frozen clock and survive clearing att
   assert.equal((await attendance(-2, { status: 'pending', expected_revision: a })).statusCode, 200);
   assert.ok(revision()); assert.notEqual(revision(), a);
   assert.equal((await attendance(-2, { status: 'absent', expected_revision: null })).statusCode, 409);
-  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
-  ctx.app.backupService.restore(archive);
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
+  await ctx.app.backupService.restore(archive);
   assert.equal((await stats()).summary.fee_revision, tombstone);
   assert.equal((await fee({ total_fee_cents: 300, expected_revision: null })).statusCode, 409);
 });

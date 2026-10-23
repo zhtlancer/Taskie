@@ -152,7 +152,7 @@ test('backup restore preserves records and photos, keeps recovery snapshot and i
 test('backup restore keeps template assignments and accepts backups from before assignments existed', async t => {
   const ctx = await fixture(t), child = await createChild(ctx);
   const template = (await ctx.app.inject({ method: 'POST', url: '/api/task-templates', payload: { title: '口算', subject: '数学', child_ids: [child.id] } })).json();
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   await ctx.app.inject({ method: 'PUT', url: `/api/task-templates/${template.id}`, payload: { child_ids: null } });
   assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) })).statusCode, 200);
   assert.deepEqual(ctx.app.services.tasksService.getTemplate(template.id).child_ids, [child.id]);
@@ -174,7 +174,7 @@ test('backup restore keeps rewards and redemptions, and backups from before rewa
   const item = ctx.app.services.redemptionsService.createItem({ title: '看动画', cost: 1 });
   ctx.db.prepare('INSERT INTO point_logs (id, child_id, points, earned_at) VALUES (?, ?, ?, ?)').run('seed-points', child.id, 5, new Date().toISOString());
   const redemption = ctx.app.services.redemptionsService.requestRedemption(child.id, item.id);
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   ctx.app.services.redemptionsService.resolveRedemption(redemption.id, 'cancelled');
   ctx.app.services.redemptionsService.deleteItem(item.id);
   assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) })).statusCode, 200);
@@ -204,7 +204,7 @@ test('current-schema backups missing assignment data are rejected before changin
   const template = service.createTemplate({ title: '阅读', subject: '语文', child_ids: [child.id] });
   fs.writeFileSync(path.join(ctx.tempUploadDir, 'assignment.jpg'), 'snapshot');
   ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '语文', description: 'snapshot', photo_path: '/uploads/assignment.jpg' });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const second = await createChild(ctx);
   service.updateTemplate(template.id, { child_ids: [second.id] });
   fs.writeFileSync(path.join(ctx.tempUploadDir, 'assignment.jpg'), 'current');
@@ -236,7 +236,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   const template = tasks.createTemplate({ title: '阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 2 });
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   for (const n of [0, 1]) tasks.completeDailyTask(tasks.getDailyTasks(child.id, shiftDate(monday, n))[0].id);
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const Database = require('better-sqlite3');
   const legacy = JSON.parse(gunzipSync(archive));
   const db = new Database(Buffer.from(legacy.database, 'base64'));
@@ -259,7 +259,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
   const rows = ctx.db.prepare('SELECT source_template_id, template_created_at FROM daily_tasks').all();
   assert.ok(rows.every(row => row.source_template_id === template.id && row.template_created_at === template.created_at));
   tasks.deleteTemplate(template.id);
-  const deletedArchive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const deletedArchive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   ctx.db.exec('DELETE FROM daily_tasks');
   assert.equal((await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(deletedArchive) })).statusCode, 200);
   assert.equal(ctx.app.services.statsService.getWeeklySummary(child.id, monday).current_week.completion.completed_units, 2);
@@ -267,7 +267,7 @@ test('task history snapshots survive restore, migrate v3 backups and reject inco
 
 test('corrupt backups, unsafe photo paths and wrong PIN do not alter current data', async t => {
   const ctx = await fixture(t), child = await createChild(ctx);
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const unsafe = JSON.parse(gunzipSync(archive));
   unsafe.photo_manifest.push({ name: '../../escape.jpg', size: 6, sha256: 'a'.repeat(64) });
   // The older v1 format with embedded photos is checked the same way.
@@ -285,11 +285,11 @@ test('restore database failure rolls back both live records and photos', async t
   const ctx = await fixture(t), child = await createChild(ctx);
   fs.writeFileSync(path.join(ctx.tempUploadDir, 'rollback.jpg'), 'snapshot');
   ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: 'rollback', photo_path: '/uploads/rollback.jpg' });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   fs.writeFileSync(path.join(ctx.tempUploadDir, 'rollback.jpg'), 'current');
   const second = await createChild(ctx);
   ctx.db.exec("CREATE TRIGGER reject_restore BEFORE INSERT ON children BEGIN SELECT RAISE(ABORT, 'restore failed'); END");
-  assert.throws(() => ctx.app.backupService.restore(archive), /restore failed/);
+  await assert.rejects(() => ctx.app.backupService.restore(archive), /restore failed/);
   assert.equal(ctx.db.prepare('SELECT id FROM children WHERE id = ?').get(second.id).id, second.id);
   assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'rollback.jpg'), 'utf8'), 'current');
   assert.equal(ctx.db.pragma('foreign_keys', { simple: true }), 1);
@@ -298,8 +298,8 @@ test('restore database failure rolls back both live records and photos', async t
 test('backup retention keeps the most recent archives', async t => {
   const ctx = await fixture(t);
   ctx.app.backupService.retention = 2;
-  ctx.app.backupService.create(); ctx.app.backupService.create();
-  const newest = ctx.app.backupService.create();
+  await ctx.app.backupService.create(); await ctx.app.backupService.create();
+  const newest = (await ctx.app.backupService.create());
   assert.equal(ctx.app.backupService.list().length, 2);
   assert.ok(ctx.app.backupService.list().some(b => b.name === newest.name));
 });
@@ -322,7 +322,7 @@ test('old schema migrates without losing existing children and fixed-day templat
 test('v8 character books restore with empty categories; a v9 backup without them is rejected', async t => {
   const ctx = await fixture(t), child = await createChild(ctx);
   ctx.app.services.charactersService.createCharacter({ child_id: child.id, char: '春', categories: ['write'] });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const Database = require('better-sqlite3');
   const legacy = JSON.parse(gunzipSync(archive));
   const db = new Database(Buffer.from(legacy.database, 'base64'));
@@ -347,7 +347,7 @@ test('skipped tasks and their requests survive restore; v9 backups restore witho
   tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6] });
   const task = tasksService.getDailyTasks(child.id)[0];
   skipsService.requestSkip(task.id, '老师今天没布置', { role: 'parent' });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   skipsService.unskip(task.id);
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
   assert.equal(restored.statusCode, 200, restored.body);
@@ -396,7 +396,7 @@ test('task durations survive restore; v10 backups restore without timing and a v
   tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], track_time: true, expected_minutes: 20 });
   const task = tasksService.getDailyTasks(child.id)[0];
   tasksService.completeDailyTask(task.id, { duration_seconds: 1200 });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   tasksService.setDuration(task.id, null);
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
   assert.equal(restored.statusCode, 200, restored.body);
@@ -436,7 +436,7 @@ test('timetables and outside classes survive restore; v11 backups restore withou
   scheduleService.createTimetable(child.id, { name: '本学期', start_date: today, end_date: shiftDate(today, 30),
     slots: [{ id: 's1', kind: 'class', label: '第1节', start_time: '08:00', end_time: '08:40' }], lessons: [{ slot_id: 's1', weekday: 1, subject: '语文' }] });
   const piano = scheduleService.createClass({ title: '钢琴课', days_of_week: [3], start_time: '16:30', end_time: '17:30', child_ids: [child.id] });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   scheduleService.deleteClass(piano.id);
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
   assert.equal(restored.statusCode, 200, restored.body);
@@ -484,7 +484,7 @@ test('lesson identities migrate from v12 without losing check-ins; v13 backups r
   skipsService.requestSkip(moved.id, '今天请假', { role: 'parent' });
   // v12 only generated one row per class/day, even when two piano lessons happened that day.
   ctx.db.prepare('DELETE FROM daily_tasks WHERE class_id = ? AND id != ?').run(cls.id, regular.id);
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const data = JSON.parse(gunzipSync(archive));
   const Database = require('better-sqlite3');
   const candidate = new Database(Buffer.from(data.database, 'base64'));
@@ -510,7 +510,7 @@ test('lesson identities migrate from v12 without losing check-ins; v13 backups r
   assert.equal(rows.find(row => row.class_id === cls.id && row.class_lesson_date === tomorrow).class_lesson.start_time, '09:00');
   assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 8, 'migration cannot award duplicate points');
 
-  const current = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const current = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const roundTrip = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(current) });
   assert.equal(roundTrip.statusCode, 200, roundTrip.body);
   assert.deepEqual(tasksService.getDailyTasks(child.id).map(row => [row.id, row.class_lesson_date]), rows.map(row => [row.id, row.class_lesson_date]));
@@ -523,7 +523,7 @@ test('carry-over, due dates and make-up days survive restore; v13 backups restor
   const template = tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], carry_over: true });
   tasksService.createAdhocTask(child.id, { title: '手抄报', subject: '其他', date: today, due_date: shiftDate(today, 3) });
   periodsService.createMakeupDay(child.id, { date: shiftDate(today, 10), acts_as: 1 });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   tasksService.updateTemplate(template.id, { carry_over: false });
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(archive) });
   assert.equal(restored.statusCode, 200, restored.body);
@@ -664,7 +664,7 @@ test('a restore killed mid-way leaves records and photos from the same side afte
     console.log('restore finished without being killed');
   `;
   for (const killAt of ['photos-swapped', 'committed']) {
-    await t.test(killAt, () => {
+    await t.test(killAt, async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-restore-crash-'));
       t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
       const uploads = path.join(dir, 'uploads'), backups = path.join(dir, 'backups');
@@ -675,7 +675,7 @@ test('a restore killed mid-way leaves records and photos from the same side afte
       addChild('backup-child');
       fs.writeFileSync(path.join(uploads, 'p.jpg'), 'backup photo');
       db.prepare("INSERT INTO mistake_records (id, child_id, subject, description, photo_path, created_at) VALUES ('m', 'backup-child', '数学', 'x', '/uploads/p.jpg', datetime('now'))").run();
-      fs.copyFileSync(service.getPath(service.create().name), path.join(dir, 'backup.taskie.gz'));
+      fs.copyFileSync(service.getPath((await service.create()).name), path.join(dir, 'backup.taskie.gz'));
       // The current data differs from the backup in both records and photo bytes.
       addChild('current-child');
       fs.writeFileSync(path.join(uploads, 'p.jpg'), 'current photo');

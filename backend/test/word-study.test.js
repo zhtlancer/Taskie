@@ -267,9 +267,9 @@ test('a failed award transaction rolls back attempts, memory, completion and poi
 test('study snapshots, memory, attempts and points survive backup; missing v17 data is rejected and v16 upgrades', async t => {
   const ctx = await fixture(t); ctx.add('山'); ctx.plan(); ctx.finish(ctx.today()[0]);
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   ctx.study.savePlan(ctx.child.id, 'recognize', { enabled: false });
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.equal(ctx.study.plans(ctx.child.id)[0].enabled, true);
   assert.equal(ctx.today()[0].base_done, true);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM word_study_states').get().n, 1);
@@ -278,14 +278,14 @@ test('study snapshots, memory, attempts and points survive backup; missing v17 d
   const data = JSON.parse(gunzipSync(archive));
   const db = new Database(Buffer.from(data.database, 'base64'));
   db.exec('DROP TABLE word_study_attempts');
-  assert.throws(() => backup.restore(gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }))), /字词学习/);
+  await assert.rejects(() => backup.restore(gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }))), /字词学习/);
   db.close();
   const legacy = new Database(Buffer.from(data.database, 'base64'));
   legacy.pragma('foreign_keys = OFF');
   legacy.exec('DELETE FROM point_logs; DELETE FROM daily_tasks; DROP INDEX idx_point_logs_study_batch; DROP INDEX idx_daily_tasks_study_day; ALTER TABLE point_logs DROP COLUMN study_batch_id; ALTER TABLE daily_tasks DROP COLUMN study_day_id');
   for (const table of ['word_study_attempts', 'word_study_items', 'word_study_batches', 'word_study_days', 'word_study_states', 'word_study_plans']) legacy.exec(`DROP TABLE ${table}`);
   legacy.pragma('user_version = 16');
-  backup.restore(gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') })));
+  await backup.restore(gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') })));
   assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
   assert.deepEqual(ctx.study.plans(ctx.child.id), []);
   legacy.close();

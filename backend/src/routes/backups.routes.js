@@ -3,9 +3,9 @@ const { MAX_UPLOAD_SIZE, MAX_PHOTO_PACKAGE_SIZE } = require('../services/backup.
 
 async function backupRoutes(app, { backupService, authService, intervalHours }) {
   app.get('/', async () => {
-    const missing = backupService.missingPhotos();
+    const missing = await backupService.missingPhotos();
     return { backups: backupService.list(), interval_hours: intervalHours, retention: backupService.retention, last_error: backupService.lastError,
-      last_warning: backupService.lastWarning, photo_export: backupService.photoExportStatus(),
+      last_warning: backupService.lastWarning, photo_export: await backupService.photoExportStatus(),
       missing_photos: { count: missing.length, absent: missing.filter(p => p.reason === 'absent').length, mismatch: missing.filter(p => p.reason === 'mismatch').length, sample: missing.slice(0, 5) } };
   });
   // A photo package can be large, so the browser downloads it directly rather than through script.
@@ -13,8 +13,11 @@ async function backupRoutes(app, { backupService, authService, intervalHours }) 
   app.post('/photos/export-ticket', async (request, reply) => {
     const scope = request.body?.scope ?? 'all';
     if (Object.hasOwn(request.body || {}, 'since') || !['all', 'new'].includes(scope)) return reply.code(400).send({ error: '请使用 scope: all 或 new' });
-    const ticket = app.jwt.sign({ purpose: 'photo-export', scope, epoch: app.sessionEpoch() }, { expiresIn: '5m' });
-    return { url: `/api/backups/photos/export?ticket=${encodeURIComponent(ticket)}` };
+    const epoch = app.sessionEpoch();
+    const entries = await backupService.exportEntries(scope);
+    if (epoch !== app.sessionEpoch()) return reply.code(401).send({ error: '会话已失效，请重新登录' });
+    const ticket = app.jwt.sign({ purpose: 'photo-export', scope, epoch }, { expiresIn: '5m' });
+    return { url: `/api/backups/photos/export?ticket=${encodeURIComponent(ticket)}`, included_count: entries.length, skipped: entries.skipped };
   });
   app.get('/photos/export', async (request, reply) => {
     let ticket;

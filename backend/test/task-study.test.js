@@ -182,9 +182,9 @@ test('completed legacy durations and new sessions survive backup and restore tog
   await c.call('POST', '/uncomplete');
   await c.call('POST', '/sessions', { request_id: 'backup_manual_session', duration_seconds: 300 });
   const backup = c.app.backupService;
-  const archive = require('node:fs').readFileSync(backup.getPath(backup.create('ordinary-study').name));
+  const archive = require('node:fs').readFileSync(backup.getPath((await backup.create('ordinary-study')).name));
   c.db.prepare('DELETE FROM homework_sessions').run();
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.equal(c.details().total_seconds, 1200);
   assert.equal(c.details().sessions.length, 1);
   assert.equal(c.stats().summary.recorded_seconds, 1200);
@@ -291,14 +291,14 @@ test('a v22 backup without the revoked marker is rejected before restoring', asy
   const Database = require('better-sqlite3');
   const { gzipSync, gunzipSync } = require('node:zlib');
   const backup = c.app.backupService;
-  const packed = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath(backup.create('revoked').name))));
+  const packed = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath((await backup.create('revoked')).name))));
   const damaged = new Database(Buffer.from(packed.database, 'base64'));
   t.after(() => damaged.close());
   damaged.exec('ALTER TABLE daily_tasks DROP COLUMN revoked_at');
   const archive = () => gzipSync(JSON.stringify({ ...packed, database: damaged.serialize().toString('base64') }));
-  assert.throws(() => backup.restore(archive()), /已取消任务标记/);
+  await assert.rejects(() => backup.restore(archive()), /已取消任务标记/);
   damaged.pragma('user_version = 21');
-  backup.restore(archive());
+  await backup.restore(archive());
   assert.equal(c.db.pragma('user_version', { simple: true }), 30);
 });
 
@@ -368,7 +368,7 @@ test('deleting only a course record preserves its saved finish-time attribution 
   c.homeworkService.delete(record.id, {}, 'parent');
   assert.deepEqual(finish(), [['2026-10-21', 1290]]);
   const backup = c.app.backupService;
-  backup.restore(require('node:fs').readFileSync(backup.getPath(backup.create('finish-snapshot').name)));
+  await backup.restore(require('node:fs').readFileSync(backup.getPath((await backup.create('finish-snapshot')).name)));
   assert.deepEqual(finish(), [['2026-10-21', 1290]]);
   c.tasksService.uncompleteDailyTask(record.task.id);
   assert.deepEqual(finish(), []);
@@ -392,14 +392,14 @@ test('v22 finish times migrate; v23 backups missing attribution are rejected saf
   const Database = require('better-sqlite3');
   const { gzipSync, gunzipSync } = require('node:zlib');
   const backup = c.app.backupService;
-  const packed = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath(backup.create('finish-migration').name))));
+  const packed = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath((await backup.create('finish-migration')).name))));
   const old = new Database(Buffer.from(packed.database, 'base64')); t.after(() => old.close());
   old.exec('ALTER TABLE daily_tasks DROP COLUMN finish_on_actual_date');
   const archive = () => gzipSync(JSON.stringify({ ...packed, database: old.serialize().toString('base64') }));
-  assert.throws(() => backup.restore(archive()), /完成时间归属/);
+  await assert.rejects(() => backup.restore(archive()), /完成时间归属/);
   assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-21', '2026-10-21')], [['2026-10-21', 1290]]);
   old.pragma('user_version = 22');
-  backup.restore(archive());
+  await backup.restore(archive());
   assert.equal(c.db.pragma('user_version', { simple: true }), 30);
   assert.equal(c.skipsService.getRequest(request.id).status, 'cancelled');
   assert.equal(c.db.prepare('SELECT finish_on_actual_date AS actual FROM daily_tasks WHERE id = ?').get(c.task.id).actual, 0);

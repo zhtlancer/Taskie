@@ -185,9 +185,9 @@ test('v16 backup preserves policy, classification and awards; v15 upgrades and d
   const ctx = await fixture(t, { weekly_target_times: 1 });
   await ctx.post(0); await ctx.post(1);
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   await ctx.post(1, 'undo-backfill');
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.equal(ctx.row(1).earned_points, 3);
   assert.equal(ctx.row(1).is_extra_completion, true);
   assert.equal(ctx.tasks.getTemplate(ctx.template.id).allow_extra, true);
@@ -195,13 +195,13 @@ test('v16 backup preserves policy, classification and awards; v15 upgrades and d
   const db = new Database(Buffer.from(data.database, 'base64'));
   db.exec('ALTER TABLE daily_tasks DROP COLUMN earned_points');
   const damaged = gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }));
-  assert.throws(() => backup.restore(damaged), /额外完成/);
+  await assert.rejects(() => backup.restore(damaged), /额外完成/);
   db.close();
   const old = new Database(Buffer.from(data.database, 'base64'));
   for (const [table, columns] of Object.entries(WEEKLY_EXTRA_COLUMNS)) for (const column of Object.keys(columns)) old.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
   old.pragma('user_version = 15');
   const legacy = gzipSync(JSON.stringify({ ...data, database: old.serialize().toString('base64') }));
-  backup.restore(legacy);
+  await backup.restore(legacy);
   assert.equal(ctx.row(0).earned_points, 10);
   assert.equal(ctx.tasks.getTemplate(ctx.template.id).allow_extra, false);
   initDb(old);

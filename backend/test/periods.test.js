@@ -229,11 +229,11 @@ test('backups keep periods and progress, restore older backups and reject incomp
   const period = (await createPeriod({ name: '寒假', start_date: today, end_date: shiftDate(today, 5) })).json();
   const task = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '寒假作业', subject: '语文', mode: 'progress', total_amount: 10, unit: '页', points: 1 })).json();
   await asParent('POST', `/api/period-tasks/${task.id}/logs`, { amount: 4 });
-  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const restore = buffer => ctx.app.backupService.restore(buffer);
 
   await asParent('DELETE', `/api/periods/${period.id}`);
-  restore(archive);
+  await restore(archive);
   const restored = ctx.app.services.periodsService.listPeriods(child.id);
   assert.deepEqual([restored[0].name, restored[0].tasks[0].done_amount], ['寒假', 4]);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM point_logs WHERE period_log_id IS NOT NULL').get().n, 1);
@@ -249,8 +249,8 @@ test('backups keep periods and progress, restore older backups and reject incomp
     return gzipSync(JSON.stringify(data));
   };
   const withoutPeriods = 'DROP TABLE period_task_logs; DROP TABLE period_tasks; DROP TABLE period_paused_templates; DROP TABLE periods; ALTER TABLE point_logs DROP COLUMN period_log_id';
-  assert.throws(() => restore(rewrite(withoutPeriods, 5)), /备份缺少假期数据/);
-  restore(rewrite(withoutPeriods, 4));
+  await assert.rejects(() => restore(rewrite(withoutPeriods, 5)), /备份缺少假期数据/);
+  await restore(rewrite(withoutPeriods, 4));
   assert.deepEqual(ctx.app.services.periodsService.listPeriods(child.id), []);
   assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
 });
@@ -264,20 +264,20 @@ test('v5 point histories migrate to durable snapshots; incomplete v6 backups fai
   const removed = (await asParent('POST', `/api/periods/${period.id}/tasks`, { title: '已删任务', subject: '数学', points: 4 })).json();
   await asParent('POST', `/api/period-tasks/${removed.id}/logs`, {});
   await asParent('DELETE', `/api/period-tasks/${removed.id}`);
-  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   const data = JSON.parse(gunzipSync(archive));
   const Database = require('better-sqlite3');
   const old = new Database(Buffer.from(data.database, 'base64'));
   old.exec('ALTER TABLE point_logs DROP COLUMN activity_date; ALTER TABLE point_logs DROP COLUMN activity_title');
   data.database = old.serialize().toString('base64');
   const epoch = ctx.app.sessionEpoch(), backups = ctx.app.backupService.list();
-  assert.throws(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /备份缺少积分历史快照/);
+  await assert.rejects(() => ctx.app.backupService.restore(gzipSync(JSON.stringify(data))), /备份缺少积分历史快照/);
   assert.equal(ctx.app.sessionEpoch(), epoch);
   assert.deepEqual(ctx.app.backupService.list(), backups);
   old.pragma('user_version = 5');
   data.database = old.serialize().toString('base64');
   old.close();
-  ctx.app.backupService.restore(gzipSync(JSON.stringify(data)));
+  await ctx.app.backupService.restore(gzipSync(JSON.stringify(data)));
   const { initDb } = require('../src/db');
   initDb(ctx.db); // Repeating initialization must preserve the migrated snapshots.
   const entries = ctx.db.prepare('SELECT activity_date, activity_title FROM point_logs ORDER BY points DESC').all();
@@ -288,9 +288,9 @@ test('v5 point histories migrate to durable snapshots; incomplete v6 backups fai
   await asParent('DELETE', `/api/periods/${period.id}`);
   assert.deepEqual(ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned), [6, 4]);
   // Current backups keep those snapshots even after all sources have been deleted.
-  const restoredArchive = require('node:fs').readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const restoredArchive = require('node:fs').readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   ctx.db.exec('DELETE FROM point_logs');
-  ctx.app.backupService.restore(restoredArchive);
+  await ctx.app.backupService.restore(restoredArchive);
   assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 10);
   assert.deepEqual(ctx.app.services.statsService.getHistory(child.id, yesterday, today).map(day => day.points_earned), [6, 4]);
 });
