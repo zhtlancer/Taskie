@@ -6,6 +6,10 @@
     </template>
     <div class="space-y-4">
       <p v-if="asParent" class="text-sm font-bold text-violet-700 dark:text-violet-300">只对 {{ childName }} 生效</p>
+      <div v-if="sessionExpired" role="alert" class="rounded-xl p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-sm">
+        <p>家长登录已过期，请重新登录</p>
+        <router-link v-if="!busy" :to="{ path: '/parent/login', query: { returnTo: `/child/${childId}/today` } }" class="inline-flex items-center min-h-11 underline font-bold">重新登录</router-link>
+      </div>
       <div v-if="error" role="alert" class="rounded-xl p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm">
         <p>{{ error }}</p>
         <button type="button" :disabled="busy" class="min-h-11 min-w-11 underline font-bold" @click="refreshOnly">刷新日程和打卡任务</button>
@@ -73,7 +77,7 @@
         <label class="block text-sm font-bold">结束时间<input v-model="moveForm.end" type="time" required :disabled="busy" class="input-field mt-1 w-full min-h-11" /></label>
       </div>
       <div v-if="moveError" role="alert" class="text-sm text-rose-600 dark:text-rose-300"><p>{{ moveError }}</p><button v-if="needsRefresh" type="button" :disabled="busy" class="min-h-11 underline" @click="refreshOnly">刷新日程和打卡任务</button></div>
-      <router-link v-if="!busy" :to="`/parent/schedule?child=${childId}`" class="inline-flex items-center min-h-11 text-sm font-bold text-violet-700 dark:text-violet-300 underline">更多设置 →</router-link>
+      <router-link v-if="!busy && asParent" :to="{ path: '/parent/schedule', query: { child: childId, class: moveTarget.lesson.class_id, date: moveTarget.lesson.source_date || moveTarget.lesson.moved_from || moveTarget.date } }" class="inline-flex items-center min-h-11 text-sm font-bold text-violet-700 dark:text-violet-300 underline">更多设置 →</router-link>
     </form>
     <template #footer>
       <button type="button" :disabled="busy" class="min-h-11 px-4 rounded-xl bg-slate-100 dark:bg-slate-800" @click="moveTarget = null">取消</button>
@@ -83,14 +87,15 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import api from '../api/client.js';
 import UiDialog from './UiDialog.vue';
 import DaySchedule from './DaySchedule.vue';
 import BoardClassControls from './BoardClassControls.vue';
 import { shortDate, WEEKDAY_NAMES } from '../utils/schedule.js';
 import { boardClassActions, classActionLabels } from '../utils/boardClassActions.js';
-import { currentRole, hasSession } from '../utils/session.js';
+import { currentRole } from '../utils/session.js';
+import { useParentSession } from '../composables/useParentSession.js';
 import { confirmAction } from '../utils/confirmation.js';
 
 const props = defineProps({
@@ -101,10 +106,24 @@ const props = defineProps({
   refresh: { type: Function, required: true }
 });
 defineEmits(['close']);
-const asParent = currentRole() === 'parent' && hasSession('parent');
+const { asParent, refreshParentSession } = useParentSession();
+const sessionExpired = ref(!asParent.value && currentRole() === 'parent');
 const busy = ref(false), error = ref(''), needsRefresh = ref(false);
 const moveTarget = ref(null), moveForm = ref({ date: '', start: '', end: '' }), moveError = ref('');
 const writeOptions = { preserveError: true, networkErrorMessage: '操作未确认，请刷新后核对' };
+
+watch(asParent, (valid, previous) => {
+  if (!valid && previous) expireSession();
+});
+function expireSession() {
+  sessionExpired.value = true;
+  moveTarget.value = null;
+}
+function requireParent() {
+  if (refreshParentSession()) return true;
+  expireSession();
+  return false;
+}
 
 async function refreshOnly() {
   if (busy.value) return;
@@ -115,7 +134,7 @@ async function refreshOnly() {
 }
 
 async function act(action, lesson, date) {
-  if (busy.value || needsRefresh.value || !boardClassActions(lesson, date, props.today.date, asParent).includes(action)) return;
+  if (busy.value || needsRefresh.value || !requireParent() || !boardClassActions(lesson, date, props.today.date, asParent.value).includes(action)) return;
   if (action === 'move') {
     moveTarget.value = { lesson, date };
     moveForm.value = { date, start: lesson.start_time, end: lesson.end_time };
@@ -126,7 +145,7 @@ async function act(action, lesson, date) {
 }
 
 async function saveMove() {
-  if (busy.value || needsRefresh.value || !moveTarget.value) return;
+  if (busy.value || needsRefresh.value || !requireParent() || !moveTarget.value) return;
   if (moveForm.value.end <= moveForm.value.start) { moveError.value = '结束时间要晚于开始时间'; return; }
   const { lesson, date } = moveTarget.value;
   await perform('move', lesson, date, { ...moveForm.value });
@@ -143,7 +162,8 @@ async function perform(action, lesson, date, moved) {
     : action === 'attended' ? '将按默认规则扣除本次课时。' : '';
   try {
     if (!await confirmAction(`确定${classActionLabels[action]}「${lesson.title}」（${date} ${lesson.start_time}–${lesson.end_time}）吗？只对 ${props.childName} 生效。${detail}`)) return;
-    if (props.childId !== childId || props.today.date !== day || currentRole() !== 'parent' || !hasSession('parent')) return;
+    if (props.childId !== childId || props.today.date !== day) return;
+    if (!requireParent()) return;
     try {
       if (action === 'leave' || action === 'move') {
         await api.setClassException(lesson.class_id, {
@@ -158,14 +178,16 @@ async function perform(action, lesson, date, moved) {
         await api.setClassAttendance(lesson.class_id, {
           child_id: childId, lesson_date: source,
           status: action === 'undoAttendance' ? 'pending' : action,
-          expected_revision: lesson.attendance?.revision ?? lesson.pending_attendance_revision ?? null
+          expected_revision: lesson.attendance_revision
         }, writeOptions);
       }
     } catch (err) {
+      if (err.status === 401) { refreshParentSession(); expireSession(); return; }
       error.value = err.message || String(err);
       if (moveTarget.value) moveError.value = error.value;
-      needsRefresh.value = !err.status || err.status === 409;
-      if (err.status === 409) {
+      const conflict = err.status === 409 || err.status === 404;
+      needsRefresh.value = !err.status || conflict;
+      if (conflict) {
         moveTarget.value = null;
         try { await props.refresh(); needsRefresh.value = false; }
         catch { error.value += '；刷新失败，请刷新后核对'; }

@@ -69,7 +69,7 @@
           </div>
           <p v-if="!classes.length" class="text-xs font-bold text-slate-400 py-2">还没有课外班。例如“钢琴课 每周三 16:30–17:30 少年宫”。</p>
           <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div v-for="cls in classes" :key="cls.id" class="p-4 rounded-2xl border border-violet-100 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/40">
+            <div v-for="cls in classes" :key="cls.id" :data-class-id="cls.id" class="p-4 rounded-2xl border border-violet-100 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/40">
               <div class="flex items-start justify-between gap-2">
                 <div class="min-w-0">
                   <div class="text-base font-black text-slate-800 dark:text-slate-100 font-chinese truncate">{{ cls.title }}</div>
@@ -104,6 +104,7 @@
                   <button
                     v-for="lesson in upcomingLessons(cls)"
                     :key="lesson.date"
+                    :data-source-date="lesson.date"
                     type="button"
                     class="px-2 py-1 rounded-lg border text-xs font-bold font-chinese"
                     :class="lesson.status === 'scheduled' ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'"
@@ -148,7 +149,7 @@
 
 <script setup>
 import { confirmAction } from '../utils/confirmation';
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
@@ -213,6 +214,29 @@ async function selectChild(child) {
 async function reload() {
   [classes.value] = await Promise.all([api.getOutsideClasses(), loadChild()]);
 }
+
+async function openLinkedLesson() {
+  const { child, class: classId, date } = route.query;
+  // Do not select a different child's lesson when any part of the target is invalid.
+  if (child !== selectedChild.value?.id || typeof classId !== 'string' || typeof date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return;
+  const cls = classes.value.find(item => item.id === classId);
+  if (!cls || !attends(cls)) return;
+  // A lesson moved into today may have its original date outside the usual four weeks.
+  let lesson = upcoming.value.flatMap(day => day.outside).find(item => item.class_id === classId && item.date === date && item.status !== 'moved_in');
+  if (!lesson) {
+    try {
+      const days = await api.getChildSchedule(child, date, date);
+      lesson = days.flatMap(day => day.outside).find(item => item.class_id === classId && item.status !== 'moved_in');
+    } catch { return; }
+  }
+  if (!lesson || selectedChild.value?.id !== child) return;
+  await nextTick();
+  [...document.querySelectorAll('[data-class-id]')].find(node => node.dataset.classId === classId)?.scrollIntoView({ block: 'center' });
+  exceptionModal.value = { cls, lesson };
+}
 async function refreshClassStats() {
   try { await reload(); } catch (err) { showError(err); }
 }
@@ -263,5 +287,6 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+  await openLinkedLesson();
 });
 </script>

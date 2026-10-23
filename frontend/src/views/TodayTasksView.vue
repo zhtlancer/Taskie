@@ -316,10 +316,9 @@ import SkipTaskModal from '../components/SkipTaskModal.vue';
 import DurationModal from '../components/DurationModal.vue';
 import TodayScheduleModal from '../components/TodayScheduleModal.vue';
 import { addDays, lessonHappens } from '../utils/schedule.js';
-import { pendingAttendanceRevision } from '../utils/boardClassActions.js';
 import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
-import { currentRole } from '../utils/session.js';
+import { useParentSession } from '../composables/useParentSession.js';
 import { businessDate, businessClock, businessDayLabel, DEFAULT_TIME_ZONE } from '../utils/businessDate.js';
 
 const route = useRoute();
@@ -337,7 +336,7 @@ const childId = computed(() => route.params.id || childStore.childId);
 const childName = computed(() => childStore.childName);
 const childAvatar = computed(() => childStore.childAvatar);
 // A parent opening the board from the console acts as the parent: skips take effect at once.
-const asParent = currentRole() === 'parent';
+const { asParent } = useParentSession();
 
 const tasks = ref([]);
 // The placeholder only covers a board that has nothing to show yet. Later refreshes update the
@@ -475,12 +474,6 @@ async function loadSchedule({ throwOnError = false } = {}) {
   const serial = ++scheduleSerial, id = childId.value, date = todayString.value;
   try {
     const result = await api.getChildSchedule(id, date, addDays(date, 1));
-    if (asParent) {
-      const pending = result.flatMap(day => day.outside).filter(lesson => lesson.attendance === null);
-      const details = new Map(await Promise.all([...new Set(pending.map(lesson => lesson.class_id))].map(async classId =>
-        [classId, await api.getOutsideClassDetails(classId, id, date, addDays(date, 1))])));
-      for (const lesson of pending) lesson.pending_attendance_revision = pendingAttendanceRevision(lesson, details.get(lesson.class_id));
-    }
     if (serial === scheduleSerial && id === childId.value && date === todayString.value) [todaySchedule.value, tomorrowSchedule.value] = result;
   } catch (err) {
     console.error('Failed to load the timetable:', err);

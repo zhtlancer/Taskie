@@ -20,6 +20,26 @@ function storage(t) {
 const token = (role, child_id, nonce = 1) => `header.${Buffer.from(JSON.stringify({ role, child_id, nonce, exp: Date.now() / 1000 + 3600 })).toString('base64url')}.signature`;
 const action = (role, child_id = 'a') => ({ kind: 'progress', role, child_id, task_id: 'task', payload: { amount: 1 } });
 
+test('parent permission follows expiry, replacement and clearing of the API session', t => {
+  storage(t);
+  session.saveToken('parent', token('parent'));
+  assert.equal(session.isParentSession(), true);
+  t.mock.method(Date, 'now', () => Number.MAX_SAFE_INTEGER);
+  assert.equal(session.isParentSession(), false);
+  t.mock.restoreAll();
+  session.saveToken('child', token('child', 'a'));
+  assert.equal(session.isParentSession(), false);
+  session.clearTokens();
+  assert.equal(session.isParentSession(), false);
+});
+
+test('reauthentication only returns to a local child board', () => {
+  assert.equal(session.parentLoginReturnPath('/child/child-id/today'), '/child/child-id/today');
+  for (const path of [undefined, ['/child/a/today'], '//example.com', 'https://example.com', '/parent/settings', '/child/a/today?redirect=evil']) {
+    assert.equal(session.parentLoginReturnPath(path), '/parent/dashboard');
+  }
+});
+
 // Load the real store actions with only HTTP replaced. These cases never issue a request.
 async function loadStore(name) {
   const url = new URL(`../src/stores/${name}.js`, import.meta.url);

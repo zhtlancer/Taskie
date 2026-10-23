@@ -59,16 +59,158 @@ async function openMove(page, row, date) {
   await form.getByRole('button', { name: '确认调课', exact: true }).click();
   return form;
 }
+// Each regression gets fresh children, classes and browser sessions. Successful writes
+// always hit the listening Fastify service; only explicit transport/500 failures are injected.
+async function regressions(base, token, api) {
+  async function scenario(name, body) {
+    if (process.env.BOARD_CLASS_CASE && !name.startsWith(process.env.BOARD_CLASS_CASE)) return;
+    const contexts = [];
+    const child = await api('POST', '/children', { name: `回归-${name}` });
+    const cls = await api('POST', '/outside-classes', { title: `钢琴-${name}`.slice(0, 20), child_ids: [child.id],
+      start_date: shiftDate(today, -40), days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00',
+      total_lessons: 100, bring: '回归乐谱', create_task: true });
+    async function board() {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      contexts.push(context);
+      await context.addInitScript(({ token, child }) => {
+        sessionStorage.setItem('taskie_parent_token', token);
+        sessionStorage.setItem('current_child', JSON.stringify(child));
+      }, { token, child });
+      await context.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+      const page = await context.newPage(); page.setDefaultTimeout(5000);
+      page.on('pageerror', error => errors.push(error.message));
+      return page;
+    }
+    async function open(page) {
+      await page.goto(`${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
+      await page.locator('button[title="今天的课"]').click();
+    }
+    async function move(page, row, start = '18:00', end = '19:00', status = 200) {
+      await row.getByRole('button', { name: '调课', exact: true }).click();
+      const form = page.getByRole('dialog', { name: '调整这节课', exact: true });
+      await form.getByLabel('开始时间').fill(start); await form.getByLabel('结束时间').fill(end);
+      await form.getByRole('button', { name: '确认调课', exact: true }).click();
+      const response = page.waitForResponse(r => r.request().method() === 'PUT' && r.url().endsWith('/exceptions'));
+      await confirm(page, child.name); assert.equal((await response).status(), status);
+      await form.waitFor({ state: 'detached' });
+    }
+    try {
+      await body({ child, cls, board, open, move });
+      passed++; console.log(`PASS ${name}`);
+    } catch (error) { failed++; console.error(`FAIL ${name}:`, error); }
+    finally { for (const context of contexts) await context.close(); }
+  }
+  for (const staleAction of ['modify', 'delete']) await scenario(`D1-${staleAction}`, async ({ child, cls, board, open, move }) => {
+    await api('PUT', `/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: tomorrow, kind: 'moved',
+      new_date: today, new_start_time: '16:00', new_end_time: '17:00' });
+    const a = await board(), b = await board();
+    await open(a); await open(b);
+    const ra = rowFor(a, cls, tomorrow, today), rb = rowFor(b, cls, tomorrow, today);
+    await move(a, ra);
+    const current = (await api('GET', `/outside-classes`)).find(item => item.id === cls.id).exceptions[0];
+    if (staleAction === 'modify') await move(b, rb, '20:00', '21:00', 409);
+    else await action(b, rb, '撤销调课', child, 404);
+    await modalFor(b).getByRole('alert').getByText(staleAction === 'modify' ? /请假或调课刚被修改过/ : /请假或调课已被修改或撤销/).waitFor();
+    await rb.getByText('18:00–19:00', { exact: false }).waitFor();
+    const saved = (await api('GET', '/outside-classes')).find(item => item.id === cls.id).exceptions[0];
+    assert.deepEqual(saved, current, 'stale browser must not overwrite or delete the newer arrangement');
+  });
+  await scenario('D2-stats-500', async ({ cls, board, open }) => {
+    const page = await board(); let statsRequests = 0;
+    await page.route('**/api/outside-classes/**', route => {
+      if (new URL(route.request().url()).pathname.endsWith('/stats')) {
+        statsRequests++; return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"统计不可用"}' });
+      }
+      return route.continue();
+    });
+    await open(page);
+    await page.getByText(/🎒 明天要带：.*回归乐谱/).waitFor();
+    await rowFor(page, cls).getByText('未确认', { exact: true }).waitFor();
+    await modalFor(page).getByText('回归乐谱', { exact: false }).first().waitFor();
+    assert.equal(statsRequests, 0, 'board schedule must not request class statistics');
+  });
+  await scenario('D2-attendance-revision', async ({ child, cls, board, open }) => {
+    const page = await board();
+    await page.route('**/api/outside-classes/**/stats?*', route => route.fulfill({ status: 500, body: '{"error":"统计不可用"}' }));
+    await open(page);
+    const row = rowFor(page, cls);
+    const first = await action(page, row, '已上课', child); assert.equal(first.expected_revision, null);
+    await action(page, row, '撤销确认', child);
+    const lesson = (await api('GET', `/children/${child.id}/schedule?from=${today}`))[0].outside.find(item => item.class_id === cls.id);
+    assert.equal(lesson.attendance, null); assert.ok(lesson.attendance_revision);
+    const next = await action(page, row, '缺席', child);
+    assert.equal(next.expected_revision, lesson.attendance_revision);
+  });
+  for (const duringConfirm of [false, true]) await scenario(`D3-${duringConfirm ? 'confirm' : 'open'}`, async ({ child, cls, board, open }) => {
+    const page = await board(); await page.clock.install(); await open(page);
+    const row = rowFor(page, cls);
+    await row.getByRole('button', { name: '请假', exact: true }).waitFor();
+    if (duringConfirm) await row.getByRole('button', { name: '请假', exact: true }).click();
+    // Keep the original signed token, but let the browser clock pass its actual exp.
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+    let writes = 0;
+    page.on('request', r => { if (['PUT', 'DELETE'].includes(r.method()) && /outside-class/.test(r.url())) writes++; });
+    await page.clock.fastForward(payload.exp * 1000 - Date.now() + 2000);
+    if (duringConfirm) await confirm(page, child.name);
+    else await page.waitForFunction(() => !document.querySelector('[aria-label="家长课程操作"]'));
+    await modalFor(page).getByText('家长登录已过期，请重新登录', { exact: true }).waitFor();
+    assert.equal(writes, 0);
+    const login = modalFor(page).getByRole('link', { name: '重新登录', exact: true });
+    assert.equal(new URL(await login.getAttribute('href'), base).searchParams.get('returnTo'), `/child/${child.id}/today`);
+    if (process.env.SMOKE_SCREENSHOT_DIR && duringConfirm) await page.screenshot({ path: path.join(process.env.SMOKE_SCREENSHOT_DIR, 'board-session-expired.png') });
+    // Restore the real clock to complete a real PIN login and verify the return destination.
+    await page.clock.setFixedTime(Date.now()); await login.click();
+    for (const digit of '1234') await page.getByRole('button', { name: digit, exact: true }).click();
+    await page.waitForURL(`**/child/${child.id}/today`);
+  });
+  for (const offset of [-40, 1]) await scenario(`settings-direct-${offset < 0 ? 'past' : 'next'}`, async ({ child, cls, board, open }) => {
+    const source = shiftDate(today, offset);
+    await api('PUT', `/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: source, kind: 'moved',
+      new_date: today, new_start_time: '16:00', new_end_time: '17:00' });
+    const page = await board(); await open(page);
+    await rowFor(page, cls, source, today).getByRole('button', { name: '调课', exact: true }).click();
+    await page.getByRole('link', { name: '更多设置 →', exact: true }).click();
+    await page.waitForURL('**/parent/schedule?**');
+    const form = page.getByRole('dialog', { name: new RegExp(cls.title) });
+    await form.waitFor(); await form.getByText(new RegExp(`${Number(source.slice(5, 7))}/${Number(source.slice(8))}`)).waitFor();
+    assert.equal(await form.locator('input[type=date]').inputValue(), today);
+    if (process.env.SMOKE_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.SMOKE_SCREENSHOT_DIR, 'board-settings-direct.png') });
+    // Saving closes the old form and reloads the latest exception ID before reopening.
+    await form.locator('input[type=time]').first().fill('18:00');
+    await form.locator('input[type=time]').last().fill('19:00');
+    const saved = page.waitForResponse(r => r.request().method() === 'PUT' && r.url().endsWith('/exceptions'));
+    await form.getByRole('button', { name: '保存', exact: true }).click(); assert.equal((await saved).status(), 200);
+    await form.waitFor({ state: 'detached' });
+    const card = page.locator(`[data-class-id="${cls.id}"]`);
+    // The source is outside the usual four weeks: reload the deep link to edit its new ID.
+    if (offset < 0) await page.reload({ waitUntil: 'networkidle' });
+    else await card.locator(`button[data-source-date="${source}"]`).click();
+    await form.waitFor();
+    assert.equal(await form.locator('input[type=time]').first().inputValue(), '18:00', 'manager reloads saved exception data');
+    const latest = (await api('GET', '/outside-classes')).find(item => item.id === cls.id).exceptions.find(item => item.date === source);
+    const restored = page.waitForResponse(r => r.request().method() === 'DELETE' && r.url().includes('/outside-class-exceptions/'));
+    await form.getByRole('button', { name: '恢复正常上课', exact: true }).click();
+    const response = await restored; assert.equal(response.status(), 200); assert.ok(response.url().endsWith(latest.id));
+    await form.waitFor({ state: 'detached' }); await card.waitFor();
+    for (const query of [`child=${child.id}&class=missing&date=${source}`, `child=${child.id}&class=${cls.id}&date=2026-02-30`, `child=missing&class=${cls.id}&date=${source}`]) {
+      await page.goto(`${base}/parent/schedule?${query}`, { waitUntil: 'networkidle' });
+      await page.locator('h2').getByText('课程表', { exact: true }).waitFor();
+      assert.equal(await page.getByRole('dialog').count(), 0, 'invalid targets leave the normal list usable');
+    }
+  });
+}
 async function main() {
   await app.ready();
   const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
-  const api = async (method, url, payload) => {
-    const result = await app.inject({ method, url: `/api${url}`, payload, headers: { authorization: `Bearer ${token}` } });
-    assert.ok(result.statusCode < 300, result.body); return result.json();
-  };
   const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
+  const api = async (method, url, payload) => {
+    const result = await fetch(`${base}/api${url}`, { method, headers: { authorization: `Bearer ${token}`, ...(payload ? { 'content-type': 'application/json' } : {}) }, body: payload ? JSON.stringify(payload) : undefined });
+    assert.ok(result.ok, await result.clone().text()); return result.json();
+  };
   browser = await chromium.launch(launchOptions());
-  for (const width of [390, 1180]) for (const colorScheme of ['light', 'dark']) {
+  if (process.env.SMOKE_SCREENSHOT_DIR) fs.mkdirSync(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
+  await regressions(base, token, api);
+  for (const width of process.env.BOARD_CLASS_CASE || process.env.BOARD_CLASS_REGRESSIONS_ONLY ? [] : [390, 1180]) for (const colorScheme of ['light', 'dark']) {
     const child = app.services.childrenService.createChild({ name: '看板甲' });
     const other = app.services.childrenService.createChild({ name: '看板乙' });
     const cls = app.services.scheduleService.createClass({ title: `看板钢琴-${width}-${colorScheme}`, child_ids: [child.id, other.id],

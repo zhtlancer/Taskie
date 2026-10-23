@@ -24,12 +24,14 @@
 
 <script setup>
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { parentLoginReturnPath } from '../utils/session.js';
 import api from '../api/client';
 import { useParentStore } from '../stores/parent';
 import PinInput from '../components/PinInput.vue';
 
 const router = useRouter();
+const route = useRoute();
 const parentStore = useParentStore();
 
 // The current PIN is remembered from login; after a page reload it has to be entered again.
@@ -73,7 +75,7 @@ async function save() {
     // Changing the PIN ends every session, so sign straight back in with the new one.
     parentStore.resetSession();
     await parentStore.login(newPin.value);
-    router.replace('/parent/dashboard');
+    router.replace(parentLoginReturnPath(route.query.returnTo));
   } catch (err) {
     const message = typeof err === 'string' ? err : '保存失败，请重试';
     // A wrong current PIN means starting over; other problems only need a different new PIN.
