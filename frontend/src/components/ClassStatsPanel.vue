@@ -14,7 +14,7 @@
     <p class="mt-1 text-violet-600 dark:text-violet-300">{{ summary.next_lesson ? `下次 ${summary.next_lesson.actual_date} ${summary.next_lesson.start_time}–${summary.next_lesson.end_time}` : '暂无待上课程' }}</p>
   </div>
 
-  <UiDialog v-if="opened" :title="`${child.name} · ${summary.title}`" wide :busy="busy" @close="opened = false">
+  <UiDialog v-if="opened" :title="`${child.name} · ${summary.title}`" wide :busy="busy" @close="close">
     <p v-if="error" role="alert" class="mb-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm font-bold text-rose-600 dark:text-rose-300">{{ error }}</p>
     <p v-if="fetching" class="py-6 text-center text-sm text-slate-500">正在加载出勤记录…</p>
     <template v-if="details">
@@ -86,7 +86,7 @@
   </UiDialog>
 </template>
 <script setup>
-import { ref } from 'vue';
+import { ref, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
 import api from '../api/client';
 import { addDays } from '../utils/schedule.js';
@@ -95,28 +95,36 @@ const props = defineProps({ summary: { type: Object, required: true }, child: { 
 const emit = defineEmits(['changed']);
 const opened = ref(false), details = ref(null), draft = ref(null), fee = ref(''), error = ref(''), busy = ref(false), fetching = ref(false);
 const feeVersion = ref(null), feeConflict = ref(false);
-let serial = 0;
+let serial = 0, opening = 0;
+function close() {
+  if (busy.value) return;
+  opening++; serial++; opened.value = false; fetching.value = false;
+}
+onBeforeUnmount(() => { opening++; serial++; });
 const showError = err => { error.value = typeof err === 'string' ? err : err.message || '操作失败，请重试'; };
 async function load(from, to) {
   const request = ++serial;
   fetching.value = true;
   try {
     const data = await api.getOutsideClassDetails(props.summary.class_id, props.child.id, from, to);
-    if (request === serial) details.value = data;
-  } finally { if (request === serial) fetching.value = false; }
+    if (request === serial && opened.value) { details.value = data; return data; }
+  } catch (err) { if (request === serial && opened.value) throw err; }
+  finally { if (request === serial) fetching.value = false; }
 }
 const feeInput = cents => (cents === null ? '' : (cents / 100).toFixed(2));
 // The fee form appears with the details, so it starts from their fresh fee rather than the card's,
 // which another device may have changed since; later range changes keep what the parent typed.
 async function open() {
+  if (busy.value || opened.value) return;
+  const batch = ++opening;
   opened.value = true; details.value = null; draft.value = null; error.value = ''; feeConflict.value = false;
   try {
-    await load();
-    if (details.value) {
-      fee.value = feeInput(details.value.summary.total_fee_cents);
-      feeVersion.value = details.value.summary.fee_revision ?? null;
+    const data = await load();
+    if (batch === opening && opened.value && data) {
+      fee.value = feeInput(data.summary.total_fee_cents);
+      feeVersion.value = data.summary.fee_revision ?? null;
     }
-  } catch (err) { showError(err); }
+  } catch (err) { if (batch === opening && opened.value) showError(err); }
 }
 async function changeRange(days) {
   if (busy.value || fetching.value) return;

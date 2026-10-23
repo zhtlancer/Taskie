@@ -15,7 +15,7 @@
               v-for="course in courses"
               :key="course.course_key"
               type="button"
-              class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
+              class="min-h-[44px] min-w-[44px] px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
               :aria-pressed="course.course_key === selected?.course_key"
               :class="course.course_key === selected?.course_key ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'"
               @click="selectCourse(course)"
@@ -26,7 +26,7 @@
           <select
             v-if="otherSubjects.length"
             aria-label="其他科目"
-            class="mt-2 min-h-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500"
+            class="mt-2 min-h-[44px] min-w-[44px] px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500"
             :value="selected && !courses.includes(selected) ? selected.subject : ''"
             @change="pickOtherSubject($event.target.value)"
           >
@@ -52,7 +52,7 @@
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label for="homework-assigned" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">布置日期</label>
-          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="min-h-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
+          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="min-h-[44px] min-w-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
           <div class="flex flex-wrap gap-1.5 mt-1.5">
             <button type="button" class="min-h-[44px] min-w-[44px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(today)">今天</button>
             <button v-if="selected?.last_lesson_date && selected.last_lesson_date !== today" type="button" class="min-h-[44px] min-w-[44px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(selected.last_lesson_date)">
@@ -62,7 +62,7 @@
         </div>
         <div>
           <label for="homework-due" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期</label>
-          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="min-h-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
+          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="min-h-[44px] min-w-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
           <button v-if="dueTouched && suggestion?.due_date && form.due_date !== suggestion.due_date" type="button" class="min-h-[44px] min-w-[44px] mt-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="resetDue">
             恢复默认 {{ dayName(suggestion.due_date) }}
           </button>
@@ -88,15 +88,15 @@
       <div v-if="asParent && (record || form.create_task)" class="grid grid-cols-2 gap-3 items-start">
         <div>
           <label for="homework-points" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">奖励积分</label>
-          <input id="homework-points" v-model.number="form.points" type="number" min="0" max="10000" class="min-h-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" @input="pointsTouched = true" />
+          <input id="homework-points" v-model.number="form.points" type="number" min="0" max="10000" class="min-h-[44px] min-w-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" @input="pointsTouched = true" />
           <p class="mt-1 text-xs font-bold text-slate-400">默认按课程，可以在「课程默认积分」里设置</p>
         </div>
       </div>
       <TimingFields v-if="asParent && !record && form.create_task" v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-        <button type="button" class="min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
-        <button type="submit" :disabled="saving || !form.content.trim() || !(record || selected)" class="min-h-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
+        <button type="button" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
+        <button type="submit" :disabled="saving || !form.content.trim() || !(record || selected)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
           {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>

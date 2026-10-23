@@ -473,15 +473,15 @@ async function removeTask(task) {
 function openBackfill(task) {
   const today = localToday();
   const maxDate = task.end_date && task.end_date < today ? task.end_date : today;
-  backfill.value = { task, amount: 1, position: task.done_amount + 1, date: maxDate, maxDate };
+  backfill.value = { task, attempt: {}, amount: 1, position: task.done_amount + 1, date: maxDate, maxDate };
 }
 
 onMounted(() => window.addEventListener('taskie:write-confirmed', loadPeriods));
 onBeforeUnmount(() => window.removeEventListener('taskie:write-confirmed', loadPeriods));
 async function saveBackfill() {
-  const { task, amount, position, date } = backfill.value;
+  const { task, amount, position, date, attempt } = backfill.value;
   const payload = task.input_mode === 'position' ? { position, date } : { amount, date };
-  if (await run(() => api.logPeriodProgress(task.id, payload, { childId: selectedChild.value.id, childName: selectedChild.value.name, title: task.title, backfill: true }))) {
+  if (await run(() => api.logPeriodProgress(task.id, payload, { childId: selectedChild.value.id, childName: selectedChild.value.name, title: task.title, backfill: true, attempt }))) {
     backfill.value = null;
   }
 }

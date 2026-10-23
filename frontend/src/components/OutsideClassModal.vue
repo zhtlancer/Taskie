@@ -25,7 +25,7 @@
             v-for="day in WEEK_ORDER"
             :key="day"
             type="button"
-            class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-bold border"
+            class="min-h-[44px] min-w-[44px] px-3 py-1.5 rounded-lg text-xs font-bold border"
             :class="form.days_of_week.includes(day) ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
             @click="toggleDay(day)"
           >
@@ -48,14 +48,14 @@
         </div>
         <div class="col-span-2">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">排课方式</label>
-          <select v-model="scheduleMode" aria-label="排课方式" class="w-full min-h-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
+          <select v-model="scheduleMode" aria-label="排课方式" class="w-full min-h-[44px] min-w-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm">
             <option value="count">按总课次</option>
             <option value="date">按结束日期</option>
           </select>
         </div>
         <div v-if="scheduleMode === 'count'">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">总课次</label>
-          <input v-model.number="form.total_lessons" aria-label="总课次" type="number" min="1" max="520" required class="w-full min-h-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" />
+          <input v-model.number="form.total_lessons" aria-label="总课次" type="number" min="1" max="520" required class="w-full min-h-[44px] min-w-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" />
         </div>
         <div v-else>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">到哪天结束（可不填）</label>
@@ -80,7 +80,7 @@
         <p v-else>选择上课星期、开始日期和总课次后预览排课。</p>
         <p class="text-slate-500 dark:text-slate-400">请假保留原课次，不自动延长；调课沿用原课次。保存后可对单次课程请假或调课。</p>
         <details v-if="preview.length">
-          <summary class="cursor-pointer min-h-[44px] flex items-center">查看全部课次</summary>
+          <summary class="cursor-pointer min-h-[44px] min-w-[44px] flex items-center">查看全部课次</summary>
           <ol class="max-h-48 overflow-y-auto space-y-1">
             <li v-for="(date, index) in preview" :key="date">第 {{ index + 1 }} 次 · {{ date }} {{ WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()] }} {{ form.start_time }}–{{ form.end_time }}</li>
           </ol>
@@ -90,12 +90,12 @@
       <div>
         <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">哪些孩子上</label>
         <div class="flex flex-wrap gap-1.5">
-          <button type="button" class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-bold border" :class="form.child_ids === null ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'" @click="form.child_ids = null">👨‍👩‍👧 全部孩子</button>
+          <button type="button" class="min-h-[44px] min-w-[44px] px-3 py-1.5 rounded-lg text-xs font-bold border" :class="form.child_ids === null ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'" @click="form.child_ids = null">👨‍👩‍👧 全部孩子</button>
           <button
             v-for="child in children"
             :key="child.id"
             type="button"
-            class="min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-bold border font-chinese"
+            class="min-h-[44px] min-w-[44px] px-3 py-1.5 rounded-lg text-xs font-bold border font-chinese"
             :class="form.child_ids?.includes(child.id) ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
             @click="toggleChild(child.id)"
           >
@@ -119,8 +119,8 @@
       </div>
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-        <button type="button" :disabled="saving" class="min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
-        <button type="submit" :disabled="saving || !form.days_of_week.length || form.child_ids?.length === 0 || (scheduleMode === 'count' && !preview.length)" class="min-h-[44px] px-6 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{{ saving ? '保存中...' : '保存' }}</button>
+        <button type="button" :disabled="saving" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
+        <button type="submit" :disabled="saving || !form.days_of_week.length || form.child_ids?.length === 0 || (scheduleMode === 'count' && !preview.length)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{{ saving ? '保存中...' : '保存' }}</button>
       </div>
     </form>
   </UiDialog>

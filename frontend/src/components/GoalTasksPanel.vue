@@ -251,16 +251,17 @@ function record(goal) {
     playClick();
     const seconds = liveSeconds(goal, props.now);
     error.value = '';
+    const attempt = {};
     durationAsk.value = seconds > LONG_TIMER_SECONDS
-      ? { goal, payload, initialSeconds: seconds, note: `计时已经走了 ${formatDuration(seconds)}，是不是忘了暂停？请改成实际用了多久。` }
-      : { goal, payload, initialSeconds: goal.expected_minutes ? goal.expected_minutes * 60 : null };
+      ? { goal, payload, attempt, initialSeconds: seconds, note: `计时已经走了 ${formatDuration(seconds)}，是不是忘了暂停？请改成实际用了多久。` }
+      : { goal, payload, attempt, initialSeconds: goal.expected_minutes ? goal.expected_minutes * 60 : null };
     return;
   }
   return run(() => logProgress(goal, payload));
 }
 
-async function logProgress(goal, payload) {
-  const result = await api.logPeriodProgress(goal.id, { ...payload, date: props.today }, { childId: goal.child_id, childName: props.childName, title: goal.title });
+async function logProgress(goal, payload, attempt) {
+  const result = await api.logPeriodProgress(goal.id, { ...payload, date: props.today }, { childId: goal.child_id, childName: props.childName, title: goal.title, attempt });
   if (result.task?.is_completed) playAllDone();
   else playTaskComplete();
 }
@@ -281,9 +282,10 @@ function editDuration(goal, entry) {
 
 function submitDuration(seconds) {
   const { goal, entry, payload } = durationAsk.value;
+  durationAsk.value.attempt ||= {};
   return run(async () => {
     if (entry) await api.setGoalLogDuration(entry.id, seconds);
-    else await logProgress(goal, { ...payload, duration_seconds: seconds });
+    else await logProgress(goal, { ...payload, duration_seconds: seconds }, durationAsk.value.attempt);
     durationAsk.value = null;
   }, { keepValues: Boolean(entry) });
 }

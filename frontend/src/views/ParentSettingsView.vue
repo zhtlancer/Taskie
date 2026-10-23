@@ -32,17 +32,29 @@
           <button :disabled="busy" @click="run(loadPhotoStatus)" class="min-h-[44px] px-3 font-bold text-brand-600 dark:text-brand-300 disabled:opacity-50">刷新导出状态</button>
         </div>
         <p class="text-xs text-slate-500 dark:text-slate-400">下载完成后可刷新导出状态；回到本页面时也会自动刷新。</p>
-        <div v-if="info.missing_photos?.count" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
-          <p class="font-bold">有 {{ info.missing_photos.count }} 张错题照片需要补齐：不存在 {{ info.missing_photos.absent }} 张，校验不一致 {{ info.missing_photos.mismatch }} 张。</p>
-          <ul class="space-y-3 text-sm">
-            <li v-for="photo in info.missing_photos.sample" :key="photo.name" class="break-words">
-              <p class="font-bold">{{ photo.subject || '未填写科目' }} · {{ photo.created_at ? businessDate(photo.created_at, timeZone) : '日期未知' }}</p>
-              <p class="whitespace-pre-wrap">{{ photo.description || '未填写题目描述' }}</p>
-              <p>{{ photo.reason === 'mismatch' ? '校验不一致' : '不存在' }}</p>
+        <div v-if="skippedPhotos.length" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
+          <p class="font-bold">本次导出跳过 {{ skippedPhotos.length }} 张照片，其余 {{ includedPhotos }} 张已请求下载。被跳过的照片不会记为已导出。</p>
+          <ul class="space-y-2 text-sm">
+            <li v-for="photo in skippedPhotos" :key="`${photo.name}-${photo.subject}-${photo.description}`" class="break-words">
+              {{ photo.subject || '未知科目' }} · {{ photo.created_at ? businessDate(photo.created_at, timeZone) : '未知日期' }} · {{ photo.description || '未填写题目' }}
+              <span class="font-bold">（{{ photo.reason === 'mismatch' ? '校验不一致' : '不存在' }}）</span>
             </li>
           </ul>
-          <p v-if="info.missing_photos.count > info.missing_photos.sample.length" class="text-sm">这里只显示前 {{ info.missing_photos.sample.length }} 张，还有 {{ info.missing_photos.count - info.missing_photos.sample.length }} 张需要补齐。</p>
-          <p class="text-sm">从别的服务器恢复备份后可能缺少照片；校验不一致表示内容与备份清单不符。请上传当时下载的正确照片包，系统会核对内容并补齐或修复照片，已有且校验正确的照片会保留。可以多次上传、上传多个照片包。</p>
+          <p class="text-sm">请上传当时下载的正确照片包，补齐或修复这些照片后再导出。</p>
+        </div>
+        <div v-if="info.missing_photos?.count || skippedPhotos.length" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
+          <template v-if="info.missing_photos?.count">
+            <p class="font-bold">有 {{ info.missing_photos.count }} 张错题照片需要补齐：不存在 {{ info.missing_photos.absent }} 张，校验不一致 {{ info.missing_photos.mismatch }} 张。</p>
+            <ul class="space-y-3 text-sm">
+              <li v-for="photo in info.missing_photos.sample" :key="photo.name" class="break-words">
+                <p class="font-bold">{{ photo.subject || '未填写科目' }} · {{ photo.created_at ? businessDate(photo.created_at, timeZone) : '日期未知' }}</p>
+                <p class="whitespace-pre-wrap">{{ photo.description || '未填写题目描述' }}</p>
+                <p>{{ photo.reason === 'mismatch' ? '校验不一致' : '不存在' }}</p>
+              </li>
+            </ul>
+            <p v-if="info.missing_photos.count > info.missing_photos.sample.length" class="text-sm">这里只显示前 {{ info.missing_photos.sample.length }} 张，还有 {{ info.missing_photos.count - info.missing_photos.sample.length }} 张需要补齐。</p>
+            <p class="text-sm">从别的服务器恢复备份后可能缺少照片；校验不一致表示内容与备份清单不符。请上传当时下载的正确照片包，系统会核对内容并补齐或修复照片，已有且校验正确的照片会保留。可以多次上传、上传多个照片包。</p>
+          </template>
           <form @submit.prevent="importPhotos" class="flex flex-wrap items-end gap-3">
             <label class="block text-sm">照片包 <input type="file" accept=".tar,application/x-tar" required @change="photoFile = $event.target.files[0]" class="block mt-2" /></label>
             <button :disabled="busy || !photoFile" class="min-h-[44px] px-5 py-3 bg-amber-600 text-white rounded-xl font-bold disabled:opacity-50">上传照片包</button>
@@ -127,6 +139,7 @@ const failed = ref(false), uploading = ref(false), uploadPercent = ref(null);
 const backupSize = size => size < 1048576 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1048576).toFixed(1)} MiB`;
 // Remove the old device-clock marker; export history now belongs to the server.
 localStorage.removeItem('taskie_photo_export_at');
+const skippedPhotos = ref([]), includedPhotos = ref(0);
 const photoFile = ref(null), timeZone = ref(DEFAULT_TIME_ZONE);
 const devices = ref([]), pairCode = ref(''), pairLabel = ref(''), deviceEvents = ref([]), showAllEvents = ref(false);
 const shownEvents = computed(() => (showAllEvents.value ? deviceEvents.value : deviceEvents.value.slice(0, 10)));
@@ -165,7 +178,8 @@ function download(item) { return run(async () => {
 }); }
 // Native downloads do not report completion to the page. Only server responses update the status.
 function downloadPhotos(scope) { return run(async () => {
-  const url = await api.photoPackageUrl(scope);
+  const { url, included_count, skipped = [] } = await api.photoPackageTicket(scope);
+  skippedPhotos.value = skipped; includedPhotos.value = included_count ?? 0;
   const link = document.createElement('a'); link.href = url; link.download = ''; link.click();
   message.value = `${scope === 'new' ? '新照片' : '全部照片'}的照片包已请求下载，照片多时需要一些时间。请确认浏览器下载并保存成功后，刷新导出状态。`;
 }); }

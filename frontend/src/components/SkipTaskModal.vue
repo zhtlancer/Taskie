@@ -17,7 +17,7 @@
             v-for="option in quickReasons"
             :key="option"
             type="button"
-            :disabled="busy" class="min-h-[44px] px-3 py-1.5 rounded-xl text-xs font-bold border font-chinese active:scale-95"
+            :disabled="busy" class="min-h-[44px] min-w-[44px] px-3 py-1.5 rounded-xl text-xs font-bold border font-chinese active:scale-95"
             :class="reason === option ? 'bg-sky-500 border-sky-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
             @click="reason = option"
           >
@@ -38,11 +38,11 @@
       </div>
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-        <button type="button" class="min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :disabled="busy" @click="emit('close')">取消</button>
+        <button type="button" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" :disabled="busy" @click="emit('close')">取消</button>
         <button
           type="submit"
           :disabled="busy || !reason.trim()"
-          class="min-h-[44px] px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold shadow-sm disabled:opacity-50"
+          class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold shadow-sm disabled:opacity-50"
         >
           {{ busy ? '提交中...' : asParent ? '确认跳过' : '请家长确认' }}
         </button>

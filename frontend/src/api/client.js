@@ -42,8 +42,8 @@ async function sendPendingWrite(entry) {
   } finally { activeWrites.delete(entry.request_id); notifyPendingWrites(); }
 }
 
-function pendingWrite(action) {
-  try { return sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole() })); }
+function pendingWrite(action, attempt) {
+  try { return sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole() }, attempt)); }
   catch (err) { return Promise.reject(err.message || '无法保存待确认请求，请允许会话存储后重试'); }
 }
 
@@ -181,7 +181,7 @@ export const api = {
   createPeriodTask: (periodId, data) => post(`/periods/${periodId}/tasks`, data),
   updatePeriodTask: (id, data) => put(`/period-tasks/${id}`, data),
   deletePeriodTask: id => remove(`/period-tasks/${id}`),
-  logPeriodProgress: (taskId, data, { childId, childName, title, backfill = false }) => pendingWrite({ kind: backfill ? 'backfill' : 'progress', child_id: childId, child_name: childName, task_id: taskId, title, payload: data }),
+  logPeriodProgress: (taskId, data, { childId, childName, title, backfill = false, attempt }) => pendingWrite({ kind: backfill ? 'backfill' : 'progress', child_id: childId, child_name: childName, task_id: taskId, title, payload: data }, attempt),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
   getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
   getTimeStats: (id, from, to, signal) => get(`/children/${id}/time-stats`, { from, to }, signal),
@@ -214,7 +214,7 @@ export const api = {
     return post('/backups/restore', data);
   },
   // A direct link with a short-lived ticket, so a large photo package is not held in page memory.
-  async photoPackageUrl(scope = 'all') { return (await post('/backups/photos/export-ticket', { scope })).url; },
+  photoPackageTicket: (scope = 'all') => post('/backups/photos/export-ticket', { scope }),
   async importPhotos(file, onUploadProgress) {
     const data = new FormData(); data.append('file', file);
     return (await client.post('/backups/photos/import', data, { timeout: 0, onUploadProgress })).data;
