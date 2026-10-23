@@ -123,10 +123,15 @@ async function mistakesRoutes(fastify, options) {
 
   fastify.delete('/:id', async (request, reply) => {
     try {
-      const result = mistakesService.deleteMistake(request.params.id);
+      const result = await fastify.backupService.exclusive(() => {
+        fastify.requireCurrentSession(request);
+        const record = mistakesService.getMistake(request.params.id);
+        if (record) fastify.requireChildAccess(request, record.child_id);
+        return mistakesService.deleteMistake(request.params.id);
+      });
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || 'Internal server error' });
     }
   });
 }

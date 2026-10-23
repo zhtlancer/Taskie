@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
+import { pendingWriteStore } from '../utils/requestId.js';
 
 export const useChildStore = defineStore('child', {
   state: () => ({
@@ -26,6 +27,7 @@ export const useChildStore = defineStore('child', {
 
   actions: {
     setChild(child) {
+      if (this.currentChild?.id !== child?.id) pendingWriteStore.clear();
       this.currentChild = child;
       if (child) {
         sessionStorage.setItem('current_child', JSON.stringify(child));

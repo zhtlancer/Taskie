@@ -542,6 +542,52 @@ async function main() {
     assert.equal(await page.locator('input[accept*=tar]').count(), 0, 'no skipped or missing photos means no repair entry');
   });
 
+  await check('B-F1 evicted receipt replays the same request without duplicate rewards', async () => {
+    const item = await api('POST', '/reward-items', { title: '回执淘汰重试', cost: 1, icon_emoji: '🎁' });
+    db.prepare('INSERT INTO point_logs (id, child_id, points, earned_at) VALUES (?, ?, ?, ?)').run('b-f1-points', child.id, 100, new Date().toISOString());
+    const page = await open('child');
+    await page.route(`**/api/children/${child.id}/redemptions`, async route => {
+      await route.fetch(); await route.abort();
+    });
+    await page.goto(`${base}/child/${child.id}/rewards`, { waitUntil: 'networkidle' });
+    const card = page.locator('div.rounded-2xl.border.p-4').filter({ has: page.getByText(item.title, { exact: true }) });
+    await card.getByRole('button', { name: '兑换', exact: true }).click();
+    await card.getByRole('button', { name: '确定兑换？', exact: true }).click();
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+    const first = (await pending(page))[0];
+    await page.unroute(`**/api/children/${child.id}/redemptions`);
+    // Receipt has expired/been evicted in a copied or suspended tab, but its pending
+    // operation remains. The server must still see the original id and exact body.
+    await page.evaluate(id => localStorage.removeItem(`taskie_confirmed_write_v1:${id}`), first.request_id);
+    const request = page.waitForRequest(r => r.url().endsWith('/redemptions') && r.method() === 'POST');
+    await page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
+    assert.equal((await request).postDataJSON().request_id, first.request_id);
+    await page.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM reward_redemptions WHERE reward_id=?').get(item.id).n, 1);
+  });
+
+  await check('B-F2 logout and switching children remove local pending request details', async () => {
+    const other = await api('POST', '/children', { name: '切换后孩子' });
+    const page = await open('parent');
+    await page.goto(`${base}/parent/dashboard`, { waitUntil: 'networkidle' });
+    const seed = async role => page.evaluate(({ role, child }) => {
+      sessionStorage.setItem('taskie_pending_write_v1:private-old-request', JSON.stringify({ request_id: 'private-old-request', role, kind: 'progress', child_id: child.id, task_id: 'private-task', child_name: '旧会话私密姓名', title: '旧会话私密内容', payload: { amount: 1 } }));
+      window.dispatchEvent(new Event('taskie:pending-writes'));
+    }, { role, child });
+    await seed('parent');
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+    await page.getByRole('button', { name: '打开家长设置菜单' }).click();
+    await page.getByRole('button', { name: '退出家长，返回孩子选择' }).click();
+    await page.waitForURL(base + '/');
+    assert.deepEqual(await pending(page), []);
+    // Another old child request on this device must be removed by the actual login flow.
+    await seed('child');
+    await page.getByText(other.name, { exact: true }).click();
+    await page.waitForURL(`**/child/${other.id}/today`);
+    assert.deepEqual(await pending(page), []);
+    assert.equal(await page.getByText('旧会话私密内容', { exact: false }).count(), 0);
+  });
+
   const passed = results.filter(r => r.passed).length;
   console.log(`RESULT ${passed} passed, ${results.length - passed} failed`);
   if (results.some(r => !r.passed)) process.exitCode = 1;

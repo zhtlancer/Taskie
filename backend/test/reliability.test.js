@@ -657,11 +657,10 @@ test('a restore killed mid-way leaves records and photos from the same side afte
     const { DIR, KILL_AT } = process.env;
     const db = getDb(DIR + '/data.sqlite');
     const service = new BackupService(db, DIR + '/uploads', DIR + '/backups');
-    const rename = fs.renameSync, rm = fs.rmSync;
+    const rename = fs.renameSync, rm = fs.promises.rm;
     fs.renameSync = (from, to) => { rename(from, to); if (KILL_AT === 'photos-swapped' && from.includes('.restore-')) process.kill(process.pid, 'SIGKILL'); };
-    fs.rmSync = (target, options) => { if (KILL_AT === 'committed' && String(target).includes('.previous-')) process.kill(process.pid, 'SIGKILL'); return rm(target, options); };
-    service.restore(fs.readFileSync(DIR + '/backup.taskie.gz'));
-    console.log('restore finished without being killed');
+    fs.promises.rm = (target, options) => { if (KILL_AT === 'committed' && String(target).includes('.previous-')) process.kill(process.pid, 'SIGKILL'); return rm(target, options); };
+    service.restore(fs.readFileSync(DIR + '/backup.taskie.gz')).then(() => console.log('restore finished without being killed'));
   `;
   for (const killAt of ['photos-swapped', 'committed']) {
     await t.test(killAt, async () => {
@@ -693,6 +692,7 @@ test('a restore killed mid-way leaves records and photos from the same side afte
       else assert.deepEqual([children, photo], [['backup-child'], 'backup photo'], 'a committed restore is kept');
       assert.deepEqual(fs.readdirSync(dir).filter(name => /\.(?:previous|restore)-/.test(name)), [], 'no leftover photo directories');
       assert.equal(fs.existsSync(path.join(backups, '.restore-journal.json')), false);
+      assert.deepEqual(fs.readdirSync(backups).filter(name => name.startsWith('.restore-')), [], 'prepared database and uploaded archive are cleaned after recovery');
       db.close();
     });
   }

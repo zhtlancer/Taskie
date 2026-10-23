@@ -3,6 +3,9 @@ export const newRequestId = () => globalThis.crypto?.randomUUID?.() || `req_${Da
 
 const PREFIX = 'taskie_pending_write_v1:';
 const CONFIRMED_PREFIX = 'taskie_confirmed_write_v1:';
+export const RECEIPT_LIMIT = 200;
+export const RECEIPT_TTL_MS = 24 * 60 * 60 * 1000;
+const keysWithPrefix = (storage, prefix) => Array.from({ length: storage.length }, (_, index) => storage.key(index)).filter(key => key?.startsWith(prefix));
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().filter(key => value[key] !== undefined).map(key => [key, canonical(value[key])])) : value;
 const scope = ({ kind, role, child_id, task_id }) => JSON.stringify({ kind, role, child_id, task_id });
@@ -17,6 +20,17 @@ export function pendingWrites(storage = () => globalThis.sessionStorage, confirm
   const getStorage = () => typeof storage === 'function' ? storage() : storage;
   const getConfirmations = () => typeof confirmations === 'function' ? confirmations() : confirmations;
   const isConfirmed = id => Boolean(getConfirmations()?.getItem(`${CONFIRMED_PREFIX}${id}`));
+  const pruneReceipts = (keep = RECEIPT_LIMIT) => {
+    const receipts = getConfirmations();
+    if (!receipts) return;
+    const now = Date.now();
+    const entries = keysWithPrefix(receipts, CONFIRMED_PREFIX).map(key => ({ key, at: Number(receipts.getItem(key)) || 0 }))
+      .sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
+    for (const [index, entry] of entries.entries()) {
+      // Legacy "1" receipts have no reliable date and are retired first.
+      if (index >= keep || entry.at <= 1 || now - entry.at >= RECEIPT_TTL_MS) receipts.removeItem(entry.key);
+    }
+  };
   const list = () => {
     const target = getStorage();
     if (!target) return [];
@@ -29,18 +43,24 @@ export function pendingWrites(storage = () => globalThis.sessionStorage, confirm
         if (entry?.request_id && entry.payload && entry.child_id && entry.task_id) entries.push(entry);
       } catch { /* A damaged entry is not sent as a different request. */ }
     }
-    return entries.filter(entry => {
+    const unresolved = entries.filter(entry => {
       if (!isConfirmed(entry.request_id)) return true;
       target.removeItem(`${PREFIX}${entry.request_id}`);
       return false;
     });
+    pruneReceipts();
+    return unresolved;
   };
   return {
     list,
     prepare(action, attempt = {}) {
       const entries = list();
       // A failed form remains the same attempt, including after confirmation in another tab/UI.
-      if (attempt.request_id && isConfirmed(attempt.request_id)) throw new Error('原操作已确认。请关闭当前表单；如需更正，请修改已有记录，新增操作请重新打开。');
+      if (attempt.request_id && !entries.some(entry => entry.request_id === attempt.request_id)) {
+        // Receipts are bounded; a suspended form must never turn an old attempt into a
+        // new request just because its receipt was evicted or its session was cleared.
+        throw new Error('原操作已确认或当前会话已结束。请关闭当前表单；如需更正，请修改已有记录，新增操作请重新打开。');
+      }
       const previous = entries.find(entry => identity(entry) === identity(action));
       const unresolved = entries.find(entry => scope(entry) === scope(action));
       if (unresolved && !previous) {
@@ -62,12 +82,25 @@ export function pendingWrites(storage = () => globalThis.sessionStorage, confirm
       return entry;
     },
     done(id) {
-      // Only an opaque id is shared. Keep receipts so suspended/reloaded copied sessions can
-      // reconcile too; no child names, task titles or request bodies go into localStorage.
+      // Only opaque ids and timestamps are shared. If a copied session outlives receipt
+      // retention, its persisted operation still replays the SAME id for server deduplication.
       const receipts = getConfirmations();
       if (!receipts) throw new Error('无法同步操作确认结果，请允许本地存储后重试');
-      receipts.setItem(`${CONFIRMED_PREFIX}${id}`, '1');
+      pruneReceipts(RECEIPT_LIMIT - 1);
+      try { receipts.setItem(`${CONFIRMED_PREFIX}${id}`, String(Date.now())); }
+      catch (error) {
+        // Free only our receipt keys, never unrelated preferences or unresolved requests.
+        pruneReceipts(Math.floor(RECEIPT_LIMIT / 2));
+        const oldest = keysWithPrefix(receipts, CONFIRMED_PREFIX).sort((a, b) => Number(receipts.getItem(a)) - Number(receipts.getItem(b)));
+        if (oldest.length) receipts.removeItem(oldest[0]);
+        receipts.setItem(`${CONFIRMED_PREFIX}${id}`, String(Date.now()));
+      }
       getStorage().removeItem(`${PREFIX}${id}`);
+      notifyPendingWrites();
+    },
+    clear() {
+      const target = getStorage();
+      if (target) for (const key of keysWithPrefix(target, PREFIX)) target.removeItem(key);
       notifyPendingWrites();
     }
   };
@@ -76,7 +109,7 @@ export const pendingWriteStore = pendingWrites();
 export const activeWrites = new Set();
 
 if (typeof window !== 'undefined') window.addEventListener('storage', event => {
-  if (!event.key?.startsWith(CONFIRMED_PREFIX) || event.newValue !== '1') return;
+  if (!event.key?.startsWith(CONFIRMED_PREFIX) || !event.newValue) return;
   try {
     pendingWriteStore.list();
     notifyPendingWrites();

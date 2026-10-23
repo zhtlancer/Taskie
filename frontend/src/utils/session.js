@@ -1,12 +1,19 @@
+import { pendingWriteStore } from './requestId.js';
+
 const key = role => `taskie_${role}_token`;
 export function getToken(role) {
   if (role) return sessionStorage.getItem(key(role));
   return getToken('parent') || getToken('child');
 }
-export function saveToken(role, token) { sessionStorage.setItem(key(role), token); }
+export function saveToken(role, token) {
+  // Signing in starts a fresh local session, even when the new role is also "parent".
+  if (getToken(role) !== token) pendingWriteStore.clear();
+  sessionStorage.setItem(key(role), token);
+}
 export function clearTokens() {
   for (const role of ['parent', 'child']) sessionStorage.removeItem(key(role));
   sessionStorage.removeItem('parent_auth');
+  pendingWriteStore.clear();
 }
 // Set while the parent signed in with the default PIN and must replace it first.
 export function mustChangePin() { return sessionStorage.getItem('parent_must_change_pin') === 'true'; }

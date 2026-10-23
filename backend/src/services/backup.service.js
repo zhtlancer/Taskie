@@ -1,21 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
-const { gzipSync, gunzipSync } = require('node:zlib');
+const { gzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { initDb, TIMING_COLUMNS, WEEKLY_EXTRA_COLUMNS } = require('../db');
 const { PhotoStore, fileEntry } = require('./photo-store');
 const { Worker } = require('node:worker_threads');
 const { MAX_PHOTO_SIZE } = require('../utils/photo-limits');
 const { tarStream, TarReader } = require('../utils/tar');
 
-// Only genuine older schemas may have their newer tables created by initDb.
-const REQUIRED_TABLES = ['children', 'task_templates', 'daily_tasks', 'point_logs', 'badge_definitions', 'child_badges', 'mistake_records', 'settings', 'characters'];
-const PERIOD_TABLES = ['periods', 'period_paused_templates', 'period_tasks', 'period_task_logs'];
-const SCHEDULE_TABLES = ['timetables', 'timetable_slots', 'timetable_lessons', 'outside_classes', 'outside_class_children', 'outside_class_exceptions'];
-const STUDY_TABLES = ['word_study_plans', 'word_study_states', 'word_study_days', 'word_study_batches', 'word_study_items', 'word_study_attempts'];
-const HOMEWORK_TABLES = ['homework_records', 'homework_course_points', 'homework_sessions', 'homework_session_days'];
-const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees', 'outside_class_changes', 'outside_class_revisions', 'photo_expectations'];
+const { TABLES } = require('./backup-format');
 // Backups (format v2) hold the database and a manifest of its photos; the photos themselves are kept
 // once in backups/photos and move between servers as separate photo packages. This limit therefore
 // applies to the database alone. Older v1 archives with embedded photos still restore under it.
@@ -128,7 +121,7 @@ class BackupService {
       fs.rmSync(this.uploadDir, { recursive: true, force: true });
       fs.renameSync(journal.previous, this.uploadDir);
     }
-    for (const leftover of [journal.previous, journal.staging, journal.saved]) fs.rmSync(leftover, { recursive: true, force: true });
+    for (const leftover of [journal.previous, journal.staging, journal.saved, journal.archive].filter(Boolean)) fs.rmSync(leftover, { recursive: true, force: true });
     fs.rmSync(this.journalPath, { force: true });
     console.warn(committed
       ? '    [Backup] 上次恢复已写入数据库但未清理完，已保留恢复后的照片并清理临时文件'
@@ -246,8 +239,8 @@ class BackupService {
     for (const name of [...names].filter(safeName).sort()) {
       if (exported.has(name)) continue;
       const photo = expected.get(name);
-      const entry = await this.exportPhoto(name, photo);
-      if (entry) entries.push({ name, photo: photo || { size: entry.content.length, sha256: entry.sha256 }, file: entry.file, sha256: entry.sha256 });
+      const entry = await this.inspectExportPhoto(name, photo);
+      if (entry) entries.push({ name, photo: photo || { size: entry.size, sha256: entry.sha256 }, file: entry.file, sha256: entry.sha256 });
       else {
         const row = details.get(name);
         entries.skipped.push({ name, subject: row?.subject || '', description: row?.description || '', created_at: row?.created_at || null,
@@ -255,6 +248,21 @@ class BackupService {
       }
     }
     return entries;
+  }
+
+  async inspectExportPhoto(name, photo) {
+    // Ticket/status inspection reuses fingerprints. Changed or uncached files are hashed
+    // once here; the actual download always verifies fresh bytes before emitting a header.
+    for (const [file, cache, key] of [[this.photos.path(name), this.photos.index, name],
+      [path.join(this.uploadDir, name), this.uploadIndex, path.join(this.uploadDir, name)]]) {
+      try {
+        const stat = await fs.promises.stat(file);
+        if (!stat.isFile() || stat.size > MAX_PHOTO_SIZE || photo && stat.size !== photo.size) continue;
+        const entry = await fileEntry(file, cache, key);
+        if (entry && (!photo || entry.size === photo.size && entry.sha256 === photo.sha256)) return { file, ...entry };
+      } catch { /* Try the other copy. Actual export never trusts cached bytes. */ }
+    }
+    return null;
   }
 
   async exportPhoto(name, photo) {
@@ -399,130 +407,31 @@ class BackupService {
   restore(buffer) { return this.exclusive(() => this.restoreSnapshot(buffer)); }
 
   async restoreSnapshot(buffer) {
-    let data, candidate;
-    try {
-      data = JSON.parse(gunzipSync(buffer, { maxOutputLength: MAX_SIZE }).toString());
-      const validManifest = list => Array.isArray(list) && list.every(p => p && safeName(p.name) && Number.isSafeInteger(p.size) && p.size >= 0 && p.size <= MAX_PHOTO_SIZE && /^[0-9a-f]{64}$/.test(p.sha256));
-      if (data.format !== 'taskie-backup' || ![1, 2].includes(data.version) || typeof data.database !== 'string' ||
-        (data.version === 1 && (!data.photos || Array.isArray(data.photos))) || (data.version === 2 && (Object.hasOwn(data, 'photos') || !validManifest(data.photo_manifest) || new Set(data.photo_manifest.map(p => p.name)).size !== data.photo_manifest.length)) ||
-        (data.missing_photos !== undefined && (!Array.isArray(data.missing_photos) || !data.missing_photos.every(safeName)))) throw fail('不是有效的 Taskie 备份包');
-      if (data.version === 1 && (typeof data.photos !== 'object' || Object.hasOwn(data, 'photo_manifest'))) throw fail('备份照片格式混用');
-      const photoNames = new Set(data.version === 2 ? data.photo_manifest.map(p => p.name) : Object.keys(data.photos));
-      if ((data.missing_photos || []).some(name => photoNames.has(name)) || new Set(data.missing_photos || []).size !== (data.missing_photos || []).length) throw fail('备份照片清单重复或冲突');
-      const database = Buffer.from(data.database, 'base64');
-      if (database.subarray(0, 16).toString() !== 'SQLite format 3\0') throw fail('备份数据库无效');
-      candidate = new Database(database);
-      if (candidate.pragma('integrity_check', { simple: true }) !== 'ok' || candidate.pragma('foreign_key_check').length) throw fail('备份数据库完整性检查失败');
-      const tables = candidate.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(r => r.name);
-      const schemaVersion = candidate.pragma('user_version', { simple: true });
-      if (!REQUIRED_TABLES.every(t => tables.includes(t)) || schemaVersion > this.db.pragma('user_version', { simple: true })) throw fail('备份版本不兼容');
-      if (schemaVersion >= 2 && (!tables.includes('template_children') ||
-        !candidate.pragma('table_info(task_templates)').some(column => column.name === 'assign_all'))) {
-        throw fail('备份缺少任务分配数据，无法恢复');
-      }
-      if (schemaVersion >= 3 && !['reward_items', 'reward_redemptions'].every(t => tables.includes(t))) {
-        throw fail('备份缺少积分兑换数据，无法恢复');
-      }
-      if (schemaVersion >= 4 && !['source_template_id', 'template_created_at'].every(name =>
-        candidate.pragma('table_info(daily_tasks)').some(column => column.name === name))) {
-        throw fail('备份缺少任务历史快照，无法恢复');
-      }
-      if (schemaVersion >= 5 && (!PERIOD_TABLES.every(t => tables.includes(t)) ||
-        !candidate.pragma('table_info(point_logs)').some(column => column.name === 'period_log_id'))) {
-        throw fail('备份缺少假期数据，无法恢复');
-      }
-      if (schemaVersion >= 6 && !['activity_date', 'activity_title'].every(name =>
-        candidate.pragma('table_info(point_logs)').some(column => column.name === name))) {
-        throw fail('备份缺少积分历史快照，无法恢复');
-      }
-      if (schemaVersion >= 7 && !candidate.pragma('table_info(daily_tasks)').some(column => column.name === 'origin')) {
-        throw fail('备份缺少临时任务数据，无法恢复');
-      }
-      const hasColumn = (table, name) => candidate.pragma(`table_info(${table})`).some(column => column.name === name);
-      if (schemaVersion >= 8 && !(hasColumn('period_tasks', 'child_id') && hasColumn('period_task_logs', 'position') && hasColumn('daily_tasks', 'goal_id'))) {
-        throw fail('备份缺少长期任务数据，无法恢复');
-      }
-      if (schemaVersion >= 9 && !hasColumn('characters', 'categories')) throw fail('备份缺少生字生词分类，无法恢复');
-      if (schemaVersion >= 10 && !(tables.includes('task_skip_requests') &&
-        ['skipped_at', 'skip_reason'].every(name => hasColumn('daily_tasks', name)))) {
-        throw fail('备份缺少跳过申请数据，无法恢复');
-      }
-      if (schemaVersion >= 11 && !Object.entries(TIMING_COLUMNS).every(([table, columns]) =>
-        Object.keys(columns).every(name => hasColumn(table, name)))) {
-        throw fail('备份缺少任务用时数据，无法恢复');
-      }
-      if (schemaVersion >= 12 && !(SCHEDULE_TABLES.every(t => tables.includes(t)) && hasColumn('daily_tasks', 'class_id'))) {
-        throw fail('备份缺少课程表数据，无法恢复');
-      }
-      if (schemaVersion >= 13 && !hasColumn('daily_tasks', 'class_lesson_date')) {
-        throw fail('备份缺少课次数据，无法恢复');
-      }
-      if (schemaVersion >= 14 && !(tables.includes('makeup_days') && hasColumn('task_templates', 'carry_over') &&
-        ['carry_over', 'due_date'].every(name => hasColumn('daily_tasks', name)))) {
-        throw fail('备份缺少顺延和调休数据，无法恢复');
-      }
-      if (schemaVersion >= 15 && (!tables.includes('task_backfill_events') || !hasColumn('daily_tasks', 'completion_source'))) {
-        throw fail('备份缺少家长补卡记录，无法恢复');
-      }
-      if (schemaVersion >= 16 && !Object.entries(WEEKLY_EXTRA_COLUMNS).every(([table, columns]) =>
-        Object.keys(columns).every(name => hasColumn(table, name)))) {
-        throw fail('备份缺少每周额外完成和奖励数据，无法恢复');
-      }
-      if (schemaVersion >= 17 && (!STUDY_TABLES.every(table => tables.includes(table)) ||
-        !hasColumn('daily_tasks', 'study_day_id') || !hasColumn('point_logs', 'study_batch_id'))) {
-        throw fail('备份缺少字词学习计划数据，无法恢复');
-      }
-      if (schemaVersion >= 18 && !tables.includes('task_day_snapshots')) throw fail('备份缺少每日任务快照，无法恢复');
-      if (schemaVersion >= 19 && !['homework_records', 'homework_course_points'].every(table => tables.includes(table))) throw fail('备份缺少作业记录，无法恢复');
-      if (schemaVersion >= 20 && !hasColumn('homework_records', 'course_key')) throw fail('备份缺少作业课程标识，无法恢复');
-      if (schemaVersion >= 21 && (!HOMEWORK_TABLES.every(table => tables.includes(table)) || !hasColumn('daily_tasks', 'homework_legacy_seconds') || !hasColumn('homework_records', 'completion_requested_at'))) throw fail('备份缺少分次学习记录，无法恢复');
-      if (schemaVersion >= 22 && !hasColumn('daily_tasks', 'revoked_at')) throw fail('备份缺少已取消任务标记，无法恢复');
-      if (schemaVersion >= 23 && !hasColumn('daily_tasks', 'finish_on_actual_date')) throw fail('备份缺少完成时间归属，无法恢复');
-      if (schemaVersion >= 24 && (!tables.includes('study_legacy_corrections') ||
-        !['id', 'task_id', 'child_id', 'old_seconds', 'new_seconds', 'reason', 'actor', 'created_at'].every(name => hasColumn('study_legacy_corrections', name)))) throw fail('备份缺少旧累计更正记录，无法恢复');
-      if (schemaVersion >= 25 && !hasColumn('daily_tasks', 'is_course_homework')) throw fail('备份缺少课程作业来源，无法恢复');
-      if (schemaVersion >= 26 && !['last_timer_kind', 'last_timer_id'].every(name => hasColumn('children', name))) throw fail('备份缺少最近计时记录，无法恢复');
-      if (schemaVersion >= 27 && !hasColumn('outside_classes', 'total_lessons')) throw fail('备份缺少课外班总课次，无法恢复');
-      if (schemaVersion >= 28 && (!['class_id', 'child_id', 'lesson_date', 'actual_date', 'start_time', 'end_time', 'duration_minutes', 'status', 'charged', 'source', 'task_id', 'note', 'updated_at'].every(name => hasColumn('outside_class_attendance', name)) ||
-        !['class_id', 'child_id', 'total_fee_cents', 'updated_at'].every(name => hasColumn('outside_class_fees', name)))) throw fail('备份缺少课外班出勤或学费记录，无法恢复');
-      if (schemaVersion >= 29 && (!hasColumn('children', 'session_epoch') || !tables.includes('outside_class_changes') ||
-        !['id', 'class_id', 'child_id', 'kind', 'lesson_date', 'old_value', 'new_value', 'created_at'].every(name => hasColumn('outside_class_changes', name)))) throw fail('备份缺少出勤学费修改记录或孩子会话版本，无法恢复');
-      if (schemaVersion >= 30 && (!['photo_expectations', 'outside_class_revisions'].every(t => tables.includes(t)) ||
-        !['name', 'size', 'sha256'].every(name => hasColumn('photo_expectations', name)) ||
-        !['class_id', 'child_id', 'kind', 'lesson_date', 'revision'].every(name => hasColumn('outside_class_revisions', name)) || !hasColumn('period_task_logs', 'request_fingerprint'))) throw fail('备份缺少照片校验或独立版本数据，无法恢复');
-      if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
-      initDb(candidate);
-      for (const [name, value] of Object.entries(data.photos || {})) {
-        if (!safeName(name) || typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw fail('备份照片路径或内容无效');
-      }
-      candidate.prepare('DELETE FROM photo_expectations').run();
-      const expectation = candidate.prepare('INSERT INTO photo_expectations VALUES (?, ?, ?)');
-      for (const photo of data.photo_manifest || []) expectation.run(photo.name, photo.size, photo.sha256);
-      for (const [name, value] of Object.entries(data.photos || {})) {
-        const content = Buffer.from(value, 'base64');
-        if (content.length > MAX_PHOTO_SIZE) throw fail('备份单张照片超过 10 MiB');
-        expectation.run(name, content.length, createHash('sha256').update(content).digest('hex'));
-      }
-      const listed = new Set([...Object.keys(data.photos || {}), ...(data.photo_manifest || []).map(p => p.name), ...(data.missing_photos || [])]);
-      for (const name of this.referencedPhotos(candidate)) {
-        if (!listed.has(name)) throw fail('备份缺少关联照片');
-      }
-    } catch (error) {
-      if (candidate) candidate.close();
-      throw fail(error.statusCode ? error.message : '备份包损坏或无法读取');
-    }
-
     const restoreId = randomUUID();
     const staging = `${this.uploadDir}.restore-${restoreId}`;
     const previous = `${this.uploadDir}.previous-${restoreId}`;
     const saved = path.join(this.backupDir, `.restore-${restoreId}.sqlite`);
+    const archive = path.join(this.backupDir, `.restore-${restoreId}.taskie.gz`);
     let moved = false, installed = false, attached = false, journaled = false;
     // A v2 backup's photos come from the photo store or the current upload directory, checked against
     // its manifest; photos found in neither are reported and can be added later from a photo package.
-    const unavailable = [...(data.missing_photos || [])];
     try {
-      fs.mkdirSync(staging, { recursive: true });
-      for (const [name, content] of Object.entries(data.photos || {})) fs.writeFileSync(path.join(staging, name), Buffer.from(content, 'base64'), { mode: 0o600 });
+      fs.mkdirSync(staging, { recursive: true, mode: 0o700 });
+      await fs.promises.writeFile(archive, buffer, { mode: 0o600 });
+      const data = await new Promise((resolve, reject) => {
+        const worker = new Worker(path.join(__dirname, '../utils/restore-worker.js'), { workerData: {
+          archive, saved, staging, maxSize: MAX_SIZE, currentSchemaVersion: this.db.pragma('user_version', { simple: true })
+        } });
+        let message, workerError;
+        worker.once('message', value => { message = value; });
+        worker.once('error', error => { workerError = error; });
+        worker.once('exit', code => {
+          if (workerError || code || !message) reject(fail('备份包损坏或无法读取'));
+          else if (message.error) reject(fail(message.error));
+          else resolve(message.result);
+        });
+      });
+      const unavailable = [...data.missing_photos];
       for (const photo of data.photo_manifest || []) {
         let source;
         for (const file of [this.photos.path(photo.name), path.join(this.uploadDir, photo.name)]) {
@@ -532,15 +441,12 @@ class BackupService {
         await fs.promises.copyFile(source, path.join(staging, photo.name), fs.constants.COPYFILE_FICLONE);
         if (!await this.matches(path.join(staging, photo.name), photo, true)) throw fail('照片在恢复时被修改');
       }
-      fs.writeFileSync(saved, candidate.serialize(), { mode: 0o600 });
-      candidate.close();
-      candidate = null;
       const recovery = await this.createSnapshot('before-restore');
       const secrets = this.db.prepare("SELECT key, value FROM settings WHERE key IN ('jwt_secret')").all();
       this.db.prepare('ATTACH DATABASE ? AS recovery').run(saved);
       attached = true;
       this.db.pragma('foreign_keys = OFF');
-      this.writeJournal({ id: restoreId, previous, staging, saved });
+      this.writeJournal({ id: restoreId, previous, staging, saved, archive });
       journaled = true;
       fs.renameSync(this.uploadDir, previous);
       moved = true;
@@ -568,12 +474,12 @@ class BackupService {
       }
       throw error;
     } finally {
-      if (candidate) candidate.close();
       if (attached) this.db.exec('DETACH DATABASE recovery');
       this.db.pragma('foreign_keys = ON');
-      fs.rmSync(staging, { recursive: true, force: true });
-      if (!moved) fs.rmSync(previous, { recursive: true, force: true });
-      fs.rmSync(saved, { force: true });
+      await fs.promises.rm(staging, { recursive: true, force: true });
+      if (!moved) await fs.promises.rm(previous, { recursive: true, force: true });
+      await fs.promises.rm(saved, { force: true });
+      await fs.promises.rm(archive, { force: true });
       // Done or rolled back: nothing is left for a restart to finish.
       if (journaled && !moved) fs.rmSync(this.journalPath, { force: true });
     }

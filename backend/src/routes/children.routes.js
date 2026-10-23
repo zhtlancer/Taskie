@@ -34,10 +34,13 @@ async function childrenRoutes(fastify, options) {
 
   fastify.delete('/:id', async (request, reply) => {
     try {
-      const result = childrenService.deleteChild(request.params.id);
+      const result = await fastify.backupService.exclusive(() => {
+        fastify.requireCurrentSession(request);
+        return childrenService.deleteChild(request.params.id);
+      });
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || 'Internal server error' });
     }
   });
 }

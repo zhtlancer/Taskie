@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newRequestId, pendingWrites } from '../src/utils/requestId.js';
+import { newRequestId, pendingWrites, RECEIPT_LIMIT, RECEIPT_TTL_MS } from '../src/utils/requestId.js';
 
 test('request ids satisfy the server format with or without crypto.randomUUID', () => {
   assert.match(newRequestId(), /^[a-zA-Z0-9_-]{8,100}$/);
@@ -57,7 +57,70 @@ for (const kind of ['progress', 'backfill', 'redemption']) test(`${kind}: copied
   const next = a.prepare(action, {});
   assert.notEqual(next.request_id, first.request_id, 'identical new operation uses a fresh id');
   assert.equal(receipts.length, 1);
-  assert.equal(receipts.getItem(receipts.key(0)), '1', 'receipt contains no child or request data');
+  assert.match(receipts.getItem(receipts.key(0)), /^\d+$/, 'receipt contains only a timestamp, no child or request data');
+});
+
+test('receipts are bounded and expired receipts never turn an old form into a new operation', t => {
+  const session = memoryStorage(), copied = memoryStorage(), receipts = memoryStorage();
+  const store = pendingWrites(session, receipts), other = pendingWrites(copied, receipts);
+  const action = { kind: 'progress', role: 'child', child_id: 'c', task_id: 't', payload: { amount: 1 } };
+  const attempt = {}, first = store.prepare(action, attempt);
+  copied.setItem(session.key(0), session.getItem(session.key(0)));
+  let now = Date.now(); t.mock.method(Date, 'now', () => now);
+  store.done(first.request_id);
+  receipts.setItem('unrelated-preference', 'keep');
+  for (let i = 0; i < RECEIPT_LIMIT + 10; i++) { now++; store.done(`later-${i}`); }
+  assert.equal(receipts.length, RECEIPT_LIMIT + 1);
+  assert.equal(receipts.getItem(`taskie_confirmed_write_v1:${first.request_id}`), null);
+  assert.throws(() => store.prepare(action, attempt), /原操作已确认/, 'eviction cannot create a fresh request from an old form');
+  assert.equal(other.prepare(action).request_id, first.request_id, 'a copied pending request replays the original id');
+  now += RECEIPT_TTL_MS;
+  store.list();
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts.getItem('unrelated-preference'), 'keep');
+  assert.throws(() => store.prepare(action, attempt), /原操作已确认/);
+});
+
+test('quota retry evicts receipts only and preserves the original operation if retry fails', () => {
+  const session = memoryStorage(), receipts = memoryStorage(), store = pendingWrites(session, receipts);
+  const action = { kind: 'progress', role: 'child', child_id: 'c', task_id: 't', payload: { amount: 1 } };
+  const first = store.prepare(action);
+  for (let i = 0; i < 4; i++) receipts.setItem(`taskie_confirmed_write_v1:old-${i}`, String(Date.now() - 10));
+  receipts.setItem('unrelated', 'keep');
+  const write = receipts.setItem;
+  let failures = 0;
+  receipts.setItem = (key, value) => { if (receipts.length >= 5) { failures++; throw new Error('quota'); } write(key, value); };
+  store.done(first.request_id);
+  assert.equal(failures, 1);
+  assert.deepEqual(store.list(), []);
+  assert.equal(receipts.getItem('unrelated'), 'keep');
+  assert.ok(receipts.getItem(`taskie_confirmed_write_v1:${first.request_id}`));
+});
+
+test('logout and signing in clear local pending bodies but keep cross-tab receipts', async t => {
+  const session = memoryStorage(), receipts = memoryStorage();
+  for (const [key, value] of [['sessionStorage', session], ['localStorage', receipts]]) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { value, configurable: true });
+    t.after(() => { if (previous) Object.defineProperty(globalThis, key, previous); else delete globalThis[key]; });
+  }
+  const { saveToken, clearTokens } = await import('../src/utils/session.js');
+  const store = pendingWrites(session, receipts);
+  const action = { kind: 'progress', role: 'child', child_id: 'a', task_id: 't', title: 'private', payload: { amount: 1 } };
+  saveToken('child', 'child-a-token');
+  const attempt = {}; store.prepare(action, attempt);
+  store.done('receipt-to-preserve');
+  clearTokens();
+  assert.deepEqual(store.list(), []);
+  assert.equal(session.getItem('taskie_child_token'), null);
+  assert.equal(receipts.length, 1);
+  assert.throws(() => store.prepare(action, attempt), /会话已结束/);
+  store.prepare(action);
+  saveToken('child', 'child-b-token');
+  assert.deepEqual(store.list(), []);
+  store.prepare({ ...action, role: 'parent' });
+  saveToken('parent', 'parent-token');
+  assert.deepEqual(store.list(), []);
 });
 
 test('an edited form cannot change progress, date, position or duration before confirmation', () => {

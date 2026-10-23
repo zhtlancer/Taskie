@@ -15,6 +15,17 @@ function getSetting(db, key) {
 
 function installAuthorization(app, db) {
   app.decorate('sessionEpoch', () => getSetting(db, 'auth_epoch'));
+  app.decorate('requireCurrentSession', request => {
+    const user = request.user;
+    if (!user || !['parent', 'child'].includes(user.role) || user.epoch !== app.sessionEpoch() || user.exp * 1000 <= Date.now()) {
+      throw Object.assign(new Error('会话已失效，请重新登录'), { statusCode: 401 });
+    }
+    if (user.role === 'child') {
+      const child = db.prepare('SELECT session_epoch FROM children WHERE id = ?').get(user.child_id);
+      if (!child) throw Object.assign(new Error('孩子账号已删除，请重新选择账号'), { statusCode: 401 });
+      if ((child.session_epoch ?? null) !== (user.child_epoch ?? null)) throw Object.assign(new Error('孩子的 PIN 已更改，请重新登录'), { statusCode: 401 });
+    }
+  });
   app.decorate('requireChildAccess', (request, childId) => {
     if (request.user.role !== 'parent' && (!childId || request.user.child_id !== childId)) {
       throw Object.assign(new Error('无权访问其他孩子的数据'), { statusCode: 403 });
@@ -29,14 +40,8 @@ function installAuthorization(app, db) {
     if (url === '/api/health' || url.startsWith('/api/device/') || request.method === 'GET' && ['/api/children', '/api/auth/setup'].includes(url.replace(/\/$/, '')) ||
       request.method === 'POST' && ['/api/auth/parent-login', '/api/auth/child-login', '/api/auth/logout'].includes(url)) return;
     try { await request.jwtVerify(); } catch { return reply.code(401).send({ error: '请先登录，或重新登录已过期的会话' }); }
-    if (!['parent', 'child'].includes(request.user.role) || request.user.epoch !== app.sessionEpoch()) {
-      return reply.code(401).send({ error: '会话已失效，请重新登录' });
-    }
-    if (request.user.role === 'child') {
-      const child = db.prepare('SELECT session_epoch FROM children WHERE id = ?').get(request.user.child_id);
-      if (!child) return reply.code(401).send({ error: '孩子账号已删除，请重新选择账号' });
-      if ((child.session_epoch ?? null) !== (request.user.child_epoch ?? null)) return reply.code(401).send({ error: '孩子的 PIN 已更改，请重新登录' });
-    }
+    try { app.requireCurrentSession(request); }
+    catch (error) { return reply.code(error.statusCode).send({ error: error.message }); }
     // Until the default PIN is replaced, a parent session may only change it.
     if (request.user.role === 'parent' && url !== '/api/auth/parent-pin' &&
       db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1') {
