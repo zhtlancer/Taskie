@@ -566,6 +566,35 @@ async function main() {
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM reward_redemptions WHERE reward_id=?').get(item.id).n, 1);
   });
 
+  await check('B-F2 parent browsing another child preserves the original pending request', async () => {
+    const other = await api('POST', '/children', { name: '家长浏览的另一个孩子' });
+    const goal = await api('POST', `/children/${child.id}/goals`, { title: '跨孩子保留补记', subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10) });
+    const page = await open('parent');
+    const target = `**/api/period-tasks/${goal.id}/logs`;
+    const bodies = []; let lose = true;
+    await page.route(target, async route => {
+      bodies.push(route.request().postDataJSON());
+      if (lose) await route.abort(); else await route.continue();
+    });
+    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
+    await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+    const first = (await pending(page))[0];
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 0);
+    await page.goto(`${base}/parent/dashboard`, { waitUntil: 'networkidle' });
+    await page.locator(`a[href="/child/${other.id}/today"]`).first().click();
+    await page.waitForFunction(id => JSON.parse(sessionStorage.getItem('current_child'))?.id === id, other.id);
+    assert.deepEqual(await pending(page), [first], 'viewing B must preserve the parent request for A');
+    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    lose = false;
+    await page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
+    await page.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
+    assert.deepEqual(bodies[1], bodies[0], 'the retry must preserve the original id and payload');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 1);
+    assert.deepEqual(await pending(page), []);
+  });
+
   await check('B-F2 logout and switching children remove local pending request details', async () => {
     const other = await api('POST', '/children', { name: '切换后孩子' });
     const page = await open('parent');

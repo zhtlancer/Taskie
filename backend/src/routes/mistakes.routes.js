@@ -3,6 +3,7 @@ const path = require('path');
 const { generateId } = require('../utils/crypto');
 const { isImageExtensionSupported, processOrFallbackPhoto } = require('../utils/image');
 const config = require('../config');
+const { queuedDeletion } = require('../utils/queued-deletion');
 
 async function mistakesRoutes(fastify, options) {
   const { mistakesService } = options;
@@ -123,7 +124,7 @@ async function mistakesRoutes(fastify, options) {
 
   fastify.delete('/:id', async (request, reply) => {
     try {
-      const result = await fastify.backupService.exclusive(() => {
+      const result = await queuedDeletion(fastify.backupService, request, reply, () => {
         fastify.requireCurrentSession(request);
         const record = mistakesService.getMistake(request.params.id);
         if (record) fastify.requireChildAccess(request, record.child_id);

@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
-import { pendingWriteStore } from '../utils/requestId.js';
 
 export const useChildStore = defineStore('child', {
   state: () => ({
@@ -27,7 +26,8 @@ export const useChildStore = defineStore('child', {
 
   actions: {
     setChild(child) {
-      if (this.currentChild?.id !== child?.id) pendingWriteStore.clear();
+      // Selecting a view is not a new login: parents may browse several children's
+      // pages while their own pending requests still need confirmation.
       this.currentChild = child;
       if (child) {
         sessionStorage.setItem('current_child', JSON.stringify(child));

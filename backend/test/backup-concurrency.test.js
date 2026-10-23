@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { gunzipSync } = require('node:zlib');
 const { createTestApp, cleanupTestApp } = require('./helper');
+const { DELETE_WAIT_MS } = require('../src/utils/queued-deletion');
 
 for (const kind of ['mistake', 'child']) test(`backup keeps its snapshot photo when a ${kind} deletion arrives during copying`, async t => {
   const ctx = createTestApp();
@@ -62,5 +63,70 @@ test('a queued photo deletion cannot use an invalidated session after restore or
   } finally { release(); }
   await blocked;
   assert.equal((await deleting).statusCode, 401);
+  assert.ok(ctx.app.services.mistakesService.getMistake(mistake.id));
+});
+
+for (const kind of ['mistake', 'child']) test(`a ${kind} deletion returns 503 after its queue deadline and never executes later`, async t => {
+  const ctx = createTestApp();
+  t.after(async () => { await ctx.app.close(); cleanupTestApp(ctx); ctx.db.close(); });
+  await ctx.app.ready();
+  const child = ctx.app.services.childrenService.createChild({ name: 'timeout' });
+  const photo = path.join(ctx.tempUploadDir, 'timeout.jpg');
+  fs.writeFileSync(photo, 'keep');
+  const mistake = ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: 'queued', photo_path: '/uploads/timeout.jpg' });
+  const service = ctx.app.backupService;
+  let release, reached;
+  const held = new Promise(resolve => { release = resolve; });
+  const blocked = service.exclusive(() => held);
+  const queued = new Promise(resolve => { reached = resolve; });
+  const exclusive = service.exclusive.bind(service);
+  t.mock.method(service, 'exclusive', operation => { const result = exclusive(operation); reached(); return result; });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const deleting = ctx.app.inject({ method: 'DELETE', url: kind === 'mistake' ? `/api/mistakes/${mistake.id}` : `/api/children/${child.id}` });
+    await queued;
+    t.mock.timers.tick(DELETE_WAIT_MS);
+    const response = await deleting;
+    assert.equal(response.statusCode, 503, response.body);
+    assert.match(response.json().error, /本次删除未执行/);
+  } finally { t.mock.timers.reset(); release(); }
+  await blocked;
+  await service.operation;
+  assert.ok(ctx.app.services.childrenService.getChild(child.id));
+  assert.ok(ctx.app.services.mistakesService.getMistake(mistake.id));
+  assert.equal(fs.readFileSync(photo, 'utf8'), 'keep');
+  const retried = await ctx.app.inject({ method: 'DELETE', url: kind === 'mistake' ? `/api/mistakes/${mistake.id}` : `/api/children/${child.id}` });
+  assert.equal(retried.statusCode, 200, 'a new request can delete once the queue is free');
+});
+
+for (const kind of ['mistake', 'child']) test(`disconnecting a queued ${kind} deletion cancels it before its deadline`, async t => {
+  const ctx = createTestApp();
+  t.after(async () => { await ctx.app.close(); cleanupTestApp(ctx); ctx.db.close(); });
+  let arrived, closed, release;
+  const requestArrived = new Promise(resolve => { arrived = resolve; });
+  const connectionClosed = new Promise(resolve => { closed = resolve; });
+  ctx.app.addHook('preHandler', async (request, reply) => {
+    if (request.method === 'DELETE') { reply.raw.once('close', closed); arrived(); }
+  });
+  await ctx.app.ready();
+  const child = ctx.app.services.childrenService.createChild({ name: 'disconnected' });
+  const mistake = ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: 'keep' });
+  const held = new Promise(resolve => { release = resolve; });
+  const blocked = ctx.app.backupService.exclusive(() => held);
+  const base = await ctx.app.listen({ host: '127.0.0.1', port: 0 });
+  const token = ctx.app.jwt.sign({ role: 'parent', epoch: ctx.app.sessionEpoch() });
+  const controller = new AbortController();
+  const url = kind === 'mistake' ? `/api/mistakes/${mistake.id}` : `/api/children/${child.id}`;
+  const deleting = fetch(base + url, { method: 'DELETE', headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
+  const rejected = assert.rejects(deleting, { name: 'AbortError' });
+  try {
+    await requestArrived;
+    controller.abort();
+    await rejected;
+    await connectionClosed;
+  } finally { controller.abort(); release(); }
+  await blocked;
+  await ctx.app.backupService.operation;
+  assert.ok(ctx.app.services.childrenService.getChild(child.id));
   assert.ok(ctx.app.services.mistakesService.getMistake(mistake.id));
 });

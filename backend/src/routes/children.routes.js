@@ -1,3 +1,5 @@
+const { queuedDeletion } = require('../utils/queued-deletion');
+
 async function childrenRoutes(fastify, options) {
   const { childrenService } = options;
 
@@ -34,7 +36,7 @@ async function childrenRoutes(fastify, options) {
 
   fastify.delete('/:id', async (request, reply) => {
     try {
-      const result = await fastify.backupService.exclusive(() => {
+      const result = await queuedDeletion(fastify.backupService, request, reply, () => {
         fastify.requireCurrentSession(request);
         return childrenService.deleteChild(request.params.id);
       });
