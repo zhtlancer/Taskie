@@ -1,3 +1,5 @@
+const { dataGeneration } = require('../utils/data-generation');
+
 async function authRoutes(fastify, options) {
   const { authService } = options;
   const attempts = new Map();
@@ -43,6 +45,7 @@ async function authRoutes(fastify, options) {
     return reply.send({
       success: true,
       token,
+      data_generation: dataGeneration(fastify.db),
       child_id: result.child.id,
       child: result.child
     });
@@ -66,6 +69,7 @@ async function authRoutes(fastify, options) {
     return reply.send({
       success: true,
       token,
+      data_generation: dataGeneration(fastify.db),
       role: 'parent',
       must_change_pin: result.must_change_pin
     });
@@ -73,6 +77,8 @@ async function authRoutes(fastify, options) {
 
   // Public: lets the login page show the default-PIN hint only until it has been changed.
   fastify.get('/setup', async () => ({ parent_pin_is_default: authService.isParentPinDefault() }));
+
+  fastify.get('/data-generation', async () => ({ data_generation: dataGeneration(fastify.db) }));
 
   fastify.post('/logout', async (request, reply) => {
     return reply.send({

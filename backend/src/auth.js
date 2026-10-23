@@ -42,8 +42,8 @@ function installAuthorization(app, db) {
     try { await request.jwtVerify(); } catch { return reply.code(401).send({ error: '请先登录，或重新登录已过期的会话' }); }
     try { app.requireCurrentSession(request); }
     catch (error) { return reply.code(error.statusCode).send({ error: error.message }); }
-    // Until the default PIN is replaced, a parent session may only change it.
-    if (request.user.role === 'parent' && url !== '/api/auth/parent-pin' &&
+    // Until the default PIN is replaced, only changing it and calibrating the generation are allowed.
+    if (request.user.role === 'parent' && !['/api/auth/parent-pin', '/api/auth/data-generation'].includes(url) &&
       db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1') {
       return reply.code(403).send({ error: '请先修改默认家长 PIN', code: 'PARENT_PIN_CHANGE_REQUIRED' });
     }
