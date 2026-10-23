@@ -71,7 +71,7 @@ async function save() {
   try {
     await api.changeParentPin(currentPin.value, newPin.value);
     // Changing the PIN ends every session, so sign straight back in with the new one.
-    parentStore.logout();
+    parentStore.resetSession();
     await parentStore.login(newPin.value);
     router.replace('/parent/dashboard');
   } catch (err) {

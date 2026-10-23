@@ -617,6 +617,144 @@ async function main() {
     assert.equal(await page.getByText('旧会话私密内容', { exact: false }).count(), 0);
   });
 
+
+  await check('I1 lost progress survives 401 and same child login, replaying the original id once', async () => {
+    const goal = await api('POST', `/children/${child.id}/goals`, { title: '会话过期保留进度', subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10) });
+    const page = await open('child');
+    const bodies = []; let lose = true;
+    await page.route(`**/api/period-tasks/${goal.id}/logs`, async route => {
+      bodies.push(route.request().postDataJSON());
+      const response = await route.fetch();
+      if (lose) await route.abort(); else await route.fulfill({ response });
+    });
+    await page.goto(`${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
+    await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
+    const panel = page.getByRole('complementary', { name: '待确认请求' });
+    await panel.waitFor();
+    const first = (await pending(page))[0];
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 1);
+    lose = false;
+    await page.evaluate(expired => sessionStorage.setItem('taskie_child_token', expired), app.jwt.sign({ role: 'child', child_id: child.id, epoch: app.sessionEpoch() }, { expiresIn: -1 }));
+    const rejected = page.waitForResponse(r => r.url().endsWith(`/period-tasks/${goal.id}/logs`) && r.status() === 401);
+    await panel.getByRole('button', { name: '确认这次操作' }).click();
+    await rejected; await page.waitForURL(base + '/');
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_child_token')), null);
+    assert.deepEqual(await pending(page), [first], '401 clears credentials, preserving the entire uncertain request');
+    await page.getByText(child.name, { exact: true }).click();
+    await page.waitForURL(`**/child/${child.id}/today`);
+    await panel.waitFor();
+    assert.deepEqual(await pending(page), [first]);
+    await panel.getByRole('button', { name: '确认这次操作' }).click();
+    await page.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
+    assert.equal(bodies.length, 3);
+    assert.deepEqual(bodies[1], bodies[0]); assert.deepEqual(bodies[2], bodies[0]);
+    const rows = db.prepare('SELECT * FROM period_task_logs WHERE period_task_id=?').all(goal.id);
+    assert.equal(rows.length, 1);
+    assert.equal(db.prepare('SELECT SUM(points) AS n FROM point_logs WHERE period_log_id=?').get(rows[0].id).n, 1);
+    assert.deepEqual(await pending(page), []);
+  });
+
+  const seedIdentityRequest = async (page, role = 'parent') => {
+    const entry = { request_id: 'identity-pending-request', role, kind: 'backfill', child_id: child.id, task_id: 'old-task', title: '身份保留测试', child_name: child.name, payload: { amount: 1, date: today } };
+    await page.evaluate(entry => {
+      sessionStorage.setItem(`taskie_pending_write_v1:${entry.request_id}`, JSON.stringify(entry));
+      window.dispatchEvent(new Event('taskie:pending-writes'));
+    }, entry);
+    return entry;
+  };
+  const enterPin = async (page, pin) => { for (const digit of pin) await page.getByRole('button', { name: digit, exact: true }).click(); };
+
+  await check('I2 expired child A requests are removed when child B signs in', async () => {
+    const other = await api('POST', '/children', { name: '过期后登录的孩子B' });
+    const page = await open('child');
+    await page.goto(`${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
+    await seedIdentityRequest(page, 'child');
+    await page.evaluate(expired => sessionStorage.setItem('taskie_child_token', expired), app.jwt.sign({ role: 'child', child_id: child.id, epoch: app.sessionEpoch() }, { expiresIn: -1 }));
+    await page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
+    await page.waitForURL(base + '/');
+    assert.equal((await pending(page)).length, 1, 'retained until the next identity is known');
+    await page.getByText(other.name, { exact: true }).click();
+    await page.waitForURL(`**/child/${other.id}/today`);
+    assert.deepEqual(await pending(page), []);
+    assert.equal(await page.getByRole('complementary', { name: '待确认请求' }).count(), 0);
+  });
+
+  await check('I3 parent 401 and same parent login retain requests targeting any child', async () => {
+    const page = await open('parent');
+    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    const first = await seedIdentityRequest(page);
+    await page.evaluate(expired => sessionStorage.setItem('taskie_parent_token', expired), app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() }, { expiresIn: -1 }));
+    await page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
+    await page.waitForURL('**/parent/login');
+    assert.deepEqual(await pending(page), [first]);
+    await enterPin(page, '1234');
+    await page.waitForURL('**/parent/dashboard');
+    assert.deepEqual(await pending(page), [first]);
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+  });
+
+  for (const forced of [false, true]) await check(`I4 ${forced ? 'first-use' : 'settings'} parent PIN change retains requests after reauthentication`, async () => {
+    const page = await open('parent');
+    const originalPinHash = db.prepare("SELECT value FROM settings WHERE key='parent_pin_hash'").get().value;
+    try {
+      if (forced) db.prepare("UPDATE settings SET value='1' WHERE key='parent_pin_is_default'").run();
+      await page.goto(`${base}/parent/${forced ? 'setup-pin' : 'settings'}`, { waitUntil: 'networkidle' });
+      const first = await seedIdentityRequest(page);
+      if (forced) {
+        await enterPin(page, '1234'); await enterPin(page, '5678'); await enterPin(page, '5678');
+      } else {
+        const form = page.locator('form').filter({ has: page.getByRole('button', { name: '保存 PIN', exact: true }) });
+        await form.locator('input[type=password]').nth(0).fill('1234');
+        await form.locator('input[type=password]').nth(1).fill('5678');
+        await form.getByRole('button', { name: '保存 PIN', exact: true }).click();
+        await page.waitForURL('**/parent/login');
+        assert.deepEqual(await pending(page), [first]);
+        await enterPin(page, '5678');
+      }
+      await page.waitForURL('**/parent/dashboard');
+      assert.deepEqual(await pending(page), [first]);
+    } finally {
+      // Restore only the isolated fixture's PIN. The public API deliberately forbids
+      // choosing the default PIN; retain the new epoch so old tokens stay invalid.
+      db.prepare("UPDATE settings SET value=? WHERE key='parent_pin_hash'").run(originalPinHash);
+      token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
+      db.prepare("UPDATE settings SET value='0' WHERE key='parent_pin_is_default'").run();
+    }
+  });
+
+  for (const entry of ['today', 'sidebar', 'more']) await check(`I5 explicit child switch from ${entry} clears requests and credentials`, async () => {
+    const page = await open('child', entry === 'sidebar' ? 1180 : 390);
+    await page.goto(`${base}/child/${child.id}/${entry === 'today' ? 'today' : 'rewards'}`, { waitUntil: 'networkidle' });
+    await seedIdentityRequest(page, 'child');
+    if (entry === 'more') await page.getByRole('button', { name: '更多学习功能' }).click();
+    await page.getByRole('link', { name: entry === 'today' ? '🔄 切换' : '切换小朋友', exact: true }).click();
+    await page.waitForURL(base + '/');
+    assert.deepEqual(await pending(page), []);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_child_token')), null);
+  });
+
+  // Restore changes the complete dataset and session epoch. Run it last.
+  await check('I6 failed restore preserves requests; successful backup restore clears them', async () => {
+    const backup = await app.backupService.create();
+    const page = await open('parent');
+    await page.goto(`${base}/parent/settings`, { waitUntil: 'networkidle' });
+    const first = await seedIdentityRequest(page);
+    await page.locator('input[accept=".gz"]').setInputFiles(app.backupService.getPath(backup.name));
+    await page.getByLabel('当前家长 PIN', { exact: true }).fill('0000');
+    await page.getByRole('checkbox', { name: '我确认用备份替换当前数据' }).check();
+    const rejected = page.waitForResponse(r => r.url().endsWith('/backups/restore'));
+    await page.getByRole('button', { name: '确认恢复', exact: true }).click();
+    assert.ok((await rejected).status() >= 400);
+    assert.deepEqual(await pending(page), [first], 'a rejected restore leaves the original data and pending request intact');
+    await page.getByLabel('当前家长 PIN', { exact: true }).fill('1234');
+    const restored = page.waitForResponse(r => r.url().endsWith('/backups/restore'));
+    await page.getByRole('button', { name: '确认恢复', exact: true }).click();
+    assert.equal((await restored).status(), 200);
+    await page.waitForURL('**/parent/login');
+    assert.deepEqual(await pending(page), []);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')), null);
+  });
+
   const passed = results.filter(r => r.passed).length;
   console.log(`RESULT ${passed} passed, ${results.length - passed} failed`);
   if (results.some(r => !r.passed)) process.exitCode = 1;

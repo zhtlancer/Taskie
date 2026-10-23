@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
+import { currentRole, endSession } from '../utils/session.js';
 
 export const useChildStore = defineStore('child', {
   state: () => ({
@@ -63,6 +64,12 @@ export const useChildStore = defineStore('child', {
 
     clearChild() {
       this.setChild(null);
+    },
+
+    switchAccount() {
+      // A parent can browse another child without ending the parent's identity.
+      if (currentRole() === 'child') endSession();
+      this.clearChild();
     }
   }
 });

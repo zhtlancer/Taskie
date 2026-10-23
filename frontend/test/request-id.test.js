@@ -97,32 +97,6 @@ test('quota retry evicts receipts only and preserves the original operation if r
   assert.ok(receipts.getItem(`taskie_confirmed_write_v1:${first.request_id}`));
 });
 
-test('logout and signing in clear local pending bodies but keep cross-tab receipts', async t => {
-  const session = memoryStorage(), receipts = memoryStorage();
-  for (const [key, value] of [['sessionStorage', session], ['localStorage', receipts]]) {
-    const previous = Object.getOwnPropertyDescriptor(globalThis, key);
-    Object.defineProperty(globalThis, key, { value, configurable: true });
-    t.after(() => { if (previous) Object.defineProperty(globalThis, key, previous); else delete globalThis[key]; });
-  }
-  const { saveToken, clearTokens } = await import('../src/utils/session.js');
-  const store = pendingWrites(session, receipts);
-  const action = { kind: 'progress', role: 'child', child_id: 'a', task_id: 't', title: 'private', payload: { amount: 1 } };
-  saveToken('child', 'child-a-token');
-  const attempt = {}; store.prepare(action, attempt);
-  store.done('receipt-to-preserve');
-  clearTokens();
-  assert.deepEqual(store.list(), []);
-  assert.equal(session.getItem('taskie_child_token'), null);
-  assert.equal(receipts.length, 1);
-  assert.throws(() => store.prepare(action, attempt), /会话已结束/);
-  store.prepare(action);
-  saveToken('child', 'child-b-token');
-  assert.deepEqual(store.list(), []);
-  store.prepare({ ...action, role: 'parent' });
-  saveToken('parent', 'parent-token');
-  assert.deepEqual(store.list(), []);
-});
-
 test('an edited form cannot change progress, date, position or duration before confirmation', () => {
   for (const payload of [{ amount: 3 }, { position: 4 }, { date: '2026-10-23' }, { duration_seconds: 180 }]) {
     const store = pendingWrites(memoryStorage(), memoryStorage());

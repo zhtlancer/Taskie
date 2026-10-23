@@ -98,6 +98,17 @@ export function pendingWrites(storage = () => globalThis.sessionStorage, confirm
       getStorage().removeItem(`${PREFIX}${id}`);
       notifyPendingWrites();
     },
+    retainIdentity(role, childId) {
+      const target = getStorage();
+      if (target) for (const key of keysWithPrefix(target, PREFIX)) {
+        let entry;
+        try { entry = JSON.parse(target.getItem(key)); } catch { /* Discard damaged private bodies on login. */ }
+        // For a parent, child_id identifies the target child, not the request owner.
+        const keep = entry?.role === role && (role === 'parent' || (role === 'child' && childId && entry.child_id === childId));
+        if (!keep) target.removeItem(key);
+      }
+      notifyPendingWrites();
+    },
     clear() {
       const target = getStorage();
       if (target) for (const key of keysWithPrefix(target, PREFIX)) target.removeItem(key);

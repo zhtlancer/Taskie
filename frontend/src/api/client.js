@@ -57,7 +57,6 @@ export const api = {
   async loginChild({ child_id, pin }) {
     const result = await post('/auth/child-login', { child_id, pin });
     if (!result.success) throw result.error;
-    clearTokens();
     saveToken('child', result.token);
     return result;
   },

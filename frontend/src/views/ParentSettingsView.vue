@@ -131,7 +131,7 @@ import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../api/client';
-import { clearTokens } from '../utils/session.js';
+import { clearTokens, endSession } from '../utils/session.js';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.js';
 import { businessDate, DEFAULT_TIME_ZONE } from '../utils/businessDate.js';
@@ -198,7 +198,7 @@ function importPhotos() { return run(async () => {
   await load();
   message.value = `已补齐或修复 ${result.imported} 张照片${result.present ? `，${result.present} 张原本就在` : ''}${result.unused ? `，${result.unused} 张已不需要` : ''}${result.mismatch ? `，${result.mismatch} 张与清单不符，未安装` : ''}${result.unverified ? `，${result.unverified} 张没有可信校验信息，请用包含原照片的备份恢复或重新上传错题照片` : ''}。${result.missing ? `还缺 ${result.missing} 张。` : result.unreadable_backups?.length ? '' : '照片已全部齐全。'}${result.unreadable_backups?.length ? `有 ${result.unreadable_backups.length} 份备份清单无法读取，无法确认所有照片是否齐全。` : ''}`;
 }); }
-function restore() { return run(async () => { await api.restoreBackup(file.value, restorePin.value); clearTokens(); sessionStorage.removeItem('current_child'); await router.replace('/parent/login'); }); }
+function restore() { return run(async () => { await api.restoreBackup(file.value, restorePin.value); endSession(); sessionStorage.removeItem('current_child'); await router.replace('/parent/login'); }); }
 function changePin() { return run(async () => { await api.changeParentPin(oldPin.value, newPin.value); clearTokens(); await router.replace('/parent/login'); }); }
 onMounted(() => {
   run(load);

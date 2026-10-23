@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
 import { hasSession, clearTokens, setMustChangePin } from '../utils/session.js';
+import { pendingWriteStore } from '../utils/requestId.js';
 
 export const useParentStore = defineStore('parent', {
   state: () => ({
@@ -29,12 +30,17 @@ export const useParentStore = defineStore('parent', {
       }
     },
 
-    logout() {
+    resetSession() {
       this.isAuthenticated = false;
       this.pendingPin = null;
       sessionStorage.removeItem('parent_auth');
       setMustChangePin(false);
       clearTokens();
+    },
+
+    logout() {
+      this.resetSession();
+      pendingWriteStore.clear();
     }
   }
 });

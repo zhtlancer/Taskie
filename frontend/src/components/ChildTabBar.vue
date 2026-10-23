@@ -7,7 +7,7 @@
     </nav>
     <div class="mt-auto space-y-4 border-t border-slate-100 dark:border-slate-700 pt-4">
       <ThemeSelect />
-      <router-link to="/" class="block min-h-[44px] px-3 py-3 text-sm text-slate-500 dark:text-slate-400">切换小朋友</router-link>
+      <router-link to="/" class="block min-h-[44px] px-3 py-3 text-sm text-slate-500 dark:text-slate-400" @click="childStore.switchAccount()">切换小朋友</router-link>
     </div>
   </aside>
   <nav class="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 pb-[env(safe-area-inset-bottom)]" aria-label="学生导航">
@@ -27,7 +27,7 @@
       <router-link v-for="tab in secondaryTabs" :key="tab.path" :to="link(tab.path)" class="min-h-[56px] rounded-xl bg-slate-50 dark:bg-slate-800 p-3 text-sm font-bold text-slate-700 dark:text-slate-200" @click="moreOpen = false">{{ tab.icon }} {{ tab.label }}</router-link>
     </nav>
     <ThemeSelect />
-    <router-link to="/" class="block mt-4 min-h-[44px] rounded-xl py-3 text-center text-sm text-slate-500 dark:text-slate-400" @click="moreOpen = false">切换小朋友</router-link>
+    <router-link to="/" class="block mt-4 min-h-[44px] rounded-xl py-3 text-center text-sm text-slate-500 dark:text-slate-400" @click="moreOpen = false; childStore.switchAccount()">切换小朋友</router-link>
   </UiDialog>
 </template>
 <script setup>
@@ -39,6 +39,8 @@ import UiDialog from './UiDialog.vue';
 import RunningTimer from './RunningTimer.vue';
 import RestCountdown from './RestCountdown.vue';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
+import { useChildStore } from '../stores/child';
+const childStore = useChildStore();
 const props = defineProps({ childId: { type: String, required: true } });
 const route = useRoute(), moreOpen = ref(false);
 const primaryTabs = [{path:'today',icon:'📋',label:'今日'}, {path:'homework',icon:'📒',label:'作业'}, {path:'word-study',icon:'📚',label:'学习'}, {path:'rewards',icon:'🏆',label:'积分'}];

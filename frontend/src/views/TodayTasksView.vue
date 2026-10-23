@@ -83,7 +83,7 @@
       <div class="flex items-center gap-2 text-xs font-black">
         <StreakBadge ref="streakRef" :count="streakDays" />
         <span class="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300">💰 今日已得 {{ todayPoints }} 分</span>
-        <router-link to="/" class="ml-auto px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 whitespace-nowrap" @click="playClick">🔄 切换</router-link>
+        <router-link to="/" class="ml-auto px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 whitespace-nowrap" @click="playClick(); childStore.switchAccount()">🔄 切换</router-link>
       </div>
       <div class="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
         <button
