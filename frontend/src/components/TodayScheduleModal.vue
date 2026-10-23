@@ -1,5 +1,9 @@
 <template>
   <UiDialog title="今天的课" :busy="busy" wide @close="$emit('close')">
+    <template #title>
+      今天的课
+      <span v-if="today.week" class="ml-1 px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 text-xs">{{ today.week }}周</span>
+    </template>
     <div class="space-y-4">
       <p v-if="asParent" class="text-sm font-bold text-violet-700 dark:text-violet-300">只对 {{ childName }} 生效</p>
       <div v-if="error" role="alert" class="rounded-xl p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm">
