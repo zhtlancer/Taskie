@@ -308,9 +308,6 @@ class ScheduleService {
       throw fail(400, '这个孩子没有这门课');
     }
     const date = validateDate(body.date, '日期');
-    if (this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, date)) {
-      throw fail(409, '这次课已确认出勤，请先在出勤统计中恢复未确认，再请假或调课');
-    }
     if (date < cls.start_date || (cls.end_date && date > cls.end_date) || !cls.days_of_week.includes(getDayOfWeek(date))) {
       throw fail(400, '这天没有这门课');
     }
@@ -323,6 +320,13 @@ class ScheduleService {
     }
     const note = text(body.note, '备注', 50);
     this.db.transaction(() => {
+      const current = this.db.prepare('SELECT id FROM outside_class_exceptions WHERE class_id = ? AND child_id = ? AND date = ?').get(classId, childId, date);
+      if (body.expected_exception_id !== undefined && (current?.id ?? null) !== body.expected_exception_id) {
+        throw fail(409, '这节课的请假或调课刚被修改过，请刷新后再操作');
+      }
+      if (this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, date)) {
+        throw fail(409, '这次课已确认出勤，请先在出勤统计中恢复未确认，再请假或调课');
+      }
       this.db.prepare(`INSERT INTO outside_class_exceptions (id, class_id, child_id, date, kind, new_date, new_start_time, new_end_time, note, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (class_id, child_id, date) DO UPDATE SET kind = excluded.kind, new_date = excluded.new_date,
@@ -373,22 +377,35 @@ class ScheduleService {
       return row && (!row.lessonDates || row.lessonDates.includes(e.date));
     });
     const exceptionAt = new Map(exceptions.map(e => [`${e.class_id}|${e.date}`, e]));
-    const attendance = new Map(this.db.prepare('SELECT class_id, lesson_date, status FROM outside_class_attendance WHERE child_id = ?').all(childId)
+    // Read the same persisted revision as ClassStatsService.revision; never derive it from timestamps.
+    const attendance = new Map(this.db.prepare(`SELECT a.class_id, a.lesson_date, a.status, a.charged, a.source, r.revision
+      FROM outside_class_attendance a LEFT JOIN outside_class_revisions r
+        ON r.class_id = a.class_id AND r.child_id = a.child_id AND r.kind = 'attendance' AND r.lesson_date = a.lesson_date
+      WHERE a.child_id = ?`).all(childId)
       .map(r => [`${r.class_id}|${r.lesson_date}`, r]));
     const movedInto = new Map();
     for (const e of exceptions.filter(e => e.kind === 'moved')) {
       if (!movedInto.has(e.new_date)) movedInto.set(e.new_date, []);
       movedInto.get(e.new_date).push(e);
     }
-    const lesson = (row, date, startTime, endTime, status, e = null) => ({
-      class_id: row.id, class_lesson_date: e?.date ?? date, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
-      lesson_number: row.lessonDates ? row.lessonDates.indexOf(e?.date ?? date) + 1 : null, total_lessons: row.total_lessons,
-      bring: row.bring, note: row.note, start_time: startTime, end_time: endTime, status,
-      exception_id: e?.id ?? null, exception_note: e?.note ?? null,
-      moved_to: status === 'moved_out' ? { date: e.new_date, start_time: e.new_start_time, end_time: e.new_end_time } : null,
-      moved_from: status === 'moved_in' ? e.date : null,
-      create_task: Boolean(row.create_task), points: row.points, created_at: row.created_at
-    });
+    const lesson = (row, date, startTime, endTime, status, e = null) => {
+      const sourceDate = e?.date ?? date;
+      const record = attendance.get(`${row.id}|${sourceDate}`);
+      return {
+        class_id: row.id, class_lesson_date: sourceDate, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
+        source_date: sourceDate,
+        attendance: record ? {
+          status: record.status, charged: Boolean(record.charged),
+          source: record.source === 'checkin' ? 'task' : record.source, revision: record.revision ?? null
+        } : null,
+        lesson_number: row.lessonDates ? row.lessonDates.indexOf(sourceDate) + 1 : null, total_lessons: row.total_lessons,
+        bring: row.bring, note: row.note, start_time: startTime, end_time: endTime, status,
+        exception_id: e?.id ?? null, exception_note: e?.note ?? null,
+        moved_to: status === 'moved_out' ? { date: e.new_date, start_time: e.new_start_time, end_time: e.new_end_time } : null,
+        moved_from: status === 'moved_in' ? e.date : null,
+        create_task: Boolean(row.create_task), points: row.points, created_at: row.created_at
+      };
+    };
     return date => {
       const weekday = getDayOfWeek(date);
       const list = [];
