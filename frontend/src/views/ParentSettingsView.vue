@@ -24,8 +24,11 @@
         <p class="text-sm text-slate-600 dark:text-slate-300">导出记录是全家共用的，不区分设备。浏览器收到照片包但没有保存成功，系统检测不到，所以下载全部照片始终是最保险的做法。</p>
         <div v-if="info.photo_export" role="status" class="text-sm text-slate-700 dark:text-slate-200 space-y-1">
           <p>{{ info.photo_export.last_complete_at ? `上次完整导出：${formatTime(info.photo_export.last_complete_at)}` : '尚未完整导出照片' }}</p>
-          <p>还有 {{ info.photo_export.pending_count }} 张未导出</p>
+          <p>{{ info.photo_export.unreadable_backups?.length ? '已读取的清单中还有' : '还有' }} {{ info.photo_export.pending_count }} 张未导出</p>
         </div>
+        <p v-if="info.photo_export?.unreadable_backups?.length" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 text-amber-800 dark:text-amber-200">
+          有 {{ info.photo_export.unreadable_backups.length }} 份备份清单无法读取，导出统计不完整。仍可上传照片包修复其他照片，但无法确认这些备份独有的照片是否齐全。请保留原备份和照片包，检查损坏的备份后再导出。
+        </p>
         <div class="flex flex-wrap gap-3">
           <button :disabled="busy" @click="downloadPhotos('all')" class="min-h-[44px] px-5 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl font-bold disabled:opacity-50">下载全部照片</button>
           <button :disabled="busy" @click="downloadPhotos('new')" class="min-h-[44px] px-5 py-3 bg-brand-500 text-white rounded-xl font-bold disabled:opacity-50">下载新照片</button>
@@ -42,7 +45,7 @@
           </ul>
           <p class="text-sm">请上传当时下载的正确照片包，补齐或修复这些照片后再导出。</p>
         </div>
-        <div v-if="info.missing_photos?.count || skippedPhotos.length" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
+        <div v-if="info.missing_photos?.count || skippedPhotos.length || info.photo_export?.unreadable_backups?.length" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
           <template v-if="info.missing_photos?.count">
             <p class="font-bold">有 {{ info.missing_photos.count }} 张错题照片需要补齐：不存在 {{ info.missing_photos.absent }} 张，校验不一致 {{ info.missing_photos.mismatch }} 张。</p>
             <ul class="space-y-3 text-sm">
@@ -193,7 +196,7 @@ function importPhotos() { return run(async () => {
   } finally { uploading.value = false; }
   photoFile.value = null;
   await load();
-  message.value = `已补齐或修复 ${result.imported} 张照片${result.present ? `，${result.present} 张原本就在` : ''}${result.unused ? `，${result.unused} 张已不需要` : ''}${result.mismatch ? `，${result.mismatch} 张与清单不符，未安装` : ''}${result.unverified ? `，${result.unverified} 张没有可信校验信息，请用包含原照片的备份恢复或重新上传错题照片` : ''}。${result.missing ? `还缺 ${result.missing} 张。` : '照片已全部齐全。'}`;
+  message.value = `已补齐或修复 ${result.imported} 张照片${result.present ? `，${result.present} 张原本就在` : ''}${result.unused ? `，${result.unused} 张已不需要` : ''}${result.mismatch ? `，${result.mismatch} 张与清单不符，未安装` : ''}${result.unverified ? `，${result.unverified} 张没有可信校验信息，请用包含原照片的备份恢复或重新上传错题照片` : ''}。${result.missing ? `还缺 ${result.missing} 张。` : result.unreadable_backups?.length ? '' : '照片已全部齐全。'}${result.unreadable_backups?.length ? `有 ${result.unreadable_backups.length} 份备份清单无法读取，无法确认所有照片是否齐全。` : ''}`;
 }); }
 function restore() { return run(async () => { await api.restoreBackup(file.value, restorePin.value); clearTokens(); sessionStorage.removeItem('current_child'); await router.replace('/parent/login'); }); }
 function changePin() { return run(async () => { await api.changeParentPin(oldPin.value, newPin.value); clearTokens(); await router.replace('/parent/login'); }); }

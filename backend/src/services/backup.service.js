@@ -282,9 +282,25 @@ class BackupService {
   async photoExportStatus() {
     const state = this.exportState(), exported = new Set(state.names);
     const names = new Set(this.referencedPhotos().filter(safeName));
-    for (const item of this.list()) for (const name of (await this.retainedManifest(item.name)).photos) names.add(name);
+    const { manifests, unreadable } = await this.readableRetainedManifests();
+    for (const retained of manifests) for (const name of retained.photos) names.add(name);
     return { last_complete_at: state.last_complete_at, exported_count: [...names].filter(name => exported.has(name)).length,
-      pending_count: [...names].filter(name => !exported.has(name)).length };
+      pending_count: [...names].filter(name => !exported.has(name)).length,
+      ...(unreadable.length ? { unreadable_backups: unreadable } : {}) };
+  }
+
+  // Recovery and status remain usable when one archive is damaged. Export and pruning
+  // stay strict: an unreadable manifest must never silently omit or delete its photos.
+  async readableRetainedManifests() {
+    const manifests = [], unreadable = [];
+    for (const item of this.list()) {
+      try { manifests.push(await this.retainedManifest(item.name)); }
+      catch (error) {
+        unreadable.push(item.name);
+        console.warn('    [Backup] 无法读取备份清单，跳过该清单:', item.name, error.message);
+      }
+    }
+    return { manifests, unreadable };
   }
 
   recordPhotoExport(names) {
@@ -311,11 +327,11 @@ class BackupService {
 
   async importPhotoStream(stream) {
     const result = { imported: 0, present: 0, unused: 0, skipped: 0, mismatch: 0, unverified: 0 };
-    const referenced = new Set(this.referencedPhotos()), expected = this.expectations();
+    const current = new Set(this.referencedPhotos()), referenced = new Set(current), expected = this.expectations();
     // A deleted mistake may still be part of a retained backup. Its manifest remains the
     // authoritative source for both whether the photo is wanted and which bytes are trusted.
-    for (const item of this.list()) {
-      const retained = await this.retainedManifest(item.name);
+    const { manifests, unreadable } = await this.readableRetainedManifests();
+    for (const retained of manifests) {
       for (const name of retained.photos) referenced.add(name);
       for (const photo of retained.manifest) {
         const previous = expected.get(photo.name);
@@ -329,11 +345,28 @@ class BackupService {
     const reader = new TarReader((name, content) => pending.push({ name, content }), { maxFileSize: MAX_PHOTO_SIZE });
     const install = async (name, content) => {
       if (!safeName(name)) { result.skipped++; return; }
-      if (!referenced.has(name)) { result.unused++; return; }
+      if (!referenced.has(name)) {
+        // An unreadable backup may still need this photo; do not call it unnecessary.
+        if (unreadable.length) result.skipped++; else result.unused++;
+        return;
+      }
       const photo = expected.get(name);
       // A legacy missing_photos entry has no trusted bytes or digest. Never guess by filename.
       if (!photo) { result.unverified++; return; }
       if (content.length !== photo.size || createHash('sha256').update(content).digest('hex') !== photo.sha256) { result.mismatch++; return; }
+      if (!current.has(name)) {
+        // Retained-only photos belong in the store so retention can reclaim them later.
+        // Force a fresh digest before add(), including when its metadata cache is stale.
+        const stored = await this.photos.entry(name, true);
+        if (stored && stored.size === photo.size && stored.sha256 === photo.sha256) { result.present++; return; }
+        const temp = path.join(this.photos.dir, `.import-${randomUUID()}`);
+        try {
+          fs.writeFileSync(temp, content, { mode: 0o600 });
+          await this.photos.add(name, temp, photo);
+        } finally { fs.rmSync(temp, { force: true }); }
+        result.imported++;
+        return;
+      }
       const file = path.join(this.uploadDir, name);
       if (await this.matches(file, photo, true)) { await this.photos.entry(name, true); await this.photos.add(name, file, photo); result.present++; return; }
       const temp = path.join(this.uploadDir, `.import-${randomUUID()}`);
@@ -360,7 +393,7 @@ class BackupService {
     result.skipped += reader.skipped;
     const missing = (await this.missingPhotos()).length;
     this.saveUploadIndex();
-    return { ...result, missing };
+    return { ...result, missing, ...(unreadable.length ? { unreadable_backups: unreadable } : {}) };
   }
 
   restore(buffer) { return this.exclusive(() => this.restoreSnapshot(buffer)); }

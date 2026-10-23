@@ -1,4 +1,4 @@
-// Backend contract exercised with real Chromium downloads. The settings UI is migrated separately.
+// Photo recovery and export contracts exercised through real Chromium downloads and settings UI.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -53,12 +53,33 @@ async function main() {
     const downloaded = await event, file = path.join(dir, `${scope}.tar`); await downloaded.saveAs(file);
     return file;
   };
-  const all = await download('all');
+  // Advance the server clock only after the authorized native download starts streaming.
+  // Client clock skew alone cannot exercise the server-side ticket expiry check.
+  const service = app.backupService, originalExport = service.exportPhotos, originalNow = Date.now;
+  const issued = await api('/api/backups/photos/export-ticket', { scope: 'all' });
+  const ticketToken = new URL(issued.body.url, base).searchParams.get('ticket');
+  let clockAdvanced = false, all;
+  service.exportPhotos = function (...args) {
+    const source = originalExport.apply(this, args);
+    const stream = require('node:stream').Readable.from((async function* () {
+      for await (const chunk of source) {
+        yield chunk;
+        if (!clockAdvanced) { clockAdvanced = true; Date.now = () => originalNow() + 6 * 60 * 1000; }
+      }
+    })(), { objectMode: false });
+    stream.photoNames = source.photoNames;
+    return stream;
+  };
+  try {
+    all = await download('all', issued);
+    assert.ok(clockAdvanced);
+    assert.throws(() => app.jwt.verify(ticketToken), /expired/i);
+  } finally { Date.now = originalNow; service.exportPhotos = originalExport; }
   assert.deepEqual(names(all), ['current.jpg', 'retained.jpg']);
   console.log('PASS native browser download includes current and retained-only photos');
   let status = (await api('/api/backups')).body.photo_export;
   assert.deepEqual([status.exported_count, status.pending_count], [2, 0]); assert.ok(status.last_complete_at);
-  console.log('PASS completion is persisted after the response finishes');
+  console.log('PASS native download crossing ticket expiry is complete and recorded');
   add('new.jpg', 'new'); fs.utimesSync(path.join(dir, 'uploads', 'new.jpg'), 0, 0);
   assert.deepEqual(names(await download('new')), ['new.jpg']);
   console.log('PASS new photos ignore both skewed device clock and old file mtime');
@@ -66,7 +87,7 @@ async function main() {
   assert.deepEqual(names(await download('new')), []);
   console.log('PASS legacy since is rejected and repeated incremental downloads are empty');
   await page.evaluate(() => { Date.now = window.__taskieNativeNow; });
-  token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
+  const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
   await page.evaluate(token => sessionStorage.setItem('taskie_parent_token', token), token);
   await page.goto(`${base}/parent/settings`, { waitUntil: 'networkidle' });
   // Preserve trusted expectations, then simulate a same-size corrupted photo and import through HTTP.
@@ -86,7 +107,9 @@ async function main() {
   fs.writeFileSync(badFile, Buffer.concat(chunks));
   const bad = await upload(badFile); assert.equal(bad.body.mismatch, 1); assert.equal(bad.body.missing, 1);
   console.log('PASS corrupted same-name content is refused and reported as mismatch');
-  const repaired = await upload(all); assert.equal(repaired.status, 200); assert.equal(repaired.body.imported, 2);
+  const repaired = await upload(all); assert.equal(repaired.status, 200); assert.equal(repaired.body.imported, 1);
+  assert.equal(repaired.body.present, 1);
+  assert.equal(fs.existsSync(path.join(dir, 'uploads', 'retained.jpg')), false);
   assert.equal((await api('/api/backups')).body.missing_photos.count, 0);
   assert.equal(fs.readFileSync(path.join(dir, 'uploads', 'current.jpg'), 'utf8'), 'current');
   console.log('PASS correct content repairs an existing corrupted photo');
@@ -103,13 +126,16 @@ async function main() {
   fs.rmSync(app.backupService.photos.path('retained-only.jpg'), { force: true });
   const requestUiDownload = async label => {
     const ticketResponse = page.waitForResponse(r => r.url().endsWith('/api/backups/photos/export-ticket'));
+    const downloadEvent = page.waitForEvent('download');
     await page.getByRole('button', { name: label, exact: true }).click();
     const issued = await ticketResponse;
     if (issued.status() !== 200) assert.fail(await issued.text());
     const body = await issued.json();
     const warning = page.getByRole('alert').filter({ hasText: '本次导出跳过' });
     await warning.waitFor({ state: body.skipped?.length ? 'visible' : 'detached' });
-    return download(label === '下载新照片' ? 'new' : 'all', { status: 200, body });
+    const downloaded = await downloadEvent, file = path.join(dir, 'settings-export.tar');
+    await downloaded.saveAs(file);
+    return file;
   };
   const emptyExport = await requestUiDownload('下载全部照片');
   assert.deepEqual(names(emptyExport), ['current.jpg', 'new.jpg', 'retained.jpg']);
@@ -122,6 +148,7 @@ async function main() {
   assert.doesNotMatch(await page.locator('[role=status]').first().textContent(), /已不需要/);
   const afterRepair = await requestUiDownload('下载全部照片');
   assert.ok(names(afterRepair).includes('retained-only.jpg'));
+  assert.equal(fs.existsSync(path.join(dir, 'uploads', 'retained-only.jpg')), false);
   console.log('PASS settings page imports a trusted retained-only photo and the next full export includes it');
 
   add('broken.jpg', 'broken'); add('missing.jpg', 'missing');
@@ -143,6 +170,25 @@ async function main() {
   assert.ok(!app.backupService.exportState().names.includes('broken.jpg'));
   assert.ok(!app.backupService.exportState().names.includes('missing.jpg'));
   console.log('PASS corruption after ticket issuance skips that photo without failing the browser download');
+
+  // A corrupt archive must not hide the settings form or overwrite a successful import
+  // with a failed status refresh. Its unknown photos must not be reported as all present.
+  fs.writeFileSync(path.join(service.backupDir, 'backup-2026-10-23-broken.taskie.gz'), 'invalid gzip');
+  fs.writeFileSync(path.join(dir, 'uploads', 'current.jpg'), 'WRONG!!');
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('alert').filter({ hasText: '导出统计不完整' }).waitFor();
+  await page.locator('input[accept*=tar]').setInputFiles(all);
+  const recoveredResponse = page.waitForResponse(r => r.url().endsWith('/api/backups/photos/import'));
+  await page.getByRole('button', { name: '上传照片包', exact: true }).click();
+  const recovered = await recoveredResponse;
+  assert.equal(recovered.status(), 200);
+  assert.equal((await recovered.json()).imported, 1);
+  const recoveryMessage = page.getByRole('status').filter({ hasText: '已补齐或修复 1 张照片' });
+  await recoveryMessage.waitFor();
+  assert.match(await recoveryMessage.textContent(), /无法确认所有照片是否齐全/);
+  assert.doesNotMatch(await recoveryMessage.textContent(), /照片已全部齐全/);
+  assert.equal(fs.readFileSync(path.join(dir, 'uploads', 'current.jpg'), 'utf8'), 'current');
+  console.log('PASS unreadable backup warns on settings and does not block photo recovery');
   await context.close();
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

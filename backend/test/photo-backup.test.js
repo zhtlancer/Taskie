@@ -365,9 +365,81 @@ test('a retained backup photo can be restored from a package after its mistake w
 
   const imported = await service.importPhotos(Readable.from([packageBytes]));
   assert.deepEqual([imported.imported, imported.unused, imported.missing], [1, 0, 0]);
-  assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'retained-only.jpg'), 'utf8'), 'trusted retained bytes');
+  assert.equal(fs.readFileSync(service.photos.path('retained-only.jpg'), 'utf8'), 'trusted retained bytes');
+  assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'retained-only.jpg')), false);
   const download = await exportPackage(ctx, 'all');
   assert.deepEqual(tarNames(download), ['retained-only.jpg']);
+});
+
+test('retained-only imports preserve correct store copies, repair corruption, and leave no orphan uploads after rotation', async t => {
+  const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
+  service.retention = 1;
+  addPhoto('retained.jpg', 'correct');
+  await service.create();
+  const record = ctx.db.prepare('SELECT id FROM mistake_records').get();
+  ctx.app.services.mistakesService.deleteMistake(record.id);
+  const bytes = await packageOf(ctx, 'retained.jpg', 'correct');
+  const { Readable } = require('node:stream');
+  const upload = () => service.importPhotos(Readable.from([bytes]));
+  const first = await upload();
+  assert.deepEqual([first.imported, first.present], [0, 1]);
+  assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'retained.jpg')), false);
+  fs.writeFileSync(service.photos.path('retained.jpg'), 'WRONG!!');
+  // Even a forged warm cache must not turn a bad store copy into "present".
+  const stat = fs.statSync(service.photos.path('retained.jpg'));
+  Object.assign(service.photos.index['retained.jpg'], { size: stat.size, mtime: stat.mtimeMs, ctime: stat.ctimeMs, ino: stat.ino, dev: stat.dev });
+  const repaired = await upload();
+  assert.deepEqual([repaired.imported, repaired.present], [1, 0]);
+  assert.equal(fs.readFileSync(service.photos.path('retained.jpg'), 'utf8'), 'correct');
+  assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'retained.jpg')), false);
+  assert.equal((await upload()).present, 1);
+  await service.create();
+  assert.equal(fs.existsSync(service.photos.path('retained.jpg')), false);
+  assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'retained.jpg')), false);
+});
+
+test('an unreadable retained backup does not block status or trusted photo repairs and does not permit unsafe cleanup', async t => {
+  const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
+  addPhoto('retained.jpg', 'retained'); await service.create();
+  ctx.app.services.mistakesService.deleteMistake(ctx.db.prepare('SELECT id FROM mistake_records').get().id);
+  ctx.db.prepare('DELETE FROM photo_expectations').run();
+  fs.rmSync(service.photos.path('retained.jpg'));
+  addPhoto('current.jpg', 'current'); await service.create();
+  fs.rmSync(path.join(ctx.tempUploadDir, 'current.jpg'));
+  fs.rmSync(service.photos.path('current.jpg'));
+  const broken = 'backup-2026-10-23-broken.taskie.gz';
+  fs.writeFileSync(path.join(service.backupDir, broken), 'invalid gzip');
+  const status = await ctx.app.inject({ url: '/api/backups' });
+  assert.equal(status.statusCode, 200, status.body);
+  assert.deepEqual(status.json().photo_export.unreadable_backups, [broken]);
+  assert.equal(status.json().missing_photos.count, 1);
+  const chunks = [];
+  for await (const chunk of tarStream(['current', 'retained', 'unknown'].map(name => ({ name: `${name}.jpg`, content: Buffer.from(name), mtime: Date.now() })))) chunks.push(chunk);
+  const response = await ctx.app.inject({ method: 'POST', url: '/api/backups/photos/import', ...multipart('file', 'photos.tar', Buffer.concat(chunks)) });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json(), { imported: 2, present: 0, unused: 0, skipped: 1, mismatch: 0, unverified: 0, missing: 0, unreadable_backups: [broken] });
+  assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'current.jpg'), 'utf8'), 'current');
+  assert.equal(fs.readFileSync(service.photos.path('retained.jpg'), 'utf8'), 'retained');
+  assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'retained.jpg')), false);
+  assert.equal(fs.existsSync(service.photos.path('unknown.jpg')), false);
+  fs.writeFileSync(service.photos.path('possibly-needed.jpg'), 'keep');
+  await service.prunePhotos();
+  assert.ok(fs.existsSync(service.photos.path('possibly-needed.jpg')));
+  await assert.rejects(service.exportEntries(), /备份/);
+});
+
+test('tolerating unreadable manifests never suppresses conflicting trusted photo digests', async t => {
+  const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
+  addPhoto('conflict.jpg', 'original');
+  const backup = await service.create();
+  const file = service.getPath(backup.name);
+  const data = JSON.parse(gunzipSync(fs.readFileSync(file)));
+  data.photo_manifest[0].sha256 = '0'.repeat(64);
+  fs.writeFileSync(file, gzipSync(JSON.stringify(data)));
+  fs.rmSync(`${file}.manifest.json`);
+  fs.writeFileSync(path.join(service.backupDir, 'backup-2026-10-23-broken.taskie.gz'), 'invalid gzip');
+  const bytes = await packageOf(ctx, 'conflict.jpg', 'original');
+  await assert.rejects(service.importPhotos(require('node:stream').Readable.from([bytes])), /同名不同内容/);
 });
 
 test('retained v1 scans skip large embedded payloads, cache manifests and keep referenced store photos', async t => {
