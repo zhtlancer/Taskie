@@ -26,9 +26,16 @@ function header(name, size, mtime) {
 }
 
 // entries: [{ name, file }], read lazily as the stream is consumed.
-function tarStream(entries) {
+function tarStream(entries, { onEntry = () => {} } = {}) {
   return Readable.from((async function* () {
-    for (const { name, file, sha256 } of entries) {
+    for await (const { name, file, sha256, content, mtime } of entries) {
+      if (content) {
+        yield header(name, content.length, mtime);
+        yield content;
+        if (content.length % BLOCK) yield Buffer.alloc(BLOCK - content.length % BLOCK);
+        onEntry(name);
+        continue;
+      }
       let stat;
       stat = fs.statSync(file); // A removed file must fail the package, not silently mark it exported.
       yield header(name, stat.size, stat.mtimeMs);
@@ -37,6 +44,7 @@ function tarStream(entries) {
       if (stat.size) for await (const chunk of fs.createReadStream(file, { end: stat.size - 1 })) { written += chunk.length; hash.update(chunk); yield chunk; }
       if (written !== stat.size || sha256 && hash.digest('hex') !== sha256) throw new Error(`照片 ${name} 在打包时被修改`);
       if (stat.size % BLOCK) yield Buffer.alloc(BLOCK - stat.size % BLOCK);
+      onEntry(name);
     }
     yield Buffer.alloc(BLOCK * 2);
   })(), { objectMode: false });

@@ -152,7 +152,7 @@ test('backfill markers and audit survive backup restore; v14 migrates and damage
   await ctx.post(task.id);
   ctx.tasks.recordDaySnapshot(ctx.child.id, ctx.date);
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   await ctx.post(task.id, 'undo-backfill');
   ctx.db.prepare('DELETE FROM task_day_snapshots').run();
   const restore = buffer => ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...multipart(buffer) });

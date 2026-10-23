@@ -4,8 +4,8 @@ const { randomUUID, createHash } = require('node:crypto');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
 const { initDb, TIMING_COLUMNS, WEEKLY_EXTRA_COLUMNS } = require('../db');
-const { PhotoStore, hashFile, cloneFile } = require('./photo-store');
-const { readManifest } = require('../utils/backup-manifest');
+const { PhotoStore, fileEntry } = require('./photo-store');
+const { Worker } = require('node:worker_threads');
 const { MAX_PHOTO_SIZE } = require('../utils/photo-limits');
 const { tarStream, TarReader } = require('../utils/tar');
 
@@ -34,11 +34,19 @@ class BackupService {
     this.uploadDir = path.resolve(uploadDir);
     this.backupDir = path.resolve(backupDir);
     this.retention = Math.max(1, Math.min(100, Math.floor(Number(retention) || 7)));
+    this.uploadIndexPath = path.join(this.backupDir, '.upload-index.json');
+    try { this.uploadIndex = JSON.parse(fs.readFileSync(this.uploadIndexPath, 'utf8')); } catch { this.uploadIndex = {}; }
+    this.manifestReads = new Map();
     this.lastError = null;
     this.lastWarning = null;
     fs.mkdirSync(this.backupDir, { recursive: true, mode: 0o700 });
     this.photos = new PhotoStore(path.join(this.backupDir, 'photos'));
     this.recoverInterruptedRestore();
+  }
+
+  saveUploadIndex() {
+    fs.writeFileSync(`${this.uploadIndexPath}.tmp`, JSON.stringify(this.uploadIndex), { mode: 0o600 });
+    fs.renameSync(`${this.uploadIndexPath}.tmp`, this.uploadIndexPath);
   }
 
   referencedPhotos(db = this.db) {
@@ -50,33 +58,56 @@ class BackupService {
     return new Map(this.db.prepare('SELECT name, size, sha256 FROM photo_expectations').all().map(p => [p.name, p]));
   }
 
-  matches(file, photo) {
-    try { return fs.statSync(file).size === photo.size && hashFile(file) === photo.sha256; } catch { return false; }
+  async matches(file, photo, verify = false) {
+    try {
+      const actual = await fileEntry(file, verify ? {} : this.uploadIndex, file, verify);
+      return actual && actual.size === photo.size && actual.sha256 === photo.sha256;
+    } catch { return false; }
   }
 
-  missingPhotos() {
-    const expected = this.expectations(), seen = new Set();
-    return this.db.prepare("SELECT photo_path, subject, description, created_at FROM mistake_records WHERE photo_path LIKE '/uploads/%' ORDER BY created_at, id").all()
-      .flatMap(row => {
-        const name = row.photo_path.slice('/uploads/'.length), file = path.join(this.uploadDir, name);
-        if (seen.has(name)) return [];
-        seen.add(name);
-        const reason = !safeName(name) || !fs.existsSync(file) ? 'absent' : expected.has(name) && !this.matches(file, expected.get(name)) ? 'mismatch' : null;
-        return reason ? [{ name, subject: row.subject, description: row.description, created_at: row.created_at, reason }] : [];
-      });
+  async missingPhotos() {
+    const expected = this.expectations(), seen = new Set(), missing = [];
+    for (const row of this.db.prepare("SELECT photo_path, subject, description, created_at FROM mistake_records WHERE photo_path LIKE '/uploads/%' ORDER BY created_at, id").all()) {
+      const name = row.photo_path.slice('/uploads/'.length), file = path.join(this.uploadDir, name);
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const reason = !safeName(name) || !fs.existsSync(file) ? 'absent' : expected.has(name) && !await this.matches(file, expected.get(name)) ? 'mismatch' : null;
+      if (reason) missing.push({ name, subject: row.subject, description: row.description, created_at: row.created_at, reason });
+    }
+    return missing;
   }
 
-  retainedManifest(name) {
+  async retainedManifest(name) {
     const file = path.join(this.backupDir, name), stat = fs.statSync(file);
     const cache = `${file}.manifest.json`;
     try {
       const data = JSON.parse(fs.readFileSync(cache, 'utf8'));
       if (data.size === stat.size && data.mtime === stat.mtimeMs) return data;
-    } catch { /* Old archives are scanned once with bounded memory. */ }
-    const data = { ...readManifest(file, MAX_SIZE), size: stat.size, mtime: stat.mtimeMs };
-    fs.writeFileSync(`${cache}.tmp`, JSON.stringify(data), { mode: 0o600 });
-    fs.renameSync(`${cache}.tmp`, cache);
-    return data;
+    } catch { /* Scan old archives off the request thread, with bounded memory. */ }
+    if (this.manifestReads.has(name)) return this.manifestReads.get(name);
+    const pending = (async () => {
+      const manifest = await new Promise((resolve, reject) => {
+        const worker = new Worker(path.join(__dirname, '../utils/manifest-worker.js'), { workerData: { file, maxSize: MAX_SIZE } });
+        let message, workerError;
+        worker.once('message', value => { message = value; });
+        worker.once('error', error => { workerError = error; });
+        worker.once('exit', code => {
+          if (workerError) reject(workerError);
+          else if (code || !message) reject(new Error(`清单扫描失败 (${code})`));
+          else if (message.error) reject(new Error(message.error));
+          else resolve(message.result);
+        });
+      });
+      const data = { ...manifest, size: stat.size, mtime: stat.mtimeMs };
+      // A concurrent retention cleanup or replacement must not resurrect a stale cache.
+      const current = await fs.promises.stat(file);
+      if (current.size !== stat.size || current.mtimeMs !== stat.mtimeMs) throw fail('备份在扫描时被修改');
+      fs.writeFileSync(`${cache}.tmp`, JSON.stringify(data), { mode: 0o600 });
+      fs.renameSync(`${cache}.tmp`, cache);
+      return data;
+    })();
+    this.manifestReads.set(name, pending);
+    try { return await pending; } finally { this.manifestReads.delete(name); }
   }
 
   get journalPath() { return path.join(this.backupDir, '.restore-journal.json'); }
@@ -122,46 +153,67 @@ class BackupService {
   }
 
   create(reason = 'manual') {
-    // Synchronous throughout: application writes cannot interleave with the database snapshot and
-    // the photos it refers to. Recheck stored bytes before trusting or repairing a photo copy.
+    // Serialize backup/restore jobs; reads and ordinary application requests can still run.
+    return this.exclusive(() => this.createSnapshot(reason));
+  }
+
+  exclusive(operation) {
+    const pending = (this.operation || Promise.resolve()).then(operation);
+    this.operation = pending.catch(() => {});
+    return pending;
+  }
+
+  async createSnapshot(reason) {
+    // Capture references, expectations and database in the same synchronous turn, before photo I/O.
+    const names = this.referencedPhotos();
+    const snapshot = new Database(this.db.serialize());
     const manifest = [];
     const missing = [];
     const expected = this.expectations();
-    for (const name of this.referencedPhotos()) {
-      if (!safeName(name)) throw fail('照片路径无效，无法备份');
-      const file = path.join(this.uploadDir, name);
-      // A photo already lost on disk must not stop every later backup of the remaining data.
-      const known = expected.get(name);
-      if (known && !this.matches(file, known)) { manifest.push(known); missing.push(name); continue; }
-      if (!fs.existsSync(file)) { missing.push(name); continue; }
-      const photo = this.photos.add(name, file);
-      manifest.push(photo);
-      this.db.prepare('INSERT OR REPLACE INTO photo_expectations VALUES (?, ?, ?)').run(name, photo.size, photo.sha256);
-    }
-    this.photos.save();
-    const database = this.db.serialize().toString('base64');
-    const data = Buffer.from(JSON.stringify({ format: 'taskie-backup', version: 2, created_at: new Date().toISOString(), reason, database, photo_manifest: manifest, missing_photos: missing.filter(name => !manifest.some(p => p.name === name)) }));
-    if (data.length > MAX_SIZE) throw fail('备份数据超过 256 MiB，请使用 NAS 文件备份');
-    const name = `backup-${new Date().toISOString().replace(/[:.Z]/g, '-')}-${randomUUID()}.taskie.gz`;
-    const target = path.join(this.backupDir, name);
-    fs.writeFileSync(`${target}.tmp`, gzipSync(data), { mode: 0o600 });
-    fs.renameSync(`${target}.tmp`, target);
-    this.lastError = null;
-    this.lastWarning = missing.length ? `${missing.length} 张错题照片文件已丢失或校验不一致，备份保留了它们的记录和已有校验清单：${missing.slice(0, 5).join('、')}${missing.length > 5 ? ' 等' : ''}` : null;
-    for (const old of this.list().filter(item => item.name !== name).slice(this.retention - 1)) {
-      fs.unlinkSync(this.getPath(old.name));
-      fs.rmSync(path.join(this.backupDir, `${old.name}.manifest.json`), { force: true });
-    }
-    this.prunePhotos();
-    return this.list().find(item => item.name === name);
+    try {
+      for (const name of names) {
+        if (!safeName(name)) throw fail('照片路径无效，无法备份');
+        const file = path.join(this.uploadDir, name);
+        // A photo already lost on disk must not stop every later backup of the remaining data.
+        const known = expected.get(name);
+        if (known && !await this.matches(file, known)) { manifest.push(known); missing.push(name); continue; }
+        if (!fs.existsSync(file)) { missing.push(name); continue; }
+        const source = await fileEntry(file, this.uploadIndex, file);
+        if (!source) { missing.push(name); continue; }
+        const photo = await this.photos.add(name, file, source);
+        manifest.push(photo);
+        snapshot.prepare('INSERT OR REPLACE INTO photo_expectations VALUES (?, ?, ?)').run(name, photo.size, photo.sha256);
+        this.db.prepare('INSERT OR IGNORE INTO photo_expectations VALUES (?, ?, ?)').run(name, photo.size, photo.sha256);
+      }
+      this.photos.save();
+      this.saveUploadIndex();
+      const database = snapshot.serialize().toString('base64');
+      const data = Buffer.from(JSON.stringify({ format: 'taskie-backup', version: 2, created_at: new Date().toISOString(), reason, database, photo_manifest: manifest, missing_photos: missing.filter(name => !manifest.some(p => p.name === name)) }));
+      if (data.length > MAX_SIZE) throw fail('备份数据超过 256 MiB，请使用 NAS 文件备份');
+      const name = `backup-${new Date().toISOString().replace(/[:.Z]/g, '-')}-${randomUUID()}.taskie.gz`;
+      const target = path.join(this.backupDir, name);
+      fs.writeFileSync(`${target}.tmp`, gzipSync(data), { mode: 0o600 });
+      fs.renameSync(`${target}.tmp`, target);
+      this.lastError = null;
+      this.lastWarning = missing.length ? `${missing.length} 张错题照片文件已丢失或校验不一致，备份保留了它们的记录和已有校验清单：${missing.slice(0, 5).join('、')}${missing.length > 5 ? ' 等' : ''}` : null;
+      for (const old of this.list().filter(item => item.name !== name).slice(this.retention - 1)) {
+        fs.unlinkSync(this.getPath(old.name));
+        fs.rmSync(path.join(this.backupDir, `${old.name}.manifest.json`), { force: true });
+      }
+      // New archives already have a manifest: do not decompress their database just to prune.
+      const stat = fs.statSync(target);
+      fs.writeFileSync(`${target}.manifest.json`, JSON.stringify({ photos: manifest.map(p => p.name), manifest, size: stat.size, mtime: stat.mtimeMs }), { mode: 0o600 });
+      await this.prunePhotos();
+      return this.list().find(item => item.name === name);
+    } finally { snapshot.close(); }
   }
 
   // Stored photos stay while the current data or any retained backup refers to them.
-  prunePhotos() {
+  async prunePhotos() {
     const keep = new Set(this.referencedPhotos());
     for (const item of this.list()) {
       try {
-        for (const name of this.retainedManifest(item.name).photos) keep.add(name);
+        for (const name of (await this.retainedManifest(item.name)).photos) keep.add(name);
       } catch (error) {
         console.error('    [Backup] 读取备份清单失败，本次不清理照片:', item.name, error.message);
         return;
@@ -176,11 +228,11 @@ class BackupService {
     catch (error) { if (error.code !== 'ENOENT') throw error; return { last_complete_at: null, names: [] }; }
   }
 
-  exportEntries(scope = 'all') {
+  async exportEntries(scope = 'all') {
     if (!['all', 'new'].includes(scope)) throw fail('照片范围无效');
     const expected = this.expectations(), names = new Set(this.referencedPhotos());
     for (const item of this.list()) {
-      const retained = this.retainedManifest(item.name);
+      const retained = await this.retainedManifest(item.name);
       for (const name of retained.photos) names.add(name);
       for (const photo of retained.manifest) {
         const previous = expected.get(photo.name);
@@ -189,25 +241,48 @@ class BackupService {
       }
     }
     const exported = new Set(scope === 'new' ? this.exportState().names : []), entries = [];
+    const details = new Map(this.db.prepare("SELECT photo_path, subject, description, created_at FROM mistake_records ORDER BY created_at, id").all().map(row => [row.photo_path.slice('/uploads/'.length), row]));
+    entries.skipped = [];
     for (const name of [...names].filter(safeName).sort()) {
       if (exported.has(name)) continue;
       const photo = expected.get(name);
-      let file = this.photos.path(name);
-      if (!fs.existsSync(file)) file = path.join(this.uploadDir, name);
-      if (!fs.existsSync(file)) continue; // No bytes to export; this name is never marked exported.
-      if (photo && !this.matches(file, photo)) throw fail(`照片 ${name} 校验不一致，请先补齐正确的照片`);
-      const entry = this.photos.add(name, file);
-      if (photo && (entry.size !== photo.size || entry.sha256 !== photo.sha256)) throw fail(`照片 ${name} 校验不一致`);
-      entries.push({ name, file: this.photos.path(name), sha256: entry.sha256 });
+      const entry = await this.exportPhoto(name, photo);
+      if (entry) entries.push({ name, photo: photo || { size: entry.content.length, sha256: entry.sha256 }, file: entry.file, sha256: entry.sha256 });
+      else {
+        const row = details.get(name);
+        entries.skipped.push({ name, subject: row?.subject || '', description: row?.description || '', created_at: row?.created_at || null,
+          reason: [this.photos.path(name), path.join(this.uploadDir, name)].some(file => fs.existsSync(file)) ? 'mismatch' : 'absent' });
+      }
     }
-    this.photos.save();
     return entries;
   }
 
-  photoExportStatus() {
+  async exportPhoto(name, photo) {
+    // Read at most one photo (10 MiB) at a time. Only verified, immutable buffers enter the tar;
+    // a disk edit after verification cannot leak bad bytes or invalidate an already-sent header.
+    for (const file of [this.photos.path(name), path.join(this.uploadDir, name)]) {
+      try {
+        const stat = await fs.promises.stat(file);
+        if (!stat.isFile() || stat.size > MAX_PHOTO_SIZE || photo && stat.size !== photo.size) continue;
+        const chunks = [], hash = createHash('sha256');
+        let size = 0;
+        for await (const chunk of fs.createReadStream(file)) {
+          size += chunk.length;
+          if (size > MAX_PHOTO_SIZE) throw new Error('照片过大');
+          chunks.push(chunk); hash.update(chunk);
+        }
+        const sha256 = hash.digest('hex');
+        if (size !== stat.size || photo && sha256 !== photo.sha256) continue;
+        return { file, sha256, content: Buffer.concat(chunks), mtime: stat.mtimeMs };
+      } catch { /* Try the other copy, then skip only this photo. */ }
+    }
+    return null;
+  }
+
+  async photoExportStatus() {
     const state = this.exportState(), exported = new Set(state.names);
     const names = new Set(this.referencedPhotos().filter(safeName));
-    for (const item of this.list()) for (const name of this.retainedManifest(item.name).photos) names.add(name);
+    for (const item of this.list()) for (const name of (await this.retainedManifest(item.name)).photos) names.add(name);
     return { last_complete_at: state.last_complete_at, exported_count: [...names].filter(name => exported.has(name)).length,
       pending_count: [...names].filter(name => !exported.has(name)).length };
   }
@@ -220,16 +295,26 @@ class BackupService {
   }
 
   exportPhotos(scope = 'all') {
-    const entries = this.exportEntries(scope);
-    const stream = tarStream(entries);
-    stream.photoNames = entries.map(e => e.name);
+    const names = [];
+    const entries = (async function* (service) {
+      for (const entry of await service.exportEntries(scope)) {
+        const loaded = await service.exportPhoto(entry.name, entry.photo);
+        if (loaded) yield { name: entry.name, ...loaded };
+      }
+    })(this);
+    const stream = tarStream(entries, { onEntry: name => names.push(name) });
+    stream.photoNames = names;
     return stream;
   }
 
-  async importPhotos(stream) {
+  importPhotos(stream) { return this.exclusive(() => this.importPhotoStream(stream)); }
+
+  async importPhotoStream(stream) {
     const result = { imported: 0, present: 0, unused: 0, skipped: 0, mismatch: 0, unverified: 0 };
     const referenced = new Set(this.referencedPhotos()), expected = this.expectations();
-    const reader = new TarReader((name, content) => {
+    const pending = [];
+    const reader = new TarReader((name, content) => pending.push({ name, content }), { maxFileSize: MAX_PHOTO_SIZE });
+    const install = async (name, content) => {
       if (!safeName(name)) { result.skipped++; return; }
       if (!referenced.has(name)) { result.unused++; return; }
       const photo = expected.get(name);
@@ -237,25 +322,37 @@ class BackupService {
       if (!photo) { result.unverified++; return; }
       if (content.length !== photo.size || createHash('sha256').update(content).digest('hex') !== photo.sha256) { result.mismatch++; return; }
       const file = path.join(this.uploadDir, name);
-      if (this.matches(file, photo)) { this.photos.add(name, file); result.present++; return; }
+      if (await this.matches(file, photo, true)) { await this.photos.entry(name, true); await this.photos.add(name, file, photo); result.present++; return; }
       const temp = path.join(this.uploadDir, `.import-${randomUUID()}`);
       try {
         fs.writeFileSync(temp, content, { mode: 0o600 });
         fs.renameSync(temp, file);
-        this.photos.add(name, file);
+        await this.photos.entry(name, true);
+        await this.photos.add(name, file, photo);
       } finally { fs.rmSync(temp, { force: true }); }
       result.imported++;
-    }, { maxFileSize: MAX_PHOTO_SIZE });
+    };
     try {
-      for await (const chunk of stream) reader.push(chunk);
+      for await (const chunk of stream) {
+        // Bound parsing/copying work per turn, including a giant single input chunk.
+        for (let offset = 0; offset < chunk.length; offset += 64 * 1024) {
+          reader.push(chunk.subarray(offset, offset + 64 * 1024));
+          for (const item of pending.splice(0)) await install(item.name, item.content);
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      }
       if (stream.truncated) throw Object.assign(new Error('照片包过大'), { statusCode: 413 });
       reader.end();
     } finally { this.photos.save(); }
     result.skipped += reader.skipped;
-    return { ...result, missing: this.missingPhotos().length };
+    const missing = (await this.missingPhotos()).length;
+    this.saveUploadIndex();
+    return { ...result, missing };
   }
 
-  restore(buffer) {
+  restore(buffer) { return this.exclusive(() => this.restoreSnapshot(buffer)); }
+
+  async restoreSnapshot(buffer) {
     let data, candidate;
     try {
       data = JSON.parse(gunzipSync(buffer, { maxOutputLength: MAX_SIZE }).toString());
@@ -381,16 +478,18 @@ class BackupService {
       fs.mkdirSync(staging, { recursive: true });
       for (const [name, content] of Object.entries(data.photos || {})) fs.writeFileSync(path.join(staging, name), Buffer.from(content, 'base64'), { mode: 0o600 });
       for (const photo of data.photo_manifest || []) {
-        const source = [this.photos.path(photo.name), path.join(this.uploadDir, photo.name)].find(file => {
-          try { return fs.statSync(file).size === photo.size && hashFile(file) === photo.sha256; } catch { return false; }
-        });
+        let source;
+        for (const file of [this.photos.path(photo.name), path.join(this.uploadDir, photo.name)]) {
+          if (await this.matches(file, photo, true)) { source = file; break; }
+        }
         if (!source) { unavailable.push(photo.name); continue; }
-        cloneFile(source, path.join(staging, photo.name));
+        await fs.promises.copyFile(source, path.join(staging, photo.name), fs.constants.COPYFILE_FICLONE);
+        if (!await this.matches(path.join(staging, photo.name), photo, true)) throw fail('照片在恢复时被修改');
       }
       fs.writeFileSync(saved, candidate.serialize(), { mode: 0o600 });
       candidate.close();
       candidate = null;
-      const recovery = this.create('before-restore');
+      const recovery = await this.createSnapshot('before-restore');
       const secrets = this.db.prepare("SELECT key, value FROM settings WHERE key IN ('jwt_secret')").all();
       this.db.prepare('ATTACH DATABASE ? AS recovery').run(saved);
       attached = true;
@@ -401,6 +500,7 @@ class BackupService {
       moved = true;
       fs.renameSync(staging, this.uploadDir);
       installed = true;
+      this.uploadIndex = {};
       this.db.transaction(() => {
         for (const table of TABLES) {
           const columns = this.db.pragma(`table_info(${table})`).map(c => `"${c.name}"`).join(',');

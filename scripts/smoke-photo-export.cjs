@@ -25,7 +25,7 @@ async function main() {
     fs.writeFileSync(path.join(dir, 'uploads', name), content);
     app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: name, photo_path: `/uploads/${name}` });
   };
-  add('retained.jpg', 'retained'); app.backupService.create();
+  add('retained.jpg', 'retained'); await app.backupService.create();
   db.prepare('DELETE FROM mistake_records').run(); fs.rmSync(path.join(dir, 'uploads', 'retained.jpg'));
   add('current.jpg', 'current');
   const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
@@ -43,8 +43,8 @@ async function main() {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() };
   }, { url, body });
-  const download = async scope => {
-    const ticket = await api('/api/backups/photos/export-ticket', { scope }); assert.equal(ticket.status, 200);
+  const download = async (scope, issued) => {
+    const ticket = issued || await api('/api/backups/photos/export-ticket', { scope }); assert.equal(ticket.status, 200);
     const event = page.waitForEvent('download');
     await page.evaluate(url => { const a = document.createElement('a'); a.href = url; a.download = ''; a.click(); }, ticket.body.url);
     const downloaded = await event, file = path.join(dir, `${scope}.tar`); await downloaded.saveAs(file);
@@ -63,7 +63,7 @@ async function main() {
   assert.deepEqual(names(await download('new')), []);
   console.log('PASS legacy since is rejected and repeated incremental downloads are empty');
   // Preserve trusted expectations, then simulate a same-size corrupted photo and import through HTTP.
-  app.backupService.create();
+  await app.backupService.create();
   fs.writeFileSync(path.join(dir, 'uploads', 'current.jpg'), 'WRONG!!');
   let missing = (await api('/api/backups')).body.missing_photos;
   assert.deepEqual([missing.count, missing.mismatch], [1, 1]);
@@ -83,6 +83,25 @@ async function main() {
   assert.equal((await api('/api/backups')).body.missing_photos.count, 0);
   assert.equal(fs.readFileSync(path.join(dir, 'uploads', 'current.jpg'), 'utf8'), 'current');
   console.log('PASS correct content repairs an existing corrupted photo');
+  add('broken.jpg', 'broken'); add('missing.jpg', 'missing');
+  await app.backupService.create();
+  for (const name of ['broken.jpg', 'missing.jpg']) {
+    fs.rmSync(app.backupService.photos.path(name)); fs.rmSync(path.join(dir, 'uploads', name));
+  }
+  fs.writeFileSync(app.backupService.photos.path('broken.jpg'), 'WRONG!');
+  const partial = await api('/api/backups/photos/export-ticket', { scope: 'all' });
+  assert.equal(partial.status, 200); assert.equal(partial.body.included_count, 3);
+  assert.deepEqual(partial.body.skipped.map(p => [p.name, p.subject, p.description, p.reason]),
+    [['broken.jpg', '数学', 'broken.jpg', 'mismatch'], ['missing.jpg', '数学', 'missing.jpg', 'absent']]);
+  assert.deepEqual(names(await download('all', partial)), ['current.jpg', 'new.jpg', 'retained.jpg']);
+  assert.equal((await api('/api/backups')).body.photo_export.pending_count, 2);
+  console.log('PASS ticket reports bad and absent photos; native download completes with remaining photos only');
+  const late = await api('/api/backups/photos/export-ticket', { scope: 'all' });
+  for (const file of [app.backupService.photos.path('new.jpg'), path.join(dir, 'uploads', 'new.jpg')]) fs.writeFileSync(file, 'BAD');
+  assert.deepEqual(names(await download('all', late)), ['current.jpg', 'retained.jpg']);
+  assert.ok(!app.backupService.exportState().names.includes('broken.jpg'));
+  assert.ok(!app.backupService.exportState().names.includes('missing.jpg'));
+  console.log('PASS corruption after ticket issuance skips that photo without failing the browser download');
   await context.close();
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

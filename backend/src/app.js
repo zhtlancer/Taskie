@@ -190,8 +190,8 @@ function buildApp(opts = {}) {
   let backupTimer;
   fastify.addHook('onReady', async () => {
     if (!(intervalHours > 0)) return;
-    const run = () => {
-      try { backupService.create('scheduled'); }
+    const run = async () => {
+      try { await backupService.create('scheduled'); }
       catch (error) { backupService.lastError = error.message; fastify.log.error(error, '自动备份失败'); }
     };
     const latest = backupService.list()[0];
@@ -199,7 +199,11 @@ function buildApp(opts = {}) {
     backupTimer = setInterval(run, intervalHours * 3600000);
     backupTimer.unref();
   });
-  fastify.addHook('onClose', async () => clearInterval(backupTimer));
+  fastify.addHook('onClose', async () => {
+    clearInterval(backupTimer);
+    await backupService.operation;
+    await Promise.allSettled(backupService.manifestReads.values());
+  });
 
   // Health check
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));

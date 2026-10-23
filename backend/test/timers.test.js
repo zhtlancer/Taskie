@@ -396,18 +396,18 @@ test('v26 migration remembers timers running during the upgrade; backups keep th
 
   await asChild('POST', `/api/children/${child.id}/current-timer/pause`);
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   ctx.db.prepare('UPDATE children SET last_timer_kind = NULL, last_timer_id = NULL').run();
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.deepEqual({ ...latest() }, { kind: 'task', id: oral.id });
   const packed = JSON.parse(gunzipSync(archive));
   const candidate = new Database(Buffer.from(packed.database, 'base64'));
   candidate.exec('ALTER TABLE children DROP COLUMN last_timer_id');
   const pack = () => gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') }));
-  assert.throws(() => backup.restore(pack()), /最近计时记录/);
+  await assert.rejects(() => backup.restore(pack()), /最近计时记录/);
   candidate.exec('ALTER TABLE children DROP COLUMN last_timer_kind');
   candidate.pragma('user_version = 25');
-  backup.restore(pack());
+  await backup.restore(pack());
   candidate.close();
   assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
   // An older backup has no latest timer: the paused session simply shows again once restarted.

@@ -91,7 +91,7 @@ async function main() {
       slow.photoNames = source.photoNames;
       return slow;
     };
-    const before = home.app.backupService.photoExportStatus();
+    const before = (await home.app.backupService.photoExportStatus());
     let closeTimer;
     const closed = new Promise((resolve, reject) => {
       exportClosed = resolve;
@@ -103,7 +103,7 @@ async function main() {
       assert.deepEqual(requests.at(-1), { scope: 'all' });
       await (await interrupted).cancel();
       await closed;
-      assert.deepEqual(home.app.backupService.photoExportStatus(), before);
+      assert.deepEqual((await home.app.backupService.photoExportStatus()), before);
       await page.getByRole('button', { name: '刷新导出状态', exact: true }).click();
       await page.getByText('尚未完整导出照片').waitFor();
       await page.getByText('还有 2 张未导出', { exact: true }).waitFor();
@@ -131,7 +131,7 @@ async function main() {
       clearTimeout(failedTimer); failedResponse = null;
       home.app.backupService.exportPhotos = originalExport;
     }
-    assert.deepEqual(home.app.backupService.photoExportStatus(), before);
+    assert.deepEqual((await home.app.backupService.photoExportStatus()), before);
     console.log('PASS failed export GET after ticket creation leaves photos pending');
     await page.context().close();
     page = await open(home.app, homeBase);
@@ -147,7 +147,7 @@ async function main() {
     await page.getByRole('button', { name: '刷新导出状态', exact: true }).click();
     await page.getByText('还有 0 张未导出', { exact: true }).waitFor();
     await page.getByText(/上次完整导出：/).waitFor();
-    assert.equal(home.app.backupService.photoExportStatus().exported_count, 2);
+    assert.equal((await home.app.backupService.photoExportStatus()).exported_count, 2);
     console.log('PASS the settings page downloads a package of all photos');
 
     await page.clock.install({ time: new Date('2099-01-01T00:00:00Z') });
@@ -192,7 +192,7 @@ async function main() {
     // Independently exercise missing-photo rendering on the pre-fix UI too.
     await page.context().close();
     addPhoto('third.jpg', 'third photo');
-    const backup = home.app.backupService.create();
+    const backup = (await home.app.backupService.create());
     const chunks = [];
     for await (const chunk of home.app.backupService.exportPhotos('all')) chunks.push(chunk);
     const allFile = path.join(dir, 'all.tar'); fs.writeFileSync(allFile, Buffer.concat(chunks));
@@ -201,7 +201,7 @@ async function main() {
 
   async function missingFlow(backup, allFile, freshFile) {
     // Another server: restore the data, then fill the photos from both packages.
-    const result = away.app.backupService.restore(fs.readFileSync(home.app.backupService.getPath(backup.name)));
+    const result = (await away.app.backupService.restore(fs.readFileSync(home.app.backupService.getPath(backup.name))));
     assert.deepEqual(result.missing_photos.sort(), ['first.jpg', 'second.webp', 'third.jpg']);
     await home.app.close();
     const awayBase = await away.app.listen({ host: '127.0.0.1', port: smokePort() });

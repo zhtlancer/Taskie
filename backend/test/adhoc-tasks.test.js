@@ -91,9 +91,9 @@ test('holiday pauses never remove one-off tasks', async t => {
 test('backups keep one-off tasks; v6 backups restore and incomplete v7 ones are rejected', async t => {
   const { ctx, child, addAdhoc } = await fixture(t);
   await addAdhoc({ title: '手抄报' });
-  const archive = fs.readFileSync(ctx.app.backupService.getPath(ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(ctx.app.backupService.getPath((await ctx.app.backupService.create()).name));
   ctx.db.prepare('DELETE FROM daily_tasks').run();
-  ctx.app.backupService.restore(archive);
+  await ctx.app.backupService.restore(archive);
   assert.deepEqual(ctx.app.services.tasksService.listAdhocTasks(child.id).map(task => task.title), ['手抄报']);
 
   const Database = require('better-sqlite3');
@@ -106,8 +106,8 @@ test('backups keep one-off tasks; v6 backups restore and incomplete v7 ones are 
     db.close();
     return gzipSync(JSON.stringify(data));
   };
-  assert.throws(() => ctx.app.backupService.restore(rewrite(7)), /备份缺少临时任务数据/);
-  ctx.app.backupService.restore(rewrite(6));
+  await assert.rejects(() => ctx.app.backupService.restore(rewrite(7)), /备份缺少临时任务数据/);
+  await ctx.app.backupService.restore(rewrite(6));
   // Older backups had no one-off tasks: their rows come back as template tasks.
   assert.deepEqual(ctx.db.prepare('SELECT origin FROM daily_tasks').all().map(r => r.origin), ['template']);
 });

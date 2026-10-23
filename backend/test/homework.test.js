@@ -34,9 +34,9 @@ test('deleted classes keep distinct homework identities, filters and summary thr
     assert.deepEqual(filtered.json().map(row => row.course_key), [`class:${cls.id}`]);
   }
   const backup = ctx.app.backupService;
-  const archive = require('node:fs').readFileSync(backup.getPath(backup.create('course-identity').name));
+  const archive = require('node:fs').readFileSync(backup.getPath((await backup.create('course-identity')).name));
   ctx.db.prepare('DELETE FROM homework_records').run();
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.deepEqual(summary(), before);
   assert.deepEqual(homework.list(child.id).map(row => [row.id, row.course_key, row.task.id]), ids);
 });
@@ -56,16 +56,16 @@ test('v19 homework backups gain stable course keys; damaged v20 backups are reje
   assert.equal((await record({ content: '科学实验报告' })).statusCode, 201);
   schedule.deleteClass(archived.id);
   const backup = ctx.app.backupService;
-  const data = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath(backup.create('legacy-courses').name))));
+  const data = JSON.parse(gunzipSync(require('node:fs').readFileSync(backup.getPath((await backup.create('legacy-courses')).name))));
   const legacy = new Database(Buffer.from(data.database, 'base64'));
   t.after(() => legacy.close());
   legacy.exec('ALTER TABLE homework_records DROP COLUMN course_key');
   const pack = () => gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') }));
   const before = homework.list(child.id);
-  assert.throws(() => backup.restore(pack()), /作业课程标识/);
+  await assert.rejects(() => backup.restore(pack()), /作业课程标识/);
   assert.deepEqual(homework.list(child.id), before);
   legacy.pragma('user_version = 19');
-  backup.restore(pack());
+  await backup.restore(pack());
   assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
   assert.deepEqual(homework.summary(child.id).courses.map(row => [row.course_key, row.total]).sort(),
     [[`class:${live.id}`, 1], ['class:archived:游泳课', 2], ['school:科学', 1]].sort());
@@ -277,11 +277,11 @@ test('homework records survive a backup and restore', async t => {
   const { ctx, child, asParent, record } = await fixture(t);
   await record({ create_task: true });
   await asParent('PUT', '/api/homework-course-points', { course_key: 'school:科学', points: 6 });
-  const backup = ctx.app.backupService.create('test');
+  const backup = (await ctx.app.backupService.create('test'));
   const archive = require('node:fs').readFileSync(ctx.app.backupService.getPath(backup.name));
   ctx.db.prepare('DELETE FROM homework_records').run();
   ctx.db.prepare('DELETE FROM homework_course_points').run();
-  ctx.app.backupService.restore(archive);
+  await ctx.app.backupService.restore(archive);
   const restored = ctx.app.services.homeworkService.list(child.id);
   assert.deepEqual([restored.length, restored[0].task_state], [1, 'open']);
   assert.equal(ctx.app.services.homeworkService.coursePoints('school:科学'), 6);

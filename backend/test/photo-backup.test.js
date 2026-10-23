@@ -37,7 +37,7 @@ test('on a new server the data restores first; missing photos are listed and fil
   const home = await fixture(t);
   home.addPhoto('a.jpg', 'photo a');
   home.addPhoto('b.webp', 'photo b');
-  const archive = fs.readFileSync(home.ctx.app.backupService.getPath(home.ctx.app.backupService.create().name));
+  const archive = fs.readFileSync(home.ctx.app.backupService.getPath((await home.ctx.app.backupService.create()).name));
   const photos = await exportPackage(home.ctx);
   assert.deepEqual(tarNames(photos).sort(), ['a.jpg', 'b.webp']);
   // Standard tar reads the package too.
@@ -125,18 +125,18 @@ test('stored photos stay while a retained backup needs them; v1 archives with em
   const { ctx, addPhoto } = await fixture(t);
   const service = ctx.app.backupService;
   addPhoto('kept.jpg', 'kept');
-  const firstArchive = fs.readFileSync(service.getPath(service.create().name));
+  const firstArchive = fs.readFileSync(service.getPath((await service.create()).name));
   // The mistake is deleted (and its file with it); older backups still hold the photo in the store.
   ctx.db.prepare('DELETE FROM mistake_records').run();
   fs.rmSync(path.join(ctx.tempUploadDir, 'kept.jpg'));
-  service.create();
+  await service.create();
   assert.ok(fs.existsSync(service.photos.path('kept.jpg')));
   const restored = await ctx.app.inject({ method: 'POST', url: '/api/backups/restore', ...restoreBody(firstArchive) });
   assert.deepEqual(restored.json().missing_photos, []);
   assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'kept.jpg'), 'utf8'), 'kept');
   // Once no retained backup refers to it, it goes.
   ctx.db.prepare('DELETE FROM mistake_records').run();
-  for (let i = 0; i < service.retention; i++) service.create();
+  for (let i = 0; i < service.retention; i++) await service.create();
   assert.equal(fs.existsSync(service.photos.path('kept.jpg')), false);
 
   const v1 = { ...JSON.parse(gunzipSync(firstArchive)), version: 1, photo_manifest: undefined, photos: { 'kept.jpg': Buffer.from('from v1').toString('base64') } };
@@ -144,7 +144,7 @@ test('stored photos stay while a retained backup needs them; v1 archives with em
   assert.equal(old.statusCode, 200, old.body);
   assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'kept.jpg'), 'utf8'), 'from v1');
   // A store photo that no longer matches the manifest is not used.
-  service.create();
+  await service.create();
   fs.writeFileSync(service.photos.path('kept.jpg'), 'tampered');
   fs.rmSync(path.join(ctx.tempUploadDir, 'kept.jpg'));
   const v2 = fs.readFileSync(service.getPath(service.list()[0].name));
@@ -164,22 +164,22 @@ async function packageOf(ctx, name, content) {
 test('restored expectations persist across restarts and repeated backups; wrong bytes cannot fill or poison a photo', async t => {
   const home = await fixture(t), away = await fixture(t);
   home.addPhoto('verified.jpg', 'correct bytes');
-  const original = fs.readFileSync(home.ctx.app.backupService.getPath(home.ctx.app.backupService.create().name));
-  away.ctx.app.backupService.restore(original);
+  const original = fs.readFileSync(home.ctx.app.backupService.getPath((await home.ctx.app.backupService.create()).name));
+  await away.ctx.app.backupService.restore(original);
   const BackupService = require('../src/services/backup.service');
   const service = new BackupService(away.ctx.db, away.ctx.tempUploadDir, away.ctx.app.backupService.backupDir);
   const wrong = await packageOf(home.ctx, 'verified.jpg', 'WRONG!! bytes');
   const good = await packageOf(home.ctx, 'verified.jpg', 'correct bytes');
   const { Readable } = require('node:stream');
   assert.equal((await service.importPhotos(Readable.from([wrong]))).mismatch, 1);
-  assert.equal(service.missingPhotos()[0].reason, 'absent');
+  assert.equal((await service.missingPhotos())[0].reason, 'absent');
   fs.writeFileSync(path.join(away.ctx.tempUploadDir, 'verified.jpg'), 'WRONG!! bytes');
-  assert.equal(service.missingPhotos()[0].reason, 'mismatch');
-  const again = fs.readFileSync(service.getPath(service.create().name));
+  assert.equal((await service.missingPhotos())[0].reason, 'mismatch');
+  const again = fs.readFileSync(service.getPath((await service.create()).name));
   assert.equal(JSON.parse(gunzipSync(again)).photo_manifest[0].sha256, JSON.parse(gunzipSync(original)).photo_manifest[0].sha256);
-  service.restore(again);
+  await service.restore(again);
   assert.equal((await service.importPhotos(Readable.from([good]))).imported, 1);
-  assert.equal(service.missingPhotos().length, 0);
+  assert.equal((await service.missingPhotos()).length, 0);
   assert.equal(fs.readFileSync(path.join(away.ctx.tempUploadDir, 'verified.jpg'), 'utf8'), 'correct bytes');
   // A correct upload also repairs a same-size damaged store copy.
   fs.writeFileSync(service.photos.path('verified.jpg'), 'WRONG!! bytes');
@@ -195,16 +195,16 @@ test('v2 refuses mixed formats, duplicate manifest names and overlap; v1 missing
   const { ctx, addPhoto } = await fixture(t), away = await fixture(t);
   const service = ctx.app.backupService;
   addPhoto('one.jpg', 'one');
-  const data = JSON.parse(gunzipSync(fs.readFileSync(service.getPath(service.create().name))));
+  const data = JSON.parse(gunzipSync(fs.readFileSync(service.getPath((await service.create()).name))));
   for (const invalid of [
     { ...data, photos: {} }, { ...data, photos: null },
     { ...data, photo_manifest: [...data.photo_manifest, ...data.photo_manifest] },
     { ...data, missing_photos: ['one.jpg'] },
     { ...data, missing_photos: ['other.jpg', 'other.jpg'] }
-  ]) assert.throws(() => away.ctx.app.backupService.restore(gzipSync(JSON.stringify(invalid))), { statusCode: 400 });
+  ]) await assert.rejects(() => away.ctx.app.backupService.restore(gzipSync(JSON.stringify(invalid))), { statusCode: 400 });
   const legacy = { ...data, version: 1, photos: {}, missing_photos: ['one.jpg'] };
   delete legacy.photo_manifest;
-  away.ctx.app.backupService.restore(gzipSync(JSON.stringify(legacy)));
+  await away.ctx.app.backupService.restore(gzipSync(JSON.stringify(legacy)));
   const photo = await packageOf(ctx, 'one.jpg', 'one');
   const imported = await away.ctx.app.backupService.importPhotos(require('node:stream').Readable.from([photo]));
   assert.deepEqual([imported.unverified, imported.imported, imported.missing], [1, 0, 1]);
@@ -234,10 +234,10 @@ test('tar requires both zero blocks, complete trailing blocks and strict numeric
 
 test('server export history includes retained-only photos and ignores mtime, client time and failed tickets', async t => {
   const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
-  addPhoto('history.jpg', 'history'); service.create();
+  addPhoto('history.jpg', 'history'); await service.create();
   ctx.db.prepare('DELETE FROM mistake_records').run();
   fs.rmSync(path.join(ctx.tempUploadDir, 'history.jpg'));
-  addPhoto('current.jpg', 'current'); service.create();
+  addPhoto('current.jpg', 'current'); await service.create();
   const status = async () => (await ctx.app.inject({ url: '/api/backups' })).json().photo_export;
   assert.deepEqual(await status(), { last_complete_at: null, exported_count: 0, pending_count: 2 });
   const ticket = (await ctx.app.inject({ method: 'POST', url: '/api/backups/photos/export-ticket', payload: { scope: 'new' } })).json();
@@ -254,7 +254,7 @@ test('server export history includes retained-only photos and ignores mtime, cli
   fs.utimesSync(path.join(ctx.tempUploadDir, 'later.jpg'), 0, 0);
   assert.deepEqual(tarNames(await exportPackage(ctx, 'new')), ['later.jpg']);
   const old = fs.readFileSync(service.getPath(service.list().at(-1).name));
-  service.restore(old);
+  await service.restore(old);
   assert.equal((await status()).pending_count, 0, 'restoring data does not rewind shared export history');
   const expired = ctx.app.jwt.sign({ purpose: 'photo-export', scope: 'all', epoch: ctx.app.sessionEpoch() }, { expiresIn: '1s', clockTimestamp: 1000 });
   const before = service.exportState();
@@ -316,7 +316,7 @@ test('a stream error, session invalidation or client disconnect never records a 
 test('retained v1 scans skip large embedded payloads, cache manifests and keep referenced store photos', async t => {
   const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
   addPhoto('legacy.jpg', 'keep');
-  const item = service.create(), file = service.getPath(item.name);
+  const item = (await service.create()), file = service.getPath(item.name);
   const archive = JSON.parse(gunzipSync(fs.readFileSync(file)));
   delete archive.photo_manifest;
   archive.version = 1; archive.photos = { 'legacy.jpg': 'A'.repeat(32 * 1024 * 1024) };
@@ -328,22 +328,22 @@ test('retained v1 scans skip large embedded payloads, cache manifests and keep r
     assert.notEqual(target, file, 'never read the whole compressed archive');
     return read.call(this, target, ...args);
   });
-  service.prunePhotos();
+  await service.prunePhotos();
   assert.ok(fs.existsSync(service.photos.path('legacy.jpg')));
-  assert.deepEqual(service.retainedManifest(item.name).photos, ['legacy.jpg']);
+  assert.deepEqual((await service.retainedManifest(item.name)).photos, ['legacy.jpg']);
   const open = fs.openSync;
   t.mock.method(fs, 'openSync', function(target, ...args) {
     assert.notEqual(target, file, 'second prune uses the cached manifest');
     return open.call(this, target, ...args);
   });
-  service.prunePhotos();
+  await service.prunePhotos();
   assert.ok(fs.existsSync(service.photos.path('legacy.jpg')));
 });
 
 test('v29 upgrades to v30, legacy manifests gain expectations, and incomplete v30 backups are refused', async t => {
   const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
   addPhoto('upgrade.jpg', 'upgrade');
-  const data = JSON.parse(gunzipSync(fs.readFileSync(service.getPath(service.create().name))));
+  const data = JSON.parse(gunzipSync(fs.readFileSync(service.getPath((await service.create()).name))));
   const Database = require('better-sqlite3'), { initDb, SCHEMA_VERSION } = require('../src/db');
   const db = new Database(Buffer.from(data.database, 'base64'));
   try {
@@ -355,19 +355,19 @@ test('v29 upgrades to v30, legacy manifests gain expectations, and incomplete v3
     assert.equal(SCHEMA_VERSION, 30);
     assert.equal(db.pragma('user_version', { simple: true }), 30);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'trigger'").get().n, 6);
-    service.restore(gzipSync(JSON.stringify(old)));
+    await service.restore(gzipSync(JSON.stringify(old)));
     assert.equal(service.expectations().get('upgrade.jpg').sha256, data.photo_manifest[0].sha256);
-    const current = JSON.parse(gunzipSync(fs.readFileSync(service.getPath(service.create().name))));
+    const current = JSON.parse(gunzipSync(fs.readFileSync(service.getPath((await service.create()).name))));
     for (const table of ['photo_expectations', 'outside_class_revisions']) {
       const broken = new Database(Buffer.from(current.database, 'base64'));
       broken.exec(`DROP TABLE ${table}`);
       const invalid = { ...current, database: broken.serialize().toString('base64') };
       broken.close();
-      assert.throws(() => service.restore(gzipSync(JSON.stringify(invalid))), { statusCode: 400 });
+      await assert.rejects(() => service.restore(gzipSync(JSON.stringify(invalid))), { statusCode: 400 });
     }
     db.pragma('user_version = 31');
     assert.throws(() => initDb(db), /v31/);
-    assert.throws(() => service.restore(gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }))), { statusCode: 400 });
+    await assert.rejects(() => service.restore(gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }))), { statusCode: 400 });
   } finally { db.close(); }
 });
 

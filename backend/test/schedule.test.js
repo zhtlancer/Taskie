@@ -308,18 +308,18 @@ test('v27 upgrades old classes without changing their dates; backups preserve co
   assert.deepEqual({ ...row() }, { total_lessons: null, end_date: day(30) });
   await asParent('PUT', `/api/outside-classes/${cls.id}`, { total_lessons: 3 });
   const backup = ctx.app.backupService;
-  const archive = fs.readFileSync(backup.getPath(backup.create().name));
+  const archive = fs.readFileSync(backup.getPath((await backup.create()).name));
   await asParent('PUT', `/api/outside-classes/${cls.id}`, { total_lessons: 1 });
-  backup.restore(archive);
+  await backup.restore(archive);
   assert.deepEqual({ ...row() }, { total_lessons: 3, end_date: day(14) });
   const packed = JSON.parse(gunzipSync(archive));
   const candidate = new Database(Buffer.from(packed.database, 'base64'));
   try {
     candidate.exec('ALTER TABLE outside_classes DROP COLUMN total_lessons');
     const pack = () => gzipSync(JSON.stringify({ ...packed, database: candidate.serialize().toString('base64') }));
-    assert.throws(() => backup.restore(pack()), /总课次/);
+    await assert.rejects(() => backup.restore(pack()), /总课次/);
     candidate.pragma('user_version = 26');
-    backup.restore(pack());
+    await backup.restore(pack());
     assert.deepEqual({ ...row() }, { total_lessons: null, end_date: day(14) });
     assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
   } finally { candidate.close(); }
