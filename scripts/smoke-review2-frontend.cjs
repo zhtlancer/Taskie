@@ -160,6 +160,8 @@ async function main() {
     const bar = page.getByRole('region', { name: /正在计时|计时已暂停/ }).filter({ visible: true });
     await bar.getByRole('button', { name: '休息一下', exact: true }).click();
     await page.getByRole('dialog', { name: '☕ 休息一下', exact: true }).getByRole('button', { name: '5 分钟', exact: true }).click();
+    // Choosing a rest awaits the server pause before it writes localStorage.
+    await page.getByRole('dialog', { name: '☕ 休息中', exact: true }).waitFor();
     const saved = await page.evaluate(id => JSON.parse(localStorage.getItem(`taskie_rest_${id}`)), child.id);
     const second = app.services.tasksService.createAdhocTask(child.id, { title: '另一设备的新任务', subject: '语文', track_time: true });
     app.services.taskStudyService.start(second.id);
@@ -528,6 +530,7 @@ async function main() {
     for (const name of ['下载全部照片', '下载新照片']) {
       await page.getByRole('button', { name, exact: true }).click();
       await warning.waitFor();
+      assert.equal(await page.locator('input[accept*=tar]').isVisible(), true, 'backup-only skipped photos also have a repair upload entry');
       assert.match(await warning.textContent(), /美 · 2026-10-22 · 坏照片题目.*校验不一致/s);
       assert.match(await warning.textContent(), /数学 · 2026-10-22 · 缺照片题目.*不存在/s);
       assert.match(await warning.textContent(), /上传.*正确.*照片包/);
@@ -536,6 +539,7 @@ async function main() {
     await page.route('**/api/backups/photos/export-ticket', route => route.fulfill({ json: { url: '/api/test-photo-download', included_count: 4, skipped: [] } }));
     await page.getByRole('button', { name: '下载全部照片', exact: true }).click();
     await warning.waitFor({ state: 'detached' });
+    assert.equal(await page.locator('input[accept*=tar]').count(), 0, 'no skipped or missing photos means no repair entry');
   });
 
   const passed = results.filter(r => r.passed).length;

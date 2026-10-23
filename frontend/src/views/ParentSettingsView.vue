@@ -42,17 +42,19 @@
           </ul>
           <p class="text-sm">请上传当时下载的正确照片包，补齐或修复这些照片后再导出。</p>
         </div>
-        <div v-if="info.missing_photos?.count" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
-          <p class="font-bold">有 {{ info.missing_photos.count }} 张错题照片需要补齐：不存在 {{ info.missing_photos.absent }} 张，校验不一致 {{ info.missing_photos.mismatch }} 张。</p>
-          <ul class="space-y-3 text-sm">
-            <li v-for="photo in info.missing_photos.sample" :key="photo.name" class="break-words">
-              <p class="font-bold">{{ photo.subject || '未填写科目' }} · {{ photo.created_at ? businessDate(photo.created_at, timeZone) : '日期未知' }}</p>
-              <p class="whitespace-pre-wrap">{{ photo.description || '未填写题目描述' }}</p>
-              <p>{{ photo.reason === 'mismatch' ? '校验不一致' : '不存在' }}</p>
-            </li>
-          </ul>
-          <p v-if="info.missing_photos.count > info.missing_photos.sample.length" class="text-sm">这里只显示前 {{ info.missing_photos.sample.length }} 张，还有 {{ info.missing_photos.count - info.missing_photos.sample.length }} 张需要补齐。</p>
-          <p class="text-sm">从别的服务器恢复备份后可能缺少照片；校验不一致表示内容与备份清单不符。请上传当时下载的正确照片包，系统会核对内容并补齐或修复照片，已有且校验正确的照片会保留。可以多次上传、上传多个照片包。</p>
+        <div v-if="info.missing_photos?.count || skippedPhotos.length" role="alert" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3 text-amber-800 dark:text-amber-200">
+          <template v-if="info.missing_photos?.count">
+            <p class="font-bold">有 {{ info.missing_photos.count }} 张错题照片需要补齐：不存在 {{ info.missing_photos.absent }} 张，校验不一致 {{ info.missing_photos.mismatch }} 张。</p>
+            <ul class="space-y-3 text-sm">
+              <li v-for="photo in info.missing_photos.sample" :key="photo.name" class="break-words">
+                <p class="font-bold">{{ photo.subject || '未填写科目' }} · {{ photo.created_at ? businessDate(photo.created_at, timeZone) : '日期未知' }}</p>
+                <p class="whitespace-pre-wrap">{{ photo.description || '未填写题目描述' }}</p>
+                <p>{{ photo.reason === 'mismatch' ? '校验不一致' : '不存在' }}</p>
+              </li>
+            </ul>
+            <p v-if="info.missing_photos.count > info.missing_photos.sample.length" class="text-sm">这里只显示前 {{ info.missing_photos.sample.length }} 张，还有 {{ info.missing_photos.count - info.missing_photos.sample.length }} 张需要补齐。</p>
+            <p class="text-sm">从别的服务器恢复备份后可能缺少照片；校验不一致表示内容与备份清单不符。请上传当时下载的正确照片包，系统会核对内容并补齐或修复照片，已有且校验正确的照片会保留。可以多次上传、上传多个照片包。</p>
+          </template>
           <form @submit.prevent="importPhotos" class="flex flex-wrap items-end gap-3">
             <label class="block text-sm">照片包 <input type="file" accept=".tar,application/x-tar" required @change="photoFile = $event.target.files[0]" class="block mt-2" /></label>
             <button :disabled="busy || !photoFile" class="min-h-[44px] px-5 py-3 bg-amber-600 text-white rounded-xl font-bold disabled:opacity-50">上传照片包</button>
