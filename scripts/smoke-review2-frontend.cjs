@@ -40,15 +40,16 @@ async function open(role, width = 390, theme = 'dark') {
     localStorage.setItem('app_sound_muted', 'true');
   }, { role, auth, child, theme });
   const page = await currentContext.newPage();
-  page.setDefaultTimeout(6000);
+  page.setDefaultTimeout(15000);
   page.on('pageerror', err => { throw err; });
-  await page.clock.install({ time: new RealDate(now) });
+  // Start before the pause target so a busy CI worker cannot advance past it between calls.
+  await page.clock.install({ time: new RealDate(now - 60000) });
   await page.clock.pauseAt(new RealDate(now));
   await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   return page;
 }
 async function check(name, fn) {
-  if (process.env.REGRESSION_FILTER && !name.includes(process.env.REGRESSION_FILTER)) return;
+  if (process.env.REGRESSION_FILTER && !process.env.REGRESSION_FILTER.split(',').some(part => name.includes(part))) return;
   try { await fn(); results.push({ name, passed: true }); console.log('PASS', name); }
   catch (err) { results.push({ name, passed: false, error: err.message }); console.error('FAIL', name, err.message); }
   finally { await currentContext?.close(); currentContext = null; }
@@ -65,8 +66,8 @@ async function main() {
   token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
   child = app.services.childrenService.createChild({ name: '前端回归孩子' });
   await api('POST', `/children/${child.id}/timetables`, { name: '回归课表', start_date: shiftDate(today, -30), end_date: shiftDate(today, 30),
-    slots: [{ id: 's1', kind: 'class', label: '一', start_time: '08:00', end_time: '08:40' }],
-    lessons: [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ slot_id: 's1', weekday, subject: '数学' })) });
+    slots: ['数学', '美', '体'].map((subject, i) => ({ id: `s${i + 1}`, kind: 'class', label: subject, start_time: `0${8 + i}:00`.slice(-5), end_time: `0${8 + i}:40`.slice(-5) })),
+    lessons: [0, 1, 2, 3, 4, 5, 6].flatMap(weekday => ['数学', '美', '体'].map((subject, i) => ({ slot_id: `s${i + 1}`, weekday, subject }))) });
   base = await app.listen({ host: '127.0.0.1', port: smokePort() });
   browser = await chromium.launch(launchOptions());
 
@@ -224,7 +225,16 @@ async function main() {
       await page.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'networkidle' });
       await page.getByRole('button', { name: '➕ 记作业', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: '📒 记作业', exact: true });
+      // Single-character subjects and explicit CSS minima work even without CJK fonts.
+      for (const subject of ['数学', '美', '体']) {
+        const option = dialog.getByRole('button', { name: subject, exact: true });
+        await option.click();
+        const size = await option.evaluate(el => ({ min: parseFloat(getComputedStyle(el).minWidth), width: el.getBoundingClientRect().width }));
+        assert.ok(size.min >= 44 && size.width >= 44, `${subject}: ${JSON.stringify(size)}`);
+      }
       await dialog.getByLabel('截止日期', { exact: true }).fill(shiftDate(today, 5));
+      await dialog.getByRole('checkbox', { name: /生成打卡任务/ }).check();
+      await dialog.getByRole('checkbox', { name: /记录用时/ }).check();
       const targets = dialog.locator('input[type=date], button').filter({ visible: true });
       for (const control of await targets.all()) {
         const box = await control.boundingBox();
@@ -346,6 +356,188 @@ async function main() {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     });
   }
+
+
+  for (const [width, theme] of [[390, 'light'], [1180, 'dark']]) await check(`N1 related option minimum sizes ${width}/${theme}`, async () => {
+    const page = await open('parent', width, theme);
+    const assertSize = async control => {
+      const size = await control.evaluate(el => ({ min: parseFloat(getComputedStyle(el).minWidth), minH: parseFloat(getComputedStyle(el).minHeight), width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }));
+      assert.ok(size.min >= 44 && size.minH >= 44 && size.width >= 44 && size.height >= 44, `${await control.textContent()}: ${JSON.stringify(size)}`);
+    };
+    await page.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'networkidle' });
+    await assertSize(page.getByRole('button', { name: '美', exact: true }));
+    await assertSize(page.getByRole('button', { name: '体', exact: true }));
+    await page.goto(`${base}/parent/schedule?child=${child.id}`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: '➕ 新增课外班', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    for (const name of ['周一', '周日', child.name]) await assertSize(dialog.getByRole('button', { name: new RegExp(name) }));
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('button', { name: '✏️ 编辑', exact: true }).click();
+    await page.locator('form').filter({ has: page.getByRole('heading', { name: '🏫 编辑课程表', exact: true }) }).locator('td button').first().click();
+    const chooser = page.locator('form').filter({ has: page.getByRole('heading', { name: /周.*（/ }) });
+    await assertSize(chooser.getByRole('button', { name: '美术', exact: true }));
+    await assertSize(chooser.getByRole('button', { name: '体育', exact: true }));
+  });
+
+  for (const kind of ['progress', 'backfill']) await check(`N2 edited uncertain ${kind} cannot create another record`, async () => {
+    const goal = await api('POST', `/children/${child.id}/goals`, { title: `修改失败表单-${kind}`, subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10), track_time: kind === 'progress', expected_minutes: kind === 'progress' ? 2 : null });
+    const page = await open(kind === 'backfill' ? 'parent' : 'child');
+    const bodies = []; let lose = true;
+    await page.route(`**/api/period-tasks/${goal.id}/logs`, async route => {
+      bodies.push(route.request().postDataJSON()); const response = await route.fetch();
+      if (lose) await route.abort(); else await route.fulfill({ response });
+    });
+    await page.goto(kind === 'backfill' ? `${base}/parent/periods` : `${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
+    let form, submit;
+    if (kind === 'progress') {
+      await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
+      form = page.getByRole('dialog', { name: '⏱ 用了多久？', exact: true });
+      submit = form.getByRole('button', { name: '完成', exact: true });
+    } else {
+      await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
+      form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
+      submit = form.getByRole('button', { name: '补记', exact: true });
+    }
+    await submit.click();
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+    await form.locator('input[type=number]').fill('3');
+    if (kind === 'backfill') await form.locator('input[type=date]').fill(shiftDate(today, -2));
+    await submit.click();
+    await page.getByText(/请先.*待确认请求/).first().waitFor();
+    assert.equal(bodies.length, 1, 'edited draft is blocked before HTTP');
+    assert.equal((await pending(page)).length, 1);
+    lose = false;
+    const opened = currentContext.waitForEvent('page');
+    await page.evaluate(url => window.open(url, '_blank'), page.url());
+    const other = await opened; await other.waitForLoadState('networkidle');
+    await other.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
+    await other.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor({ state: 'detached' });
+    // The still-open failed form remains the old operation, even after another UI confirms it.
+    await submit.click();
+    await page.getByText(/原操作已确认/).first().waitFor();
+    assert.equal(bodies.length, 1, 'stale form does not create a new request after confirmation');
+    const rows = db.prepare('SELECT * FROM period_task_logs WHERE period_task_id=?').all(goal.id);
+    assert.equal(rows.length, 1); assert.equal(rows[0].amount, 1);
+    if (kind === 'progress') {
+      assert.equal(rows[0].duration_seconds, 120);
+      await form.getByRole('button', { name: '取消', exact: true }).click();
+      await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '⏱ 2 分钟', exact: true }).click();
+      const correction = page.getByRole('dialog', { name: '⏱ 修改用时', exact: true });
+      await correction.locator('input[type=number]').fill('3');
+      await correction.getByRole('button', { name: '保存', exact: true }).click();
+      await correction.waitFor({ state: 'detached' });
+      const corrected = db.prepare('SELECT * FROM period_task_logs WHERE period_task_id=?').all(goal.id);
+      assert.equal(corrected.length, 1); assert.equal(corrected[0].duration_seconds, 180);
+    }
+    assert.equal(db.prepare('SELECT SUM(points) AS n FROM point_logs WHERE period_log_id=?').get(rows[0].id).n, 1);
+  });
+
+  for (const kind of ['progress', 'backfill', 'redemption']) await check(`N3 copied tab confirms ${kind} and identical new action gets a fresh id`, async () => {
+    const goal = kind === 'redemption' ? null : await api('POST', `/children/${child.id}/goals`, { title: `跨页确认-${kind}`, subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10) });
+    const item = kind === 'redemption' ? await api('POST', '/reward-items', { title: '跨页兑换', cost: 1, icon_emoji: '🎁' }) : null;
+    if (item) db.prepare('INSERT INTO point_logs (id, child_id, points, earned_at) VALUES (?, ?, ?, ?)').run('n3-points', child.id, 100, new Date().toISOString());
+    const page = await open(kind === 'backfill' ? 'parent' : 'child');
+    const target = goal ? `**/api/period-tasks/${goal.id}/logs` : `**/api/children/${child.id}/redemptions`;
+    const bodies = []; let lose = true;
+    await page.route(target, async route => {
+      bodies.push(route.request().postDataJSON()); const response = await route.fetch();
+      if (lose) await route.abort(); else await route.fulfill({ response });
+    });
+    const url = kind === 'backfill' ? `${base}/parent/periods` : `${base}/child/${child.id}/${goal ? 'today' : 'rewards'}`;
+    await page.goto(url, { waitUntil: 'networkidle' });
+    const perform = async () => {
+      if (kind === 'progress') await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
+      else if (kind === 'backfill') {
+        await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
+        await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
+      } else {
+        const card = page.locator('div.rounded-2xl.border.p-4').filter({ has: page.getByText(item.title, { exact: true }) });
+        await card.getByRole('button', { name: '兑换', exact: true }).click();
+        await card.getByRole('button', { name: '确定兑换？', exact: true }).click();
+      }
+    };
+    await perform(); await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+    const first = (await pending(page))[0];
+    const opened = currentContext.waitForEvent('page');
+    await page.evaluate(url => window.open(url, '_blank'), url);
+    const other = await opened; await other.waitForLoadState('networkidle');
+    assert.equal((await pending(other))[0].request_id, first.request_id, 'native session copy');
+    await other.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
+    await other.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor({ state: 'detached' });
+    assert.equal((await pending(page)).length, 0, 'storage event clears original tab without reload');
+    // Simulate a suspended tab missing the event but restoring an old session snapshot.
+    await page.evaluate(entry => sessionStorage.setItem(`taskie_pending_write_v1:${entry.request_id}`, JSON.stringify(entry)), first);
+    lose = false; await page.reload({ waitUntil: 'networkidle' });
+    assert.equal((await pending(page)).length, 0, 'durable confirmation reconciles a missed event');
+    await perform();
+    await page.waitForFunction(() => !Object.keys(sessionStorage).some(k => k.startsWith('taskie_pending_write_v1:')));
+    assert.equal(bodies.length, 2); assert.notEqual(bodies[1].request_id, first.request_id);
+    const rows = goal ? db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n : db.prepare('SELECT COUNT(*) AS n FROM reward_redemptions WHERE reward_id=?').get(item.id).n;
+    assert.equal(rows, 2, 'both intentional operations are recorded');
+  });
+
+  for (const outcome of ['success', 'error']) await check(`N4 obsolete opening ${outcome} cannot change fee draft or revision`, async () => {
+    const cls = await api('POST', '/outside-classes', { title: `异步打开-${outcome}`, start_date: shiftDate(today, -2), days_of_week: [0,1,2,3,4,5,6], start_time: '16:00', end_time: '17:00', total_lessons: 5 });
+    await api('PUT', `/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 10000 });
+    const page = await open('parent');
+    await page.goto(`${base}/parent/schedule?child=${child.id}`, { waitUntil: 'networkidle' });
+    let release, fetched, finished;
+    const gate = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { fetched = resolve; });
+    const done = new Promise(resolve => { finished = resolve; });
+    let count = 0;
+    await page.route(`**/api/outside-classes/${cls.id}/stats?**`, async route => {
+      const response = await route.fetch();
+      if (++count === 1) {
+        fetched(); await gate;
+        if (outcome === 'error') await route.fulfill({ status: 503, json: { error: '旧打开失败' } });
+        else await route.fulfill({ response });
+        finished();
+      } else await route.fulfill({ response });
+    });
+    try {
+      const opener = page.locator('div.p-4.rounded-2xl').filter({ has: page.getByText(cls.title, { exact: true }) }).getByRole('button', { name: '出勤与学费', exact: true });
+      await opener.click(); await ready;
+      const dialog = page.getByRole('dialog', { name: `${child.name} · ${cls.title}`, exact: true });
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+      await api('PUT', `/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 20000 });
+      await opener.click(); await dialog.locator('#class-fee').fill('150');
+      const currentRevision = db.prepare("SELECT revision FROM outside_class_revisions WHERE class_id=? AND child_id=? AND kind='fee'").get(cls.id, child.id).revision;
+      release(); await done;
+      await page.waitForLoadState('networkidle');
+      assert.equal(await dialog.locator('#class-fee').inputValue(), '150');
+      assert.equal(await dialog.getByRole('alert').count(), 0, 'obsolete error is not written into current dialog');
+      const sent = page.waitForResponse(r => r.url().endsWith('/fee') && r.request().method() === 'PUT');
+      await dialog.getByRole('button', { name: '保存学费', exact: true }).click();
+      const response = await sent;
+      assert.equal(response.request().postDataJSON().expected_revision, currentRevision);
+      assert.equal(response.status(), 200);
+    } finally { release(); }
+  });
+
+  for (const width of [390, 1180]) for (const theme of ['light', 'dark']) await check(`R1 skipped export photos ${width}/${theme}`, async () => {
+    const page = await open('parent', width, theme);
+    const skipped = [ { name: 'bad.webp', subject: '美', description: '坏照片题目', created_at: `${today}T00:00:00Z`, reason: 'mismatch' }, { name: 'gone.webp', subject: '数学', description: '缺照片题目', created_at: `${today}T00:00:00Z`, reason: 'absent' } ];
+    await page.route('**/api/backups/photos/export-ticket', route => route.fulfill({ json: { url: '/api/test-photo-download', included_count: 2, skipped } }));
+    await page.route('**/api/test-photo-download', route => route.fulfill({ body: Buffer.alloc(1024), headers: { 'Content-Disposition': 'attachment; filename="test.tar"' } }));
+    await page.goto(`${base}/parent/settings`, { waitUntil: 'networkidle' });
+    const warning = page.getByRole('alert').filter({ hasText: '本次导出跳过' });
+    assert.equal(await warning.count(), 0);
+    for (const name of ['下载全部照片', '下载新照片']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      await warning.waitFor();
+      assert.match(await warning.textContent(), /美 · 2026-10-22 · 坏照片题目.*校验不一致/s);
+      assert.match(await warning.textContent(), /数学 · 2026-10-22 · 缺照片题目.*不存在/s);
+      assert.match(await warning.textContent(), /上传.*正确.*照片包/);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.route('**/api/backups/photos/export-ticket', route => route.fulfill({ json: { url: '/api/test-photo-download', included_count: 4, skipped: [] } }));
+    await page.getByRole('button', { name: '下载全部照片', exact: true }).click();
+    await warning.waitFor({ state: 'detached' });
+  });
+
   const passed = results.filter(r => r.passed).length;
   console.log(`RESULT ${passed} passed, ${results.length - passed} failed`);
   if (results.some(r => !r.passed)) process.exitCode = 1;

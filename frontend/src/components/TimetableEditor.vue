@@ -133,7 +133,7 @@
               v-for="subject in SCHOOL_SUBJECTS"
               :key="subject"
               type="button"
-              class="px-2 py-1 rounded-lg text-xs font-bold border font-chinese"
+              class="min-h-[44px] min-w-[44px] px-2 py-1 rounded-lg text-xs font-bold border font-chinese"
               :class="cell.entries[week].subject === subject ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
               @click="pickSubject(week, subject)"
             >

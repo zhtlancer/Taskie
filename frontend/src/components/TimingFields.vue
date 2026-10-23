@@ -15,7 +15,7 @@
           v-for="option in [10, 15, 20, 30, 45, 60]"
           :key="option"
           type="button"
-          class="px-2.5 py-1 rounded-lg text-xs font-bold border"
+          class="min-h-[44px] min-w-[44px] px-2.5 py-1 rounded-lg text-xs font-bold border"
           :class="expectedMinutes === option ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
           @click="expectedMinutes = expectedMinutes === option ? null : option"
         >
