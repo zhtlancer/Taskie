@@ -48,11 +48,13 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import api from '../api/client';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { parentLoginReturnPath } from '../utils/session.js';
 import { useParentStore } from '../stores/parent';
 import PinInput from '../components/PinInput.vue';
 
 const router = useRouter();
+const route = useRoute();
 const parentStore = useParentStore();
 
 const errorMessage = ref('');
@@ -71,7 +73,8 @@ async function handlePinComplete(pin) {
     errorMessage.value = '';
     const success = await parentStore.login(pin);
     if (success) {
-      router.push(parentStore.pendingPin ? '/parent/setup-pin' : '/parent/dashboard');
+      const returnTo = parentLoginReturnPath(route.query.returnTo);
+      router.push(parentStore.pendingPin ? { path: '/parent/setup-pin', query: { returnTo } } : returnTo);
     }
   } catch (err) {
     errorMessage.value = typeof err === 'string' ? err : 'PIN 码错误，请重新输入';

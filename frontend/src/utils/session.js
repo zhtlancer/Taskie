@@ -51,3 +51,12 @@ export function hasSession(role, childId) {
 export function currentRole() {
   return tokenPayload(getToken())?.role || null;
 }
+
+export function isParentSession() {
+  return currentRole() === 'parent' && hasSession('parent');
+}
+
+// Reauthentication from a board may only return to a local board route.
+export function parentLoginReturnPath(value) {
+  return typeof value === 'string' && /^\/child\/[^/?#]+\/today$/.test(value) ? value : '/parent/dashboard';
+}

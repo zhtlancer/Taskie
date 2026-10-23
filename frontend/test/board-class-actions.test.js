@@ -1,16 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { boardClassActions, boardClassStatus, pendingAttendanceRevision } from '../src/utils/boardClassActions.js';
+import { boardClassActions, boardClassStatus } from '../src/utils/boardClassActions.js';
 
 const today = '2026-10-23', tomorrow = '2026-10-24';
-const scheduled = { status: 'scheduled', attendance: null };
+const scheduled = { status: 'scheduled', attendance: null, attendance_revision: null };
 const actions = (lesson, date = today, parent = true) => boardClassActions(lesson, date, today, parent);
 
-test('pending revisions survive clearing without adopting unseen confirmed attendance', () => {
-  const lesson = { source_date: tomorrow, attendance: null };
-  assert.equal(pendingAttendanceRevision(lesson, { lessons: [{ lesson_date: tomorrow, confirmed: false, revision: 'cleared-version' }] }), 'cleared-version');
-  assert.equal(pendingAttendanceRevision(lesson, { lessons: [{ lesson_date: tomorrow, confirmed: true, revision: 'unseen-version' }] }), null);
-  assert.equal(pendingAttendanceRevision(lesson, { lessons: [{ lesson_date: today, confirmed: false, revision: 'another-lesson' }] }), null);
+test('attendance writes require the schedule revision, including cleared revisions', () => {
+  assert.deepEqual(actions({ status: 'scheduled', attendance: null }), ['leave', 'move']);
+  assert.deepEqual(actions({ status: 'scheduled', attendance: { status: 'attended', revision: 'old' } }), []);
+  assert.deepEqual(actions({ ...scheduled, attendance_revision: 'cleared' }), ['leave', 'move', 'attended', 'absent']);
 });
 
 test('only parents get actions; today permits attendance, tomorrow only scheduling', () => {
@@ -31,14 +30,14 @@ test('leave and moved-away lessons only offer their matching undo', () => {
 
 test('confirmed attendance takes precedence over exceptions and can always be undone', () => {
   for (const status of ['attended', 'absent', 'leave']) {
-    assert.deepEqual(actions({ status: 'leave', exception_id: 'e', attendance: { status } }), ['undoAttendance']);
+    assert.deepEqual(actions({ status: 'leave', exception_id: 'e', attendance_revision: 'v1', attendance: { status } }), ['undoAttendance']);
     assert.deepEqual(actions({ ...scheduled, attendance: { status } }, tomorrow), ['undoAttendance']);
   }
   assert.deepEqual(actions({ ...scheduled, attendance: { status: 'pending', revision: 'tombstone' } }), ['leave', 'move', 'attended', 'absent']);
 });
 
 test('moved-in attendance follows actual day, including a future source moved into today', () => {
-  const incoming = { status: 'moved_in', source_date: tomorrow, moved_from: tomorrow, exception_id: 'e' };
+  const incoming = { status: 'moved_in', source_date: tomorrow, moved_from: tomorrow, exception_id: 'e', attendance_revision: null };
   assert.deepEqual(actions(incoming), ['leave', 'move', 'attended', 'absent', 'undoMove']);
   assert.deepEqual(actions({ ...incoming, source_date: today, moved_from: today }, tomorrow), ['leave', 'move', 'undoMove']);
 });

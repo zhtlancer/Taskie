@@ -5,22 +5,15 @@ export const classActionLabels = {
   undoAttendance: '撤销确认', undoLeave: '撤销请假', undoMove: '撤销调课'
 };
 
-// A cleared attendance still has a persisted revision. The schedule contract returns
-// attendance:null, so recover that pending revision from the existing stats endpoint.
-// Never adopt a newer confirmed record that the schedule has not shown to the parent.
-export function pendingAttendanceRevision(lesson, details) {
-  const record = details.lessons.find(item => item.lesson_date === lesson.source_date);
-  return record && !record.confirmed ? record.revision ?? null : null;
-}
-
 // Use the displayed lesson's actual date and the board's business date, never the device date.
 export function boardClassActions(lesson, actualDate, today, asParent) {
   if (!asParent) return [];
-  if (['attended', 'absent', 'leave'].includes(lesson.attendance?.status)) return ['undoAttendance'];
+  const hasRevision = Object.hasOwn(lesson, 'attendance_revision');
+  if (['attended', 'absent', 'leave'].includes(lesson.attendance?.status)) return hasRevision ? ['undoAttendance'] : [];
   if (lesson.status === 'leave') return lesson.exception_id ? ['undoLeave'] : [];
   if (lesson.status === 'moved_out') return lesson.exception_id ? ['undoMove'] : [];
   const actions = ['leave', 'move'];
-  if (actualDate <= today) actions.push('attended', 'absent');
+  if (actualDate <= today && hasRevision) actions.push('attended', 'absent');
   if (lesson.status === 'moved_in' && lesson.exception_id) actions.push('undoMove');
   return actions;
 }
