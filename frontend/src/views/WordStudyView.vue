@@ -108,7 +108,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
@@ -129,6 +129,9 @@ const nextDue = computed(() => {
   return day?.batches.flatMap(batch => batch.items).find(item => item.id === active.value?.item.id)?.next_due_date;
 });
 let pendingAttempt = null;
+const closeRestoredForm = () => { active.value = null; pendingAttempt = null; };
+onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
+onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const skillName = skill => skill === 'write' ? '书写' : '认读';

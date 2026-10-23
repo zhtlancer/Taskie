@@ -1,9 +1,21 @@
 import axios from 'axios';
-import { getToken, saveToken, clearTokens, currentRole } from '../utils/session.js';
+import { getToken, saveToken, clearTokens, currentRole, getDataGeneration, saveDataGeneration, clearDataGeneration } from '../utils/session.js';
 import { pendingWriteStore, activeWrites, notifyPendingWrites } from '../utils/requestId.js';
 
 const client = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api', timeout: 15000 });
-client.interceptors.request.use(config => {
+let calibration;
+async function ensureDataGeneration() {
+  const token = getToken();
+  if (!token || getDataGeneration()) return;
+  if (!calibration || calibration.token !== token) {
+    const promise = client.get('/auth/data-generation').then(response => saveDataGeneration(response.data.data_generation, token));
+    calibration = { token, promise };
+    promise.finally(() => { if (calibration?.promise === promise) calibration = null; }).catch(() => {});
+  }
+  await calibration.promise;
+}
+client.interceptors.request.use(async config => {
+  if (!config.url.startsWith('/auth/')) await ensureDataGeneration();
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -15,6 +27,11 @@ client.interceptors.response.use(response => response, error => {
     window.location.href = '/api/device/page';
     return new Promise(() => {});
   }
+  if (error.response?.status === 409 && error.response?.data?.code === 'DATA_RESTORED') {
+    if (error.config.pendingRequestId) pendingWriteStore.discard(error.config.pendingRequestId);
+    clearDataGeneration();
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('taskie:data-restored'));
+  }
   const login = error.config?.url?.includes('-login');
   if (error.response?.status === 401 && !login) clearTokens();
   const message = !error.response ? '无法连接服务器，操作未确认。请检查网络后，在原处重试，或到“待确认请求”核对。'
@@ -23,10 +40,24 @@ client.interceptors.response.use(response => response, error => {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   return Promise.reject(message);
 });
-const request = async (method, url, data, params, signal) =>
-  (await client.request({ method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
+const request = async (method, url, data, params, signal, options = {}) =>
+  (await client.request({ ...options, method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
 const get = (url, params, signal) => request('get', url, undefined, params, signal);
-const post = (url, data) => request('post', url, data);
+const post = (url, data, options) => request('post', url, data, undefined, undefined, options);
+const generationHeaders = generation => generation ? { 'X-Taskie-Data-Generation': generation } : {};
+// Non-persisted practice/manual forms keep the same object for an uncertain attempt.
+const requestGenerations = new WeakMap();
+const invalidAttempts = new WeakSet();
+async function idempotentPost(url, data) {
+  if (invalidAttempts.has(data)) throw '数据已恢复，这次操作没有执行，请核对后重新操作';
+  await ensureDataGeneration();
+  if (!requestGenerations.has(data)) requestGenerations.set(data, getDataGeneration());
+  try { return await post(url, data, { headers: generationHeaders(requestGenerations.get(data)) }); }
+  catch (error) {
+    if (error === '数据已恢复，这次操作没有执行，请核对后重新操作') invalidAttempts.add(data);
+    throw error;
+  }
+}
 const put = (url, data) => request('put', url, data);
 const remove = url => request('delete', url);
 
@@ -36,28 +67,33 @@ async function sendPendingWrite(entry) {
   notifyPendingWrites();
   try {
     const url = entry.kind === 'redemption' ? `/children/${entry.child_id}/redemptions` : `/period-tasks/${entry.task_id}/logs`;
-    const result = await post(url, { ...entry.payload, request_id: entry.request_id });
+    const result = await post(url, { ...entry.payload, request_id: entry.request_id }, { headers: generationHeaders(entry.data_generation), pendingRequestId: entry.request_id });
     pendingWriteStore.done(entry.request_id);
     return result;
   } finally { activeWrites.delete(entry.request_id); notifyPendingWrites(); }
 }
 
-function pendingWrite(action, attempt) {
-  try { return sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole() }, attempt)); }
-  catch (err) { return Promise.reject(err.message || '无法保存待确认请求，请允许会话存储后重试'); }
+async function pendingWrite(action, attempt) {
+  try {
+    // Validate a suspended form before calibrating or sending anything. Its original
+    // entry supplies the generation, including a legacy entry that has none.
+    if (!attempt?.request_id) await ensureDataGeneration();
+    return await sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole(), data_generation: getDataGeneration() || undefined }, attempt));
+  }
+  catch (err) { return Promise.reject(typeof err === 'string' ? err : err.message || '无法保存待确认请求，请允许会话存储后重试'); }
 }
 
 export const api = {
   async loginParent({ pin }) {
     const result = await post('/auth/parent-login', { pin });
     if (!result.success) throw result.error;
-    saveToken('parent', result.token);
+    saveToken('parent', result.token, result.data_generation);
     return result;
   },
   async loginChild({ child_id, pin }) {
     const result = await post('/auth/child-login', { child_id, pin });
     if (!result.success) throw result.error;
-    saveToken('child', result.token);
+    saveToken('child', result.token, result.data_generation);
     return result;
   },
   getAuthSetup: () => get('/auth/setup'),
@@ -89,7 +125,7 @@ export const api = {
   startTaskStudy: id => post(`/daily-tasks/${id}/study/start`),
   pauseTaskStudy: (id, sid) => post(`/daily-tasks/${id}/sessions/${sid}/pause`),
   finishTaskStudy: (id, sid, data) => post(`/daily-tasks/${id}/sessions/${sid}/finish`, data),
-  addTaskStudy: (id, data) => post(`/daily-tasks/${id}/sessions`, data),
+  addTaskStudy: (id, data) => idempotentPost(`/daily-tasks/${id}/sessions`, data),
   editTaskStudy: (id, sid, data) => put(`/daily-tasks/${id}/sessions/${sid}`, data),
   completeTaskStudy: id => post(`/daily-tasks/${id}/study/complete`),
   setTaskDuration: (id, seconds) => put(`/daily-tasks/${id}/duration`, { duration_seconds: seconds }),
@@ -124,8 +160,8 @@ export const api = {
   getWordStudy: id => get(`/children/${id}/word-study`),
   getWordStudyHistory: id => get(`/children/${id}/word-study/history`),
   saveWordStudyPlan: (id, skill, data) => put(`/children/${id}/word-study/plans/${skill}`, data),
-  addWordStudyExtra: (id, requestId) => post(`/word-study/days/${id}/extra`, { request_id: requestId }),
-  gradeWordStudyItem: (id, data) => post(`/word-study/items/${id}/attempts`, data),
+  addWordStudyExtra: (id, requestId) => idempotentPost(`/word-study/days/${id}/extra`, { request_id: requestId }),
+  gradeWordStudyItem: (id, data) => idempotentPost(`/word-study/items/${id}/attempts`, data),
   getCharacters: (id, mastered = null) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }),
   createCharacter: data => post('/characters', data),
   markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }),
@@ -155,7 +191,7 @@ export const api = {
   startHomeworkStudy: id => post(`/homework/${id}/study/start`),
   pauseHomeworkStudy: (id, sid) => post(`/homework/${id}/sessions/${sid}/pause`),
   finishHomeworkStudy: (id, sid, data) => post(`/homework/${id}/sessions/${sid}/finish`, data),
-  addHomeworkStudy: (id, data) => post(`/homework/${id}/sessions`, data),
+  addHomeworkStudy: (id, data) => idempotentPost(`/homework/${id}/sessions`, data),
   editHomeworkStudy: (id, sid, data) => put(`/homework/${id}/sessions/${sid}`, data),
   completeHomework: id => post(`/homework/${id}/complete`),
   rejectHomeworkCompletion: id => post(`/homework/${id}/reject-completion`),

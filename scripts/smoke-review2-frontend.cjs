@@ -733,7 +733,120 @@ async function main() {
     assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_child_token')), null);
   });
 
-  // Restore changes the complete dataset and session epoch. Run it last.
+  for (const width of [390, 1180]) for (const theme of ['light', 'dark']) await check(`G-R1 parent to child confirmation ${width}/${theme}`, async () => {
+    const page = await open('parent', width, theme);
+    await page.goto(base + '/', { waitUntil: 'networkidle' });
+    const first = await seedIdentityRequest(page);
+    let logins = 0;
+    page.on('request', request => { if (request.url().endsWith('/auth/child-login')) logins++; });
+    const parentToken = await page.evaluate(() => sessionStorage.getItem('taskie_parent_token'));
+    await page.getByText(child.name, { exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '确认操作', exact: true });
+    await dialog.waitFor();
+    assert.match(await dialog.textContent(), /以孩子身份登录会退出家长，并清除家长未确认的操作。/);
+    assert.match(await dialog.textContent(), /1 项/);
+    assert.equal(logins, 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const bounds = await dialog.boundingBox();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width && bounds.y >= 0);
+    await snapshot(page, `generation-switch-${width}-${theme}`);
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    assert.deepEqual(await pending(page), [first]);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')), parentToken);
+    assert.equal(logins, 0);
+    await page.getByText(child.name, { exact: true }).click();
+    await dialog.getByRole('button', { name: '确认', exact: true }).click();
+    await page.waitForURL(`**/child/${child.id}/today`);
+    assert.equal(logins, 1);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')), null);
+    assert.deepEqual(await pending(page), []);
+  });
+
+  await check('G-R1 parent without pending still confirms; no parent skips confirmation', async () => {
+    const page = await open('parent');
+    await page.goto(base + '/', { waitUntil: 'networkidle' });
+    await page.getByText(child.name, { exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '确认操作', exact: true });
+    await dialog.waitFor();
+    assert.match(await dialog.textContent(), /退出家长/);
+    assert.doesNotMatch(await dialog.textContent(), /项家长操作/);
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await page.evaluate(() => { sessionStorage.removeItem('taskie_parent_token'); });
+    await page.getByText(child.name, { exact: true }).click();
+    await page.waitForURL(`**/child/${child.id}/today`);
+    assert.equal(await dialog.count(), 0);
+  });
+
+  await check('G-D1 409 removes pending and closes the original backfill form', async () => {
+    const goal = await api('POST', `/children/${child.id}/goals`, { title: '恢复后旧表单', subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10) });
+    const page = await open('parent');
+    const url = `**/api/period-tasks/${goal.id}/logs`;
+    let writes = 0;
+    await page.route(url, async route => {
+      writes++;
+      await route.fulfill({ status: 409, json: { code: 'DATA_RESTORED', error: '数据已恢复，这次操作没有执行，请核对后重新操作' } });
+    });
+    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    const card = page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) });
+    await card.getByRole('button', { name: '补记进度', exact: true }).click();
+    const form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
+    await form.getByRole('button', { name: '补记', exact: true }).click();
+    await page.getByRole('alert').filter({ hasText: '数据已恢复，这次操作没有执行，请核对后重新操作' }).first().waitFor();
+    await form.waitFor({ state: 'detached' });
+    assert.deepEqual(await pending(page), []);
+    assert.equal(writes, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 0);
+  });
+
+  // Restore changes the complete dataset and session epoch. Run these cases last.
+  await check('G-D1 two tabs: lost response, real restore, re-login discards old generation', async () => {
+    const goal = await api('POST', `/children/${child.id}/goals`, { title: '跨页恢复隔离', subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10) });
+    const backup = await app.backupService.create();
+    const page = await open('parent');
+    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    const restorePage = await currentContext.newPage();
+    await restorePage.goto(`${base}/parent/settings`, { waitUntil: 'networkidle' });
+    const url = `**/api/period-tasks/${goal.id}/logs`;
+    let writes = 0;
+    let firstHeader;
+    await page.route(url, async route => {
+      writes++;
+      firstHeader ||= route.request().headers()['x-taskie-data-generation'];
+      if (writes === 1) { await route.fetch(); await route.abort(); }
+      else await route.continue();
+    });
+    await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
+    await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
+    await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
+    const [first] = await pending(page);
+    await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '取消', exact: true }).click();
+    assert.equal(first.data_generation, firstHeader);
+    assert.equal(typeof firstHeader, 'string');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 1);
+    await restorePage.locator('input[accept=".gz"]').setInputFiles(app.backupService.getPath(backup.name));
+    await restorePage.getByLabel('当前家长 PIN', { exact: true }).fill('1234');
+    await restorePage.getByRole('checkbox', { name: '我确认用备份替换当前数据' }).check();
+    await restorePage.getByRole('button', { name: '确认恢复', exact: true }).click();
+    await restorePage.waitForURL('**/parent/login');
+    assert.deepEqual(await pending(page), [first], 'other tab retains the uncertain write until login');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 0);
+    await Promise.all([
+      page.waitForResponse(r => r.url().endsWith(`/period-tasks/${goal.id}/logs`) && r.status() === 401),
+      page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click()
+    ]);
+    await page.waitForURL('**/parent/login');
+    assert.deepEqual(await pending(page), [first]);
+    await enterPin(page, '1234');
+    await page.waitForURL('**/parent/dashboard');
+    assert.deepEqual(await pending(page), []);
+    assert.equal(await page.getByRole('complementary', { name: '待确认请求' }).count(), 0);
+    assert.equal(writes, 2, 'old write cannot be replayed after reauthentication');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 0);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM point_logs WHERE period_log_id=?').get(first.request_id).n, 0);
+    assert.notEqual(await page.evaluate(() => sessionStorage.getItem('taskie_data_generation')), first.data_generation);
+    token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
+  });
+
   await check('I6 failed restore preserves requests; successful backup restore clears them', async () => {
     const backup = await app.backupService.create();
     const page = await open('parent');

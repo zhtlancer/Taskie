@@ -273,6 +273,9 @@ function timer(goal, action) {
 }
 
 const durationAsk = ref(null);
+const closeRestoredForm = () => { durationAsk.value = null; values.value = {}; };
+onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
+onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 
 function editDuration(goal, entry) {
   playClick();
