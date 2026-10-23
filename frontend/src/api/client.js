@@ -34,11 +34,11 @@ client.interceptors.response.use(response => response, error => {
   }
   const login = error.config?.url?.includes('-login');
   if (error.response?.status === 401 && !login) clearTokens();
-  const message = !error.response ? '无法连接服务器，操作未确认。请检查网络后，在原处重试，或到“待确认请求”核对。'
+  const message = !error.response ? (error.config?.networkErrorMessage || '无法连接服务器，操作未确认。请检查网络后，在原处重试，或到“待确认请求”核对。')
     : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
   const code = error.response?.data?.code;
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
-  return Promise.reject(message);
+  return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status }) : message);
 });
 const request = async (method, url, data, params, signal, options = {}) =>
   (await client.request({ ...options, method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
@@ -58,8 +58,8 @@ async function idempotentPost(url, data) {
     throw error;
   }
 }
-const put = (url, data) => request('put', url, data);
-const remove = url => request('delete', url);
+const put = (url, data, options) => request('put', url, data, undefined, undefined, options);
+const remove = (url, options) => request('delete', url, undefined, undefined, undefined, options);
 
 async function sendPendingWrite(entry) {
   if (activeWrites.has(entry.request_id)) throw '请求正在确认，请稍候';
@@ -227,13 +227,13 @@ export const api = {
   getOutsideClasses: () => get('/outside-classes'),
   getOutsideClassStats: childId => get('/outside-classes/stats', { child_id: childId }),
   getOutsideClassDetails: (id, childId, from, to) => get(`/outside-classes/${id}/stats`, { child_id: childId, from, to }),
-  setClassAttendance: (id, data) => put(`/outside-classes/${id}/attendance`, data),
+  setClassAttendance: (id, data, options) => put(`/outside-classes/${id}/attendance`, data, options),
   setClassFee: (id, data) => put(`/outside-classes/${id}/fee`, data),
   createOutsideClass: data => post('/outside-classes', data),
   updateOutsideClass: (id, data) => put(`/outside-classes/${id}`, data),
   deleteOutsideClass: id => remove(`/outside-classes/${id}`),
-  setClassException: (classId, data) => put(`/outside-classes/${classId}/exceptions`, data),
-  deleteClassException: id => remove(`/outside-class-exceptions/${id}`),
+  setClassException: (classId, data, options) => put(`/outside-classes/${classId}/exceptions`, data, options),
+  deleteClassException: (id, options) => remove(`/outside-class-exceptions/${id}`, options),
   getMakeupDays: childId => get(`/children/${childId}/makeup-days`),
   createMakeupDay: (childId, data) => post(`/children/${childId}/makeup-days`, data),
   deleteMakeupDay: id => remove(`/makeup-days/${id}`),

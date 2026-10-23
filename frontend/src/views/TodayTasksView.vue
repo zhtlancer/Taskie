@@ -276,7 +276,10 @@
 
     <TodayScheduleModal
       v-if="scheduleOpen && todaySchedule"
+      :key="childId"
       :child-id="childId"
+      :child-name="childName"
+      :refresh="refreshClassActions"
       :today="todaySchedule"
       :tomorrow="tomorrowSchedule"
       @close="scheduleOpen = false"
@@ -313,6 +316,7 @@ import SkipTaskModal from '../components/SkipTaskModal.vue';
 import DurationModal from '../components/DurationModal.vue';
 import TodayScheduleModal from '../components/TodayScheduleModal.vue';
 import { addDays, lessonHappens } from '../utils/schedule.js';
+import { pendingAttendanceRevision } from '../utils/boardClassActions.js';
 import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
 import { currentRole } from '../utils/session.js';
@@ -467,14 +471,27 @@ const nextClass = computed(() => {
   return todayClasses.value.find(lesson => lesson.end_time > nowTime) || todayClasses.value.at(-1) || null;
 });
 
-async function loadSchedule() {
+async function loadSchedule({ throwOnError = false } = {}) {
   const serial = ++scheduleSerial, id = childId.value, date = todayString.value;
   try {
     const result = await api.getChildSchedule(id, date, addDays(date, 1));
+    if (asParent) {
+      const pending = result.flatMap(day => day.outside).filter(lesson => lesson.attendance === null);
+      const details = new Map(await Promise.all([...new Set(pending.map(lesson => lesson.class_id))].map(async classId =>
+        [classId, await api.getOutsideClassDetails(classId, id, date, addDays(date, 1))])));
+      for (const lesson of pending) lesson.pending_attendance_revision = pendingAttendanceRevision(lesson, details.get(lesson.class_id));
+    }
     if (serial === scheduleSerial && id === childId.value && date === todayString.value) [todaySchedule.value, tomorrowSchedule.value] = result;
   } catch (err) {
     console.error('Failed to load the timetable:', err);
+    if (throwOnError) throw err;
   }
+}
+
+async function refreshClassActions() {
+  const results = await Promise.allSettled([loadSchedule({ throwOnError: true }), fetchTasks(), childStore.fetchStats()]);
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
 }
 
 function openSchedule() {

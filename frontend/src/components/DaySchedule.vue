@@ -31,6 +31,9 @@
     <div
       v-for="lesson in day.outside"
       :key="`${lesson.class_id}-${lesson.class_lesson_date}-${lesson.status}`"
+      :data-class-id="lesson.class_id"
+      :data-schedule-date="day.date"
+      :data-source-date="lesson.source_date || lesson.class_lesson_date"
       class="px-3 py-2 rounded-xl border"
       :class="lessonHappens(lesson) ? 'bg-violet-50 dark:bg-violet-950/40 border-violet-200 dark:border-violet-800' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 opacity-70'"
     >
@@ -49,6 +52,7 @@
       <div v-if="lessonNote(lesson)" class="mt-0.5 text-xs font-black" :class="lesson.status === 'moved_in' ? 'text-violet-600 dark:text-violet-300' : 'text-amber-600 dark:text-amber-300'">
         {{ lessonNote(lesson) }}
       </div>
+      <slot name="outside" :lesson="lesson" :date="day.date" />
     </div>
 
     <p v-if="!day.holiday && !day.school.length && !day.outside.length" class="px-2 py-3 text-xs font-bold text-slate-400">没有课</p>
