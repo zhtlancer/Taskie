@@ -476,6 +476,8 @@ npm run test:browser:class-stats
 
 ### 家长端备份与恢复
 
+登录响应及需有效会话的 `GET /api/auth/data-generation` 返回 `data_generation`（`last_restore_id`，从未恢复时为 `initial`）；接受 `request_id` 的写接口应携带请求创建时的 `X-Taskie-Data-Generation`，服务端在会话校验后、业务校验和幂等去重前比较代次，不符时返回 `409 DATA_RESTORED` 且不执行、不保存请求号；缺少该头时兼容旧客户端照常处理。
+
 登录家长后台，打开「备份与设置」：
 
 - 「立即创建备份」会保存数据库（账号、任务、积分、兑换、假期、长期任务、作业记录与生字生词及其分类等）和一份错题照片清单（文件名、大小、校验值），支持下载 `.taskie.gz` 备份包。备份包不含照片，通常只有几 MB，不会随照片增多而变大。

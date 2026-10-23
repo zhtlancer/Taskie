@@ -1,3 +1,5 @@
+const { generationWrite } = require('../utils/data-generation');
+
 async function periodsRoutes(fastify, options) {
   const { periodsService } = options;
   const handle = fn => async (request, reply) => {
@@ -24,8 +26,10 @@ async function periodsRoutes(fastify, options) {
   fastify.put('/period-tasks/:id', handle(async request => periodsService.updateTask(request.params.id, request.body || {})));
   fastify.delete('/period-tasks/:id', handle(async request => periodsService.deleteTask(request.params.id)));
 
-  fastify.post('/period-tasks/:id/logs', handle(async (request, reply) =>
-    reply.code(201).send(periodsService.logProgress(request.params.id, request.body || {}, actor(request)))));
+  fastify.post('/period-tasks/:id/logs', generationWrite(fastify, (request, reply) => {
+    reply.code(201);
+    return periodsService.logProgress(request.params.id, request.body || {}, actor(request));
+  }));
   fastify.delete('/period-task-logs/:id', handle(async request => periodsService.deleteLog(request.params.id, actor(request))));
 
   fastify.get('/children/:id/makeup-days', handle(async request => periodsService.listMakeupDays(request.params.id)));

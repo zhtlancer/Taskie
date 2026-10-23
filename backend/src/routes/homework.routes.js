@@ -1,3 +1,5 @@
+const { generationWrite } = require('../utils/data-generation');
+
 async function homeworkRoutes(fastify, options) {
   const { homeworkService, homeworkStudyService: study } = options;
   const handle = fn => async (request, reply) => {
@@ -27,7 +29,7 @@ async function homeworkRoutes(fastify, options) {
   fastify.post('/homework/:id/study/start', handle(async r => study.start(r.params.id)));
   fastify.post('/homework/:id/sessions/:sid/pause', handle(async r => study.pauseSession(r.params.id, r.params.sid)));
   fastify.post('/homework/:id/sessions/:sid/finish', handle(async r => study.finish(r.params.id, r.params.sid, r.body || {}, actor(r))));
-  fastify.post('/homework/:id/sessions', handle(async r => study.manual(r.params.id, r.body || {}, actor(r))));
+  fastify.post('/homework/:id/sessions', generationWrite(fastify, r => study.manual(r.params.id, r.body || {}, actor(r))));
   fastify.put('/homework/:id/sessions/:sid', handle(async r => study.edit(r.params.id, r.params.sid, r.body || {}, actor(r))));
   fastify.post('/homework/:id/complete', handle(async r => {
     fastify.db.transaction(() => study.complete(r.params.id, actor(r)))();
