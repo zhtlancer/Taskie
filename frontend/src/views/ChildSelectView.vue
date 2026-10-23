@@ -120,6 +120,9 @@ import ChildSelectCard from '../components/ChildSelectCard.vue';
 import PinInput from '../components/PinInput.vue';
 import ThemeSelect from '../components/ThemeSelect.vue';
 import SoundToggle from '../components/SoundToggle.vue';
+import { hasSession } from '../utils/session.js';
+import { pendingWriteStore } from '../utils/requestId.js';
+import { confirmAction } from '../utils/confirmation.js';
 import { playClick } from '../utils/sound';
 
 const router = useRouter();
@@ -140,7 +143,20 @@ onMounted(async () => {
   }
 });
 
+const selecting = ref(false);
 async function handleChildSelect(child) {
+  if (selecting.value) return;
+  selecting.value = true;
+  try {
+    if (hasSession('parent')) {
+      const count = pendingWriteStore.list().filter(entry => entry.role === 'parent').length;
+      const message = '以孩子身份登录会退出家长，并清除家长未确认的操作。' + (count ? `当前有 ${count} 项家长操作尚未确认。` : '');
+      if (!await confirmAction(message)) return;
+    }
+    await selectChild(child);
+  } finally { selecting.value = false; }
+}
+async function selectChild(child) {
   if (child.has_pin) {
     activePinChild.value = child;
     pinError.value = '';

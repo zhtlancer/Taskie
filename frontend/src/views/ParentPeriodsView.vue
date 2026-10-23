@@ -476,6 +476,9 @@ function openBackfill(task) {
   backfill.value = { task, attempt: {}, amount: 1, position: task.done_amount + 1, date: maxDate, maxDate };
 }
 
+const closeRestoredForm = () => { backfill.value = null; };
+onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
+onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 onMounted(() => window.addEventListener('taskie:write-confirmed', loadPeriods));
 onBeforeUnmount(() => window.removeEventListener('taskie:write-confirmed', loadPeriods));
 async function saveBackfill() {

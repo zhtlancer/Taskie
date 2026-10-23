@@ -99,6 +99,10 @@ const emit = defineEmits(['close', 'saved']);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const study = ref(null), error = ref(''), notice = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
 const manualOpen = ref(false), manualDate = ref(localDate()), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
+let manualAttempt = null;
+const closeRestoredForm = () => { manualAttempt = null; manualOpen.value = false; manualId.value = requestId(); emit('close'); };
+onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
+onUnmounted(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 const legacyEdit = ref(null);
 const today = computed(() => businessDate(now.value, study.value?.time_zone));
 const dateOf = iso => businessDate(Date.parse(iso), study.value?.time_zone);
@@ -162,8 +166,10 @@ async function finish(complete) {
   if (!error.value) note.value = '';
 }
 async function manual() {
-  await act(() => studyApi.add({ request_id: manualId.value, date: manualDate.value, duration_seconds: Math.round(manualMinutes.value * 60), note: manualNote.value }));
-  if (!error.value) { manualId.value = requestId(); manualOpen.value = false; manualNote.value = ''; manualMinutes.value = 0; }
+  manualAttempt ||= { request_id: manualId.value };
+  Object.assign(manualAttempt, { date: manualDate.value, duration_seconds: Math.round(manualMinutes.value * 60), note: manualNote.value });
+  await act(() => studyApi.add(manualAttempt));
+  if (!error.value) { manualAttempt = null; manualId.value = requestId(); manualOpen.value = false; manualNote.value = ''; manualMinutes.value = 0; }
 }
 const canEdit = session => props.asParent || (session.days.length ? session.days.every(day => day.date === today.value) : dateOf(session.started_at) === today.value);
 function openEdit(session) { editing.value = { id: session.id, note: session.note, days: (session.days.length ? session.days : [{ date: dateOf(session.started_at), seconds: 0 }]).map(day => ({ ...day, minutes: day.seconds / 60 })) }; }
