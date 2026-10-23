@@ -2,8 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const buildApp = require('../src/app');
 const { getDb } = require('../src/db');
+const { timeZone } = require('../src/config');
+
+// Tests read the family's "today" once at the start and expect it to hold until they finish. A test
+// that starts in the last seconds before TIME_ZONE midnight would see the server switch to the next
+// day halfway through, so it waits for midnight to pass first. This only delays tests that start in
+// that window (e.g. CI at 16:00 UTC for Asia/Shanghai); the midnight switch itself has its own tests.
+const MIDNIGHT_GUARD_MS = 10_000;
+function msUntilFamilyMidnight(now = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    .formatToParts(now).map(part => [part.type, part.value]));
+  return 86_400_000 - ((Number(parts.hour) * 60 + Number(parts.minute)) * 60 + Number(parts.second)) * 1000 - now.getMilliseconds();
+}
+function waitPastFamilyMidnight() {
+  const left = msUntilFamilyMidnight();
+  if (left < MIDNIGHT_GUARD_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, left + 50);
+}
 
 function createTestApp({ authenticated = true, defaultParentPin = false, deviceAuth = false } = {}) {
+  waitPastFamilyMidnight();
   // Use in-memory SQLite for isolated, fast tests
   const db = getDb(':memory:');
   // Most tests exercise the parent console as if the default PIN had already been changed
@@ -47,5 +64,7 @@ function cleanupTestApp(testContext) {
 
 module.exports = {
   createTestApp,
-  cleanupTestApp
+  cleanupTestApp,
+  msUntilFamilyMidnight,
+  MIDNIGHT_GUARD_MS
 };

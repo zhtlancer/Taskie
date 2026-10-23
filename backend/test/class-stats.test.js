@@ -318,10 +318,12 @@ test('a save based on an older attendance or fee is refused, and every correctio
 
 test('independent revisions change under a frozen clock and survive clearing attendance and fees', async t => {
   const { ctx, parent, cls, child, day, stats, attendance } = await fixture(t);
-  const NativeDate = Date;
+  // Freeze at the fixture's own moment: a fixed calendar date would put day(-2) in the future once
+  // the real date is more than two days past it, and attendance for future lessons is rejected.
+  const NativeDate = Date, frozenAt = NativeDate.now();
   const FrozenDate = class extends NativeDate {
-    constructor(...args) { super(...(args.length ? args : ['2026-10-22T12:00:00Z'])); }
-    static now() { return new NativeDate('2026-10-22T12:00:00Z').getTime(); }
+    constructor(...args) { super(...(args.length ? args : [frozenAt])); }
+    static now() { return frozenAt; }
   };
   global.Date = FrozenDate;
   t.after(() => { global.Date = NativeDate; });
