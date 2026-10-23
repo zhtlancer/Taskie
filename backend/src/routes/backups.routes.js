@@ -31,8 +31,9 @@ async function backupRoutes(app, { backupService, authService, intervalHours }) 
     reply.raw.once('finish', () => {
       if (!complete || failed || reply.raw.statusCode !== 200) return;
       try {
-        const valid = app.jwt.verify(String(request.query.ticket));
-        if (valid.epoch === app.sessionEpoch()) backupService.recordPhotoExport(stream.photoNames);
+        // The ticket is authorized when the download starts. It may expire while a large
+        // response is in flight; only a session/restore change should invalidate its record.
+        if (ticket.epoch === app.sessionEpoch()) backupService.recordPhotoExport(stream.photoNames);
       } catch (error) { request.log.warn({ err: error }, '照片包未记录为完整导出'); }
     });
     const stamp = new Date().toISOString().slice(0, 10);

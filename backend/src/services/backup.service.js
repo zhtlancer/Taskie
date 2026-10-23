@@ -312,6 +312,19 @@ class BackupService {
   async importPhotoStream(stream) {
     const result = { imported: 0, present: 0, unused: 0, skipped: 0, mismatch: 0, unverified: 0 };
     const referenced = new Set(this.referencedPhotos()), expected = this.expectations();
+    // A deleted mistake may still be part of a retained backup. Its manifest remains the
+    // authoritative source for both whether the photo is wanted and which bytes are trusted.
+    for (const item of this.list()) {
+      const retained = await this.retainedManifest(item.name);
+      for (const name of retained.photos) referenced.add(name);
+      for (const photo of retained.manifest) {
+        const previous = expected.get(photo.name);
+        if (previous && (previous.size !== photo.size || previous.sha256 !== photo.sha256)) {
+          throw fail('照片清单存在同名不同内容，请检查备份');
+        }
+        expected.set(photo.name, photo);
+      }
+    }
     const pending = [];
     const reader = new TarReader((name, content) => pending.push({ name, content }), { maxFileSize: MAX_PHOTO_SIZE });
     const install = async (name, content) => {

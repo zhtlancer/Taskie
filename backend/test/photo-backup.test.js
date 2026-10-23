@@ -285,7 +285,7 @@ test('server export history includes retained-only photos and ignores mtime, cli
   assert.deepEqual(service.exportState(), before);
 });
 
-test('a stream error, session invalidation or client disconnect never records a complete export', async t => {
+test('a stream error or session invalidation never records; expiry during a completed download does', async t => {
   const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
   addPhoto('large.jpg', require('node:crypto').randomBytes(8 * 1024 * 1024));
   const original = service.exportPhotos.bind(service);
@@ -309,19 +309,29 @@ test('a stream error, session invalidation or client disconnect never records a 
   service.exportPhotos = () => {
     const source = original();
     const stream = Readable.from((async function* () {
-      for await (const chunk of source) yield chunk;
-      const now = Date.now();
-      t.mock.method(Date, 'now', () => now + 10 * 60 * 1000);
+      let first = true;
+      for await (const chunk of source) {
+        yield chunk;
+        if (first) {
+          first = false;
+          const now = Date.now();
+          t.mock.method(Date, 'now', () => now + 10 * 60 * 1000);
+        }
+      }
     })());
     stream.photoNames = source.photoNames; return stream;
   };
-  assert.equal((await ctx.rawInject({ url: await ticket() })).statusCode, 200);
-  assert.equal(service.exportState().last_complete_at, null, 'expiry before response finish is not completion');
+  const expiringUrl = await ticket();
+  // Any free port: a fixed one collides with parallel runs and with services on the shared test ports.
+  const base = await ctx.app.listen({ host: '127.0.0.1', port: 0 });
+  const complete = await fetch(base + expiringUrl);
+  assert.equal(complete.status, 200);
+  await complete.arrayBuffer();
+  assert.deepEqual(service.exportState().names, ['large.jpg'], 'a ticket expiring mid-stream does not invalidate the authorized download');
+  fs.rmSync(path.join(service.backupDir, '.photo-export.json'), { force: true });
   t.mock.restoreAll();
   service.exportPhotos = original;
   const url = await ticket();
-  // Any free port: a fixed one collides with parallel runs and with services on the shared test ports.
-  const base = await ctx.app.listen({ host: '127.0.0.1', port: 0 });
   await new Promise((resolve, reject) => {
     const req = require('node:http').get(base + url, res => {
       res.once('data', () => { res.destroy(); });
@@ -335,6 +345,29 @@ test('a stream error, session invalidation or client disconnect never records a 
   assert.equal(response.status, 200);
   await response.arrayBuffer();
   assert.deepEqual(service.exportState().names, ['large.jpg'], 'a real completed response records the photo');
+});
+
+test('a retained backup photo can be restored from a package after its mistake was deleted', async t => {
+  const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
+  addPhoto('retained-only.jpg', 'trusted retained bytes');
+  await service.create();
+  const packageBytes = await packageOf(ctx, 'retained-only.jpg', 'trusted retained bytes');
+
+  ctx.db.prepare('DELETE FROM mistake_records WHERE photo_path = ?').run('/uploads/retained-only.jpg');
+  ctx.db.prepare('DELETE FROM photo_expectations WHERE name = ?').run('retained-only.jpg');
+  fs.rmSync(path.join(ctx.tempUploadDir, 'retained-only.jpg'), { force: true });
+  fs.rmSync(service.photos.path('retained-only.jpg'), { force: true });
+
+  const { Readable } = require('node:stream');
+  const wrong = await packageOf(ctx, 'retained-only.jpg', 'forged retained bytes');
+  assert.equal((await service.importPhotos(Readable.from([wrong]))).mismatch, 1);
+  assert.equal(fs.existsSync(path.join(ctx.tempUploadDir, 'retained-only.jpg')), false);
+
+  const imported = await service.importPhotos(Readable.from([packageBytes]));
+  assert.deepEqual([imported.imported, imported.unused, imported.missing], [1, 0, 0]);
+  assert.equal(fs.readFileSync(path.join(ctx.tempUploadDir, 'retained-only.jpg'), 'utf8'), 'trusted retained bytes');
+  const download = await exportPackage(ctx, 'all');
+  assert.deepEqual(tarNames(download), ['retained-only.jpg']);
 });
 
 test('retained v1 scans skip large embedded payloads, cache manifests and keep referenced store photos', async t => {
