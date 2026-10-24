@@ -1,7 +1,7 @@
 const { formatDate, getTodayDate, getDayOfWeek, parseDate, shiftDate } = require('../utils/date');
 const { timeZone } = require('../config');
 const { generateId } = require('../utils/crypto');
-const { backfillClassRevisions } = require('../db/class-revisions');
+const { repairClassRevisions, UNAVAILABLE_REVISION } = require('../db/class-revisions');
 const fail = (status, message) => ({ status, message });
 const minutes = (start, end) => start && end ? (Number(end.slice(0, 2)) * 60 + Number(end.slice(3))) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3))) : null;
 const isDue = (date, end, today, clock) => date < today || date === today && (!end || end <= clock);
@@ -10,15 +10,20 @@ const isDue = (date, end, today, clock) => date < today || date === today && (!e
 // Summary arithmetic avoids walking an unlimited weekly course's entire history.
 class ClassStatsService {
   constructor(db, schedule) { this.db = db; this.schedule = schedule; }
-  context(classId, childId, allowEmpty = false) {
+  context(classId, childId, { allowEmpty = false, forWrite = false } = {}) {
     const cls = this.schedule.getClass(classId);
     if (!cls) throw fail(404, '课外班不存在');
     const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
     if (!child) throw fail(404, '孩子不存在');
-    backfillClassRevisions(this.db, { childId, classId });
+    repairClassRevisions(this.db, { childId, classId }, { forWrite });
     const records = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ?').all(classId, childId);
     const fee = this.db.prepare('SELECT total_fee_cents, updated_at FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(classId, childId);
     const revisions = new Map(this.db.prepare('SELECT kind, lesson_date, revision FROM outside_class_revisions WHERE class_id = ? AND child_id = ?').all(classId, childId).map(r => [`${r.kind}:${r.lesson_date}`, r.revision]));
+    for (const record of records) {
+      const key = `attendance:${record.lesson_date}`;
+      if (!revisions.has(key)) revisions.set(key, UNAVAILABLE_REVISION);
+    }
+    if (fee && !revisions.has('fee:')) revisions.set('fee:', UNAVAILABLE_REVISION);
     const enrolled = cls.child_ids === null || cls.child_ids.includes(childId);
     if (!allowEmpty && !enrolled && !records.length && !fee) throw fail(400, '这个孩子没有这门课');
     const exceptions = new Map(this.db.prepare('SELECT * FROM outside_class_exceptions WHERE class_id = ? AND child_id = ?').all(classId, childId)
@@ -153,7 +158,7 @@ class ClassStatsService {
       ON CONFLICT(class_id, child_id, kind, lesson_date) DO UPDATE SET revision = excluded.revision`).run(classId, childId, kind, date, generateId());
   }
   revision(classId, childId, kind, date = '') {
-    backfillClassRevisions(this.db, { childId, classId });
+    repairClassRevisions(this.db, { childId, classId }, { forWrite: true });
     return this.db.prepare('SELECT revision FROM outside_class_revisions WHERE class_id = ? AND child_id = ? AND kind = ? AND lesson_date = ?').get(classId, childId, kind, date)?.revision ?? null;
   }
   checkVersion(current, expected, message) {
@@ -166,7 +171,7 @@ class ClassStatsService {
   }
   setAttendance(classId, childId, source, body) {
     parseDate(source);
-    const ctx = this.context(classId, childId);
+    const ctx = this.context(classId, childId, { forWrite: true });
     if (!ctx.records.has(source) && (!ctx.enrolled || !this.validSource(ctx.cls, source))) throw fail(400, '这天没有这门课');
     const lesson = this.lesson(ctx, source);
     if (!['attended', 'leave', 'absent', 'pending'].includes(body.status)) throw fail(400, '请选择已上课、请假、缺席或未确认');
@@ -190,10 +195,10 @@ class ClassStatsService {
       this.recordChange(classId, childId, 'attendance', source, attendanceOf(before), attendanceOf(after));
       this.schedule.pruneClassTasks(classId);
     })();
-    return this.summary(this.context(classId, childId, true));
+    return this.summary(this.context(classId, childId, { allowEmpty: true }));
   }
   setFee(classId, childId, body) {
-    this.context(classId, childId);
+    this.context(classId, childId, { forWrite: true });
     const amount = body.total_fee_cents;
     if (amount !== null && (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000000)) throw fail(400, '学费须为 0 至 1000 万元，最多两位小数；不填时传 null');
     this.db.transaction(() => {
@@ -206,11 +211,11 @@ class ClassStatsService {
       if (amount === null && !before) this.touchRevision(classId, childId, 'fee');
       this.recordChange(classId, childId, 'fee', null, before?.total_fee_cents ?? null, amount);
     })();
-    return this.summary(this.context(classId, childId, true));
+    return this.summary(this.context(classId, childId, { allowEmpty: true }));
   }
   syncCheckin(task) {
     if (task.origin !== 'class' || !task.class_id) return;
-    const lesson = this.schedule.outsideLessons(task.child_id)(task.date).find(l => l.class_id === task.class_id && l.class_lesson_date === (task.class_lesson_date ?? task.date) && ['scheduled', 'moved_in'].includes(l.status));
+    const lesson = this.schedule.outsideLessons(task.child_id, { forWrite: true })(task.date).find(l => l.class_id === task.class_id && l.class_lesson_date === (task.class_lesson_date ?? task.date) && ['scheduled', 'moved_in'].includes(l.status));
     this.db.prepare(`INSERT INTO outside_class_attendance
       (class_id, child_id, lesson_date, actual_date, start_time, end_time, duration_minutes, status, charged, source, task_id, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'attended', 1, 'checkin', ?, ?)
