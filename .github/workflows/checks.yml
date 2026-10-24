@@ -82,11 +82,22 @@ jobs:
   browser-suites:
     needs: test
     runs-on: ubuntu-latest
+    # Passing suites take under 3 minutes; the font steps' limits (2 + 12 minutes) still fit.
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         suite: [ time-stats, carry-over, homework, ui-refine, midnight, legacy, dialogs, board-class-actions, class-stats, class-count, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
+    env:
+      # The files of Ubuntu's fonts-noto-cjk, from pinned upstream tags: Sans2.004 is byte-identical in
+      # Ubuntu 24.04 and 26.04, Serif2.003 is the one in 26.04. A version change needs new checksums.
+      NOTO_CJK_SANS: Sans2.004
+      NOTO_CJK_SERIF: Serif2.003
+      NOTO_CJK_SHA256: |
+        b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a  NotoSansCJK-Regular.ttc
+        faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb  NotoSansCJK-Bold.ttc
+        5d9c31a059600193c9d7968a998bde886ccdc77e934006ad243b41794c496a7d  NotoSerifCJK-Regular.ttc
+        1505ee3b9c0890fae6302ee0e9c6fd74d690f4a55a6ace1d9944f3f6352d622d  NotoSerifCJK-Bold.ttc
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -100,12 +111,37 @@ jobs:
       - run: npm ci --prefix frontend
       # Chinese fonts as on real phones and tablets, so text is measured with real glyphs. They do not
       # stand in for minimum sizes: the suites also measure single-character labels.
+      # apt is not used on the normal path: about a third of the runners stalled for 8-26 minutes in it.
+      # The pinned files come from the cache or a checked download; a broken cache only costs a download.
+      - name: Chinese font cache key
+        id: font-key
+        run: echo "key=noto-cjk-$NOTO_CJK_SANS-$NOTO_CJK_SERIF-$(printf '%s' "$NOTO_CJK_SHA256" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Restore Chinese fonts
+        id: font-cache
+        uses: actions/cache/restore@v6
+        timeout-minutes: 2
+        continue-on-error: true
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+        with:
+          path: ~/.cache/noto-cjk
+          key: ${{ steps.font-key.outputs.key }}
+      # Normally well under a minute; download (at most 150 s) plus the apt fallback (two attempts of
+      # update 90 s + install 150 s) stay within the step limit. Stage times are in a notice annotation.
       - name: Install Chinese fonts
-        timeout-minutes: 10
-        run: |
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends fonts-noto-cjk
-          fc-list :lang=zh family | grep -q . || { echo 'No Chinese font installed'; exit 1; }
+        id: fonts
+        timeout-minutes: 12
+        run: bash scripts/ci-install-fonts.sh
+        env:
+          CACHE_HIT: ${{ steps.font-cache.outputs.cache-hit }}
+      - name: Save Chinese fonts
+        if: steps.fonts.outputs.source == 'download'
+        uses: actions/cache/save@v6
+        timeout-minutes: 2
+        continue-on-error: true
+        with:
+          path: ~/.cache/noto-cjk
+          key: ${{ steps.font-key.outputs.key }}
       - run: npm run build
       - name: Install Playwright (using the runner's Chrome)
         run: npm install --no-save --package-lock=false playwright@1.64.0
