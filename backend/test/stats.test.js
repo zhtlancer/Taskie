@@ -1,6 +1,6 @@
 const { test, describe, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 
 describe('Stats API (/api/children/:id/history & weekly-summary)', () => {
   let ctx;
@@ -26,11 +26,11 @@ describe('Stats API (/api/children/:id/history & weekly-summary)', () => {
       ctx.db.prepare(`
         INSERT INTO daily_tasks (id, child_id, template_id, title, subject, points, date, is_completed, completed_at)
         VALUES (?, ?, NULL, '语文练习', '语文', 15, ?, 1, ?)
-      `).run(taskId, child.id, d, d + 'T09:00:00Z');
+      `).run(taskId, child.id, d, familyInstant(d, '17:00:00'));
       ctx.db.prepare(`
         INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at)
         VALUES (?, ?, ?, 15, ?)
-      `).run('log-' + d, child.id, taskId, d + 'T09:00:00Z');
+      `).run('log-' + d, child.id, taskId, familyInstant(d, '17:00:00'));
     }
 
     // 1. History query

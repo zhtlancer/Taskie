@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, shiftDate, getWeekRange } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -41,7 +41,7 @@ test('parent backfills existing rows idempotently; points, history, audit and un
   assert.equal(history[0].all_done, true);
   assert.equal(history[0].tasks[0].completion_source, 'parent_backfill');
   // Even if a late-night operation is assigned to the prior evening, its time is not real completion time.
-  ctx.db.prepare('UPDATE daily_tasks SET completed_at = ? WHERE id = ?').run(`${ctx.date}T10:00:00.000Z`, row.id);
+  ctx.db.prepare('UPDATE daily_tasks SET completed_at = ? WHERE id = ?').run(familyInstant(ctx.date, '18:00:00'), row.id);
   assert.equal(ctx.app.services.timeStatsService.finishTimes(ctx.child.id, ctx.date, ctx.date).size, 0);
   for (let i = 0; i < 2; i++) assert.equal((await ctx.post(row.id, 'undo-backfill')).statusCode, 200);
   assert.equal(ctx.rewards.getTotalPoints(ctx.child.id), 0);
@@ -183,7 +183,7 @@ test('unopened past days list projections without writing, and a parent material
   const ctx = await fixture(t);
   const lastMonday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(lastMonday, n);
-  const backdate = `${day(-30)}T04:00:00.000Z`;
+  const backdate = familyInstant(day(-30));
   ctx.db.prepare('UPDATE children SET created_at = ?').run(backdate);
   const daily = ctx.tasks.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], points: 10 });
   const weekly = ctx.tasks.createTemplate({ title: '跳绳', subject: '体育', days_of_week: [0, 1, 2, 3, 4, 5, 6], points: 5,

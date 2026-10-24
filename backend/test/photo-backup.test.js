@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { gzipSync, gunzipSync } = require('node:zlib');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { TarReader, tarStream } = require('../src/utils/tar');
 
 async function fixture(t) {
@@ -68,10 +68,26 @@ test('on a new server the data restores first; missing photos are listed and fil
   assert.equal(fs.readFileSync(path.join(away.ctx.tempUploadDir, 'a.jpg'), 'utf8'), 'photo a', 'a correct package repairs a mismatched photo');
 });
 
+test('photo package filenames use the family date for both complete and new-photo downloads', async t => {
+  const { ctx } = await fixture(t);
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-22', '00:30:00')) });
+  for (const time of ['00:30:00', '23:30:00']) {
+    t.mock.timers.setTime(Date.parse(familyInstant('2026-10-22', time)));
+    for (const scope of ['all', 'new']) {
+      const ticket = await ctx.app.inject({ method: 'POST', url: '/api/backups/photos/export-ticket', payload: { scope } });
+      assert.equal(ticket.statusCode, 200, ticket.body);
+      const download = await ctx.rawInject({ method: 'GET', url: ticket.json().url });
+      assert.equal(download.statusCode, 200, download.body);
+      assert.equal(download.headers['content-disposition'],
+        `attachment; filename="taskie-photos-2026-10-22${scope === 'new' ? '-new' : ''}.tar"`, `${time} ${scope}`);
+    }
+  }
+});
+
 test('missing photos are listed oldest first, and photos saved in the same millisecond keep a stable order', async t => {
   const { ctx, addPhoto } = await fixture(t);
   // Reproduces CI Run 39874220129: two photos share a timestamp and the later one has the smaller id.
-  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-22T15:59:59.999Z') });
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(familyInstant('2026-10-22', '23:59:59.999')) });
   const ids = ['ffffffff-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000000'];
   t.mock.method(require('node:crypto'), 'randomUUID', () => ids.shift());
   addPhoto('first.jpg', 'first');

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { gzipSync, gunzipSync } = require('node:zlib');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -91,8 +91,8 @@ test('paused days are rest days for the streak and are not owed in weekly comple
   const school = tasksService.createTemplate({ title: '校内作业', subject: '数学', days_of_week: [1, 2, 3, 4, 5] });
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
-  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
-  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-30)));
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant(day(-30)));
   for (const n of [0, 1]) tasksService.completeDailyTask(tasksService.getDailyTasks(child.id, day(n))[0].id);
   await createPeriod({ name: '小长假', start_date: day(2), end_date: day(4), paused_template_ids: [school.id] });
 
@@ -110,8 +110,8 @@ test('already generated paused tasks stop counting in history, weekly completion
   const day = n => shiftDate(monday, n);
   const fixed = tasks.createTemplate({ title: '校内任务', subject: '数学' });
   const weekly = tasks.createTemplate({ title: '阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 3 });
-  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00Z`);
-  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(`${day(-30)}T04:00:00Z`);
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-30)));
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant(day(-30)));
   const rows = [0, 1, 2, 3].flatMap(n => tasks.getDailyTasks(child.id, day(n)));
   tasks.completeDailyTask(rows.find(row => row.date === day(1) && row.template_id === fixed.id).id);
   const completedWeekly = rows.find(row => row.date === day(3) && row.template_id === weekly.id);

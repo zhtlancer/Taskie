@@ -1,6 +1,6 @@
 const { test, describe, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 
 describe('Rewards & Gamification API', () => {
   let ctx;
@@ -109,11 +109,11 @@ describe('Rewards & Gamification API', () => {
       ctx.db.prepare(`
         INSERT INTO daily_tasks (id, child_id, template_id, title, subject, points, date, is_completed, completed_at)
         VALUES (?, ?, NULL, '任务', '综合', 10, ?, 1, ?)
-      `).run(taskId, child.id, d, d + 'T10:00:00Z');
+      `).run(taskId, child.id, d, familyInstant(d, '18:00:00'));
       ctx.db.prepare(`
         INSERT INTO point_logs (id, child_id, daily_task_id, points, earned_at)
         VALUES (?, ?, ?, 10, ?)
-      `).run('log-' + d, child.id, taskId, d + 'T10:00:00Z');
+      `).run('log-' + d, child.id, taskId, familyInstant(d, '18:00:00'));
     }
 
     const streak = rewardsService.getCurrentStreak(child.id, '2026-10-13');
@@ -126,8 +126,8 @@ describe('Rewards & Gamification API', () => {
     // If day is 2026-10-15 and nothing was done on a scheduled 2026-10-14, the streak breaks to 0
     const { tasksService } = ctx.app.services;
     const template = tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6] });
-    ctx.db.prepare("UPDATE task_templates SET created_at = '2026-10-01T00:00:00.000Z'").run();
-    ctx.db.prepare("UPDATE children SET created_at = '2026-10-01T00:00:00.000Z'").run();
+    ctx.db.prepare("UPDATE task_templates SET created_at = ?").run(familyInstant('2026-10-01', '08:00:00'));
+    ctx.db.prepare("UPDATE children SET created_at = ?").run(familyInstant('2026-10-01', '08:00:00'));
     const streakBroken = rewardsService.getCurrentStreak(child.id, '2026-10-15');
     assert.equal(streakBroken, 0);
 

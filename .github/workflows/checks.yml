@@ -40,6 +40,26 @@ jobs:
             --test-reporter=spec --test-reporter-destination=stdout
             --test-reporter=${{ github.workspace }}/scripts/test-annotations.mjs --test-reporter-destination=stdout
 
+  backend-new-york:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TIME_ZONE: America/New_York
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
+      - name: Backend tests in the family time zone
+        run: npm run test:backend
+        env:
+          NODE_OPTIONS: >-
+            --test-reporter=spec --test-reporter-destination=stdout
+            --test-reporter=${{ github.workspace }}/scripts/test-annotations.mjs --test-reporter-destination=stdout
+
   # A NAS-style bind-mounted data directory against the real image: ownership, persistence across
   # container replacement, clear refusal of unwritable directories and of newer databases.
   docker-data:

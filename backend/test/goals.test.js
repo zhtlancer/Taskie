@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { initDb } = require('../src/db');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
@@ -95,7 +95,7 @@ test('daily-required goals count in weekly completion and streaks, including uno
   const { statsService, rewardsService } = ctx.app.services;
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
-  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-30)));
   const book = (await addGoal({ title: '每天读书', total_amount: 300, input_mode: 'position', daily_required: true, start_date: day(0) })).json();
   const backfill = (position, date) => ctx.app.inject({ method: 'POST', url: `/api/period-tasks/${book.id}/logs`, payload: { position, date } });
   for (const [position, n] of [[10, 0], [20, 1], [30, 3]]) assert.equal((await backfill(position, day(n))).statusCode, 201);
@@ -279,11 +279,11 @@ test('v7 holiday tasks migrate to long-term tasks with their progress, child and
 // A daily-required goal from Monday 10-12, read on Monday 10-19: every day logged except Wednesday
 // 10-14, which the child opened and missed.
 async function missedWednesday(t) {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-19T04:00:00Z') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-19', '12:00:00')) });
   const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
   const { childrenService, periodsService, tasksService, statsService, rewardsService } = ctx.app.services;
   const child = childrenService.createChild({ name: '漏记一天' });
-  ctx.db.prepare('UPDATE children SET created_at = ?').run('2026-10-01T04:00:00Z');
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant('2026-10-01', '12:00:00'));
   const goal = periodsService.createGoal(child.id, { title: '每天读书', subject: '语文', mode: 'progress', total_amount: 100, unit: '页', daily_required: true, start_date: '2026-10-12', points: 1 });
   for (const date of ['2026-10-12', '2026-10-13', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18']) {
     periodsService.logProgress(goal.id, { amount: 1, date }, { role: 'parent' });

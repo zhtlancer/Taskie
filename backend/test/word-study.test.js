@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const Database = require('better-sqlite3');
 const { gzipSync, gunzipSync } = require('node:zlib');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-12T04:00:00Z') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-12', '12:00:00')) });
   const ctx = createTestApp();
   t.after(() => cleanupTestApp(ctx));
   await ctx.app.ready();
@@ -16,11 +16,11 @@ async function fixture(t) {
   let sequence = 0;
   const add = (char, data = {}) => {
     const entry = book.createCharacter({ child_id: child.id, char, ...data });
-    ctx.db.prepare('UPDATE characters SET created_at = ? WHERE id = ?').run(`2026-10-01T04:00:${String(sequence++).padStart(2, '0')}Z`, entry.id);
+    ctx.db.prepare('UPDATE characters SET created_at = ? WHERE id = ?').run(familyInstant('2026-10-01', `12:00:${String(sequence++).padStart(2, '0')}`), entry.id);
     return entry;
   };
   const plan = (data = {}, skill = 'recognize') => study.savePlan(child.id, skill, { new_target: 1, review_target: 1, ...data });
-  const advance = date => t.mock.timers.setTime(new Date(`${date}T04:00:00Z`).getTime());
+  const advance = date => t.mock.timers.setTime(new Date(familyInstant(date)).getTime());
   const request = () => `request-${++sequence}-study`;
   const grade = (item, result = 'good', request_id = request()) => study.grade(item.id, { result, request_id }, 'child');
   const finish = (day, result = 'good', batchIndex = 0) => {
@@ -44,7 +44,7 @@ test('automatic selection respects categories, mastery, priority and frozen dail
   assert.deepEqual(day.batches[0].items.map(item => item.character_id), [priority.id, first.id]);
   assert.equal(day.base_total, 2, 'does not pad a review target with extra new words');
   const addedLater = ctx.book.createCharacter({ child_id: ctx.child.id, char: '花', categories: ['recognize'] });
-  ctx.db.prepare('UPDATE characters SET created_at = ? WHERE id = ?').run('2026-10-12T04:00:01Z', addedLater.id);
+  ctx.db.prepare('UPDATE characters SET created_at = ? WHERE id = ?').run(familyInstant('2026-10-12', '12:00:01'), addedLater.id);
   assert.deepEqual(ctx.today()[0].batches[0].items.map(item => item.id), day.batches[0].items.map(item => item.id));
   ctx.finish(day);
   assert.equal(ctx.study.extra(day.id, ctx.request()).batches.length, 1, 'words added after today’s list wait for another day');

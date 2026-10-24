@@ -1,9 +1,9 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { splitSeconds } = require('../src/services/homework-study.service');
 
-async function fixture(t, now = '2026-10-20T04:00:00Z', due = '2026-10-22') {
+async function fixture(t, now = familyInstant('2026-10-20', '12:00:00'), due = '2026-10-22') {
   t.mock.timers.enable({ apis: ['Date'], now: new Date(now) });
   const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
   const { childrenService, homeworkService: homework, homeworkStudyService: study, tasksService: tasks, timeStatsService: stats, rewardsService: rewards } = ctx.app.services;
@@ -55,7 +55,7 @@ test('multiple same-day sessions save once each, resume after pause and reward o
 });
 
 test('cross-midnight sessions allocate time by family date and child cannot correct yesterday', async t => {
-  const c = await fixture(t, '2026-10-20T15:50:00Z'); // 23:50 Shanghai
+  const c = await fixture(t, familyInstant('2026-10-20', '23:50:00'));
   const id = (await c.call('POST', '/study/start')).json().active.id;
   c.advance(1800);
   const result = await c.call('POST', `/sessions/${id}/finish`, { note: '跨日学习' });
@@ -76,7 +76,7 @@ test('cross-midnight sessions allocate time by family date and child cannot corr
 });
 
 test('an overdue child can study but completion requires parent confirmation and is idempotent', async t => {
-  const c = await fixture(t, '2026-10-20T04:00:00Z', '2026-10-20');
+  const c = await fixture(t, familyInstant('2026-10-20', '12:00:00'), '2026-10-20');
   c.advance(86400);
   const sid = (await c.call('POST', '/study/start')).json().active.id;
   c.advance(600);
@@ -148,8 +148,8 @@ test('sessions and allocations survive backup; deleting only a record keeps spen
 });
 
 test('splitSeconds accounts exactly at the family midnight boundary', () => {
-  assert.deepEqual(splitSeconds('2026-10-20T15:59:59Z', 2), [{ date: '2026-10-20', seconds: 1 }, { date: '2026-10-21', seconds: 1 }]);
-  assert.deepEqual(splitSeconds('2026-10-20T16:00:00Z', 60), [{ date: '2026-10-21', seconds: 60 }]);
+  assert.deepEqual(splitSeconds(familyInstant('2026-10-20', '23:59:59'), 2), [{ date: '2026-10-20', seconds: 1 }, { date: '2026-10-21', seconds: 1 }]);
+  assert.deepEqual(splitSeconds(familyInstant('2026-10-21', '00:00:00'), 60), [{ date: '2026-10-21', seconds: 60 }]);
 });
 
 test('v20 legacy durations remain an aggregate without fabricated sessions; incomplete v21 backups fail safely', async t => {

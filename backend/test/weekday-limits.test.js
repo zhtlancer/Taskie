@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -13,8 +13,8 @@ async function fixture(t) {
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
   const backdateAll = () => {
-    ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
-    ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
+    ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-30)));
+    ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant(day(-30)));
   };
   const find = (date, title) => tasksService.getDailyTasks(child.id, date).find(task => task.title === title);
   return { ctx, child, tasksService, statsService, rewardsService, day, backdateAll, find };

@@ -1,22 +1,22 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 for (const action of ['create', 'delete']) {
   test(`changing today's make-up day (${action}) preserves past carry deadlines and history`, async t => {
-    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-18T04:00:00Z') }); // Sunday
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-18', '12:00:00')) }); // Sunday
     const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
     const { childrenService, tasksService: tasks, statsService: stats, rewardsService: rewards } = ctx.app.services;
     const child = childrenService.createChild({ name: '截止日快照' });
-    ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run('2026-10-01T04:00:00Z', child.id);
+    ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(familyInstant('2026-10-01', '12:00:00'), child.id);
     tasks.createTemplate({ title: '周五口算', subject: '数学', days_of_week: [5], points: 10, carry_over: true });
-    ctx.db.prepare('UPDATE task_templates SET created_at = ?').run('2026-10-01T04:00:00Z');
+    ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant('2026-10-01', '12:00:00'));
     // For deletion, the make-up Sunday was set in advance, before Friday's deadline was known.
     const makeup = action === 'delete' ? { id: randomUUID() } : null;
     if (makeup) ctx.db.prepare('INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, ?, 1, NULL, ?)')
-      .run(makeup.id, child.id, '2026-10-18', '2026-10-01T04:00:00Z');
+      .run(makeup.id, child.id, '2026-10-18', familyInstant('2026-10-01', '12:00:00'));
     const carry = tasks.getDailyTasks(child.id, '2026-10-16')[0];
     const saturday = tasks.createAdhocTask(child.id, { title: '周六作业', subject: '语文', date: '2026-10-17', points: 5 });
     tasks.backfillDailyTask(saturday.id);
@@ -46,9 +46,9 @@ async function carryChild(t, now) {
   const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
   const services = ctx.app.services;
   const child = services.childrenService.createChild({ name: '顺延截止' });
-  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run('2026-10-01T04:00:00Z', child.id);
+  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(familyInstant('2026-10-01', '12:00:00'), child.id);
   const template = services.tasksService.createTemplate({ title: '周五口算', subject: '数学', days_of_week: [5], points: 10, carry_over: true });
-  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run('2026-10-01T04:00:00Z');
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant('2026-10-01', '12:00:00'));
   // Saturday's summary; an unopened task saved by a calendar change gets a real id, so compare what counts.
   const saturday = () => {
     const day = services.statsService.getHistory(child.id, '2026-10-17', '2026-10-17')[0];
@@ -59,7 +59,7 @@ async function carryChild(t, now) {
 }
 
 test("making today a make-up day keeps an unopened Friday's task open", async t => {
-  const { periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+  const { periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, familyInstant('2026-10-18', '12:00:00')); // Sunday
   assert.equal(fridayRow(), undefined, 'Friday was never opened');
   const before = saturday();
   periodsService.createMakeupDay(child.id, { date: '2026-10-18', acts_as: 1 });
@@ -70,9 +70,9 @@ test("making today a make-up day keeps an unopened Friday's task open", async t 
 });
 
 test("removing today's make-up day keeps an unopened Friday's missed task closed", async t => {
-  const { ctx, periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+  const { ctx, periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, familyInstant('2026-10-18', '12:00:00')); // Sunday
   const id = randomUUID(); // set in advance
-  ctx.db.prepare("INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, '2026-10-18', 1, NULL, '2026-10-01T04:00:00Z')").run(id, child.id);
+  ctx.db.prepare("INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, '2026-10-18', 1, NULL, ?)").run(id, child.id, familyInstant('2026-10-01'));
   const before = saturday();
   assert.deepEqual([before.total_tasks, before.all_done], [1, false], 'the break ended Saturday');
   periodsService.deleteMakeupDay(id);
@@ -82,7 +82,7 @@ test("removing today's make-up day keeps an unopened Friday's missed task closed
 });
 
 test('a make-up day ahead still shortens an ongoing break', async t => {
-  const { periodsService, tasksService, child, fridayRow } = await carryChild(t, '2026-10-17T04:00:00Z'); // Saturday
+  const { periodsService, tasksService, child, fridayRow } = await carryChild(t, familyInstant('2026-10-17', '12:00:00')); // Saturday
   periodsService.createPeriod(child.id, { name: '秋假', start_date: '2026-10-19', end_date: '2026-10-23' });
   tasksService.getDailyTasks(child.id, '2026-10-16');
   assert.equal(tasksService.getDailyTasks(child.id)[0].due_date, '2026-10-25');
@@ -92,7 +92,7 @@ test('a make-up day ahead still shortens an ongoing break', async t => {
 });
 
 test('turning carry-over off drops a pinned deadline; other template edits keep it', async t => {
-  const { periodsService, tasksService, child, template, fridayRow } = await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+  const { periodsService, tasksService, child, template, fridayRow } = await carryChild(t, familyInstant('2026-10-18', '12:00:00')); // Sunday
   periodsService.createMakeupDay(child.id, { date: '2026-10-18', acts_as: 1 });
   assert.equal(fridayRow().due_date, '2026-10-18');
   tasksService.updateTemplate(template.id, { title: '周五口算练习' });
@@ -105,7 +105,7 @@ test('turning carry-over off drops a pinned deadline; other template edits keep 
 for (const state of ['completed', 'skipped']) {
   test(`making today a make-up day preserves a ${state} carried card and its correction permissions`, async t => {
     const { ctx, child, template, tasksService: tasks, periodsService: periods, rewardsService: rewards, fridayRow } =
-      await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+      await carryChild(t, familyInstant('2026-10-18', '12:00:00')); // Sunday
     tasks.updateTemplate(template.id, { track_time: true });
     const task = tasks.getDailyTasks(child.id)[0];
     const login = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json();
@@ -142,11 +142,11 @@ for (const state of ['completed', 'skipped']) {
 }
 
 test("removing today's make-up day keeps a completed overdue card closed to corrections", async t => {
-  const { ctx, child, tasksService: tasks, periodsService: periods, fridayRow } = await carryChild(t, '2026-10-17T04:00:00Z'); // Saturday
+  const { ctx, child, tasksService: tasks, periodsService: periods, fridayRow } = await carryChild(t, familyInstant('2026-10-17', '12:00:00')); // Saturday
   const id = randomUUID(); // set in advance: the break ends Saturday
-  ctx.db.prepare("INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, '2026-10-18', 1, NULL, '2026-10-01T04:00:00Z')").run(id, child.id);
+  ctx.db.prepare("INSERT INTO makeup_days (id, child_id, date, acts_as, note, created_at) VALUES (?, ?, '2026-10-18', 1, NULL, ?)").run(id, child.id, familyInstant('2026-10-01'));
   tasks.completeDailyTask(tasks.getDailyTasks(child.id)[0].id, { duration_seconds: 600 });
-  t.mock.timers.setTime(new Date('2026-10-18T04:00:00Z').getTime()); // Sunday
+  t.mock.timers.setTime(new Date(familyInstant('2026-10-18', '12:00:00')).getTime()); // Sunday
   const login = (await ctx.rawInject({ method: 'POST', url: '/api/auth/child-login', payload: { child_id: child.id } })).json();
   const request = action => ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${fridayRow().id}/${action}`, headers: { authorization: `Bearer ${login.token}` } });
   assert.equal(tasks.childMayActOn(fridayRow()), false);
@@ -159,7 +159,7 @@ test("removing today's make-up day keeps a completed overdue card closed to corr
 });
 
 test('a holiday set today keeps an overdue Friday task closed', async t => {
-  const { periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, '2026-10-19T04:00:00Z'); // Monday
+  const { periodsService, tasksService, child, saturday, fridayRow } = await carryChild(t, familyInstant('2026-10-19', '12:00:00')); // Monday
   tasksService.getDailyTasks(child.id, '2026-10-16');
   const sunday = () => tasksService.summaryTasksBetween(child.id, '2026-10-18', '2026-10-18').map(task => [task.title, task.carried_from]);
   assert.deepEqual(sunday(), [['周五口算', '2026-10-16']], 'missed on Sunday');
@@ -173,10 +173,10 @@ test('a holiday set today keeps an overdue Friday task closed', async t => {
 
 for (const action of ['delete', 'end early']) {
   test(`a holiday under way (${action}) keeps an open Friday task open`, async t => {
-    const { periodsService, tasksService, child, fridayRow } = await carryChild(t, '2026-10-17T04:00:00Z'); // Saturday
+    const { periodsService, tasksService, child, fridayRow } = await carryChild(t, familyInstant('2026-10-17', '12:00:00')); // Saturday
     const autumn = periodsService.createPeriod(child.id, { name: '秋假', start_date: '2026-10-19', end_date: '2026-10-23' });
     tasksService.getDailyTasks(child.id, '2026-10-16');
-    t.mock.timers.setTime(new Date('2026-10-20T04:00:00Z').getTime()); // Tuesday, inside the holiday
+    t.mock.timers.setTime(new Date(familyInstant('2026-10-20', '12:00:00')).getTime()); // Tuesday, inside the holiday
     assert.equal(tasksService.getDailyTasks(child.id)[0].due_date, '2026-10-25');
     if (action === 'delete') periodsService.deletePeriod(autumn.id);
     else periodsService.updatePeriod(autumn.id, { end_date: '2026-10-19' });
@@ -187,7 +187,7 @@ for (const action of ['delete', 'end early']) {
 }
 
 test('a holiday set on past days still excuses a missed task, and removing it restores the miss', async t => {
-  const { periodsService, tasksService, child, template, fridayRow } = await carryChild(t, '2026-10-19T04:00:00Z'); // Monday
+  const { periodsService, tasksService, child, template, fridayRow } = await carryChild(t, familyInstant('2026-10-19', '12:00:00')); // Monday
   const sunday = () => tasksService.summaryTasksBetween(child.id, '2026-10-18', '2026-10-18').length;
   assert.equal(sunday(), 1, "the unopened Friday's task was missed on Sunday");
   const excuse = periodsService.createPeriod(child.id, { name: '病假', start_date: '2026-10-16', end_date: '2026-10-16', paused_template_ids: [template.id] });
@@ -202,10 +202,10 @@ for (const pinned of [false, true]) {
   for (const undo of ['delete', 'unpause']) {
     test(`a past holiday excuses a generated carry (${pinned ? 'pinned' : 'dynamic'} deadline), restored by ${undo}`, async t => {
       const { child, template, tasksService: tasks, periodsService: periods, statsService: stats, rewardsService: rewards, fridayRow } =
-        await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+        await carryChild(t, familyInstant('2026-10-18', '12:00:00')); // Sunday
       const carry = tasks.getDailyTasks(child.id, '2026-10-16')[0];
       if (pinned) periods.createMakeupDay(child.id, { date: '2026-10-18', acts_as: 1 });
-      t.mock.timers.setTime(new Date('2026-10-19T04:00:00Z').getTime()); // Monday
+      t.mock.timers.setTime(new Date(familyInstant('2026-10-19', '12:00:00')).getTime()); // Monday
       const sundayTask = tasks.createAdhocTask(child.id, { title: '周日阅读', subject: '语文', date: '2026-10-18', points: 5 });
       tasks.backfillDailyTask(sundayTask.id);
       const history = () => stats.getHistory(child.id, '2026-10-18', '2026-10-18')[0];
@@ -233,7 +233,7 @@ for (const pinned of [false, true]) {
 
 test('a retroactive pause preserves a completed carried card and its correction permissions', async t => {
   const { ctx, child, template, tasksService: tasks, periodsService: periods, rewardsService: rewards, fridayRow } =
-    await carryChild(t, '2026-10-18T04:00:00Z'); // Sunday
+    await carryChild(t, familyInstant('2026-10-18', '12:00:00')); // Sunday
   tasks.updateTemplate(template.id, { track_time: true });
   const carry = tasks.getDailyTasks(child.id)[0];
   tasks.completeDailyTask(carry.id, { duration_seconds: 600 });
@@ -257,7 +257,7 @@ async function fixture(t) {
   // Last week's Monday: every day of last week is in the past.
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
-  const backdate = `${day(-30)}T04:00:00.000Z`;
+  const backdate = familyInstant(day(-30));
   ctx.db.prepare('UPDATE children SET created_at = ?').run(backdate);
   const template = data => {
     const created = tasksService.createTemplate({ subject: '数学', days_of_week: [1, 2, 3, 4, 5], ...data });
@@ -272,7 +272,7 @@ async function fixture(t) {
   const holiday = (start_date, end_date, { paused_template_ids = [] } = {}) => {
     const id = randomUUID();
     ctx.db.prepare("INSERT INTO periods (id, child_id, name, start_date, end_date, created_at) VALUES (?, ?, '假期', ?, ?, ?)")
-      .run(id, child.id, start_date, end_date, `${day(-30)}T04:00:00.000Z`);
+      .run(id, child.id, start_date, end_date, familyInstant(day(-30)));
     for (const templateId of paused_template_ids) ctx.db.prepare('INSERT INTO period_paused_templates (period_id, template_id) VALUES (?, ?)').run(id, templateId);
   };
   // A make-up day the parent set before it came; the service only accepts today or later.
@@ -531,7 +531,7 @@ test('opening a weekend preserves weekly obligations for the unopened source day
   template({ title: '可延后', days_of_week: [5], carry_over: true });
   template({ title: '当天要交', days_of_week: [5] });
   const later = template({ title: '周六才布置', days_of_week: [5] });
-  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(5)}T04:00:00Z`, later.id);
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(familyInstant(day(5)), later.id);
   const obligations = () => statsService.getWeeklyCompletion(child.id, day(0), day(6), day(6)).items.map(i => [i.title, i.total]).sort();
   const before = obligations();
   assert.deepEqual(before, [['可延后', 1], ['当天要交', 1]].sort());
@@ -545,7 +545,7 @@ test('unopened holiday carries respect template creation, child assignment and h
   const oral = template({ title: '周五口算', days_of_week: [5], carry_over: true });
   const paused = template({ title: '已暂停', days_of_week: [5], carry_over: true });
   const tooNew = template({ title: '后来才布置', days_of_week: [5], carry_over: true });
-  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(5)}T04:00:00Z`, tooNew.id);
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(familyInstant(day(5)), tooNew.id);
   const sibling = ctx.app.services.childrenService.createChild({ name: '妹妹' });
   template({ title: '妹妹的作业', days_of_week: [5], carry_over: true, child_ids: [sibling.id] });
   holiday(day(4), day(4), { paused_template_ids: [paused.id] });

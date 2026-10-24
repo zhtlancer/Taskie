@@ -4,6 +4,29 @@ const buildApp = require('../src/app');
 const { getDb } = require('../src/db');
 const { timeZone } = require('../src/config');
 
+const clockFormats = new Map();
+// Convert a family wall clock to a UTC timestamp without depending on the host's TZ or a fixed
+// offset. Re-evaluate the offset at the candidate instant so dates on either side of DST work.
+// Fixtures should avoid ambiguous fall-back hours; nonexistent spring-forward times are rejected.
+function familyInstant(date, time = '12:00:00', zone = timeZone) {
+  if (!clockFormats.has(zone)) clockFormats.set(zone, new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }));
+  const target = Date.parse(`${date}T${time}Z`);
+  if (!Number.isFinite(target)) throw new Error(`Invalid family clock: ${date} ${time}`);
+  let instant = target;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const d = new Date(instant);
+    const p = Object.fromEntries(clockFormats.get(zone).formatToParts(d).map(part => [part.type, part.value]));
+    const local = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second, d.getUTCMilliseconds());
+    const correction = target - local;
+    if (correction === 0) return d.toISOString();
+    instant += correction;
+  }
+  throw new Error(`Family clock does not exist in ${zone}: ${date} ${time}`);
+}
+
 // Tests read the family's "today" once at the start and expect it to hold until they finish. A test
 // that starts in the last seconds before TIME_ZONE midnight would see the server switch to the next
 // day halfway through, so it waits for midnight to pass first. This only delays tests that start in
@@ -65,6 +88,7 @@ function cleanupTestApp(testContext) {
 module.exports = {
   createTestApp,
   cleanupTestApp,
+  familyInstant,
   msUntilFamilyMidnight,
   MIDNIGHT_GUARD_MS
 };

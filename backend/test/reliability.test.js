@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { gzipSync, gunzipSync } = require('node:zlib');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -117,9 +117,14 @@ test('same-day new templates are filled once and future tasks cannot earn points
 });
 
 test('family date is correct at midnight regardless of host timezone; invalid dates are bounded', async () => {
-  const result = spawnSync(process.execPath, ['-e', "const D=Date;global.Date=class extends D{constructor(...a){super(...(a.length?a:['2026-10-14T00:30:00+08:00']));}};console.log(require('./src/utils/date').getTodayDate());"], { cwd: path.resolve(__dirname, '..'), env: { ...process.env, TZ: 'UTC', TIME_ZONE: 'Asia/Shanghai' }, encoding: 'utf8' });
-  assert.equal(result.status, 0);
-  assert.equal(result.stdout.trim(), '2026-10-14');
+  const instant = familyInstant('2026-10-14', '00:30:00');
+  for (const TZ of ['UTC', 'Pacific/Honolulu']) {
+    const result = spawnSync(process.execPath, ['-e', `const D=Date;global.Date=class extends D{constructor(...a){super(...(a.length?a:[${JSON.stringify(instant)}]));}};console.log(require('./src/utils/date').getTodayDate());`], {
+      cwd: path.resolve(__dirname, '..'), env: { ...process.env, TZ }, encoding: 'utf8'
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), '2026-10-14', TZ);
+  }
   const dates = require('../src/utils/date');
   assert.throws(() => dates.parseDate('2026-02-30'));
   assert.throws(() => dates.getDateRangeList('invalid', 'z'));

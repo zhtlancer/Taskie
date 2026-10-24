@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, shiftDate, getWeekRange } = require('../src/utils/date');
 const { WEEKLY_EXTRA_COLUMNS, initDb } = require('../src/db');
 
@@ -15,10 +15,10 @@ async function fixture(t, policy = {}) {
   const child = childrenService.createChild({ name: '额外挑战同学' });
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
-  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(`${day(-7)}T04:00:00Z`, child.id);
+  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(familyInstant(day(-7)), child.id);
   const template = tasks.createTemplate({ title: '阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 2,
     points: 10, allow_extra: true, extra_points: 3, extra_reward_limit: 2, ...policy });
-  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(-7)}T04:00:00Z`, template.id);
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(familyInstant(day(-7)), template.id);
   const rows = Array.from({ length: 7 }, (_, n) => tasks.getDailyTasks(child.id, day(n)).find(row => row.template_id === template.id));
   const post = (n, action = 'backfill', payload = {}) => ctx.app.inject({ method: 'POST', url: `/api/daily-tasks/${rows[n].id}/${action}`, payload });
   const row = n => tasks.describeTask(ctx.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(rows[n].id));
@@ -51,7 +51,7 @@ test('weekly extras have a separate capped award, are idempotent and stay once p
 });
 
 test('disabled extras keep the previous cap; enabling updates today but preserves historical policy', async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-16T12:00:00Z') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-16', '20:00:00')) });
   const ctx = await fixture(t, { allow_extra: false });
   await ctx.post(0); await ctx.post(1);
   assert.equal((await ctx.post(2)).statusCode, 409);
@@ -89,7 +89,7 @@ test('extra completions never change assessment totals, all-done counts, streaks
   const history = ctx.stats.getHistory(ctx.child.id, ctx.day(1), ctx.day(1))[0];
   assert.deepEqual([history.total_tasks, history.completed_tasks, history.all_done, history.points_earned], [0, 0, false, 3]);
   assert.equal(history.tasks[0].is_extra, true);
-  ctx.db.prepare('UPDATE daily_tasks SET completion_source = NULL, completed_at = ? WHERE id = ?').run(`${ctx.day(1)}T10:00:00Z`, ctx.rows[1].id);
+  ctx.db.prepare('UPDATE daily_tasks SET completion_source = NULL, completed_at = ? WHERE id = ?').run(familyInstant(ctx.day(1), '18:00:00'), ctx.rows[1].id);
   assert.equal(ctx.app.services.timeStatsService.finishTimes(ctx.child.id, ctx.day(1), ctx.day(1)).size, 0);
 });
 
@@ -164,7 +164,7 @@ test('stale reward previews and concurrent retries never exceed the weekly rewar
 });
 
 test('children complete today’s extra challenge through the normal endpoint with server-owned awards', async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-16T12:00:00Z') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-16', '20:00:00')) });
   const ctx = await fixture(t, { weekly_target_times: 1 });
   const monday = getWeekRange(getTodayDate()).startDate;
   const target = ctx.tasks.getDailyTasks(ctx.child.id, monday)[0];
