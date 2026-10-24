@@ -321,7 +321,7 @@ import { addDays, lessonHappens } from '../utils/schedule.js';
 import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
 import { useParentSession } from '../composables/useParentSession.js';
-import { businessDate, businessClock, businessDayLabel } from '../utils/businessDate.js';
+import { businessClock, businessDayLabel } from '../utils/businessDate.js';
 const calendar = useCalendarStore();
 
 const route = useRoute();
@@ -358,7 +358,7 @@ let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, lo
 
 // Keep task timers and the next-class reminder current even when no task timer is running.
 const now = ref(Date.now());
-const todayString = computed(() => businessDate(now.value, timeZone.value));
+const todayString = computed(() => calendar.today);
 // Only sessions whose task left today's board; a task still due (carried over, homework) keeps its card.
 const unfinishedAttention = computed(() => loading.value ? [] : unfinished.value.filter(item => !tasks.value.some(task => task.id === item.task_id)));
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);

@@ -127,7 +127,6 @@
 </template>
 
 <script setup>
-import { businessDate } from '../utils/businessDate.js';
 import { useCalendarStore } from '../stores/calendar';
 import { ref, computed } from 'vue';
 import UiDialog from './UiDialog.vue';
@@ -146,7 +145,7 @@ const scheduleMode = ref(props.cls && !props.cls.total_lessons ? 'date' : 'count
 const fields = ['title', 'institution', 'location', 'teacher', 'start_time', 'end_time', 'start_date', 'end_date', 'bring', 'note', 'create_task', 'points'];
 const form = ref(props.cls
   ? { ...Object.fromEntries(fields.map(field => [field, props.cls[field] ?? ''])), total_lessons: props.cls.total_lessons ?? 20, days_of_week: [...props.cls.days_of_week], child_ids: props.cls.child_ids && [...props.cls.child_ids] }
-  : { title: '', institution: '', location: '', teacher: '', start_time: '16:30', end_time: '17:30', start_date: businessDate(Date.now(), calendar.timeZone), end_date: '', bring: '', note: '',
+  : { title: '', institution: '', location: '', teacher: '', start_time: '16:30', end_time: '17:30', start_date: calendar.today, end_date: '', bring: '', note: '',
       create_task: false, points: 5, days_of_week: [], child_ids: null, total_lessons: 20 });
 const preview = computed(() => lessonDates(form.value.start_date, form.value.days_of_week, form.value.total_lessons));
 const saving = ref(false);

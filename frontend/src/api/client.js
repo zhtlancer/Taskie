@@ -1,3 +1,4 @@
+import { requireFamilyDate, FAMILY_DATE_REQUIRED } from '../utils/calendarWriteGuard.js';
 import axios from 'axios';
 import { getToken, saveToken, clearTokens, currentRole, getDataGeneration, saveDataGeneration, clearDataGeneration } from '../utils/session.js';
 import { pendingWriteStore, activeWrites, notifyPendingWrites } from '../utils/requestId.js';
@@ -15,12 +16,15 @@ async function ensureDataGeneration() {
   await calibration.promise;
 }
 client.interceptors.request.use(async config => {
+  if (!['get', 'head', 'options'].includes(config.method) && !config.url.startsWith('/auth/')) requireFamilyDate();
   if (!config.url.startsWith('/auth/')) await ensureDataGeneration();
+  if (!['get', 'head', 'options'].includes(config.method) && !config.url.startsWith('/auth/')) requireFamilyDate();
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 client.interceptors.response.use(response => response, error => {
+  if (error === FAMILY_DATE_REQUIRED) return Promise.reject(error);
   if (axios.isCancel(error)) return Promise.reject(error);
   // This browser lost or never had device authorization: show the pairing page.
   if (error.response?.data?.code === 'DEVICE_NOT_AUTHORIZED' && typeof window !== 'undefined') {
@@ -49,6 +53,7 @@ const generationHeaders = generation => generation ? { 'X-Taskie-Data-Generation
 const requestGenerations = new WeakMap();
 const invalidAttempts = new WeakSet();
 async function idempotentPost(url, data) {
+  requireFamilyDate();
   if (invalidAttempts.has(data)) throw '数据已恢复，这次操作没有执行，请核对后重新操作';
   await ensureDataGeneration();
   if (!requestGenerations.has(data)) requestGenerations.set(data, getDataGeneration());
@@ -62,6 +67,7 @@ const put = (url, data, options) => request('put', url, data, undefined, undefin
 const remove = (url, options) => request('delete', url, undefined, undefined, undefined, options);
 
 async function sendPendingWrite(entry) {
+  requireFamilyDate();
   if (activeWrites.has(entry.request_id)) throw '请求正在确认，请稍候';
   activeWrites.add(entry.request_id);
   notifyPendingWrites();
@@ -74,6 +80,7 @@ async function sendPendingWrite(entry) {
 }
 
 async function pendingWrite(action, attempt) {
+  requireFamilyDate();
   try {
     // Validate a suspended form before calibrating or sending anything. Its original
     // entry supplies the generation, including a legacy entry that has none.

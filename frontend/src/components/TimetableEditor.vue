@@ -160,7 +160,6 @@
 </template>
 
 <script setup>
-import { businessDate } from '../utils/businessDate.js';
 import { useCalendarStore } from '../stores/calendar';
 import { confirmAction } from '../utils/confirmation';
 import { computed, ref } from 'vue';
@@ -178,13 +177,13 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved']);
 
 const newId = () => `new-${Math.random().toString(36).slice(2)}`;
-const today = businessDate(Date.now(), calendar.timeZone);
-const thisMonday = mondayOf(today);
+const today = computed(() => calendar.today);
+const thisMonday = computed(() => mondayOf(today.value));
 
 // Whether this week is an A week, from the stored anchor (whose week is an A week).
 function currentWeek(source) {
   if (!source?.ab_weeks) return 'A';
-  const weeks = Math.round((new Date(`${thisMonday}T00:00:00Z`) - new Date(`${mondayOf(source.ab_anchor_date)}T00:00:00Z`)) / (7 * 86400000));
+  const weeks = Math.round((new Date(`${thisMonday.value}T00:00:00Z`) - new Date(`${mondayOf(source.ab_anchor_date)}T00:00:00Z`)) / (7 * 86400000));
   return weeks % 2 === 0 ? 'A' : 'B';
 }
 
@@ -200,8 +199,8 @@ function initialForm() {
   const lessons = source ? source.lessons.map(({ id, ...lesson }) => ({ ...lesson, slot_id: ids.get(lesson.slot_id) })) : [];
   return {
     name: props.timetable?.name ?? '',
-    start_date: props.timetable?.start_date ?? today,
-    end_date: props.timetable?.end_date ?? addDays(today, 150),
+    start_date: props.timetable?.start_date ?? today.value,
+    end_date: props.timetable?.end_date ?? addDays(today.value, 150),
     ab_weeks: Boolean(source?.ab_weeks),
     this_week: currentWeek(source),
     slots,
@@ -287,7 +286,7 @@ async function save() {
     .map(l => ({ ...l, week: ab_weeks ? l.week : 'all', teacher: l.teacher || null, room: l.room || null, bring: l.bring || null }));
   const payload = {
     name, start_date, end_date, ab_weeks,
-    ab_anchor_date: ab_weeks ? (this_week === 'A' ? thisMonday : addDays(thisMonday, -7)) : null,
+    ab_anchor_date: ab_weeks ? (this_week === 'A' ? thisMonday.value : addDays(thisMonday.value, -7)) : null,
     slots, lessons
   };
   try {

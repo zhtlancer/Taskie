@@ -65,8 +65,7 @@
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import DaySchedule from '../components/DaySchedule.vue';
@@ -77,10 +76,10 @@ const calendar = useCalendarStore();
 
 const route = useRoute();
 const childId = computed(() => route.params.id);
-const today = businessDate(Date.now(), calendar.timeZone);
-const weekStart = ref(mondayOf(today));
+const today = computed(() => calendar.today);
+const weekStart = ref(mondayOf(today.value));
 const days = ref([]);
-const selectedDate = ref(today);
+const selectedDate = ref(today.value);
 const loading = ref(true);
 
 const selectedDay = computed(() => days.value.find(day => day.date === selectedDate.value) || days.value[0]);
@@ -103,10 +102,15 @@ async function load() {
 
 function shiftWeek(days) {
   playClick();
-  weekStart.value = days === null ? mondayOf(today) : addDays(weekStart.value, days);
-  selectedDate.value = days === null ? today : weekStart.value;
+  weekStart.value = days === null ? mondayOf(today.value) : addDays(weekStart.value, days);
+  selectedDate.value = days === null ? today.value : weekStart.value;
   load();
 }
 
+watch(today, (day, previous) => {
+  if (weekStart.value === mondayOf(previous)) weekStart.value = mondayOf(day);
+  if (selectedDate.value === previous) selectedDate.value = day;
+  load();
+});
 onMounted(load);
 </script>

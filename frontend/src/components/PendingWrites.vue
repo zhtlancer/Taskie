@@ -4,7 +4,7 @@
     <ul class="space-y-2 mt-2">
       <li v-for="entry in entries" :key="entry.request_id" class="flex flex-wrap items-center gap-2">
         <span class="break-words">{{ entry.child_name || '孩子' }} · {{ description(entry) }}</span>
-        <button type="button" :disabled="busy" class="min-h-[44px] px-3 rounded-xl bg-amber-700 text-white font-bold disabled:opacity-50" @click="retry(entry)">确认这次操作</button>
+        <button type="button" :disabled="busy || !calendar.ready" class="min-h-[44px] px-3 rounded-xl bg-amber-700 text-white font-bold disabled:opacity-50" @click="retry(entry)">确认这次操作</button>
       </li>
     </ul>
     <p v-if="error" role="alert" class="text-rose-700 dark:text-rose-300">{{ error }}</p>
@@ -12,6 +12,8 @@
   <p v-else-if="confirmed" role="status" class="m-3 text-sm text-emerald-700 dark:text-emerald-300">操作已确认。</p>
 </template>
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+const calendar = useCalendarStore();
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
