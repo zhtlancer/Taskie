@@ -6,6 +6,10 @@
     </template>
     <div class="space-y-4">
       <p v-if="asParent" class="text-sm font-bold text-violet-700 dark:text-violet-300">只对 {{ childName }} 生效</p>
+      <div v-if="dateChanged" role="status" class="rounded-xl p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-sm">
+        <p>日期已变化，请重新操作</p>
+        <button v-if="staleSchedule" type="button" :disabled="busy" class="min-h-11 min-w-11 underline font-bold" @click="refreshOnly">刷新日程和打卡任务</button>
+      </div>
       <div v-if="sessionExpired" role="alert" class="rounded-xl p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-sm">
         <p>家长登录已过期，请重新登录</p>
         <router-link v-if="!busy" :to="{ path: '/parent/login', query: { returnTo: `/child/${childId}/today` } }" class="inline-flex items-center min-h-11 underline font-bold">重新登录</router-link>
@@ -20,7 +24,7 @@
         <h4 class="text-xs font-black text-violet-600 dark:text-violet-300 mb-1.5">🎨 课外班</h4>
         <DaySchedule :day="{ ...today, holiday: null, school: [] }">
           <template #outside="{ lesson, date }">
-            <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :as-parent="asParent" :disabled="busy || needsRefresh" @action="action => act(action, lesson, date)" />
+            <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :as-parent="asParent" :disabled="busy || needsRefresh || staleSchedule" @action="action => act(action, lesson, date)" />
           </template>
         </DaySchedule>
       </section>
@@ -41,7 +45,7 @@
           <h4 class="text-xs font-black text-violet-600 dark:text-violet-300 mb-1.5">🎨 明天的课外班</h4>
           <DaySchedule v-if="tomorrow.outside.length" :day="{ ...tomorrow, holiday: null, makeup: null, school: [] }">
             <template #outside="{ lesson, date }">
-              <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :as-parent="asParent" :disabled="busy || needsRefresh" @action="action => act(action, lesson, date)" />
+              <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :as-parent="asParent" :disabled="busy || needsRefresh || staleSchedule" @action="action => act(action, lesson, date)" />
             </template>
           </DaySchedule>
           <p v-else class="px-2 py-2 text-xs font-bold text-slate-400">明天没有课外班</p>
@@ -87,7 +91,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import api from '../api/client.js';
 import UiDialog from './UiDialog.vue';
 import DaySchedule from './DaySchedule.vue';
@@ -96,11 +100,12 @@ import { shortDate, WEEKDAY_NAMES } from '../utils/schedule.js';
 import { boardClassActions, classActionLabels } from '../utils/boardClassActions.js';
 import { currentRole } from '../utils/session.js';
 import { useParentSession } from '../composables/useParentSession.js';
-import { confirmAction } from '../utils/confirmation.js';
+import { cancelConfirmations, confirmAction } from '../utils/confirmation.js';
 
 const props = defineProps({
   childId: { type: String, required: true },
   childName: { type: String, required: true },
+  businessDate: { type: String, required: true },
   today: { type: Object, required: true },
   tomorrow: { type: Object, default: null },
   refresh: { type: Function, required: true }
@@ -111,6 +116,18 @@ const sessionExpired = ref(!asParent.value && currentRole() === 'parent');
 const busy = ref(false), error = ref(''), needsRefresh = ref(false);
 const moveTarget = ref(null), moveForm = ref({ date: '', start: '', end: '' }), moveError = ref('');
 const writeOptions = { preserveError: true, networkErrorMessage: '操作未确认，请刷新后核对' };
+const staleSchedule = computed(() => props.today.date !== props.businessDate);
+const dateChanged = ref(staleSchedule.value);
+let awaitingConfirmation = false;
+
+watch(() => props.businessDate, () => {
+  // Cancel before the replacement schedule arrives: a failed/delayed read must
+  // never leave yesterday's confirmation or move draft actionable.
+  if (awaitingConfirmation) cancelConfirmations();
+  moveTarget.value = null;
+  error.value = ''; moveError.value = ''; needsRefresh.value = false;
+  dateChanged.value = true;
+}, { flush: 'sync' });
 
 watch(asParent, (valid, previous) => {
   if (!valid && previous) expireSession();
@@ -134,7 +151,7 @@ async function refreshOnly() {
 }
 
 async function act(action, lesson, date) {
-  if (busy.value || needsRefresh.value || !requireParent() || !boardClassActions(lesson, date, props.today.date, asParent.value).includes(action)) return;
+  if (busy.value || needsRefresh.value || staleSchedule.value || !requireParent() || !boardClassActions(lesson, date, props.today.date, asParent.value).includes(action)) return;
   if (action === 'move') {
     moveTarget.value = { lesson, date };
     moveForm.value = { date, start: lesson.start_time, end: lesson.end_time };
@@ -145,14 +162,14 @@ async function act(action, lesson, date) {
 }
 
 async function saveMove() {
-  if (busy.value || needsRefresh.value || !requireParent() || !moveTarget.value) return;
+  if (busy.value || needsRefresh.value || staleSchedule.value || !requireParent() || !moveTarget.value) return;
   if (moveForm.value.end <= moveForm.value.start) { moveError.value = '结束时间要晚于开始时间'; return; }
   const { lesson, date } = moveTarget.value;
   await perform('move', lesson, date, { ...moveForm.value });
 }
 
 async function perform(action, lesson, date, moved) {
-  const childId = props.childId, day = props.today.date;
+  const childId = props.childId, day = props.businessDate;
   const source = lesson.source_date || lesson.moved_from || date;
   busy.value = true;
   error.value = '';
@@ -161,8 +178,10 @@ async function perform(action, lesson, date, moved) {
     : action === 'move' ? `调到 ${moved.date} ${moved.start}–${moved.end}。`
     : action === 'attended' ? '将按默认规则扣除本次课时。' : '';
   try {
+    awaitingConfirmation = true;
     if (!await confirmAction(`确定${classActionLabels[action]}「${lesson.title}」（${date} ${lesson.start_time}–${lesson.end_time}）吗？只对 ${props.childName} 生效。${detail}`)) return;
-    if (props.childId !== childId || props.today.date !== day) return;
+    awaitingConfirmation = false;
+    if (props.childId !== childId || props.businessDate !== day || staleSchedule.value) return;
     if (!requireParent()) return;
     try {
       if (action === 'leave' || action === 'move') {
@@ -197,6 +216,6 @@ async function perform(action, lesson, date, moved) {
     moveTarget.value = null;
     try { await props.refresh(); needsRefresh.value = false; }
     catch { needsRefresh.value = true; error.value = '操作已保存，但刷新失败，请刷新后核对'; }
-  } finally { busy.value = false; }
+  } finally { awaitingConfirmation = false; busy.value = false; }
 }
 </script>

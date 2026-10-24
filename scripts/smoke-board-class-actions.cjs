@@ -270,6 +270,30 @@ async function regressions(base, token, api) {
     await action(page, row, '缺席', child);
     await row.getByText('缺席', { exact: true }).waitFor();
   });
+  await scenario('confirmation-layer', async ({ cls, board, open }) => {
+    const page = await board(); await open(page);
+    await rowFor(page, cls).getByRole('button', { name: '请假', exact: true }).click();
+    const dialog = confirmation(page);
+    await dialog.waitFor();
+    // Simulate a business dialog opening from a background callback while the
+    // confirmation is already mounted. Pointer input cannot reach its opener.
+    await page.getByTitle('实时查笔画', { exact: true }).evaluate(button => button.click());
+    const later = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+    await later.waitFor();
+    const button = dialog.getByRole('button', { name: '确认', exact: true });
+    assert.equal(await button.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    }), true, 'global confirmation remains above a later business dialog');
+    await button.focus(); await page.keyboard.press('Tab');
+    assert.equal(await dialog.evaluate(el => el.contains(document.activeElement)), true, 'keyboard focus follows visual priority');
+    await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
+    assert.equal(await later.isVisible(), true, 'Escape only cancels the top confirmation');
+    assert.equal(await later.evaluate(el => el.contains(document.activeElement)), true, 'focus returns to the exposed dialog');
+    await page.keyboard.press('Escape'); await later.waitFor({ state: 'detached' });
+    await page.keyboard.press('Escape'); await modalFor(page).waitFor({ state: 'detached' });
+    assert.notEqual(await page.evaluate(() => document.body.style.overflow), 'hidden');
+  });
   for (const duringConfirm of [false, true]) await scenario(`D3-${duringConfirm ? 'confirm' : 'open'}`, async ({ child, cls, board, open }) => {
     const page = await board(); await page.clock.install(); await open(page);
     const row = rowFor(page, cls);
@@ -328,6 +352,106 @@ async function regressions(base, token, api) {
     }
   });
 }
+// Keep this separate from D3: the session stays valid and both clocks cross only
+// a fixed business midnight, regardless of the time the suite is run.
+async function midnightRegressions(base) {
+  const RealDate = Date;
+  const { formatDate } = require('../backend/src/utils/date');
+  let low = RealDate.parse('2026-10-20T00:00:00Z'), high = low + 86400000;
+  const initialDate = formatDate(new RealDate(low));
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (formatDate(new RealDate(mid)) === initialDate) low = mid; else high = mid;
+  }
+  const midnight = high;
+  for (const pending of ['leave', 'move', 'refresh-failure']) {
+    const name = `F1-midnight-${pending}`;
+    if (process.env.BOARD_CLASS_CASE && !name.startsWith(process.env.BOARD_CLASS_CASE)) continue;
+    let context, release;
+    let now = midnight - 10000;
+    global.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [now])); }
+      static now() { return now; }
+    };
+    try {
+      const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() }, { expiresIn: '1h' });
+      const api = async (method, url, payload) => {
+        const result = await app.inject({ method, url: `/api${url}`, payload, headers: { authorization: `Bearer ${token}` } });
+        assert.ok(result.statusCode < 300, result.body); return result.json();
+      };
+      const before = getTodayDate(), after = shiftDate(before, 1);
+      const child = await api('POST', '/children', { name });
+      const cls = await api('POST', '/outside-classes', { title: '跨午夜钢琴', child_ids: [child.id], start_date: before,
+        days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00', total_lessons: 10 });
+      context = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'America/Los_Angeles', colorScheme: pending === 'move' ? 'dark' : 'light' });
+      await context.addInitScript(({ token, child }) => {
+        sessionStorage.setItem('taskie_parent_token', token); sessionStorage.setItem('current_child', JSON.stringify(child));
+      }, { token, child });
+      await context.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+      const page = await context.newPage(); page.setDefaultTimeout(5000);
+      page.on('pageerror', error => errors.push(error.message));
+      await page.clock.install({ time: new RealDate(now) }); await page.clock.pauseAt(new RealDate(now));
+      const writes = [];
+      page.on('request', request => {
+        if (['PUT', 'POST', 'DELETE'].includes(request.method()) && /outside-class/.test(request.url())) writes.push(request);
+      });
+      await page.goto(`${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
+      await page.locator('button[title="今天的课"]').click();
+      const modal = modalFor(page), oldPanel = await modal.elementHandle();
+      const row = rowFor(page, cls, before);
+      if (pending === 'move') await openMove(page, row, after);
+      else await row.getByRole('button', { name: '请假', exact: true }).click();
+      await confirmation(page).getByText(new RegExp(before)).waitFor();
+      const gate = new Promise(resolve => { release = resolve; });
+      await page.route(`**/api/children/${child.id}/schedule?*`, async route => {
+        await gate;
+        if (pending === 'refresh-failure') return route.fulfill({ status: 500, body: '{"error":"测试跨日刷新失败"}', contentType: 'application/json' });
+        await route.continue();
+      }, { times: 1 });
+      const refreshed = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/children/${child.id}/schedule`);
+      // A failed assertion before releasing the route must not leave an unhandled timeout.
+      refreshed.catch(() => {});
+      now = midnight + 10000;
+      await page.clock.runFor(20000);
+      // These assertions run while the new schedule is still in flight.
+      await confirmation(page).waitFor({ state: 'detached' });
+      await modal.getByText('日期已变化，请重新操作', { exact: true }).waitFor();
+      assert.equal(await oldPanel.evaluate(el => el.isConnected), true, 'midnight must not remount the board dialog');
+      assert.equal(await page.getByRole('dialog', { name: '调整这节课', exact: true }).count(), 0, 'old move draft is discarded');
+      assert.equal(await row.getByRole('button', { name: '请假', exact: true }).isDisabled(), true, 'old schedule is read-only while refreshing');
+      assert.equal(await modal.getByRole('button', { name: '关闭', exact: true }).isEnabled(), true);
+      release();
+      assert.equal((await refreshed).status(), pending === 'refresh-failure' ? 500 : 200);
+      if (pending === 'refresh-failure') {
+        assert.equal(await row.getByRole('button', { name: '请假', exact: true }).isDisabled(), true);
+        // Even closing/reopening after a failed read must retain a way to retry.
+        await page.keyboard.press('Escape'); await modal.waitFor({ state: 'detached' });
+        assert.equal(await confirmation(page).count(), 0);
+        await page.locator('button[title="今天的课"]').click();
+        await modal.getByText('日期已变化，请重新操作', { exact: true }).waitFor();
+        await modal.getByRole('button', { name: '刷新日程和打卡任务', exact: true }).click();
+      }
+      const next = rowFor(page, cls, after);
+      await next.getByRole('button', { name: '请假', exact: true }).waitFor();
+      assert.equal(writes.length, 0, 'cancelling the previous day must send no write');
+      const saved = await action(page, next, '请假', child);
+      assert.equal(saved.date, after);
+      await next.getByText('已请假', { exact: true }).waitFor();
+      assert.equal(writes.length, 1);
+      assert.equal(writes[0].postDataJSON().date, after, 'only the new day may be written');
+      assert.deepEqual(db.prepare('SELECT date FROM outside_class_exceptions WHERE child_id = ?').all(child.id).map(item => item.date), [after]);
+      await page.keyboard.press('Escape'); await modal.waitFor({ state: 'detached' });
+      assert.equal(await confirmation(page).count(), 0, 'closing the board must not reveal an old confirmation');
+      assert.notEqual(await page.evaluate(() => document.body.style.overflow), 'hidden');
+      await page.locator('button[title="今天的课"]').click();
+      await next.getByText('已请假', { exact: true }).waitFor();
+      assert.ok(JSON.parse(Buffer.from(token.split('.')[1], 'base64url')).exp * 1000 > now, 'login remains valid');
+      assert.deepEqual(errors, []);
+      passed++; console.log(`PASS ${name}`);
+    } catch (error) { failed++; console.error(`FAIL ${name}:`, error); }
+    finally { release?.(); if (context) await context.close(); global.Date = RealDate; }
+  }
+}
 async function main() {
   await app.ready();
   const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
@@ -339,6 +463,7 @@ async function main() {
   browser = await chromium.launch(launchOptions());
   if (process.env.SMOKE_SCREENSHOT_DIR) fs.mkdirSync(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
   await regressions(base, token, api);
+  await midnightRegressions(base);
   for (const width of process.env.BOARD_CLASS_CASE || process.env.BOARD_CLASS_REGRESSIONS_ONLY ? [] : [390, 1180]) for (const colorScheme of ['light', 'dark']) {
     const child = app.services.childrenService.createChild({ name: '看板甲' });
     const other = app.services.childrenService.createChild({ name: '看板乙' });

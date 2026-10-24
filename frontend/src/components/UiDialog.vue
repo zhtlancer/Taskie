@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div class="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/50 p-0 sm:p-4" @click.self="requestClose">
+    <div class="fixed inset-0 flex items-end sm:items-center justify-center bg-slate-950/50 p-0 sm:p-4" :class="confirmation ? 'z-[90]' : 'z-[80]'" @click.self="requestClose">
       <section ref="panel" role="dialog" aria-modal="true" :aria-labelledby="titleId" tabindex="-1"
         class="ui-dialog bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 w-full rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col overflow-hidden max-h-[92dvh]" :class="workspace ? 'max-w-5xl h-[760px]' : wide ? 'max-w-2xl' : 'max-w-md'">
         <header class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
@@ -19,13 +19,14 @@ let originalOverflow;
 </script>
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, useId } from 'vue';
-const props = defineProps({ title: { type: String, required: true }, busy: Boolean, wide: Boolean, workspace: Boolean, closeLabel: { type: String, default: '关闭' } });
+const props = defineProps({ title: { type: String, required: true }, busy: Boolean, wide: Boolean, workspace: Boolean, confirmation: Boolean, closeLabel: { type: String, default: '关闭' } });
 const emit = defineEmits(['close']);
 const panel = ref(null), titleId = useId();
+const dialog = { id: titleId, confirmation: props.confirmation, panel };
 let previousFocus;
 function requestClose() { if (!props.busy) emit('close'); }
 function onKey(event) {
-  if (dialogs.at(-1) !== titleId) return;
+  if (dialogs.at(-1) !== dialog) return;
   if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); requestClose(); }
   if (event.key !== 'Tab') return;
   const elements = [...panel.value.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex="0"]')].filter(el => el.getClientRects().length);
@@ -37,16 +38,24 @@ function onKey(event) {
 onMounted(async () => {
   previousFocus = document.activeElement;
   if (!dialogs.length) { originalOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
-  dialogs.push(titleId);
+  dialogs.push(dialog);
+  // Keyboard ownership must follow the visual layer, even when a business
+  // dialog mounts after a global confirmation.
+  dialogs.sort((a, b) => Number(a.confirmation) - Number(b.confirmation));
   document.addEventListener('keydown', onKey, true);
   await nextTick();
-  if (dialogs.at(-1) === titleId && panel.value?.isConnected) (panel.value.querySelector('[autofocus]') || panel.value).focus();
+  if (dialogs.at(-1) === dialog && panel.value?.isConnected) (panel.value.querySelector('[autofocus]') || panel.value).focus();
 });
 onBeforeUnmount(() => {
-  const index = dialogs.indexOf(titleId);
+  const wasTop = dialogs.at(-1) === dialog;
+  const index = dialogs.indexOf(dialog);
   if (index >= 0) dialogs.splice(index, 1);
   document.removeEventListener('keydown', onKey, true);
   if (!dialogs.length) document.body.style.overflow = originalOverflow;
-  if (previousFocus?.isConnected) previousFocus.focus();
+  if (wasTop) {
+    const topPanel = dialogs.at(-1)?.panel.value;
+    if (previousFocus?.isConnected && (!topPanel || topPanel.contains(previousFocus))) previousFocus.focus();
+    else topPanel?.focus();
+  }
 });
 </script>

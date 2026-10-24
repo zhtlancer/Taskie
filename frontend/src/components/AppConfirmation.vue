@@ -1,5 +1,5 @@
 <template>
-  <UiDialog v-if="confirmation" :key="dialogKey" :title="confirmation.title" @close="settleConfirmation(null)">
+  <UiDialog v-if="confirmation" :key="dialogKey" :title="confirmation.title" confirmation @close="settleConfirmation(null)">
     <p class="text-sm leading-relaxed text-slate-600 dark:text-slate-300 whitespace-pre-line">{{ confirmation.message }}</p>
     <form v-if="confirmation.input" id="confirmation-form" class="mt-4" @submit.prevent="submit">
       <label class="block text-sm font-bold text-slate-600 dark:text-slate-300">原因<input v-model="value" autofocus maxlength="50" required class="ui-input w-full mt-2" /></label>
