@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const config = require('../config');
 const { hashPin, verifyPin } = require('../utils/crypto');
 const { formatDate } = require('../utils/date');
+const { backfillClassRevisions } = require('./class-revisions');
 
 const defaultBadges = [
   {
@@ -508,6 +509,8 @@ function initDb(db) {
       db.pragma('user_version = 30');
     })();
   }
+  // Run on every startup and on the restore worker's candidate, even for current-schema data.
+  backfillClassRevisions(db);
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new
   // install or restoring an older backup), not from lessons nobody could record before it.
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('class_attendance_since', ?)").run(formatDate());

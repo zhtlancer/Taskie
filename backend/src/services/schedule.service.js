@@ -2,6 +2,7 @@ const { generateId } = require('../utils/crypto');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate } = require('../utils/date');
 const { classLessonKey, lessonDates } = require('../utils/schedule');
 const { schoolCalendar } = require('./calendar');
+const { backfillClassRevisions } = require('../db/class-revisions');
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WEEKS = ['all', 'A', 'B'];
@@ -377,8 +378,9 @@ class ScheduleService {
       return row && (!row.lessonDates || row.lessonDates.includes(e.date));
     });
     const exceptionAt = new Map(exceptions.map(e => [`${e.class_id}|${e.date}`, e]));
-    // Start from revisions so undo tombstones survive without an attendance row. Read both in
-    // one statement, using the same persisted version as ClassStatsService.revision.
+    // Repair manual edits made while running, then start from revisions so undo tombstones
+    // survive without an attendance row. Statistics and writes use these same persisted tokens.
+    backfillClassRevisions(this.db, { childId });
     const attendance = new Map(this.db.prepare(`SELECT r.class_id, r.lesson_date, a.status, a.charged, a.source, r.revision
       FROM outside_class_revisions r LEFT JOIN outside_class_attendance a
         ON r.class_id = a.class_id AND r.child_id = a.child_id AND r.kind = 'attendance' AND r.lesson_date = a.lesson_date

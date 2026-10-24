@@ -141,6 +141,29 @@ async function regressions(base, token, api) {
     const next = await action(page, row, '缺席', child);
     assert.equal(next.expected_revision, lesson.attendance_revision);
   });
+  await scenario('R-A-orphan-attendance', async ({ child, cls, board, open }) => {
+    await api('PUT', `/outside-classes/${cls.id}/attendance`, { child_id: child.id, lesson_date: today, status: 'attended' });
+    await api('PUT', `/outside-classes/${cls.id}/fee`, { child_id: child.id, total_fee_cents: 10000 });
+    db.prepare('DELETE FROM outside_class_revisions WHERE class_id = ? AND child_id = ?').run(cls.id, child.id);
+    const page = await board(); await open(page);
+    const row = rowFor(page, cls);
+    await row.getByText('已上课', { exact: true }).waitFor();
+    assert.equal(await row.getByText('未确认', { exact: true }).count(), 0);
+    const lesson = (await api('GET', `/children/${child.id}/schedule?from=${today}`))[0].outside.find(item => item.class_id === cls.id);
+    const stats = await api('GET', `/outside-classes/${cls.id}/stats?child_id=${child.id}`);
+    assert.ok(lesson.attendance_revision);
+    assert.equal(stats.lessons.find(item => item.lesson_date === today).revision, lesson.attendance_revision);
+    assert.ok(stats.summary.fee_revision);
+    const stale = await fetch(`${base}/api/outside-classes/${cls.id}/attendance`, { method: 'PUT',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ child_id: child.id, lesson_date: today, status: 'absent', expected_revision: null }) });
+    assert.equal(stale.status, 409);
+    const undo = await action(page, row, '撤销确认', child);
+    assert.equal(undo.expected_revision, lesson.attendance_revision);
+    await row.getByText('未确认', { exact: true }).waitFor();
+    await action(page, row, '缺席', child);
+    await row.getByText('缺席', { exact: true }).waitFor();
+  });
   for (const duringConfirm of [false, true]) await scenario(`D3-${duringConfirm ? 'confirm' : 'open'}`, async ({ child, cls, board, open }) => {
     const page = await board(); await page.clock.install(); await open(page);
     const row = rowFor(page, cls);

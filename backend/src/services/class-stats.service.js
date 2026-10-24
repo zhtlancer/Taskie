@@ -1,6 +1,7 @@
 const { formatDate, getTodayDate, getDayOfWeek, parseDate, shiftDate } = require('../utils/date');
 const { timeZone } = require('../config');
 const { generateId } = require('../utils/crypto');
+const { backfillClassRevisions } = require('../db/class-revisions');
 const fail = (status, message) => ({ status, message });
 const minutes = (start, end) => start && end ? (Number(end.slice(0, 2)) * 60 + Number(end.slice(3))) - (Number(start.slice(0, 2)) * 60 + Number(start.slice(3))) : null;
 const isDue = (date, end, today, clock) => date < today || date === today && (!end || end <= clock);
@@ -14,6 +15,7 @@ class ClassStatsService {
     if (!cls) throw fail(404, '课外班不存在');
     const child = this.db.prepare('SELECT created_at FROM children WHERE id = ?').get(childId);
     if (!child) throw fail(404, '孩子不存在');
+    backfillClassRevisions(this.db, { childId, classId });
     const records = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ?').all(classId, childId);
     const fee = this.db.prepare('SELECT total_fee_cents, updated_at FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(classId, childId);
     const revisions = new Map(this.db.prepare('SELECT kind, lesson_date, revision FROM outside_class_revisions WHERE class_id = ? AND child_id = ?').all(classId, childId).map(r => [`${r.kind}:${r.lesson_date}`, r.revision]));
@@ -151,6 +153,7 @@ class ClassStatsService {
       ON CONFLICT(class_id, child_id, kind, lesson_date) DO UPDATE SET revision = excluded.revision`).run(classId, childId, kind, date, generateId());
   }
   revision(classId, childId, kind, date = '') {
+    backfillClassRevisions(this.db, { childId, classId });
     return this.db.prepare('SELECT revision FROM outside_class_revisions WHERE class_id = ? AND child_id = ? AND kind = ? AND lesson_date = ?').get(classId, childId, kind, date)?.revision ?? null;
   }
   checkVersion(current, expected, message) {
