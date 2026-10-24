@@ -2,7 +2,7 @@ const { generateId } = require('../utils/crypto');
 const { formatDate, getTodayDate, getDayOfWeek, getWeekRange, getDateRangeList, parseDate } = require('../utils/date');
 const { classLessonKey, lessonDates } = require('../utils/schedule');
 const { schoolCalendar } = require('./calendar');
-const { backfillClassRevisions } = require('../db/class-revisions');
+const { repairClassRevisions, UNAVAILABLE_REVISION } = require('../db/class-revisions');
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WEEKS = ['all', 'A', 'B'];
@@ -368,7 +368,7 @@ class ScheduleService {
 
   // For a child, a function telling a date's outside-class lessons: the usual ones (possibly on
   // leave or moved away, still listed so the board can say so) and lessons moved there.
-  outsideLessons(childId) {
+  outsideLessons(childId, { forWrite = false } = {}) {
     const classes = this.db.prepare(`SELECT * FROM outside_classes c WHERE c.assign_all = 1
         OR EXISTS (SELECT 1 FROM outside_class_children WHERE class_id = c.id AND child_id = ?)`).all(childId)
       .map(row => ({ ...row, days: JSON.parse(row.days_of_week), lessonDates: row.total_lessons ? lessonDates(row.start_date, JSON.parse(row.days_of_week), row.total_lessons) : null }));
@@ -378,14 +378,19 @@ class ScheduleService {
       return row && (!row.lessonDates || row.lessonDates.includes(e.date));
     });
     const exceptionAt = new Map(exceptions.map(e => [`${e.class_id}|${e.date}`, e]));
-    // Repair manual edits made while running, then start from revisions so undo tombstones
-    // survive without an attendance row. Statistics and writes use these same persisted tokens.
-    backfillClassRevisions(this.db, { childId });
+    // Keep both undo tombstones and orphan attendance visible if best-effort repair fails.
+    repairClassRevisions(this.db, { childId }, { forWrite });
     const attendance = new Map(this.db.prepare(`SELECT r.class_id, r.lesson_date, a.status, a.charged, a.source, r.revision
       FROM outside_class_revisions r LEFT JOIN outside_class_attendance a
         ON r.class_id = a.class_id AND r.child_id = a.child_id AND r.kind = 'attendance' AND r.lesson_date = a.lesson_date
       WHERE r.child_id = ? AND r.kind = 'attendance'`).all(childId)
       .map(r => [`${r.class_id}|${r.lesson_date}`, r]));
+    for (const record of this.db.prepare(`SELECT a.class_id, a.lesson_date, a.status, a.charged, a.source, r.revision
+      FROM outside_class_attendance a LEFT JOIN outside_class_revisions r
+        ON r.class_id = a.class_id AND r.child_id = a.child_id AND r.kind = 'attendance' AND r.lesson_date = a.lesson_date
+      WHERE a.child_id = ? AND r.revision IS NULL`).all(childId)) {
+      attendance.set(`${record.class_id}|${record.lesson_date}`, { ...record, revision: UNAVAILABLE_REVISION });
+    }
     const movedInto = new Map();
     for (const e of exceptions.filter(e => e.kind === 'moved')) {
       if (!movedInto.has(e.new_date)) movedInto.set(e.new_date, []);

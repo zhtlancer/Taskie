@@ -7,6 +7,7 @@ const { gzipSync } = require('node:zlib');
 const { getDb, initDb } = require('../src/db');
 const { createTestApp, cleanupTestApp } = require('./helper');
 const { getTodayDate, shiftDate } = require('../src/utils/date');
+const { UNAVAILABLE_REVISION } = require('../src/db/class-revisions');
 
 const revisions = db => db.prepare('SELECT * FROM outside_class_revisions ORDER BY class_id, child_id, kind, lesson_date').all();
 const records = db => ['outside_class_attendance', 'outside_class_fees', 'outside_class_changes']
@@ -61,7 +62,7 @@ async function fixture(t) {
     assert.ok(feeRevision);
     return { attendanceRevision, feeRevision };
   };
-  return { ctx, child, cls, today, attendance, fee, stats, schedule, repaired };
+  return { ctx, child, cls, today, attendance, fee, stats, schedule, repaired, request };
 }
 
 async function verifyReadsAndWrites(f) {
@@ -141,4 +142,77 @@ for (const kind of ['attendance', 'fee']) test(`a null ${kind} write cannot over
   assert.equal(response.statusCode, 409, response.body);
   f.repaired();
   await verifyReadsAndWrites(f);
+});
+
+for (const code of ['SQLITE_READONLY', 'SQLITE_FULL', 'SQLITE_BUSY']) test(`${code}: reads preserve orphan data, saves fail explicitly and stale fallback tokens cannot overwrite`, async t => {
+  const f = await fixture(t), { db, app } = f.ctx;
+  const before = records(db), kept = revisions(db), warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  // READONLY uses SQLite's actual read-only mode. FULL/BUSY inject failure in the second
+  // repair statement, proving that a partial attendance repair is rolled back as well.
+  const prepare = db.prepare.bind(db);
+  if (code === 'SQLITE_READONLY') db.pragma('query_only = ON');
+  else t.mock.method(db, 'prepare', sql => {
+    const statement = prepare(sql);
+    if (sql.includes('INSERT OR IGNORE INTO outside_class_revisions') && sql.includes('FROM outside_class_fees')) {
+      statement.run = () => { throw Object.assign(new Error('injected storage failure'), { code }); };
+    }
+    return statement;
+  });
+  const board = await f.schedule(), detail = await f.stats();
+  assert.equal(board.attendance.status, 'attended');
+  assert.equal(board.attendance.charged, true);
+  assert.equal(board.attendance_revision, UNAVAILABLE_REVISION);
+  assert.equal(board.attendance.revision, UNAVAILABLE_REVISION);
+  assert.equal(detail.lessons.find(row => row.lesson_date === f.today).revision, UNAVAILABLE_REVISION);
+  assert.equal(detail.summary.attended, 1);
+  assert.equal(detail.summary.total_fee_cents, 12345);
+  assert.equal(detail.summary.fee_revision, UNAVAILABLE_REVISION);
+  assert.ok(detail.lessons.some(row => !row.confirmed && row.revision === null), 'truly unwritten lessons still use null');
+  const list = await f.request('GET', `/api/outside-classes/stats?child_id=${f.child.id}`);
+  assert.equal(list.statusCode, 200, list.body);
+  assert.equal(list.json().find(row => row.class_id === f.cls.id).fee_revision, UNAVAILABLE_REVISION);
+  // A child session uses the same resilient schedule read path.
+  const childToken = app.jwt.sign({ role: 'child', child_id: f.child.id, epoch: app.sessionEpoch() });
+  const childRead = await app.inject({ method: 'GET', url: `/api/children/${f.child.id}/schedule?from=${f.today}`,
+    headers: { authorization: `Bearer ${childToken}` } });
+  assert.equal(childRead.statusCode, 200, childRead.body);
+  for (const expected of [null, UNAVAILABLE_REVISION, undefined]) {
+    for (const response of [
+      await f.attendance({ status: 'pending', expected_revision: expected }),
+      await f.fee({ total_fee_cents: null, expected_revision: expected })
+    ]) {
+      assert.equal(response.statusCode, 503, response.body);
+      assert.equal(response.json().error, '暂时无法保存，请稍后重试');
+    }
+  }
+  assert.throws(() => app.services.classStatsService.syncCheckin({
+    origin: 'class', class_id: f.cls.id, child_id: f.child.id, date: f.today, id: 'blocked-checkin'
+  }), error => error.status === 503 && error.message === '暂时无法保存，请稍后重试');
+  assert.ok(warnings.length >= 4);
+  assert.ok(warnings.every(args => args[1].code === code));
+  assert.deepEqual(records(db), before);
+  assert.deepEqual(revisions(db), kept, 'no partial repairs, sibling or tombstone changes');
+  if (code === 'SQLITE_READONLY') db.pragma('query_only = OFF');
+  else t.mock.restoreAll();
+  // Recovery persists real versions. Neither null nor the fallback token authorizes a save.
+  for (const expected of [UNAVAILABLE_REVISION, null]) {
+    assert.equal((await f.attendance({ status: 'pending', expected_revision: expected })).statusCode, 409);
+    assert.equal((await f.fee({ total_fee_cents: null, expected_revision: expected })).statusCode, 409);
+  }
+  assert.deepEqual(records(db), before);
+  await verifyReadsAndWrites(f);
+});
+
+test('healthy reads do not open write transactions and also work with a read-only database', async t => {
+  const f = await fixture(t);
+  await f.stats();
+  const once = revisions(f.ctx.db);
+  const transaction = t.mock.method(f.ctx.db, 'transaction', () => { throw new Error('unexpected write transaction'); });
+  f.ctx.db.pragma('query_only = ON');
+  t.after(() => f.ctx.db.pragma('query_only = OFF'));
+  await f.schedule();
+  await f.stats();
+  assert.equal(transaction.mock.callCount(), 0);
+  assert.deepEqual(revisions(f.ctx.db), once);
 });
