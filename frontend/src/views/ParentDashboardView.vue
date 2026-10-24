@@ -326,7 +326,7 @@
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
 import { confirmAction } from '../utils/confirmation';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { formatMinutes } from '../utils/timeStats.js';
@@ -358,10 +358,19 @@ async function reloadLive() {
 }
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 const poll = setInterval(reloadLive, 60000);
-document.addEventListener('visibilitychange', reloadLive);
+function onResume() {
+  if (document.hidden) return;
+  calendar.refreshToday();
+  reloadDashboardDay();
+  reloadLive();
+}
+document.addEventListener('visibilitychange', onResume);
+window.addEventListener('pageshow', onResume);
 onUnmounted(() => {
+  dashboardSerial++; liveSerial++;
   clearInterval(clock); clearInterval(poll);
-  document.removeEventListener('visibilitychange', reloadLive);
+  document.removeEventListener('visibilitychange', onResume);
+  window.removeEventListener('pageshow', onResume);
 });
 const loading = ref(true);
 const dashboardError = ref('');
@@ -373,14 +382,11 @@ const skipBusy = ref(false);
 const skipError = ref('');
 const homeworkRequests = ref([]);
 const completionRequests = ref([]), completionBusy = ref(false), completionError = ref('');
-async function loadCompletionRequests() { completionRequests.value = await api.getHomeworkCompletionRequests(); }
 async function resolveCompletion(record, approve) {
   completionBusy.value = true; completionError.value = '';
   try {
     await (approve ? api.completeHomework(record.id) : api.rejectHomeworkCompletion(record.id));
-    await loadCompletionRequests();
-    const item = childrenStats.value.find(item => item.child.id === record.child_id);
-    if (item) await refreshChild(item);
+    await loadDashboard();
   } catch (err) { completionError.value = typeof err === 'string' ? err : '操作失败'; }
   finally { completionBusy.value = false; }
 }
@@ -411,12 +417,6 @@ const activeGoals = goals => goals.filter(goal => goal.status === 'active');
 const todayFinishedAt = item => item.stats.today_total_tasks && item.stats.today_completed_tasks === item.stats.today_total_tasks
   ? item.time?.days[0].finished_at ?? null : null;
 
-async function refreshChild(item) {
-  const [stats, adhoc] = await Promise.all([api.getChildStats(item.child.id), api.getAdhocTasks(item.child.id)]);
-  item.stats = stats;
-  item.adhoc = adhoc;
-}
-
 async function saveAdhoc() {
   adhocSaving.value = true;
   adhocError.value = '';
@@ -424,7 +424,7 @@ async function saveAdhoc() {
     const { child, title, subject, date, due_date, points, track_time, expected_minutes } = adhocForm.value;
     await api.createAdhocTask(child.id, { title, subject, date, due_date: due_date && due_date > date ? due_date : null, points: points || 0,
       track_time, expected_minutes: track_time ? expected_minutes : null });
-    await refreshChild(childrenStats.value.find(item => item.child.id === child.id));
+    await loadDashboard();
     adhocForm.value = null;
   } catch (err) {
     adhocError.value = typeof err === 'string' ? err : '添加失败，请重试';
@@ -438,14 +438,10 @@ async function removeAdhoc(item, task) {
   if (!await confirmAction(`确定删除临时任务「${task.title}」吗${warning}？`)) return;
   try {
     await api.deleteAdhocTask(task.id);
-    await refreshChild(item);
+    await loadDashboard();
   } catch (err) {
     console.error('Failed to delete one-off task:', err);
   }
-}
-
-async function loadSkipRequests() {
-  skipRequests.value = await api.getSkipRequests('pending', { limit: 200 });
 }
 
 // Approving a skip changes that child's progress for the day, so their card is refreshed too.
@@ -454,18 +450,13 @@ async function resolveSkip(request, action) {
   skipError.value = '';
   try {
     await (action === 'approve' ? api.approveSkipRequest(request.id) : api.rejectSkipRequest(request.id));
-    const item = childrenStats.value.find(entry => entry.child.id === request.child_id);
-    await Promise.all([loadSkipRequests(), item && refreshChild(item)]);
+    await loadDashboard();
   } catch (err) {
     skipError.value = typeof err === 'string' ? err : '操作失败，请重试';
-    await loadSkipRequests().catch(() => {});
+    await loadDashboard();
   } finally {
     skipBusy.value = false;
   }
-}
-
-async function loadHomeworkRequests() {
-  homeworkRequests.value = await api.getHomeworkRequests();
 }
 
 // Creating the task adds it to that child's board, so their card is refreshed too.
@@ -474,11 +465,10 @@ async function resolveHomework(record, action) {
   homeworkError.value = '';
   try {
     await (action === 'create' ? api.createHomeworkTask(record.id) : api.rejectHomeworkTask(record.id));
-    const item = childrenStats.value.find(entry => entry.child.id === record.child_id);
-    await Promise.all([loadHomeworkRequests(), item && refreshChild(item)]);
+    await loadDashboard();
   } catch (err) {
     homeworkError.value = typeof err === 'string' ? err : '操作失败，请重试';
-    await loadHomeworkRequests().catch(() => {});
+    await loadDashboard();
   } finally {
     homeworkBusy.value = false;
   }
@@ -504,23 +494,40 @@ const totalPointsIssued = computed(() => {
   return childrenStats.value.reduce((sum, item) => sum + (item.stats.total_points || 0), 0);
 });
 
+let dashboardSerial = 0, loadedDate = null, pendingDate = null;
+function reloadDashboardDay() {
+  if (calendar.ready && today.value !== loadedDate && today.value !== pendingDate) loadDashboard();
+}
 async function loadDashboard() {
-  loading.value = true;
+  if (!calendar.ready) { loading.value = false; return; }
+  calendar.refreshToday();
+  const date = today.value, timeZone = calendar.timeZone, serial = ++dashboardSerial;
+  pendingDate = date;
+  // Keep cards and open drafts visible during subsequent loads, including for an empty family.
+  loading.value = loadedDate === null;
+  const current = () => serial === dashboardSerial && calendar.ready && date === today.value && timeZone === calendar.timeZone;
   dashboardError.value = '';
   try {
     const children = await api.getChildren();
+    if (!current()) return;
     const statsPromises = children.map(async (child) => {
       const [stats, week, adhoc, goals, time, timer, classOverview] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
-        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today.value, today.value).catch(() => null), loadTimer(child.id), loadClassOverview(child.id)]);
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, date, date).catch(() => null), loadTimer(child.id), loadClassOverview(child.id)]);
       return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer, classOverview };
     });
-    [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests(), loadCompletionRequests()]);
+    const result = await Promise.all([Promise.all(statsPromises), api.getSkipRequests('pending', { limit: 200 }), api.getHomeworkRequests(), api.getHomeworkCompletionRequests()]);
+    if (!current()) return;
+    liveSerial++; // A live refresh for the previous cards must not land after this batch.
+    [childrenStats.value, skipRequests.value, homeworkRequests.value, completionRequests.value] = result;
+    loadedDate = date;
   } catch (err) {
+    if (!current()) return;
     console.error('Failed to load parent dashboard:', err);
     dashboardError.value = '暂时无法加载孩子的进展，请重新加载。';
   } finally {
-    loading.value = false;
+    if (serial === dashboardSerial) { loading.value = false; pendingDate = null; }
   }
 }
+watch(() => [calendar.today, calendar.ready], reloadDashboardDay);
 onMounted(loadDashboard);
 </script>

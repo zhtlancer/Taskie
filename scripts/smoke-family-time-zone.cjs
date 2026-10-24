@@ -137,11 +137,11 @@ async function main() {
       await blocked.goto(`${base}/parent/dashboard`);
       await blocked.getByRole('alert').filter({ hasText: '暂按 UTC' }).waitFor();
       const add = blocked.getByRole('button', { name: '➕ 添加', exact: true }).first();
-      await add.waitFor();
-      assert.equal(await add.isDisabled(), true, 'adhoc entry must be disabled');
+      // The dashboard now waits for a confirmed family date before loading its cards.
+      assert.equal(await add.count(), 0, 'untrusted date must not load date-dependent cards');
+      assert.equal(await blocked.locator('fieldset:disabled').count(), 1);
       await blocked.getByText('无法确认家庭日期，请重新读取家庭时区后再操作', { exact: false }).waitFor();
-      // Native click and submit cannot reach a write while the calendar is untrusted.
-      await add.evaluate(button => button.click());
+      // No date-dependent form is available while the calendar is untrusted.
       assert.equal(await blocked.locator('form').count(), 0);
       assert.equal(writes.length, 0);
       await shot(blocked, `${deviceZone.replaceAll('/', '-')}-writes-blocked`);
