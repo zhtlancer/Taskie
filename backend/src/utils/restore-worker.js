@@ -105,6 +105,8 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
       !['name', 'size', 'sha256'].every(name => hasColumn('photo_expectations', name)) ||
       !['class_id', 'child_id', 'kind', 'lesson_date', 'revision'].every(name => hasColumn('outside_class_revisions', name)) || !hasColumn('period_task_logs', 'request_fingerprint'))) throw fail('备份缺少照片校验或独立版本数据，无法恢复');
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
+    // initDb also backfills missing attendance/fee revisions on current-schema backups,
+    // before the candidate is serialized and copied into the live database.
     initDb(candidate);
     for (const [name, value] of Object.entries(data.photos || {})) {
       if (!safeName(name) || typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw fail('备份照片路径或内容无效');
