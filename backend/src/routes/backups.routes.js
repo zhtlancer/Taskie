@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const { getTodayDate } = require('../utils/date');
 const { MAX_UPLOAD_SIZE, MAX_PHOTO_PACKAGE_SIZE } = require('../services/backup.service');
 
 async function backupRoutes(app, { backupService, authService, intervalHours }) {
@@ -36,7 +37,7 @@ async function backupRoutes(app, { backupService, authService, intervalHours }) 
         if (ticket.epoch === app.sessionEpoch()) backupService.recordPhotoExport(stream.photoNames);
       } catch (error) { request.log.warn({ err: error }, '照片包未记录为完整导出'); }
     });
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = getTodayDate();
     return reply.header('Content-Disposition', `attachment; filename="taskie-photos-${stamp}${ticket.scope === 'new' ? '-new' : ''}.tar"`)
       .type('application/x-tar').send(stream);
   });

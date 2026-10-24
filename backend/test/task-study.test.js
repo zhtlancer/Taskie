@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 
-async function fixture(t, now = '2026-10-20T04:00:00Z', data = {}) {
+async function fixture(t, now = familyInstant('2026-10-20', '12:00:00'), data = {}) {
   t.mock.timers.enable({ apis: ['Date'], now: new Date(now) });
   const c = createTestApp(); t.after(() => cleanupTestApp(c)); await c.app.ready();
   const services = c.app.services;
@@ -64,7 +64,7 @@ test('direct completion ends the active ordinary session atomically; aggregate o
 });
 
 test('ordinary cross-midnight sessions split actual dates and do not become two learning sessions', async t => {
-  const c = await fixture(t, '2026-10-20T15:50:00Z', { due_date: '2026-10-22' });
+  const c = await fixture(t, familyInstant('2026-10-20', '23:50:00'), { due_date: '2026-10-22' });
   const sid = (await c.call('POST', '/study/start')).json().active.id;
   c.advance(1800);
   await c.call('POST', `/sessions/${sid}/finish`);
@@ -79,7 +79,7 @@ test('ordinary cross-midnight sessions split actual dates and do not become two 
 });
 
 test('ordinary tasks retain deadlines: child may end a session after midnight, parent completes overdue task', async t => {
-  const c = await fixture(t, '2026-10-20T15:50:00Z');
+  const c = await fixture(t, familyInstant('2026-10-20', '23:50:00'));
   const sid = (await c.call('POST', '/study/start')).json().active.id;
   c.advance(1800);
   assert.equal((await c.call('POST', '/study/complete')).statusCode, 403);
@@ -262,7 +262,7 @@ test('a task revoked with study time stays out of later days, keeps its time and
 });
 
 test('a task revoked by a calendar change with study time is not missed on later days', async t => {
-  const c = await fixture(t, '2026-10-24T04:00:00Z'); // a Saturday
+  const c = await fixture(t, familyInstant('2026-10-24', '12:00:00')); // a Saturday
   const template = c.tasksService.createTemplate({ title: '数学练习', subject: '数学', track_time: true, days_of_week: [1, 2, 3, 4, 5] });
   const makeup = c.periodsService.createMakeupDay(c.child.id, { date: '2026-10-24', acts_as: 1 });
   const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
@@ -278,9 +278,9 @@ test('a task revoked by a calendar change with study time is not missed on later
 });
 
 test('ordinary tasks keep their finish-time rule after switching to study sessions', async t => {
-  const c = await fixture(t, '2026-10-19T04:00:00Z', { due_date: '2026-10-20' });
+  const c = await fixture(t, familyInstant('2026-10-19', '12:00:00'), { due_date: '2026-10-20' });
   c.taskStudyService.details(c.task.id); // opening the study window switches the task to sessions
-  t.mock.timers.setTime(Date.parse('2026-10-20T13:30:00Z'));
+  t.mock.timers.setTime(Date.parse(familyInstant('2026-10-20', '21:30:00')));
   c.tasksService.completeDailyTask(c.task.id, {});
   assert.deepEqual([...c.timeStatsService.finishTimes(c.child.id, '2026-10-19', '2026-10-20')], [],
     'a task of an earlier day finished later is not that later day\'s finish time');
@@ -303,7 +303,7 @@ test('a v22 backup without the revoked marker is rejected before restoring', asy
 });
 
 test('a carrying task revoked with study time is not carried over the weekend', async t => {
-  const c = await fixture(t, '2026-10-23T04:00:00Z'); // a Friday
+  const c = await fixture(t, familyInstant('2026-10-23', '12:00:00')); // a Friday
   const other = c.childrenService.createChild({ name: '另一个孩子' });
   const template = c.tasksService.createTemplate({ title: '周末前练习', subject: '数学', track_time: true, carry_over: true, days_of_week: [1, 2, 3, 4, 5] });
   const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
@@ -361,7 +361,7 @@ for (const reason of ['assignment', 'calendar']) {
 test('deleting only a course record preserves its saved finish-time attribution through backup', async t => {
   const c = await fixture(t);
   const record = c.homeworkService.create(c.child.id, { subject: '语文', content: '次日写完', due_date: '2026-10-22', create_task: true }, 'parent');
-  t.mock.timers.setTime(Date.parse('2026-10-21T13:30:00Z'));
+  t.mock.timers.setTime(Date.parse(familyInstant('2026-10-21', '21:30:00')));
   c.homeworkStudyService.complete(record.id, 'child');
   const finish = () => [...c.timeStatsService.finishTimes(c.child.id, '2026-10-20', '2026-10-21')];
   assert.deepEqual(finish(), [['2026-10-21', 1290]]);
@@ -387,7 +387,7 @@ test('v22 finish times migrate; v23 backups missing attribution are rejected saf
   // Simulate the dangling pending request produced before this fix.
   c.db.prepare("UPDATE task_skip_requests SET status = 'pending', resolved_at = NULL WHERE id = ?").run(request.id);
   const record = c.homeworkService.create(c.child.id, { subject: '语文', content: '迁移完成时间', due_date: '2026-10-22', create_task: true }, 'parent');
-  t.mock.timers.setTime(Date.parse('2026-10-21T13:30:00Z'));
+  t.mock.timers.setTime(Date.parse(familyInstant('2026-10-21', '21:30:00')));
   c.homeworkStudyService.complete(record.id, 'child');
   const Database = require('better-sqlite3');
   const { gzipSync, gunzipSync } = require('node:zlib');
@@ -487,11 +487,11 @@ for (const mode of ['running', 'paused']) {
 }
 
 test('legacy preservation keeps real cross-midnight allocations and the old 12-hour cap', async t => {
-  const c = await fixture(t, '2026-10-21T04:00:00Z');
+  const c = await fixture(t, familyInstant('2026-10-21', '12:00:00'));
   const template = c.tasksService.createTemplate({ title: '跨日旧计时', subject: '语文', track_time: true, days_of_week: [0,1,2,3,4,5,6] });
   const task = c.tasksService.getDailyTasks(c.child.id).find(row => row.template_id === template.id);
   c.db.prepare('UPDATE daily_tasks SET timer_elapsed_seconds = 300, timer_started_at = ? WHERE id = ?')
-    .run('2026-10-20T15:50:00Z', task.id);
+    .run(familyInstant('2026-10-20', '23:50:00'), task.id);
   c.tasksService.updateTemplate(template.id, { track_time: false });
   const detail = c.taskStudyService.details(task.id);
   assert.equal(detail.total_seconds, 43200);
@@ -551,7 +551,7 @@ test('deleting a template keeps its legacy timer available for later conversion'
 });
 
 test('ending across midnight saves the session even when completing the expired task is rejected', async t => {
-  const c = await fixture(t, '2026-10-20T15:50:00Z');
+  const c = await fixture(t, familyInstant('2026-10-20', '23:50:00'));
   const sid = (await c.call('POST', '/study/start')).json().active.id;
   c.advance(1800);
   const ended = await c.call('POST', `/sessions/${sid}/finish`, { complete: true, note: '跨日已学完这部分' });
@@ -602,7 +602,7 @@ test('invalid finish input does not save or stop an active session', async t => 
 });
 
 test('unfinished study stays discoverable after midnight without rejoining today or mutating history', async t => {
-  const c = await fixture(t, '2026-10-20T15:30:00Z');
+  const c = await fixture(t, familyInstant('2026-10-20', '23:30:00'));
   const sid = (await c.call('POST', '/study/start')).json().active.id;
   c.advance(3600);
   const next = c.tasksService.createAdhocTask(c.child.id, { title: '第二天学习', subject: '数学', track_time: true });
@@ -642,7 +642,7 @@ test('unfinished study includes homework identifiers and enforces sibling and an
 test('an old client timer running past midnight pauses into an unfinished record the child can end', async t => {
   for (const pauseWith of ['bar', 'old-button']) {
     await t.test(pauseWith, async t => {
-      const c = await fixture(t, '2026-10-20T15:30:00Z');
+      const c = await fixture(t, familyInstant('2026-10-20', '23:30:00'));
       assert.equal((await c.call('POST', '/timer/start')).statusCode, 200);
       c.advance(3600);
       const unfinished = () => c.taskStudyService.unfinished(c.child.id).items;

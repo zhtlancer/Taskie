@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { gzipSync, gunzipSync } = require('node:zlib');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -68,8 +68,8 @@ test('one-off tasks count in weekly completion without hiding the templates of a
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
   tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [1, 2, 3, 4, 5] });
-  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
-  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-30)));
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant(day(-30)));
   // Added for Wednesday, a day the app was never opened.
   const adhoc = (await addAdhoc({ title: '手抄报', date: day(2) })).json();
   tasksService.completeDailyTask(adhoc.id);

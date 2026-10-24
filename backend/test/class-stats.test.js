@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, shiftDate } = require('../src/utils/date');
 const { initDb } = require('../src/db');
 
@@ -99,7 +99,7 @@ test('attendance snapshots survive timetable edits; current leave suppresses a c
   await attendance(-2, { status: 'attended' });
   await parent('PUT', `/api/outside-classes/${cls.id}`, { start_time: '09:00', end_time: '09:30' });
   assert.equal((await stats()).summary.attended_minutes, 60);
-  ctx.db.prepare('UPDATE outside_classes SET created_at = ? WHERE id = ?').run(`${day(-6)}T00:00:00Z`, cls.id);
+  ctx.db.prepare('UPDATE outside_classes SET created_at = ? WHERE id = ?').run(familyInstant(day(-6), '08:00:00'), cls.id);
   assert.equal((await attendance(0, { status: 'leave', charged: true })).statusCode, 200);
   assert.equal(ctx.app.services.scheduleService.outsideLessons(child.id)(getTodayDate())[0].status, 'leave');
   assert.equal(ctx.app.services.scheduleService.classTaskSchedule(child.id)(getTodayDate()).length, 0);
@@ -182,8 +182,11 @@ test('legacy duplicate check-ins consume once and undo retains any still-complet
 
 test('pending starts once the child, the class and attendance tracking all exist; earlier lessons may still be recorded', async t => {
   const { ctx, parent, child, cls, day, stats, attendance } = await fixture(t, { start_date: shiftDate(getTodayDate(), -10), total_lessons: 30 });
-  const setDates = (childAt, classAt, tracking) => ctx.db.exec(`UPDATE children SET created_at = '${childAt}T12:00:00.000Z' WHERE id = '${child.id}';
-    UPDATE outside_classes SET created_at = '${classAt}T12:00:00.000Z'; UPDATE settings SET value = '${tracking}' WHERE key = 'class_attendance_since'`);
+  const setDates = (childAt, classAt, tracking) => {
+    ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(familyInstant(childAt), child.id);
+    ctx.db.prepare('UPDATE outside_classes SET created_at = ?').run(familyInstant(classAt));
+    ctx.db.prepare("UPDATE settings SET value = ? WHERE key = 'class_attendance_since'").run(tracking);
+  };
   setDates(day(-6), day(-20), day(-20));
   assert.deepEqual([(await stats()).summary.pending, (await stats()).summary.pending_since], [6, day(-6)]);
   setDates(day(-6), day(-4), day(-20));

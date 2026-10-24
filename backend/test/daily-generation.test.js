@@ -1,16 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 
 // A child with a weekday task, on Monday 2026-10-19; nobody opens the app unless a test does.
-async function family(t, now = '2026-10-19T04:00:00Z') {
+async function family(t, now = familyInstant('2026-10-19', '12:00:00')) {
   t.mock.timers.enable({ apis: ['Date'], now: new Date(now) });
   const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
   const services = ctx.app.services;
   const child = services.childrenService.createChild({ name: '自动生成' });
-  ctx.db.prepare('UPDATE children SET created_at = ?').run('2026-10-01T04:00:00Z');
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant('2026-10-01', '12:00:00'));
   const weekday = services.tasksService.createTemplate({ title: '口算', subject: '数学', days_of_week: [1, 2, 3, 4, 5], points: 10 });
-  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run('2026-10-01T04:00:00Z');
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant('2026-10-01', '12:00:00'));
   const rows = (date, childId = child.id) => ctx.db.prepare('SELECT title FROM daily_tasks WHERE child_id = ? AND date = ? ORDER BY title').all(childId, date).map(row => row.title);
   const day = date => services.statsService.getHistory(child.id, date, date)[0];
   const setTime = iso => t.mock.timers.setTime(new Date(iso).getTime());
@@ -45,7 +45,7 @@ test('later runs follow configuration changes made during the day', async t => {
 test('a day nobody opened keeps its tasks after midnight and counts as missed, not as a rest day', async t => {
   const { tasksService, child, weekday, rows, day, setTime } = await family(t);
   tasksService.generateToday();
-  setTime('2026-10-20T04:00:00Z'); // Tuesday
+  setTime(familyInstant('2026-10-20', '12:00:00')); // Tuesday
   tasksService.generateToday();
   tasksService.updateTemplate(weekday.id, { days_of_week: [2, 3, 4, 5], title: '改名口算' });
   tasksService.createTemplate({ title: '后加的周一任务', subject: '语文', days_of_week: [1], points: 5 });
@@ -57,7 +57,7 @@ test('a day nobody opened keeps its tasks after midnight and counts as missed, n
 });
 
 test('history marks unopened days that had tasks as not opened, never rest days or today', async t => {
-  const { tasksService, child, day } = await family(t, '2026-10-20T04:00:00Z'); // Tuesday; nothing generated so far
+  const { tasksService, child, day } = await family(t, familyInstant('2026-10-20', '12:00:00')); // Tuesday; nothing generated so far
   assert.deepEqual([day('2026-10-19').total_tasks, day('2026-10-19').not_opened], [0, true], 'an unopened Monday');
   assert.equal(day('2026-10-18').not_opened, false, 'Sunday had nothing to do');
   assert.equal(day('2026-10-20').not_opened, false, 'today is not over');
@@ -68,7 +68,7 @@ test('history marks unopened days that had tasks as not opened, never rest days 
 });
 
 test('a day whose tasks were all skipped is a rest day, not an unopened one', async t => {
-  const { tasksService, skipsService, child, day } = await family(t, '2026-10-20T04:00:00Z');
+  const { tasksService, skipsService, child, day } = await family(t, familyInstant('2026-10-20', '12:00:00'));
   tasksService.materializeBackfillDay(child.id, '2026-10-19');
   const [task] = tasksService.getBackfillTasks(child.id, '2026-10-19').tasks;
   skipsService.requestSkip(task.id, '生病请假', { role: 'parent' });
@@ -82,12 +82,12 @@ test('template edits update auto-generated pending cards and rewards without rep
   const getRow = () => ctx.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND date = '2026-10-19'").get(child.id);
   const original = getRow();
   ctx.db.prepare('UPDATE daily_tasks SET timer_started_at = ?, timer_elapsed_seconds = 60 WHERE id = ?')
-    .run('2026-10-19T03:59:00.000Z', original.id);
+    .run(familyInstant('2026-10-19', '11:59:00'), original.id);
   tasks.updateTemplate(weekday.id, { title: '新阅读', subject: '语文', points: 50 });
   tasks.generateToday();
   const row = getRow();
   assert.deepEqual([row.id, row.title, row.subject, row.points, row.timer_started_at, row.timer_elapsed_seconds],
-    [original.id, '新阅读', '语文', 50, '2026-10-19T03:59:00.000Z', 60]);
+    [original.id, '新阅读', '语文', 50, familyInstant('2026-10-19', '11:59:00'), 60]);
   assert.equal(tasks.completeDailyTask(row.id, { duration_seconds: 120 }).points_earned, 50);
 });
 
@@ -115,7 +115,7 @@ test('a recorded empty day stays a rest day after later template edits', async t
   tasks.updateTemplate(weekday.id, { days_of_week: [2, 3, 4, 5] });
   tasks.generateToday();
   assert.equal(tasks.hasDaySnapshot(child.id, '2026-10-19'), true);
-  setTime('2026-10-20T04:00:00Z');
+  setTime(familyInstant('2026-10-20', '12:00:00'));
   assert.deepEqual([day('2026-10-19').total_tasks, day('2026-10-19').not_opened], [0, false]);
   tasks.updateTemplate(weekday.id, { days_of_week: [1, 2, 3, 4, 5] });
   assert.deepEqual([day('2026-10-19').total_tasks, day('2026-10-19').not_opened], [0, false]);
@@ -124,9 +124,9 @@ test('a recorded empty day stays a rest day after later template edits', async t
 
 // Friday 10-16 to Monday 10-19 generated automatically, each weekday's task done; the weekend had nothing.
 async function recordedWeekend(t) {
-  const ctx = await family(t, '2026-10-16T04:00:00Z');
+  const ctx = await family(t, familyInstant('2026-10-16', '12:00:00'));
   for (const date of ['2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19']) {
-    ctx.setTime(`${date}T04:00:00Z`);
+    ctx.setTime(familyInstant(date));
     ctx.tasksService.generateToday();
     const row = ctx.ctx.db.prepare('SELECT id FROM daily_tasks WHERE child_id = ? AND date = ?').get(ctx.child.id, date);
     if (row) ctx.tasksService.completeDailyTask(row.id);
@@ -151,17 +151,17 @@ test('later configuration never adds tasks to recorded days in the streak, weekl
       const before = ctx.state();
       assert.deepEqual([before.streak, before.weekend], [2, [[0, false], [0, false]]]);
       change(ctx);
-      ctx.ctx.db.prepare('UPDATE outside_classes SET created_at = ?').run('2026-10-01T04:00:00Z');
+      ctx.ctx.db.prepare('UPDATE outside_classes SET created_at = ?').run(familyInstant('2026-10-01', '12:00:00'));
       assert.deepEqual(ctx.state(), before);
     });
   }
 });
 
 test('days without a record are still projected from the configuration', async t => {
-  const { tasksService, rewardsService, statsService, child, weekday, setTime } = await family(t, '2026-10-16T04:00:00Z');
+  const { tasksService, rewardsService, statsService, child, weekday, setTime } = await family(t, familyInstant('2026-10-16', '12:00:00'));
   tasksService.generateToday();
   tasksService.completeDailyTask(tasksService.getDailyTasks(child.id)[0].id);
-  setTime('2026-10-19T04:00:00Z'); // the server was down over the weekend
+  setTime(familyInstant('2026-10-19', '12:00:00')); // the server was down over the weekend
   tasksService.generateToday();
   tasksService.completeDailyTask(tasksService.getDailyTasks(child.id)[0].id);
   assert.equal(rewardsService.getCurrentStreak(child.id, '2026-10-19'), 2);
@@ -182,7 +182,7 @@ for (const [name, recordedDays, allowedDays, expected] of [
     const other = childrenService.createChild({ name: '原被分配的孩子' });
     const template = tasks.createTemplate({ title: '每周阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 3,
       days_of_week: allowedDays, child_ids: [other.id], points: 5 });
-    ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run('2026-10-01T04:00:00Z', template.id);
+    ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(familyInstant('2026-10-01', '12:00:00'), template.id);
     for (const day of recordedDays) tasks.generateDay(child.id, `2026-10-${day}`);
     const completion = asOf => stats.getWeeklyCompletion(child.id, '2026-10-12', '2026-10-18', asOf);
     assert.equal(completion('2026-10-18').total_units, 0);

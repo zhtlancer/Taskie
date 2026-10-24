@@ -3,11 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { gzipSync, gunzipSync } = require('node:zlib');
 const Database = require('better-sqlite3');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { initDb } = require('../src/db');
 
 async function fixture(t, course = false) {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-20T04:00:00Z') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-20', '12:00:00')) });
   const c = createTestApp(); t.after(() => cleanupTestApp(c)); await c.app.ready();
   const services = c.app.services;
   const child = services.childrenService.createChild({ name: '旧累计验收' });
@@ -101,7 +101,7 @@ test('legacy corrections and zero totals survive restore; v23 backups upgrade; i
 
 test('deleting a course record keeps corrected legacy statistics and cannot resurrect its mirrored old duration', async t => {
   const c = await fixture(t, true);
-  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, duration_seconds = 900, completed_at = '2026-10-20T04:00:00Z' WHERE id = ?").run(c.task.id);
+  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, duration_seconds = 900, completed_at = ? WHERE id = ?").run(familyInstant('2026-10-20', '12:00:00'), c.task.id);
   const seconds = () => c.timeStatsService.stats(c.child.id, '2026-10-20', '2026-10-20').summary.recorded_seconds;
   c.homeworkService.delete(c.record.id, { delete_task: false }, 'parent');
   assert.equal(seconds(), 900, 'a mirrored aggregate is counted once after deleting the record');
@@ -113,7 +113,7 @@ test('deleting a course record keeps corrected legacy statistics and cannot resu
 
 test('v22 upgrades attribute course homework to its actual evening, retain task dates and exclude parent backfills', async t => {
   const c = await fixture(t, true);
-  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, completed_at = '2026-10-20T17:30:00Z', finish_on_actual_date = 0 WHERE id = ?").run(c.task.id);
+  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, completed_at = ?, finish_on_actual_date = 0 WHERE id = ?").run(familyInstant('2026-10-21', '01:30:00'), c.task.id);
   c.db.exec('DROP TABLE study_legacy_corrections; ALTER TABLE daily_tasks DROP COLUMN finish_on_actual_date');
   c.db.pragma('user_version = 22');
   initDb(c.db);
@@ -123,7 +123,7 @@ test('v22 upgrades attribute course homework to its actual evening, retain task 
   assert.deepEqual(row, { date: '2026-10-20', finish_on_actual_date: 1 });
   c.homeworkService.delete(c.record.id, { delete_task: false }, 'parent');
   assert.deepEqual([...finishes()], [['2026-10-20', 1530]]);
-  c.db.prepare("UPDATE daily_tasks SET completed_at = '2026-10-21T11:06:00Z' WHERE id = ?").run(c.task.id);
+  c.db.prepare("UPDATE daily_tasks SET completed_at = ? WHERE id = ?").run(familyInstant('2026-10-21', '19:06:00'), c.task.id);
   assert.deepEqual([...finishes()], [['2026-10-21', 19 * 60 + 6]]);
   c.db.prepare("UPDATE daily_tasks SET completion_source = 'parent_backfill' WHERE id = ?").run(c.task.id);
   assert.equal(finishes().size, 0);
@@ -150,7 +150,7 @@ test('revoking a task after zeroing its old aggregate preserves the correction a
 
 test('a zeroed old aggregate of an ordinary task counts as missing time, not as 0 seconds learned', async t => {
   const c = await fixture(t);
-  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, completed_at = '2026-10-20T04:00:00Z', expected_minutes = 20 WHERE id = ?").run(c.task.id);
+  c.db.prepare("UPDATE daily_tasks SET is_completed = 1, completed_at = ?, expected_minutes = 20 WHERE id = ?").run(familyInstant('2026-10-20', '12:00:00'), c.task.id);
   const stats = () => c.timeStatsService.stats(c.child.id, '2026-10-20', '2026-10-20');
   assert.equal(stats().summary.recorded_seconds, 900);
   await c.correct(0);

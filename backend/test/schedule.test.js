@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getDayOfWeek, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -170,13 +170,13 @@ test('check-in tasks of outside classes are owed on days the board was never ope
   const { rewardsService, statsService, tasksService } = ctx.app.services;
   const lastMonday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(lastMonday, n);
-  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-30)));
   await asParent('POST', '/api/task-templates', { title: '口算', subject: '数学', days_of_week: [1, 3] });
   const piano = (await asParent('POST', '/api/outside-classes', {
     title: '钢琴课', days_of_week: [2], start_time: '16:30', end_time: '17:30', start_date: day(-30), create_task: true
   })).json();
-  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
-  ctx.db.prepare('UPDATE outside_classes SET created_at = ?').run(`${day(-30)}T04:00:00.000Z`);
+  ctx.db.prepare('UPDATE task_templates SET created_at = ?').run(familyInstant(day(-30)));
+  ctx.db.prepare('UPDATE outside_classes SET created_at = ?').run(familyInstant(day(-30)));
 
   // Monday and Wednesday done; Tuesday's piano lesson was never checked in (nor the board opened).
   for (const n of [0, 2]) tasksService.completeDailyTask(tasksService.getDailyTasks(child.id, day(n))[0].id);
@@ -279,8 +279,8 @@ test('weekly classes stop at the requested count; leave and moves keep lesson nu
   const moved = (await schedule(day(0), day(20))).flatMap(d => d.outside);
   assert.deepEqual(moved.map(l => [l.date, l.lesson_number, l.status]), [[day(2), 1, 'leave'], [day(5), 2, 'scheduled'], [day(9), 3, 'moved_out'], [day(16), 3, 'moved_in']]);
   // Make these fixtures old enough for the check-in generation boundary.
-  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(`${day(-7)}T00:00:00Z`, child.id);
-  ctx.db.prepare('UPDATE outside_classes SET created_at = ? WHERE id = ?').run(`${day(-7)}T00:00:00Z`, cls.id);
+  ctx.db.prepare('UPDATE children SET created_at = ? WHERE id = ?').run(familyInstant(day(-7), '08:00:00'), child.id);
+  ctx.db.prepare('UPDATE outside_classes SET created_at = ? WHERE id = ?').run(familyInstant(day(-7), '08:00:00'), cls.id);
   const taskDays = ctx.app.services.scheduleService.classTaskSchedule(child.id);
   assert.equal(taskDays(day(2)).length, 0);
   assert.equal(taskDays(day(12)).length, 0);

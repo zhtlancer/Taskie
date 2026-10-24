@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -12,7 +12,7 @@ async function fixture(t) {
   // Last week, so every day is in the past; the week before is the one compared with.
   const monday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(monday, n);
-  const backdate = `${day(-30)}T04:00:00.000Z`;
+  const backdate = familyInstant(day(-30));
   ctx.db.prepare('UPDATE children SET created_at = ?').run(backdate);
   const template = data => {
     const created = tasksService.createTemplate({ subject: '数学', days_of_week: [0, 1, 2, 3, 4, 5, 6], ...data });
@@ -69,15 +69,15 @@ test('the period before, of the same length, is compared with', async t => {
 test('finish times are the day’s last completion in the evening, past midnight included, never later backfills', async t => {
   // The current-day assertion needs a time after 04:00. Before then, completions belong to the
   // evening before, so using the runner's real clock made this test fail in overnight CI runs.
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-17T12:00:00+08:00') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-17')) });
   const { ctx, template, doneOn, stats, day } = await fixture(t);
   template({ title: '口算' });
   template({ title: '阅读', subject: '语文' });
   const at = (task, iso) => ctx.db.prepare('UPDATE daily_tasks SET completed_at = ? WHERE id = ?').run(iso, task.id);
-  at(doneOn(day(0), '口算'), `${day(0)}T11:00:00.000Z`);   // 19:00 in Shanghai
-  at(doneOn(day(0), '阅读'), `${day(0)}T12:30:00.000Z`);   // 20:30
-  at(doneOn(day(1), '口算'), `${day(1)}T16:30:00.000Z`);   // 00:30 the night after Tuesday
-  at(doneOn(day(2), '口算'), `${day(5)}T12:00:00.000Z`);   // a backfill on Saturday
+  at(doneOn(day(0), '口算'), familyInstant(day(0), '19:00:00'));   // family time
+  at(doneOn(day(0), '阅读'), familyInstant(day(0), '20:30:00'));   // 20:30
+  at(doneOn(day(1), '口算'), familyInstant(shiftDate(day(1), 1), '00:30:00'));   // 00:30 the night after Tuesday
+  at(doneOn(day(2), '口算'), familyInstant(day(5), '20:00:00'));   // a backfill on Saturday
   const result = stats();
   assert.deepEqual(result.days.slice(0, 3).map(d => d.finished_at), ['20:30', '00:30', null]);
   // (20:30 + 24:30) / 2 = 22:30
@@ -93,7 +93,7 @@ test('finish times are the day’s last completion in the evening, past midnight
 });
 
 test('finish-time day attribution switches at 04:00, while today stays out of averages', async t => {
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-17T00:12:17+08:00') });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant('2026-10-17', '00:12:17')) });
   const { ctx, template, doneOn, stats } = await fixture(t);
   template({ title: '口算' });
   const today = getTodayDate();
@@ -108,7 +108,7 @@ test('finish-time day attribution switches at 04:00, while today stays out of av
     ['04:00:00', null, '04:00'],
     ['12:00:00', null, '12:00']
   ]) {
-    const now = new Date(`${today}T${time}+08:00`);
+    const now = new Date(familyInstant(today, time));
     t.mock.timers.setTime(now.getTime());
     at.run(now.toISOString(), previousTask.id);
     at.run(now.toISOString(), currentTask.id);
@@ -124,7 +124,7 @@ test('long-term tasks give time per page, ignoring entries from before timing wa
   const book = periodsService.createGoal(child.id, { title: '西游记', subject: '语文', mode: 'progress', unit: '页', total_amount: 200, start_date: day(-30), track_time: true });
   const log = (n, amount, duration_seconds) => {
     const { log_id } = periodsService.logProgress(book.id, { amount, date: day(n), duration_seconds }, { role: 'parent' });
-    ctx.db.prepare('UPDATE period_task_logs SET created_at = ? WHERE id = ?').run(`${day(n)}T12:00:00.000Z`, log_id);
+    ctx.db.prepare('UPDATE period_task_logs SET created_at = ? WHERE id = ?').run(familyInstant(day(n), '20:00:00'), log_id);
   };
   log(0, 10, null);   // before the first timed entry: not counted as missing
   log(1, 10, 600);
@@ -160,8 +160,8 @@ test('turning off long-term timing preserves recorded history without counting u
 test('estimates always use the latest 90 days, independent of the displayed range', async t => {
   const { ctx, template, doneOn, stats, day } = await fixture(t);
   const oral = template({ title: '口算', track_time: true });
-  ctx.db.prepare('UPDATE children SET created_at = ?').run(`${day(-180)}T04:00:00.000Z`);
-  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(`${day(-180)}T04:00:00.000Z`, oral.id);
+  ctx.db.prepare('UPDATE children SET created_at = ?').run(familyInstant(day(-180)));
+  ctx.db.prepare('UPDATE task_templates SET created_at = ? WHERE id = ?').run(familyInstant(day(-180)), oral.id);
   for (const n of [-150, -149, -148]) doneOn(day(n), '口算', 1800);
   doneOn(day(6), '口算', null);
   const short = () => stats(day(0), day(6));

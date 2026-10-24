@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTestApp, cleanupTestApp } = require('./helper');
+const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
 const { getTodayDate, getWeekRange, shiftDate } = require('../src/utils/date');
 
 async function fixture(t) {
@@ -11,8 +11,8 @@ async function fixture(t) {
   const { tasksService, statsService } = ctx.app.services;
   const lastMonday = getWeekRange(shiftDate(getTodayDate(), -7)).startDate;
   const day = n => shiftDate(lastMonday, n);
-  // Noon UTC is the same calendar date in the family time zone.
-  const backdate = (table, id, date) => ctx.db.prepare(`UPDATE ${table} SET created_at = ? WHERE id = ?`).run(`${date}T04:00:00.000Z`, id);
+  // Use family noon so the creation date matches the intended business date.
+  const backdate = (table, id, date) => ctx.db.prepare(`UPDATE ${table} SET created_at = ? WHERE id = ?`).run(familyInstant(date), id);
   backdate('children', child.id, day(-30));
   const template = data => {
     const created = tasksService.createTemplate({ subject: '数学', ...data });
