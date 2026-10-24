@@ -40,11 +40,18 @@ jobs:
             --test-reporter=spec --test-reporter-destination=stdout
             --test-reporter=${{ github.workspace }}/scripts/test-annotations.mjs --test-reporter-destination=stdout
 
-  backend-new-york:
+  backend-time-zones:
+    name: Backend (${{ matrix.time-zone }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        time-zone: [ America/New_York, Pacific/Kiritimati, Pacific/Pago_Pago ]
     env:
-      TIME_ZONE: America/New_York
+      # Keep the host clock distinct from the non-UTC family zones under test.
+      TZ: UTC
+      TIME_ZONE: ${{ matrix.time-zone }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

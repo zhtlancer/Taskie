@@ -26,6 +26,43 @@ async function fixture(t, overrides = {}) {
   return { ctx, parent, child, other, cls, today, day, service, stats, attendance, fee };
 }
 
+test('attendance uses the family clock to count today’s ended lesson as pending', async t => {
+  const today = '2026-10-21';
+  // In New York this is 2026-10-22 01:30 UTC. Keep the real service.now() so a
+  // host-local HH:MM cannot silently decide whether the family’s lesson has ended.
+  t.mock.timers.enable({ apis: ['Date'], now: new Date(familyInstant(today, '21:30:00')) });
+  const ctx = createTestApp();
+  t.after(() => cleanupTestApp(ctx));
+  await ctx.app.ready();
+  const parent = (method, url, payload) => ctx.app.inject({ method, url, payload });
+  const childResponse = await parent('POST', '/api/children', { name: '晚课孩子' });
+  assert.equal(childResponse.statusCode, 201, childResponse.body);
+  const child = childResponse.json();
+  const classResponse = await parent('POST', '/api/outside-classes', {
+    title: '家庭晚课', start_date: today, days_of_week: [0, 1, 2, 3, 4, 5, 6],
+    start_time: '20:00', end_time: '21:00', total_lessons: 1, child_ids: [child.id]
+  });
+  assert.equal(classResponse.statusCode, 201, classResponse.body);
+  const cls = classResponse.json();
+  const stats = async () => {
+    const response = await parent('GET', `/api/outside-classes/${cls.id}/stats?child_id=${child.id}`);
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+
+  const result = await stats();
+  assert.equal(result.summary.pending, 1, 'at family 21:30 the 20:00–21:00 lesson is due');
+  assert.equal(result.summary.attended, 0, 'elapsed time does not confirm attendance');
+  const lesson = result.lessons.find(row => row.lesson_date === today);
+  assert.deepEqual([lesson.actual_date, lesson.start_time, lesson.end_time, lesson.confirmed],
+    [today, '20:00', '21:00', false]);
+
+  for (const [time, pending] of [['20:59:00', 0], ['21:00:00', 1]]) {
+    t.mock.timers.setTime(Date.parse(familyInstant(today, time)));
+    assert.equal((await stats()).summary.pending, pending, `family ${time}`);
+  }
+});
+
 test('attendance stays unknown until confirmed; moves, leave, fees and each child count independently', async t => {
   const { parent, ctx, cls, child, other, day, stats, attendance, fee } = await fixture(t);
   assert.deepEqual([(await stats()).summary.attended, (await stats()).summary.pending], [0, 5]);
