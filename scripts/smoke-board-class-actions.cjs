@@ -69,8 +69,8 @@ async function regressions(base, token, api) {
     const cls = await api('POST', '/outside-classes', { title: `钢琴-${name}`.slice(0, 20), child_ids: [child.id],
       start_date: shiftDate(today, -40), days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00',
       total_lessons: 100, bring: '回归乐谱', create_task: true });
-    async function board() {
-      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    async function board(options = {}) {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, ...options });
       contexts.push(context);
       await context.addInitScript(({ token, child }) => {
         sessionStorage.setItem('taskie_parent_token', token);
@@ -100,6 +100,112 @@ async function regressions(base, token, api) {
     } catch (error) { failed++; console.error(`FAIL ${name}:`, error); }
     finally { for (const context of contexts) await context.close(); }
   }
+  for (const fault of ['stats', 'schedule', 'classes', 'pending']) await scenario(`D4-${fault}`, async ({ child, cls, board }) => {
+    const original = await api('PUT', `/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: tomorrow,
+      kind: 'moved', new_date: tomorrow, new_start_time: '18:00', new_end_time: '19:00' });
+    const oldId = original.exceptions.find(e => e.date === tomorrow).id;
+    const width = ['schedule', 'pending'].includes(fault) ? 1180 : 390;
+    const page = await board({ viewport: { width, height: 844 }, colorScheme: ['schedule', 'classes'].includes(fault) ? 'dark' : 'light' });
+    page.setDefaultTimeout(10000);
+    await page.goto(`${base}/parent/schedule?child=${child.id}`, { waitUntil: 'networkidle' });
+    const card = page.locator(`[data-class-id="${cls.id}"]`);
+    const lesson = card.locator(`button[data-source-date="${tomorrow}"]`);
+    const form = page.getByRole('dialog', { name: new RegExp(cls.title) });
+    await lesson.click();
+    await form.locator('input[type=time]').first().fill('20:00');
+    await form.locator('input[type=time]').last().fill('21:00');
+    // A slow read proves the write response updates the visible lesson before refreshing.
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let holdReads = true;
+    let broken = true;
+    await page.route('**/api/**', async route => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === 'GET') {
+        if (fault === 'pending' && holdReads && (url.pathname.endsWith('/schedule') || url.pathname === '/api/outside-classes')) {
+          await gate;
+          return route.continue();
+        }
+        if (url.pathname.endsWith('/stats') || (broken && ((fault === 'schedule' && url.pathname.endsWith('/schedule')) ||
+            (fault === 'classes' && url.pathname === '/api/outside-classes')))) {
+          return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"刷新故障"}' });
+        }
+      }
+      return route.continue();
+    });
+    async function saveException() {
+      const response = page.waitForResponse(r => r.request().method() === 'PUT' && r.url().endsWith('/exceptions'));
+      await form.getByRole('button', { name: '保存', exact: true }).click();
+      const saved = await response; assert.equal(saved.status(), 200);
+      await form.waitFor({ state: 'detached' });
+      return (await saved.json()).exceptions.find(e => e.date === tomorrow);
+    }
+    try {
+      const saved = await saveException(); assert.notEqual(saved.id, oldId);
+      if (fault === 'pending') {
+        await lesson.getByText(/20:00–21:00/).waitFor();
+        assert.equal(await lesson.isDisabled(), true, 'do not edit during a pending course refresh');
+        holdReads = false;
+        release();
+      } else if (fault !== 'stats') {
+        await page.getByText('课程数据刷新失败，请刷新后再操作', { exact: true }).waitFor();
+        assert.equal(await lesson.isDisabled(), true);
+        assert.equal(await card.getByRole('button', { name: '编辑', exact: true }).isDisabled(), true);
+        broken = false;
+        await page.getByRole('button', { name: '刷新课程数据', exact: true }).click();
+      } else {
+        await page.getByRole('status').getByText('出勤与学费统计刷新失败，请重试', { exact: true }).waitFor();
+        assert.equal(await page.getByText('课程数据刷新失败，请刷新后再操作', { exact: true }).count(), 0);
+      }
+      await lesson.click();
+      assert.equal(await form.locator('input[type=time]').first().inputValue(), '20:00', 'never reopen with the old saved time');
+      await saveException(); // Saving an unchanged form must preserve the latest time and rotate its ID.
+      await lesson.click();
+      const latest = db.prepare('SELECT * FROM outside_class_exceptions WHERE class_id = ? AND child_id = ? AND date = ?').get(cls.id, child.id, tomorrow);
+      assert.equal(latest.new_start_time, '20:00'); assert.equal(latest.new_end_time, '21:00');
+      const restored = page.waitForResponse(r => r.request().method() === 'DELETE' && r.url().includes('/outside-class-exceptions/'));
+      await form.getByRole('button', { name: '恢复正常上课', exact: true }).click();
+      const response = await restored; assert.equal(response.status(), 200); assert.ok(response.url().endsWith(latest.id));
+      await form.waitFor({ state: 'detached' });
+      await lesson.click();
+      assert.equal(await form.getByRole('button', { name: '恢复正常上课', exact: true }).count(), 0);
+      await form.getByRole('button', { name: '🔁 调课', exact: true }).click();
+      await form.locator('input[type=time]').first().fill('20:00');
+      await form.locator('input[type=time]').last().fill('21:00');
+      await saveException();
+      assert.equal(db.prepare('SELECT new_start_time FROM outside_class_exceptions WHERE class_id = ? AND date = ?').get(cls.id, tomorrow).new_start_time, '20:00');
+    } finally {
+      release();
+      await page.unroute('**/api/**');
+    }
+  });
+  await scenario('D4-class-save-stats-500', async ({ child, cls, board }) => {
+    const page = await board();
+    page.setDefaultTimeout(10000);
+    await page.goto(`${base}/parent/schedule?child=${child.id}`, { waitUntil: 'networkidle' });
+    await page.route('**/api/outside-classes/stats?*', route => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"统计刷新失败"}' }));
+    const card = page.locator(`[data-class-id="${cls.id}"]`);
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    const edit = page.getByRole('dialog', { name: '编辑课外班', exact: true });
+    const title = '统计失败仍更新课程';
+    await edit.getByLabel('课程名称', { exact: true }).fill(title);
+    await edit.getByRole('button', { name: '保存', exact: true }).click();
+    await edit.waitFor({ state: 'detached' });
+    await card.getByText(title, { exact: true }).waitFor();
+    await card.getByRole('button', { name: '编辑', exact: true }).click();
+    assert.equal(await edit.getByLabel('课程名称', { exact: true }).inputValue(), title);
+    await edit.getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('button', { name: '➕ 新增课外班', exact: true }).click();
+    const create = page.getByRole('dialog', { name: '新增课外班', exact: true });
+    await create.getByLabel('课程名称', { exact: true }).fill('统计失败仍可新建');
+    await create.getByRole('button', { name: '周一', exact: true }).click();
+    await create.getByRole('button', { name: '保存', exact: true }).click();
+    await create.waitFor({ state: 'detached' });
+    await page.getByText('统计失败仍可新建', { exact: true }).waitFor();
+    await card.getByRole('button', { name: '删除', exact: true }).click();
+    await confirmation(page).getByRole('button', { name: '确认', exact: true }).click();
+    await card.waitFor({ state: 'detached' });
+  });
   for (const staleAction of ['modify', 'delete']) await scenario(`D1-${staleAction}`, async ({ child, cls, board, open, move }) => {
     await api('PUT', `/outside-classes/${cls.id}/exceptions`, { child_id: child.id, date: tomorrow, kind: 'moved',
       new_date: today, new_start_time: '16:00', new_end_time: '17:00' });
