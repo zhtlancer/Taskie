@@ -157,6 +157,8 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { confirmAction } from '../utils/confirmation';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
@@ -166,9 +168,10 @@ import TimetableEditor from '../components/TimetableEditor.vue';
 import OutsideClassModal from '../components/OutsideClassModal.vue';
 import ClassExceptionModal from '../components/ClassExceptionModal.vue';
 import ClassStatsPanel from '../components/ClassStatsPanel.vue';
-import { WEEKDAY_NAMES, WEEK_ORDER, addDays, lessonNote, localDate, shortDate, timeRange } from '../utils/schedule.js';
+import { WEEKDAY_NAMES, WEEK_ORDER, addDays, lessonNote, shortDate, timeRange } from '../utils/schedule.js';
+const calendar = useCalendarStore();
 
-const today = localDate();
+const today = businessDate(Date.now(), calendar.timeZone);
 const route = useRoute();
 const children = ref([]);
 const selectedChild = ref(null);

@@ -21,7 +21,7 @@
           <details v-if="study.legacy_corrections?.length">
             <summary class="min-h-[44px] cursor-pointer py-3">旧累计更正记录（{{ study.legacy_corrections.length }}）</summary>
             <article v-for="(entry, index) in study.legacy_corrections" :key="index" class="border-t py-2 space-y-1">
-              <p>{{ dateOf(entry.created_at) }} {{ businessClock(Date.parse(entry.created_at), study.time_zone) }} · 家长 · {{ formatDuration(entry.old_seconds) }} → {{ formatDuration(entry.new_seconds) }}</p>
+              <p>{{ dateOf(entry.created_at) }} {{ businessClock(Date.parse(entry.created_at), calendar.timeZone) }} · 家长 · {{ formatDuration(entry.old_seconds) }} → {{ formatDuration(entry.new_seconds) }}</p>
               <p class="whitespace-pre-line break-words text-slate-500 dark:text-slate-400">{{ entry.reason }}</p>
             </article>
           </details>
@@ -77,13 +77,14 @@
   </UiDialog>
 </template>
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
 import UiDialog from './UiDialog.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
 import { formatDuration, formatClock, paceLabel } from '../utils/taskTimer.js';
-import { localDate } from '../utils/schedule.js';
 import { businessDate, businessClock } from '../utils/businessDate.js';
+const calendar = useCalendarStore();
 const props = defineProps({ recordId: String, taskId: String, asParent: Boolean });
 const studyApi = {
   get: () => props.taskId ? api.getTaskStudy(props.taskId) : api.getHomeworkStudy(props.recordId),
@@ -98,14 +99,14 @@ const studyApi = {
 const emit = defineEmits(['close', 'saved']);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const study = ref(null), error = ref(''), notice = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
-const manualOpen = ref(false), manualDate = ref(localDate()), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
+const manualOpen = ref(false), manualDate = ref(businessDate(Date.now(), calendar.timeZone)), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
 let manualAttempt = null;
 const closeRestoredForm = () => { manualAttempt = null; manualOpen.value = false; manualId.value = requestId(); emit('close'); };
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onUnmounted(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 const legacyEdit = ref(null);
-const today = computed(() => businessDate(now.value, study.value?.time_zone));
-const dateOf = iso => businessDate(Date.parse(iso), study.value?.time_zone);
+const today = computed(() => businessDate(now.value, calendar.timeZone));
+const dateOf = iso => businessDate(Date.parse(iso), calendar.timeZone);
 watch(today, date => { if (!props.asParent) manualDate.value = date; });
 const overdue = computed(() => study.value && study.value.record.task.due_date < today.value);
 const canStart = computed(() => !props.taskId || (study.value?.record.task.track_time && !overdue.value && study.value?.record.assigned_date <= today.value));

@@ -160,10 +160,13 @@
 </template>
 
 <script setup>
+import { businessDate } from '../utils/businessDate.js';
+import { useCalendarStore } from '../stores/calendar';
 import { confirmAction } from '../utils/confirmation';
 import { computed, ref } from 'vue';
 import api from '../api/client';
-import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, addDays, localDate, mondayOf, presetSlots } from '../utils/schedule.js';
+import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, addDays, mondayOf, presetSlots } from '../utils/schedule.js';
+const calendar = useCalendarStore();
 
 const props = defineProps({
   childId: { type: String, required: true },
@@ -175,7 +178,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved']);
 
 const newId = () => `new-${Math.random().toString(36).slice(2)}`;
-const today = localDate();
+const today = businessDate(Date.now(), calendar.timeZone);
 const thisMonday = mondayOf(today);
 
 // Whether this week is an A week, from the stored anchor (whose week is an A week).

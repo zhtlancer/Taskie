@@ -1,6 +1,6 @@
 <template>
   <div class="w-full h-full min-h-[260px] flex flex-col justify-center">
-    <Bar :data="chartData" :options="chartOptions" />
+    <Bar :data="chartData" :options="chartOptions" role="img" :aria-label="chartData.labels.join('，')" />
   </div>
 </template>
 
@@ -33,11 +33,11 @@ const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五'
 const chartData = computed(() => {
   const labels = props.historyData.map(item => {
     if (!item.date) return '';
-    const d = new Date(item.date);
-    const dayName = weekdayNames[d.getDay()];
+    const d = new Date(`${item.date}T00:00:00Z`);
+    const dayName = weekdayNames[d.getUTCDay()];
     // Days with nothing scheduled are rest days, not failures; a day never opened had tasks it missed.
-    if (item.not_opened) return `${d.getMonth() + 1}/${d.getDate()} (${dayName}·未打卡)`;
-    return item.total_tasks === 0 ? `${d.getMonth() + 1}/${d.getDate()} (${dayName}·休息)` : `${d.getMonth() + 1}/${d.getDate()} (${dayName})`;
+    if (item.not_opened) return `${d.getUTCMonth() + 1}/${d.getUTCDate()} (${dayName}·未打卡)`;
+    return item.total_tasks === 0 ? `${d.getUTCMonth() + 1}/${d.getUTCDate()} (${dayName}·休息)` : `${d.getUTCMonth() + 1}/${d.getUTCDate()} (${dayName})`;
   });
 
   const completionRates = props.historyData.map(item => {

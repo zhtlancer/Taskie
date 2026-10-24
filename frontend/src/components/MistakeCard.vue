@@ -91,7 +91,10 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import PrivatePhoto from './PrivatePhoto.vue';
+const calendar = useCalendarStore();
 defineProps({
   mistake: {
     type: Object,
@@ -112,7 +115,7 @@ function subjectColor(subject) {
 
 function formatDate(isoStr) {
   if (!isoStr) return '';
-  const d = new Date(isoStr);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  const date = businessDate(isoStr, calendar.timeZone);
+  return date ? `${Number(date.slice(5, 7))}月${Number(date.slice(8))}日` : '';
 }
 </script>

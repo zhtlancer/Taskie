@@ -4,10 +4,6 @@ export const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', 
 export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 export const SCHOOL_SUBJECTS = ['语文', '数学', '英语', '科学', '道德与法治', '音乐', '美术', '体育', '信息科技', '劳动', '书法', '班会'];
 
-export function localDate(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 export function addDays(date, days) {
   const d = new Date(`${date}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -36,7 +32,7 @@ const weekdayName = date => WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDa
 
 // The deadline of a task that may wait: carried in from an earlier day ("周五的作业 · 周日前完成",
 // "… · 今天要完成" on its last day), or its own day's task due later ("周日前完成即可").
-export function deadlineText(task, today = localDate()) {
+export function deadlineText(task, today) {
   if (!task.due_date) return '';
   const due = task.due_date === today ? '今天要完成' : `${weekdayName(task.due_date)}${task.due_date > addDays(today, 6) ? ` ${shortDate(task.due_date)}` : ''}前完成`;
   if (task.carried_from) return `${weekdayName(task.carried_from)}的作业 · ${due}`;

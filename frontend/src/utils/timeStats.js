@@ -1,5 +1,5 @@
 // Time stats: chart colors, ranges and the wording shared by the parent and child views.
-import { addDays, localDate } from './schedule.js';
+import { addDays } from './schedule.js';
 
 // Subjects keep one color everywhere (validated as a categorical set on the white card surface;
 // yellow and aqua sit below 3:1, so charts always carry values in a legend, labels or a table).
@@ -30,7 +30,7 @@ export function minutesDelta(current, previous) {
 }
 
 // The ranges a parent can pick: the last 7 or 30 days, and the current term from the timetable.
-export function rangePresets(timetables = [], today = localDate()) {
+export function rangePresets(timetables = [], today) {
   const presets = [
     { key: '7', label: '近 7 天', from: addDays(today, -6), to: today },
     { key: '30', label: '近 30 天', from: addDays(today, -29), to: today }

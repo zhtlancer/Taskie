@@ -236,6 +236,8 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
@@ -247,6 +249,7 @@ import TimeDailyChart from '../components/TimeDailyChart.vue';
 import { formatMinutes, improvements } from '../utils/timeStats.js';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
+const calendar = useCalendarStore();
 
 const route = useRoute();
 const childStore = useChildStore();
@@ -258,10 +261,7 @@ const lastWeek = ref(null);
 const goals = ref([]);
 const timeStats = ref(null);
 const childImprovements = computed(() => timeStats.value ? improvements(timeStats.value) : []);
-const today = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-})();
+const today = businessDate(Date.now(), calendar.timeZone);
 // Progress-based long-term tasks that are running or finished within the last 30 days.
 const chartGoals = computed(() => {
   const d = new Date(`${today}T00:00:00Z`);
@@ -299,8 +299,8 @@ onMounted(async () => {
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
-  const d = new Date(dateStr);
+  const d = new Date(`${dateStr}T00:00:00Z`);
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return `${d.getMonth() + 1}月${d.getDate()}日 (${weekDays[d.getDay()]})`;
+  return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日 (${weekDays[d.getUTCDay()]})`;
 }
 </script>

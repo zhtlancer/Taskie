@@ -55,23 +55,25 @@
 </template>
 
 <script setup>
+import { addDays } from '../utils/schedule.js';
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { confirmAction, promptAction } from '../utils/confirmation';
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import StudySessionsModal from '../components/StudySessionsModal.vue';
+const calendar = useCalendarStore();
 
 const route = useRoute();
-const d = new Date();
-d.setDate(d.getDate() - 1);
-const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const yesterday = addDays(businessDate(Date.now(), calendar.timeZone), -1);
 const date = ref(yesterday), childName = ref('孩子');
 const tasks = ref([]), events = ref([]), minutes = ref({});
 const studyTask = ref(null);
 const loading = ref(false), busy = ref(false), error = ref('');
 let requestId = 0;
-const formatTime = value => new Date(value).toLocaleString('zh-CN', { hour12: false });
+const formatTime = value => new Date(value).toLocaleString('zh-CN', { hour12: false, timeZone: calendar.timeZone });
 
 async function load() {
   const id = ++requestId;

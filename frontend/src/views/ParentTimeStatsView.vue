@@ -205,6 +205,8 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
@@ -214,6 +216,7 @@ import FinishTimeChart from '../components/FinishTimeChart.vue';
 import Sparkline from '../components/Sparkline.vue';
 import { SUBJECT_COLORS, formatMinutes, formatPerUnit, minutesDelta, rangePresets, subjectOf } from '../utils/timeStats.js';
 import { shortDate } from '../utils/schedule.js';
+const calendar = useCalendarStore();
 
 const route = useRoute();
 const children = ref([]);
@@ -229,7 +232,7 @@ let disposed = false;
 let statsController;
 let timetableController;
 
-const ranges = computed(() => rangePresets(timetables.value));
+const ranges = computed(() => rangePresets(timetables.value, businessDate(Date.now(), calendar.timeZone)));
 const range = computed(() => ranges.value.find(r => r.key === rangeKey.value) || ranges.value[0]);
 const workDays = computed(() => stats.value ? stats.value.days.filter(day => day.sessions).length : 0);
 const compareText = computed(() => {

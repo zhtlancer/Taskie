@@ -313,12 +313,15 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
 import TimingFields from '../components/TimingFields.vue';
+const calendar = useCalendarStore();
 
 const children = ref([]);
 const templates = ref([]);
@@ -344,10 +347,7 @@ const statusInfo = {
 const standaloneGoals = computed(() => goals.value.filter(goal => !goal.period_id));
 const childTemplates = computed(() => templates.value.filter(t => t.child_ids === null || t.child_ids?.includes(selectedChild.value?.id)));
 
-const localToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const localToday = () => businessDate(Date.now(), calendar.timeZone);
 
 onMounted(async () => {
   try {
