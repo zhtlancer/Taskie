@@ -6,19 +6,22 @@
 </template>
 
 <script setup>
+import { businessDate } from '../utils/businessDate.js';
+import { useCalendarStore } from '../stores/calendar';
 import { useChartTheme, useChartInk } from '../utils/chartTheme';
 const chartInk = useChartInk();
 import { computed } from 'vue';
 import { Line } from 'vue-chartjs';
 import { Chart as ChartJS, CategoryScale, LinearScale, LineElement, PointElement, Tooltip } from 'chart.js';
 import { SUBJECT_COLORS } from '../utils/timeStats.js';
-import { WEEKDAY_NAMES, localDate } from '../utils/schedule.js';
+import { WEEKDAY_NAMES } from '../utils/schedule.js';
+const calendar = useCalendarStore();
 
 ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip);
 
 const props = defineProps({ days: { type: Array, required: true } });
 // Today's evening is not over, so its latest completion so far is left out.
-const days = computed(() => props.days.filter(day => day.date < localDate()));
+const days = computed(() => props.days.filter(day => day.date < businessDate(Date.now(), calendar.timeZone)));
 
 // Evening minutes: times before 04:00 belong to the evening before and sort after midnight.
 const toMinutes = time => {

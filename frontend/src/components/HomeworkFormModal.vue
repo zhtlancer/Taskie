@@ -111,7 +111,6 @@ import api from '../api/client';
 import TimingFields from './TimingFields.vue';
 import UiDialog from './UiDialog.vue';
 import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, shortDate } from '../utils/schedule.js';
-import { businessDate } from '../utils/businessDate.js';
 import { courseLabel } from '../utils/homework.js';
 
 const props = defineProps({
@@ -121,7 +120,7 @@ const props = defineProps({
   // Set to change a record; left out to record new homework.
   record: { type: Object, default: null },
   // The family's date, not the device's.
-  today: { type: String, default: () => businessDate() }
+  today: { type: String, required: true }
 });
 const emit = defineEmits(['close', 'saved']);
 

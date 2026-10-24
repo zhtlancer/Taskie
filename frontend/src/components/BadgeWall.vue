@@ -106,8 +106,11 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { ref } from 'vue';
 import { playBadgeUnlocked, playClick } from '../utils/sound';
+const calendar = useCalendarStore();
 
 defineProps({
   badges: {
@@ -134,7 +137,7 @@ function closeBadgeModal() {
 
 function formatDate(isoStr) {
   if (!isoStr) return '';
-  const d = new Date(isoStr);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  const date = businessDate(isoStr, calendar.timeZone);
+  return date ? `${Number(date.slice(5, 7))}月${Number(date.slice(8))}日` : '';
 }
 </script>

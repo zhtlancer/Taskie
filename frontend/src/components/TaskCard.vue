@@ -80,11 +80,14 @@
 </template>
 
 <script setup>
+import { businessDate } from '../utils/businessDate.js';
+import { useCalendarStore } from '../stores/calendar';
 import { ref, computed, nextTick } from 'vue';
 import { playTaskComplete, playTaskUncomplete } from '../utils/sound';
 import TaskTimer from './TaskTimer.vue';
 import { formatClock, formatDuration, liveSeconds, needsDurationPrompt, usesStudySessions } from '../utils/taskTimer.js';
 import { deadlineText } from '../utils/schedule.js';
+const calendar = useCalendarStore();
 
 const props = defineProps({
   task: {
@@ -140,7 +143,7 @@ const isWeeklyTargetMet = computed(() => {
 });
 
 // Carried from an earlier day ("周五的作业 · 周日前完成"), or allowed to wait until a later deadline.
-const deadlineLabel = computed(() => props.task.is_completed && !props.task.carried_from ? '' : deadlineText(props.task));
+const deadlineLabel = computed(() => props.task.is_completed && !props.task.carried_from ? '' : deadlineText(props.task, businessDate(Date.now(), calendar.timeZone)));
 const deadlineToday = computed(() => !props.task.is_completed && props.task.carried_from && !props.task.is_optional);
 
 const skipPending = computed(() => !props.task.is_completed && props.task.skip_request?.status === 'pending');

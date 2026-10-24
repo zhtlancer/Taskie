@@ -247,6 +247,7 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
@@ -254,11 +255,12 @@ import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import UiDialog from '../components/UiDialog.vue';
-import { DEFAULT_TIME_ZONE, businessDate } from '../utils/businessDate.js';
+import { businessDate } from '../utils/businessDate.js';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
 import { WEEKDAY_NAMES, addDays, mondayOf, shortDate } from '../utils/schedule.js';
 import { courseLabel } from '../utils/homework.js';
+const calendar = useCalendarStore();
 
 // What became of a record's task.
 const STATE = {
@@ -285,7 +287,7 @@ const childId = computed(() => route.params.id);
 // A parent opening the child's pages records and settles homework as the parent.
 const asParent = currentRole() === 'parent';
 // Due dates follow the family's calendar and roll over at its midnight, as the board does.
-const timeZone = ref(DEFAULT_TIME_ZONE);
+const timeZone = computed(() => calendar.timeZone);
 const now = ref(Date.now());
 const today = computed(() => businessDate(now.value, timeZone.value));
 const dayName = date => `${shortDate(date)} ${WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()]}`;
@@ -413,9 +415,6 @@ function retry() {
   load();
 }
 
-async function loadCalendar() {
-  try { timeZone.value = (await api.getCalendar()).time_zone || DEFAULT_TIME_ZONE; } catch { /* keep the default zone */ }
-}
 
 // Another device may have finished or approved homework while this page sat in the background.
 function onResume() {
@@ -483,7 +482,6 @@ async function savePoints(course, value) {
 onMounted(() => {
   document.addEventListener('visibilitychange', onResume);
   window.addEventListener('pageshow', onResume);
-  loadCalendar();
   load();
 });
 </script>

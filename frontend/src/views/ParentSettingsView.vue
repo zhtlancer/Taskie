@@ -13,7 +13,7 @@
         <p v-if="!info.backups.length" class="text-slate-500 dark:text-slate-400">暂无备份</p>
         <ul class="divide-y">
           <li v-for="item in info.backups" :key="item.name" class="py-3 flex items-center justify-between gap-4">
-            <span>{{ new Date(item.created_at).toLocaleString('zh-CN') }} · {{ backupSize(item.size) }}</span>
+            <span>{{ formatTime(item.created_at) }} · {{ backupSize(item.size) }}</span>
             <button :disabled="busy" @click="download(item)" class="min-h-[44px] text-brand-600 dark:text-brand-300 font-bold">下载备份</button>
           </li>
         </ul>
@@ -127,6 +127,7 @@
   </div>
 </template>
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
 import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
@@ -134,7 +135,8 @@ import api from '../api/client';
 import { clearTokens, endSession } from '../utils/session.js';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.js';
-import { businessDate, DEFAULT_TIME_ZONE } from '../utils/businessDate.js';
+import { businessDate } from '../utils/businessDate.js';
+const calendar = useCalendarStore();
 const router = useRouter();
 const info = ref({ backups: [], interval_hours: 0, retention: 7 });
 const busy = ref(false), message = ref(''), file = ref(null), restorePin = ref(''), confirmed = ref(false), oldPin = ref(''), newPin = ref('');
@@ -143,12 +145,12 @@ const backupSize = size => size < 1048576 ? `${(size / 1024).toFixed(1)} KB` : `
 // Remove the old device-clock marker; export history now belongs to the server.
 localStorage.removeItem('taskie_photo_export_at');
 const skippedPhotos = ref([]), includedPhotos = ref(0);
-const photoFile = ref(null), timeZone = ref(DEFAULT_TIME_ZONE);
+const photoFile = ref(null), timeZone = computed(() => calendar.timeZone);
 const devices = ref([]), pairCode = ref(''), pairLabel = ref(''), deviceEvents = ref([]), showAllEvents = ref(false);
 const shownEvents = computed(() => (showAllEvents.value ? deviceEvents.value : deviceEvents.value.slice(0, 10)));
 async function load() {
-  const [backups, authorized, events, calendar] = await Promise.all([api.getBackups(), api.getDevices(), api.getDeviceEvents(), api.getCalendar()]);
-  info.value = backups; devices.value = authorized; deviceEvents.value = events; timeZone.value = calendar.time_zone;
+  const [backups, authorized, events] = await Promise.all([api.getBackups(), api.getDevices(), api.getDeviceEvents()]);
+  info.value = backups; devices.value = authorized; deviceEvents.value = events;
 }
 async function loadPhotoStatus() { info.value = await api.getBackups(); }
 function refreshPhotoStatus() {
@@ -157,7 +159,7 @@ function refreshPhotoStatus() {
   }
 }
 async function loadDevices() { [devices.value, deviceEvents.value] = await Promise.all([api.getDevices(), api.getDeviceEvents()]); }
-const formatTime = time => (time ? new Date(time).toLocaleString('zh-CN') : '未知');
+const formatTime = time => (time ? new Date(time).toLocaleString('zh-CN', { timeZone: calendar.timeZone, hour12: false }) : '未知');
 function approveDevice() { return run(async () => {
   const device = await api.approveDevice(pairCode.value, pairLabel.value);
   pairCode.value = ''; pairLabel.value = '';

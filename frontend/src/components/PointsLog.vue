@@ -45,6 +45,9 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate, businessClock } from '../utils/businessDate.js';
+const calendar = useCalendarStore();
 defineProps({
   logs: {
     type: Array,
@@ -54,12 +57,10 @@ defineProps({
 
 function formatTime(isoStr) {
   if (!isoStr) return '';
-  const d = new Date(isoStr);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-
-  const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (isToday) return `今天 ${timeStr}`;
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${timeStr}`;
+  const date = businessDate(isoStr, calendar.timeZone);
+  const time = businessClock(isoStr, calendar.timeZone);
+  if (!date) return '';
+  if (date === businessDate(Date.now(), calendar.timeZone)) return `今天 ${time}`;
+  return `${Number(date.slice(5, 7))}月${Number(date.slice(8))}日 ${time}`;
 }
 </script>

@@ -298,6 +298,7 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import confetti from 'canvas-confetti';
@@ -320,7 +321,8 @@ import { addDays, lessonHappens } from '../utils/schedule.js';
 import { playAllDone, playBadgeUnlocked, playClick, playTaskComplete } from '../utils/sound';
 import { LONG_TIMER_SECONDS, formatDuration, liveSeconds, needsDurationPrompt, withClock } from '../utils/taskTimer.js';
 import { useParentSession } from '../composables/useParentSession.js';
-import { businessDate, businessClock, businessDayLabel, DEFAULT_TIME_ZONE } from '../utils/businessDate.js';
+import { businessDate, businessClock, businessDayLabel } from '../utils/businessDate.js';
+const calendar = useCalendarStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -350,7 +352,7 @@ const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
 // Running long-term tasks, plus any finished today so the child sees the celebration.
 const activeGoals = computed(() => goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString.value));
-const timeZone = ref(DEFAULT_TIME_ZONE);
+const timeZone = computed(() => calendar.timeZone);
 const unfinished = ref([]);
 let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, loadSerial = 0;
 
@@ -498,7 +500,6 @@ async function loadUnfinished() {
   try {
     const result = await api.getUnfinishedStudy(id);
     if (serial !== unfinishedSerial || id !== childId.value) return;
-    timeZone.value = result.time_zone;
     unfinished.value = result.items;
   } catch (err) { console.error('Failed to load unfinished study:', err); }
 }

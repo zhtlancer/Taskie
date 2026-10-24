@@ -64,17 +64,20 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import DaySchedule from '../components/DaySchedule.vue';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import { playClick } from '../utils/sound';
-import { WEEKDAY_NAMES, addDays, localDate, mondayOf, shortDate } from '../utils/schedule.js';
+import { WEEKDAY_NAMES, addDays, mondayOf, shortDate } from '../utils/schedule.js';
+const calendar = useCalendarStore();
 
 const route = useRoute();
 const childId = computed(() => route.params.id);
-const today = localDate();
+const today = businessDate(Date.now(), calendar.timeZone);
 const weekStart = ref(mondayOf(today));
 const days = ref([]);
 const selectedDate = ref(today);

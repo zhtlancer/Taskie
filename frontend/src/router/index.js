@@ -19,6 +19,7 @@ const ParentScheduleView = () => import('../views/ParentScheduleView.vue');
 const ParentTimeStatsView = () => import('../views/ParentTimeStatsView.vue');
 const ParentPinSetupView = () => import('../views/ParentPinSetupView.vue');
 const ParentSettingsView = () => import('../views/ParentSettingsView.vue');
+import { useCalendarStore } from '../stores/calendar';
 import { hasSession, mustChangePin } from '../utils/session.js';
 
 const routes = [
@@ -125,10 +126,11 @@ const router = createRouter({
   history: createWebHistory(),
   routes
 });
-router.beforeEach(to => {
+router.beforeEach(async to => {
   if (to.path.startsWith('/parent/') && to.path !== '/parent/login' && !hasSession('parent')) return '/parent/login';
   if (to.path.startsWith('/parent/') && !['/parent/login', '/parent/setup-pin'].includes(to.path) && mustChangePin()) return '/parent/setup-pin';
   if (to.path.startsWith('/child/') && !hasSession('parent') && !hasSession('child', to.params.id)) return '/';
+  if (to.path.startsWith('/child/') || (to.path.startsWith('/parent/') && !['/parent/login', '/parent/setup-pin'].includes(to.path))) await useCalendarStore().load();
 });
 
 export default router;

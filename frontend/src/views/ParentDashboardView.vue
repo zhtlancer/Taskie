@@ -324,6 +324,8 @@
 </template>
 
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
+import { businessDate } from '../utils/businessDate.js';
 import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
@@ -332,6 +334,7 @@ import { formatMinutes } from '../utils/timeStats.js';
 import TimingFields from '../components/TimingFields.vue';
 import { courseLabel } from '../utils/homework.js';
 import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerTarget, withClock } from '../utils/taskTimer.js';
+const calendar = useCalendarStore();
 
 const childrenStats = ref([]);
 
@@ -390,20 +393,17 @@ const addDays = (date, days) => {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 };
-const today = (() => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-})();
+const today = computed(() => businessDate(now.value, calendar.timeZone));
 
 function dayLabel(date) {
-  if (date === today) return '今天';
-  if (date === addDays(today, 1)) return '明天';
+  if (date === today.value) return '今天';
+  if (date === addDays(today.value, 1)) return '明天';
   return date.slice(5).replace('-', '/');
 }
 
 function openAdhoc(child) {
   adhocError.value = '';
-  adhocForm.value = { child, title: '', subject: '语文', date: today, due_date: '', points: 10, track_time: false, expected_minutes: null };
+  adhocForm.value = { child, title: '', subject: '语文', date: today.value, due_date: '', points: 10, track_time: false, expected_minutes: null };
 }
 
 const activeGoals = goals => goals.filter(goal => goal.status === 'active');
@@ -511,7 +511,7 @@ async function loadDashboard() {
     const children = await api.getChildren();
     const statsPromises = children.map(async (child) => {
       const [stats, week, adhoc, goals, time, timer, classOverview] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
-        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today, today).catch(() => null), loadTimer(child.id), loadClassOverview(child.id)]);
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, today.value, today.value).catch(() => null), loadTimer(child.id), loadClassOverview(child.id)]);
       return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer, classOverview };
     });
     [childrenStats.value] = await Promise.all([Promise.all(statsPromises), loadSkipRequests(), loadHomeworkRequests(), loadCompletionRequests()]);

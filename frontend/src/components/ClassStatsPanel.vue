@@ -47,7 +47,7 @@
       <details v-if="details.changes?.length" class="mb-4 rounded-2xl border border-slate-200 dark:border-slate-700 p-3 text-sm">
         <summary class="min-h-[44px] flex items-center font-bold cursor-pointer">修改记录（最近 {{ details.changes.length }} 条）</summary>
         <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-300">
-          <li v-for="change in details.changes" :key="`${change.created_at}-${change.kind}-${change.lesson_date}`">{{ new Date(change.created_at).toLocaleString('zh-CN', { timeZone: details.summary.time_zone }) }} · {{ changeText(change) }}</li>
+          <li v-for="change in details.changes" :key="`${change.created_at}-${change.kind}-${change.lesson_date}`">{{ new Date(change.created_at).toLocaleString('zh-CN', { timeZone: calendar.timeZone }) }} · {{ changeText(change) }}</li>
         </ul>
       </details>
 
@@ -86,11 +86,13 @@
   </UiDialog>
 </template>
 <script setup>
+import { useCalendarStore } from '../stores/calendar';
 import { ref, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
 import api from '../api/client';
 import { addDays } from '../utils/schedule.js';
 import { attendanceLabels, changeText, feeText, parseFee } from '../utils/classStats.js';
+const calendar = useCalendarStore();
 const props = defineProps({ summary: { type: Object, required: true }, child: { type: Object, required: true } });
 const emit = defineEmits(['changed']);
 const opened = ref(false), details = ref(null), draft = ref(null), fee = ref(''), error = ref(''), busy = ref(false), fetching = ref(false);
