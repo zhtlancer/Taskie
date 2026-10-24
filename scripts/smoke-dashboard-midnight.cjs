@@ -114,18 +114,26 @@ async function main() {
     }
     await shot(page, `${event}-after`);
   });
-  await check('unknown calendar sends no dashboard date requests; retry uses NY date', async () => {
-    const page = await open();
+  for (const scheme of ['light', 'dark']) await check(`${scheme}: unknown calendar has no empty state or summary; retry uses NY date`, async () => {
+    const page = await open(scheme);
     const dates = [];
     page.on('request', r => { if (r.url().includes('/time-stats')) dates.push(new URL(r.url()).searchParams.get('from')); });
     await page.route('**/api/calendar', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
     await page.goto(`${base}/parent/dashboard`, { waitUntil: 'networkidle' });
     await page.getByRole('alert').filter({ hasText: '暂按 UTC' }).waitFor();
+    await page.getByRole('heading', { name: '今日作业完成概览' }).waitFor();
+    await shot(page, `${scheme}-unknown-calendar`);
     assert.deepEqual(dates, []);
+    assert.equal(await page.getByText('还没有添加小朋友账号哦', { exact: true }).count(), 0);
+    assert.equal(await page.getByRole('link', { name: '立即添加小朋友' }).count(), 0);
+    assert.equal(await page.locator('[aria-label="今日摘要"]').count(), 0, 'unknown values must not be rendered as zero');
+    await page.getByRole('status').filter({ hasText: '正在等待确认家庭时区' }).waitFor();
     await page.unroute('**/api/calendar');
     await page.getByRole('button', { name: '重新读取家庭时区' }).click();
     await oldDay(page);
     assert.deepEqual(dates, ['2026-10-21']);
+    await page.locator('[aria-label="今日摘要"]').getByText('1 位', { exact: true }).waitFor();
+    await shot(page, `${scheme}-calendar-recovered`);
   });
   await check('a delayed previous-day response cannot overwrite the new day; no loading flash', async () => {
     const page = await open();
@@ -164,6 +172,38 @@ async function main() {
     await page.unrouteAll({ behavior: 'wait' });
     await newDay(page);
     assert.equal(await draft.inputValue(), '跨夜保留的草稿');
+  });
+  await check('parent approves a homework request after family midnight; task and refreshed stats use the new day', async () => {
+    const page = await open();
+    const record = app.services.homeworkService.create(child.id, { course_kind: 'school', subject: '语文',
+      content: '跨日后审批的作业', assigned_date: '2026-10-21', due_date: '2026-10-22', create_task: true }, 'child');
+    await page.goto(`${base}/parent/dashboard`);
+    const request = page.locator('section').filter({ hasText: '孩子记的作业，等你确认生成任务' }).locator('li').filter({ hasText: record.content });
+    await request.getByRole('button', { name: '生成任务', exact: true }).waitFor();
+    await page.getByText(/完成 2 \/ 2 项/).waitFor();
+    now = after;
+    await page.clock.fastForward(120000);
+    await page.getByText(/完成 0 \/ 2 项/).waitFor();
+    await page.locator('li').filter({ hasText: '等待生成的作业' }).locator('button:disabled').waitFor();
+    assert.equal(await request.getByRole('button', { name: '生成任务', exact: true }).isEnabled(), true);
+    const dates = [];
+    page.on('request', r => { if (r.url().includes('/time-stats')) dates.push(new URL(r.url()).searchParams.get('from')); });
+    const saved = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith(`/homework/${record.id}/task`));
+    await request.getByRole('button', { name: '生成任务', exact: true }).click();
+    const response = await saved;
+    assert.equal(response.status(), 201);
+    const approved = await response.json();
+    assert.equal(approved.task_requested, false);
+    assert.equal(approved.task.date, '2026-10-22');
+    await request.waitFor({ state: 'detached' });
+    await page.getByText(/完成 0 \/ 3 项/).waitFor();
+    await page.getByText('今日积分 +0', { exact: true }).waitFor();
+    await page.locator('li').filter({ hasText: record.content }).getByText('今天', { exact: true }).waitFor();
+    assert.deepEqual(dates, ['2026-10-22']);
+    const stats = await api('GET', `/children/${child.id}/stats`);
+    assert.deepEqual([stats.today_total_tasks, stats.today_completed_tasks, stats.today_points], [3, 0, 0]);
+    assert.equal((await api('GET', '/homework-requests')).some(r => r.id === record.id), false);
+    await shot(page, 'approval-after-midnight');
   });
   assert.deepEqual(errors, []);
   assert.equal(failures, 0, `${failures} dashboard regressions failed`);

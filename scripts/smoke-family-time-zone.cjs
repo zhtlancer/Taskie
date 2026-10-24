@@ -5,6 +5,9 @@ const os = require('node:os');
 const path = require('node:path');
 const RealDate = Date;
 const zone = process.argv[2] || process.env.TIME_ZONE || 'America/New_York';
+// Exercise the lazy dashboard route arriving after the global calendar alert.
+const dashboardDelay = Number(process.env.SMOKE_DASHBOARD_DELAY_MS || 0);
+assert.ok(Number.isFinite(dashboardDelay) && dashboardDelay >= 0, 'invalid dashboard delay');
 process.env.TIME_ZONE = zone;
 const instant = zone === 'Asia/Shanghai' ? '2026-10-20T16:30:00Z' : '2026-10-21T05:30:00Z';
 global.Date = class extends RealDate {
@@ -56,6 +59,10 @@ async function main() {
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message); });
     await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+    if (dashboardDelay) await page.route('**/assets/ParentDashboardView-*.js', async route => {
+      await new Promise(resolve => setTimeout(resolve, dashboardDelay));
+      await route.continue();
+    });
     return page;
   };
   const shot = async (page, name) => {
@@ -136,10 +143,16 @@ async function main() {
       await blocked.route('**/api/calendar', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
       await blocked.goto(`${base}/parent/dashboard`);
       await blocked.getByRole('alert').filter({ hasText: '暂按 UTC' }).waitFor();
+      // The global alert can render before this lazy route has even loaded.
+      await blocked.getByRole('heading', { name: '今日作业完成概览' }).waitFor();
       const add = blocked.getByRole('button', { name: '➕ 添加', exact: true }).first();
       // The dashboard now waits for a confirmed family date before loading its cards.
       assert.equal(await add.count(), 0, 'untrusted date must not load date-dependent cards');
       assert.equal(await blocked.locator('fieldset:disabled').count(), 1);
+      await blocked.getByRole('status').filter({ hasText: '正在等待确认家庭时区' }).waitFor();
+      assert.equal(await blocked.getByText('还没有添加小朋友账号哦', { exact: true }).count(), 0);
+      assert.equal(await blocked.getByRole('link', { name: '立即添加小朋友' }).count(), 0);
+      assert.equal(await blocked.locator('[aria-label="今日摘要"]').count(), 0);
       await blocked.getByText('无法确认家庭日期，请重新读取家庭时区后再操作', { exact: false }).waitFor();
       // No date-dependent form is available while the calendar is untrusted.
       assert.equal(await blocked.locator('form').count(), 0);

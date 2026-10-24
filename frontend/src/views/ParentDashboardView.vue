@@ -91,7 +91,7 @@
           <router-link :to="`/child/${record.child_id}/homework`" class="text-indigo-600 dark:text-indigo-300">查看学习记录</router-link>
         </div>
       </section>
-      <div class="grid grid-cols-3 gap-2 mb-5" aria-label="今日摘要">
+      <div v-if="calendar.ready && !loading" class="grid grid-cols-3 gap-2 mb-5" aria-label="今日摘要">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">小朋友</p><p class="text-xl font-black text-slate-800 dark:text-slate-100">{{ childrenStats.length }} <span class="text-xs">位</span></p></div>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">今日完成</p><p class="text-xl font-black text-emerald-600 dark:text-emerald-300">{{ overallCompletionRate }}%</p></div>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">累计积分</p><p class="text-xl font-black text-amber-600 dark:text-amber-300">{{ totalPointsIssued }}</p></div>
@@ -104,7 +104,12 @@
         各个小朋友实时看板
       </h3>
 
-      <div v-if="loading" class="text-center py-16 text-brand-500 dark:text-brand-400 font-bold">
+      <div v-if="!calendar.ready" role="status" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
+        <p class="text-sm font-bold text-slate-600 dark:text-slate-300">正在等待确认家庭时区…</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">请使用顶部的“重新读取家庭时区”入口，确认后即可查看孩子的进展。</p>
+      </div>
+
+      <div v-else-if="loading" class="text-center py-16 text-brand-500 dark:text-brand-400 font-bold">
         <span class="animate-spin mr-2">⏳</span> 正在统计今日作业进展...
       </div>
 
