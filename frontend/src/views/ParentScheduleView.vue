@@ -67,6 +67,14 @@
             <h3 class="text-lg font-black text-slate-800 dark:text-slate-100">🎨 课外班</h3>
             <button type="button" class="px-4 py-2 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold" @click="classModal = { cls: null }">➕ 新增课外班</button>
           </div>
+          <div v-if="courseDataFailed" role="alert" class="mb-3 rounded-xl p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">
+            <p>课程数据刷新失败，请刷新后再操作</p>
+            <button type="button" :disabled="courseRefreshing" class="min-h-11 min-w-11 px-3 py-2 disabled:opacity-50" @click="reload">刷新课程数据</button>
+          </div>
+          <div v-if="statsError" role="status" class="mb-3 rounded-xl p-3 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 text-xs font-bold">
+            <p>出勤与学费统计刷新失败，请重试</p>
+            <button type="button" class="min-h-11 min-w-11 px-3 py-2" @click="refreshClassStats">刷新统计</button>
+          </div>
           <p v-if="!classes.length" class="text-xs font-bold text-slate-400 py-2">还没有课外班。例如“钢琴课 每周三 16:30–17:30 少年宫”。</p>
           <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div v-for="cls in classes" :key="cls.id" :data-class-id="cls.id" class="p-4 rounded-2xl border border-violet-100 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/40">
@@ -78,7 +86,7 @@
                   </div>
                 </div>
                 <div class="flex shrink-0 gap-1">
-                  <button type="button" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300" @click="classModal = { cls }">编辑</button>
+                  <button type="button" :disabled="courseActionsDisabled" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 disabled:opacity-50" @click="classModal = { cls }">编辑</button>
                   <button type="button" class="px-2 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-rose-500 dark:hover:text-rose-400" @click="removeClass(cls)">删除</button>
                 </div>
               </div>
@@ -106,9 +114,10 @@
                     :key="lesson.date"
                     :data-source-date="lesson.date"
                     type="button"
-                    class="px-2 py-1 rounded-lg border text-xs font-bold font-chinese"
+                    :disabled="courseActionsDisabled"
+                    class="px-2 py-1 rounded-lg border text-xs font-bold font-chinese disabled:opacity-50"
                     :class="lesson.status === 'scheduled' ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-violet-300 dark:hover:border-violet-700' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'"
-                    @click="exceptionModal = { cls, lesson }"
+                    @click="openException(cls, lesson)"
                   >
                     <span v-if="lesson.lesson_number">第 {{ lesson.lesson_number }} 次 · </span>{{ shortDate(lesson.date) }} {{ WEEKDAY_NAMES[weekdayOf(lesson.date)] }}<template v-if="lesson.status !== 'scheduled'"> · {{ lessonNote(lesson) }}</template>
                   </button>
@@ -134,7 +143,7 @@
       :cls="classModal.cls"
       :children="children"
       @close="classModal = null"
-      @saved="afterSave(() => { classModal = null; })"
+      @saved="afterClassSave"
     />
     <ClassExceptionModal
       v-if="exceptionModal"
@@ -142,14 +151,14 @@
       :child="selectedChild"
       :lesson="exceptionModal.lesson"
       @close="exceptionModal = null"
-      @saved="afterSave(() => { exceptionModal = null; })"
+      @saved="afterClassSave"
     />
   </div>
 </template>
 
 <script setup>
 import { confirmAction } from '../utils/confirmation';
-import { nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
@@ -168,6 +177,17 @@ const classes = ref([]);
 const classStats = ref([]);
 const statsFor = cls => classStats.value.find(item => item.class_id === cls.id);
 let childSerial = 0;
+let classSerial = 0;
+const classesReady = ref(false);
+const scheduleReady = ref(false);
+const classesRefreshing = ref(false);
+const scheduleRefreshing = ref(false);
+const classesFailed = ref(false);
+const scheduleFailed = ref(false);
+const statsError = ref(false);
+const courseRefreshing = computed(() => classesRefreshing.value || scheduleRefreshing.value);
+const courseDataFailed = computed(() => classesFailed.value || scheduleFailed.value);
+const courseActionsDisabled = computed(() => !classesReady.value || !scheduleReady.value);
 const upcoming = ref([]);
 const loading = ref(true);
 const error = ref('');
@@ -193,16 +213,39 @@ function showError(err) {
 
 async function loadChild() {
   const id = selectedChild.value.id, serial = ++childSerial;
-  const [list, days, stats] = await Promise.all([api.getTimetables(id), api.getChildSchedule(id, today, addDays(today, 27)), api.getOutsideClassStats(id)]);
-  if (selectedChild.value?.id !== id || serial !== childSerial) return;
-  timetables.value = list;
-  upcoming.value = days;
-  classStats.value = stats;
+  const current = () => selectedChild.value?.id === id && serial === childSerial;
+  scheduleReady.value = false;
+  scheduleRefreshing.value = true;
+  // Apply each response independently: neither slow nor failed statistics may hold up lessons.
+  await Promise.allSettled([
+    api.getTimetables(id).then(list => { if (current()) timetables.value = list; })
+      .catch(err => { if (current()) showError(err); }),
+    api.getChildSchedule(id, today, addDays(today, 27)).then(days => {
+      if (!current()) return;
+      upcoming.value = days;
+      scheduleReady.value = true;
+      scheduleFailed.value = false;
+    }).catch(() => { if (current()) scheduleFailed.value = true; })
+      .finally(() => { if (current()) scheduleRefreshing.value = false; }),
+    api.getOutsideClassStats(id).then(stats => {
+      if (!current()) return;
+      classStats.value = stats;
+      statsError.value = false;
+    }).catch(() => {
+      if (!current()) return;
+      classStats.value = [];
+      statsError.value = true;
+    })
+  ]);
 }
 
 async function selectChild(child) {
   selectedChild.value = child;
   classStats.value = [];
+  upcoming.value = [];
+  timetables.value = [];
+  exceptionModal.value = null;
+  classModal.value = null;
   error.value = '';
   try {
     await loadChild();
@@ -212,7 +255,23 @@ async function selectChild(child) {
 }
 
 async function reload() {
-  [classes.value] = await Promise.all([api.getOutsideClasses(), loadChild()]);
+  const serial = ++classSerial;
+  classesReady.value = false;
+  classesRefreshing.value = true;
+  await Promise.allSettled([
+    api.getOutsideClasses().then(list => {
+      if (serial !== classSerial) return;
+      classes.value = list;
+      classesReady.value = true;
+      classesFailed.value = false;
+    }).catch(() => { if (serial === classSerial) classesFailed.value = true; })
+      .finally(() => { if (serial === classSerial) classesRefreshing.value = false; }),
+    loadChild()
+  ]);
+}
+
+function openException(cls, lesson) {
+  if (!courseActionsDisabled.value) exceptionModal.value = { cls, lesson };
 }
 
 async function openLinkedLesson() {
@@ -223,7 +282,7 @@ async function openLinkedLesson() {
   const parsed = new Date(`${date}T00:00:00Z`);
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) return;
   const cls = classes.value.find(item => item.id === classId);
-  if (!cls || !attends(cls)) return;
+  if (!cls || !attends(cls) || courseActionsDisabled.value) return;
   // A lesson moved into today may have its original date outside the usual four weeks.
   let lesson = upcoming.value.flatMap(day => day.outside).find(item => item.class_id === classId && item.date === date && item.status !== 'moved_in');
   if (!lesson) {
@@ -232,10 +291,10 @@ async function openLinkedLesson() {
       lesson = days.flatMap(day => day.outside).find(item => item.class_id === classId && item.status !== 'moved_in');
     } catch { return; }
   }
-  if (!lesson || selectedChild.value?.id !== child) return;
+  if (!lesson || selectedChild.value?.id !== child || courseActionsDisabled.value) return;
   await nextTick();
   [...document.querySelectorAll('[data-class-id]')].find(node => node.dataset.classId === classId)?.scrollIntoView({ block: 'center' });
-  exceptionModal.value = { cls, lesson };
+  openException(cls, lesson);
 }
 async function refreshClassStats() {
   try { await reload(); } catch (err) { showError(err); }
@@ -249,6 +308,23 @@ async function afterSave(close) {
   } catch (err) {
     showError(err);
   }
+}
+
+function afterClassSave(savedClass) {
+  // Both save and restore return the full class, including the newly rotated exception IDs.
+  const index = classes.value.findIndex(cls => cls.id === savedClass.id);
+  if (index < 0) classes.value.push(savedClass);
+  else classes.value[index] = savedClass;
+  // Update the manager's source lessons immediately, before any refresh can fail or stall.
+  upcoming.value = upcoming.value.map(day => ({ ...day, outside: day.outside.map(lesson => {
+    if (lesson.class_id !== savedClass.id || lesson.status === 'moved_in') return lesson;
+    const exception = savedClass.exceptions.find(e => e.child_id === selectedChild.value.id && e.date === lesson.date);
+    return { ...lesson, title: savedClass.title, start_time: savedClass.start_time, end_time: savedClass.end_time,
+      exception_id: exception?.id ?? null, exception_note: exception?.note ?? null,
+      status: exception ? (exception.kind === 'leave' ? 'leave' : 'moved_out') : 'scheduled',
+      moved_to: exception?.kind === 'moved' ? { date: exception.new_date, start_time: exception.new_start_time, end_time: exception.new_end_time } : null };
+  }) }));
+  return afterSave(() => { classModal.value = null; exceptionModal.value = null; });
 }
 
 function openTimetable(timetable, copyFrom = null) {
@@ -269,6 +345,9 @@ async function removeClass(cls) {
   if (!await confirmAction(`确定删除课外班「${cls.title}」吗？本班的出勤、学费和未完成打卡任务会一起删除；已完成的打卡、作业记录和积分保留。`)) return;
   try {
     await api.deleteOutsideClass(cls.id);
+    classes.value = classes.value.filter(item => item.id !== cls.id);
+    upcoming.value = upcoming.value.map(day => ({ ...day, outside: day.outside.filter(item => item.class_id !== cls.id) }));
+    classStats.value = classStats.value.filter(item => item.class_id !== cls.id);
     await reload();
   } catch (err) {
     showError(err);
