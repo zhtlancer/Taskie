@@ -104,7 +104,8 @@ if [ -z "$source" ]; then
 fi
 
 families=$(fc-list :lang=zh family | wc -l)
-sans=$(fc-match -f '%{family[0]}' 'sans-serif:lang=zh-cn')
+# Unescaped, fontconfig reads "-serif" as a size suffix and matches the family "sans".
+sans=$(fc-match -f '%{family[0]}' 'sans\-serif:lang=zh-cn')
 summary="source=${source:-none} ${timings[*]} total=$(elapsed "$started") zh-fonts=$families sans-serif:zh-cn=$sans"
 echo "::notice title=Chinese fonts::$summary"
 echo "source=$source" >> "${GITHUB_OUTPUT:-/dev/null}"
