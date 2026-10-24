@@ -279,6 +279,7 @@
       :key="childId"
       :child-id="childId"
       :child-name="childName"
+      :business-date="todayString"
       :refresh="refreshClassActions"
       :today="todaySchedule"
       :tomorrow="tomorrowSchedule"
@@ -513,12 +514,15 @@ function onResume() {
   now.value = Date.now();
   if (date === todayString.value) refreshBoard(); // A changed date is handled by the watcher.
 }
-watch([todayString, childId], () => {
+watch([todayString, childId], ([, id], [, previousId]) => {
   tasks.value = []; goals.value = []; periods.value = []; unfinished.value = []; tasksError.value = false;
   boardLoaded = false;
   childStore.statsRequestId++;
   childStore.stats = { ...childStore.stats, today_points: 0, today_total_tasks: 0, today_completed_tasks: 0, today_completion_rate: 0 };
-  todaySchedule.value = null; tomorrowSchedule.value = null;
+  // Keep an open dialog mounted while the new business day's schedule loads.
+  // Its business-date prop invalidates old actions even if that refresh fails.
+  if (!scheduleOpen.value || id !== previousId) todaySchedule.value = null;
+  tomorrowSchedule.value = null;
   refreshBoard();
 });
 onMounted(() => {
