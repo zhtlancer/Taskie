@@ -255,7 +255,6 @@ import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import UiDialog from '../components/UiDialog.vue';
-import { businessDate } from '../utils/businessDate.js';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
 import { WEEKDAY_NAMES, addDays, mondayOf, shortDate } from '../utils/schedule.js';
@@ -287,9 +286,7 @@ const childId = computed(() => route.params.id);
 // A parent opening the child's pages records and settles homework as the parent.
 const asParent = currentRole() === 'parent';
 // Due dates follow the family's calendar and roll over at its midnight, as the board does.
-const timeZone = computed(() => calendar.timeZone);
-const now = ref(Date.now());
-const today = computed(() => businessDate(now.value, timeZone.value));
+const today = computed(() => calendar.today);
 const dayName = date => `${shortDate(date)} ${WEEKDAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()]}`;
 
 const records = ref([]);
@@ -420,7 +417,7 @@ function retry() {
 function onResume() {
   if (document.hidden) return;
   const date = today.value;
-  now.value = Date.now();
+  calendar.refreshToday();
   if (date === today.value) refresh();
 }
 function refresh() {
@@ -428,9 +425,7 @@ function refresh() {
   if (view.value === 'summary') loadSummary();
 }
 watch(today, refresh);
-const clock = setInterval(() => { now.value = Date.now(); }, 30000);
 onUnmounted(() => {
-  clearInterval(clock);
   loadSerial++;
   document.removeEventListener('visibilitychange', onResume);
   window.removeEventListener('pageshow', onResume);

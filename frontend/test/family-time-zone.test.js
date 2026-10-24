@@ -16,7 +16,7 @@ function displayFunction(file, name, deviceZone, familyZone, now) {
     static now() { return RealDate.parse(now); }
   };
   const fn = runInNewContext(`(${code})`, {
-    ...dates, Date: Clock, calendar: { timeZone: familyZone }, timeZone: { value: familyZone }
+    ...dates, Date: Clock, calendar: { timeZone: familyZone, today: dates.businessDate(now, familyZone) }, timeZone: { value: familyZone }
   });
   return { call: (...args) => fn(...args), restore: () => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; } };
 }

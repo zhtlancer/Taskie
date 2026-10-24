@@ -325,7 +325,6 @@
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
 import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
@@ -393,7 +392,7 @@ const addDays = (date, days) => {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 };
-const today = computed(() => businessDate(now.value, calendar.timeZone));
+const today = computed(() => calendar.today);
 
 function dayLabel(date) {
   if (date === today.value) return '今天';
@@ -402,6 +401,7 @@ function dayLabel(date) {
 }
 
 function openAdhoc(child) {
+  calendar.refreshToday();
   adhocError.value = '';
   adhocForm.value = { child, title: '', subject: '语文', date: today.value, due_date: '', points: 10, track_time: false, expected_minutes: null };
 }

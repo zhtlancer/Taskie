@@ -60,7 +60,7 @@ function formatTime(isoStr) {
   const date = businessDate(isoStr, calendar.timeZone);
   const time = businessClock(isoStr, calendar.timeZone);
   if (!date) return '';
-  if (date === businessDate(Date.now(), calendar.timeZone)) return `今天 ${time}`;
+  if (date === calendar.today) return `今天 ${time}`;
   return `${Number(date.slice(5, 7))}月${Number(date.slice(8))}日 ${time}`;
 }
 </script>

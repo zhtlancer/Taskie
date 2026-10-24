@@ -6,7 +6,6 @@
 </template>
 
 <script setup>
-import { businessDate } from '../utils/businessDate.js';
 import { useCalendarStore } from '../stores/calendar';
 import { useChartTheme, useChartInk } from '../utils/chartTheme';
 const chartInk = useChartInk();
@@ -21,7 +20,7 @@ ChartJS.register(CategoryScale, LinearScale, LineElement, PointElement, Tooltip)
 
 const props = defineProps({ days: { type: Array, required: true } });
 // Today's evening is not over, so its latest completion so far is left out.
-const days = computed(() => props.days.filter(day => day.date < businessDate(Date.now(), calendar.timeZone)));
+const days = computed(() => props.days.filter(day => day.date < calendar.today));
 
 // Evening minutes: times before 04:00 belong to the evening before and sort after midnight.
 const toMinutes = time => {

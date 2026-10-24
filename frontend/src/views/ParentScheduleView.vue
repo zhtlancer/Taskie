@@ -158,9 +158,8 @@
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
 import { confirmAction } from '../utils/confirmation';
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
@@ -171,7 +170,7 @@ import ClassStatsPanel from '../components/ClassStatsPanel.vue';
 import { WEEKDAY_NAMES, WEEK_ORDER, addDays, lessonNote, shortDate, timeRange } from '../utils/schedule.js';
 const calendar = useCalendarStore();
 
-const today = businessDate(Date.now(), calendar.timeZone);
+const today = computed(() => calendar.today);
 const route = useRoute();
 const children = ref([]);
 const selectedChild = ref(null);
@@ -205,8 +204,8 @@ const upcomingLessons = cls => upcoming.value.flatMap(day => day.outside)
   .filter(lesson => lesson.class_id === cls.id && lesson.status !== 'moved_in');
 
 function termStatus(timetable) {
-  if (today < timetable.start_date) return { label: '未开始', class: 'bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300' };
-  if (today > timetable.end_date) return { label: '已结束', class: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' };
+  if (today.value < timetable.start_date) return { label: '未开始', class: 'bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300' };
+  if (today.value > timetable.end_date) return { label: '已结束', class: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' };
   return { label: '使用中', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' };
 }
 
@@ -223,7 +222,7 @@ async function loadChild() {
   await Promise.allSettled([
     api.getTimetables(id).then(list => { if (current()) timetables.value = list; })
       .catch(err => { if (current()) showError(err); }),
-    api.getChildSchedule(id, today, addDays(today, 27)).then(days => {
+    api.getChildSchedule(id, today.value, addDays(today.value, 27)).then(days => {
       if (!current()) return;
       upcoming.value = days;
       scheduleReady.value = true;
@@ -241,6 +240,8 @@ async function loadChild() {
     })
   ]);
 }
+
+watch(today, () => { if (selectedChild.value) loadChild(); });
 
 async function selectChild(child) {
   selectedChild.value = child;

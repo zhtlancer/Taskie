@@ -237,9 +237,8 @@
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
 import ChildTabBar from '../components/ChildTabBar.vue';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
@@ -261,10 +260,10 @@ const lastWeek = ref(null);
 const goals = ref([]);
 const timeStats = ref(null);
 const childImprovements = computed(() => timeStats.value ? improvements(timeStats.value) : []);
-const today = businessDate(Date.now(), calendar.timeZone);
+const today = computed(() => calendar.today);
 // Progress-based long-term tasks that are running or finished within the last 30 days.
 const chartGoals = computed(() => {
-  const d = new Date(`${today}T00:00:00Z`);
+  const d = new Date(`${today.value}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 30);
   const since = d.toISOString().slice(0, 10);
   return goals.value.filter(goal => goal.mode === 'progress' && goal.logs.length &&
@@ -283,7 +282,7 @@ const totalPointsEarned = computed(() => {
   return historyList.value.reduce((sum, item) => sum + (item.points_earned || 0), 0);
 });
 
-onMounted(async () => {
+async function load() {
   try {
     const [data, summary, goalList, time] = await Promise.all([api.getHistory(childId.value, 7), api.getWeeklySummary(childId.value), api.getChildGoals(childId.value),
       api.getTimeStats(childId.value).catch(() => null)]);
@@ -295,7 +294,9 @@ onMounted(async () => {
   } catch (err) {
     console.error('Failed to load history stats:', err);
   }
-});
+}
+onMounted(load);
+watch(today, load);
 
 function formatDate(dateStr) {
   if (!dateStr) return '';

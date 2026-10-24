@@ -57,9 +57,8 @@
 <script setup>
 import { addDays } from '../utils/schedule.js';
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
 import { confirmAction, promptAction } from '../utils/confirmation';
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
@@ -67,8 +66,8 @@ import StudySessionsModal from '../components/StudySessionsModal.vue';
 const calendar = useCalendarStore();
 
 const route = useRoute();
-const yesterday = addDays(businessDate(Date.now(), calendar.timeZone), -1);
-const date = ref(yesterday), childName = ref('孩子');
+const yesterday = computed(() => addDays(calendar.today, -1));
+const date = ref(yesterday.value), childName = ref('孩子');
 const tasks = ref([]), events = ref([]), minutes = ref({});
 const studyTask = ref(null);
 const loading = ref(false), busy = ref(false), error = ref('');
@@ -137,6 +136,8 @@ async function act(task, action) {
     busy.value = false;
   }
 }
+
+watch(yesterday, (value, previous) => { if (date.value === previous) { date.value = value; load(); } });
 
 onMounted(async () => {
   await load();

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import axios from 'axios';
+import { familyDateConfirmed, FAMILY_DATE_REQUIRED } from '../src/utils/calendarWriteGuard.js';
 import * as session from '../src/utils/session.js';
 import { pendingWriteStore as pending } from '../src/utils/requestId.js';
 
@@ -14,6 +15,8 @@ const token = (role = 'parent') => `header.${Buffer.from(JSON.stringify({ role, 
 const action = data_generation => ({ kind: 'backfill', role: 'parent', child_id: 'a', task_id: 'goal', payload: { amount: 1 }, ...(data_generation ? { data_generation } : {}) });
 let serial = 0;
 async function fixture(t, respond = () => ({})) {
+  familyDateConfirmed.value = true;
+  t.after(() => { familyDateConfirmed.value = false; });
   for (const name of ['sessionStorage', 'localStorage', 'window']) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, name);
     Object.defineProperty(globalThis, name, { value: name === 'window' ? new EventTarget() : memoryStorage(), configurable: true });
@@ -160,4 +163,26 @@ test('manual/practice rejected attempt cannot post its original request again', 
   const count = sent.length;
   await assert.rejects(api.addTaskStudy('target', body));
   assert.equal(sent.length, count);
+});
+
+
+test('unknown family date blocks all mutation transports, manual retries and pending creation before sending', async t => {
+  const { api, sent } = await fixture(t, config => config.url === '/auth/data-generation' ? { data_generation: 'current' } : {});
+  session.saveToken('parent', token());
+  const entry = pending.prepare(action());
+  familyDateConfirmed.value = false;
+  for (const write of [
+    () => api.createAdhocTask('a', { date: '2026-10-22' }),
+    () => api.materializeBackfillDay('a', '2026-10-21'),
+    () => api.setClassException('class', { date: '2026-10-22', type: 'leave' }),
+    () => api.setClassAttendance('class', { date: '2026-10-22' }),
+    () => api.addTaskStudy('task', { date: '2026-10-22' }),
+    () => api.logPeriodProgress('goal', { date: '2026-10-22' }, { childId: 'a' }),
+    () => api.retryPendingWrite(entry)
+  ]) await assert.rejects(write(), error => error === FAMILY_DATE_REQUIRED);
+  assert.equal(sent.length, 0, 'no HTTP requests, even calibration, before blocking');
+  assert.deepEqual(pending.list(), [entry], 'blocked progress creates no uncertain-write entry');
+  familyDateConfirmed.value = true;
+  await api.createAdhocTask('a', { date: '2026-10-21' });
+  assert.equal(JSON.parse(sent.at(-1).data).date, '2026-10-21');
 });

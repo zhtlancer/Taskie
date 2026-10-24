@@ -206,8 +206,7 @@
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
@@ -232,7 +231,7 @@ let disposed = false;
 let statsController;
 let timetableController;
 
-const ranges = computed(() => rangePresets(timetables.value, businessDate(Date.now(), calendar.timeZone)));
+const ranges = computed(() => rangePresets(timetables.value, calendar.today));
 const range = computed(() => ranges.value.find(r => r.key === rangeKey.value) || ranges.value[0]);
 const workDays = computed(() => stats.value ? stats.value.days.filter(day => day.sessions).length : 0);
 const compareText = computed(() => {
@@ -298,7 +297,10 @@ async function selectChild(child) {
   await load();
 }
 
+watch(() => calendar.today, () => { if (selectedChild.value) load(); });
+
 function selectRange(key) {
+  calendar.refreshToday();
   rangeKey.value = key;
   load();
 }

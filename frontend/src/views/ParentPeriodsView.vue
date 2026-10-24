@@ -314,7 +314,6 @@
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { businessDate } from '../utils/businessDate.js';
 import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
@@ -347,7 +346,7 @@ const statusInfo = {
 const standaloneGoals = computed(() => goals.value.filter(goal => !goal.period_id));
 const childTemplates = computed(() => templates.value.filter(t => t.child_ids === null || t.child_ids?.includes(selectedChild.value?.id)));
 
-const localToday = () => businessDate(Date.now(), calendar.timeZone);
+const localToday = () => calendar.today;
 
 onMounted(async () => {
   try {

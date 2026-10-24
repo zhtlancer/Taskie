@@ -99,13 +99,13 @@ const studyApi = {
 const emit = defineEmits(['close', 'saved']);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const study = ref(null), error = ref(''), notice = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
-const manualOpen = ref(false), manualDate = ref(businessDate(Date.now(), calendar.timeZone)), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
+const manualOpen = ref(false), manualDate = ref(calendar.today), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
 let manualAttempt = null;
 const closeRestoredForm = () => { manualAttempt = null; manualOpen.value = false; manualId.value = requestId(); emit('close'); };
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onUnmounted(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 const legacyEdit = ref(null);
-const today = computed(() => businessDate(now.value, calendar.timeZone));
+const today = computed(() => calendar.today);
 const dateOf = iso => businessDate(Date.parse(iso), calendar.timeZone);
 watch(today, date => { if (!props.asParent) manualDate.value = date; });
 const overdue = computed(() => study.value && study.value.record.task.due_date < today.value);
