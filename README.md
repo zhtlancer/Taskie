@@ -380,7 +380,7 @@ npm run test:browser:time-stats
 
 该回归直接启动临时本地服务，使用内存数据库，结束后自动清理，无需 Docker。所有本地浏览器专项（`test:browser:*`）共用 `scripts/browser-env.cjs`：`PLAYWRIGHT_MODULE_PATH` 指向项目外的 Playwright 安装（绝对路径），`CHROMIUM_PATH` 指定浏览器（未设置时依次使用系统 Chromium/Chrome，再退回 Playwright 自带浏览器），`SMOKE_PORT` 指定监听端口（默认随机空闲端口）。
 
-浏览器专项会测量按钮和文字的实际尺寸，结果取决于系统字体。CI 在运行专项前安装中文字体 `fonts-noto-cjk`，使测量接近真实手机和平板；本地运行时也应安装中文字体（Debian/Ubuntu：`sudo apt-get install fonts-noto-cjk`），否则中文会以缺字方框排版，宽度与真实设备不同。字体不能替代控件自身的最小尺寸：专项会单独测量“美”“体”这类单字按钮，确保它们在任何字体下都不小于 44px。
+浏览器专项会测量按钮和文字的实际尺寸，结果取决于系统字体。CI 在运行专项前安装与 Ubuntu `fonts-noto-cjk` 相同的中文字体，使测量接近真实手机和平板：`scripts/ci-install-fonts.sh` 从 notofonts/noto-cjk 的固定标签下载这四个文件（思源黑体 Sans2.004 常规/粗体，与 Ubuntu 24.04、26.04 软件包逐字节一致；宋体 Serif2.003 常规/粗体，与 26.04 一致），按 `checks.yml` 中写死的 sha256 校验后，连同软件包的 fontconfig 规则装到 apt 相同的位置，并用 `actions/cache` 缓存（缓存键含版本和校验值）。下载或校验失败时才退回 apt（每条命令都有短超时，最多两次）。各阶段用时写在“Chinese fonts”注释（annotation）里，作业日志不可见时也能看到卡在哪一步。升级字体版本时需同时更新 `checks.yml` 中的版本和 sha256。本地运行时也应安装中文字体（Debian/Ubuntu：`sudo apt-get install fonts-noto-cjk`），否则中文会以缺字方框排版，宽度与真实设备不同。字体不能替代控件自身的最小尺寸：专项会单独测量“美”“体”这类单字按钮，确保它们在任何字体下都不小于 44px。
 
 假期延后任务与调休设置的页面回归也使用相同环境，覆盖模板保存、所有孩子批量添加、已有日期跳过与重试、保留原设置，以及手机布局：
 
