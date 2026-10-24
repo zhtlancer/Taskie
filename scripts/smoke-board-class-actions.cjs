@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
@@ -69,13 +70,13 @@ async function regressions(base, token, api) {
     const cls = await api('POST', '/outside-classes', { title: `钢琴-${name}`.slice(0, 20), child_ids: [child.id],
       start_date: shiftDate(today, -40), days_of_week: [0, 1, 2, 3, 4, 5, 6], start_time: '16:00', end_time: '17:00',
       total_lessons: 100, bring: '回归乐谱', create_task: true });
-    async function board(options = {}) {
+    async function board({ session = token, ...options } = {}) {
       const context = await browser.newContext({ viewport: { width: 390, height: 844 }, ...options });
       contexts.push(context);
       await context.addInitScript(({ token, child }) => {
         sessionStorage.setItem('taskie_parent_token', token);
         sessionStorage.setItem('current_child', JSON.stringify(child));
-      }, { token, child });
+      }, { token: session, child });
       await context.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
       const page = await context.newPage(); page.setDefaultTimeout(5000);
       page.on('pageerror', error => errors.push(error.message));
@@ -295,15 +296,21 @@ async function regressions(base, token, api) {
     assert.notEqual(await page.evaluate(() => document.body.style.overflow), 'hidden');
   });
   for (const duringConfirm of [false, true]) await scenario(`D3-${duringConfirm ? 'confirm' : 'open'}`, async ({ child, cls, board, open }) => {
-    const page = await board(); await page.clock.install(); await open(page);
+    // A real signed token that expires in 2 minutes: the browser clock only passes its exp, so the
+    // board stays on the same business day whatever the time of the run (T-1: the 12h token's jump
+    // crossed midnight after 12:00 Beijing time). D3-afternoon reruns these at a 13:xx business clock.
+    const session = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() }, { expiresIn: '2m' });
+    const page = await board({ session }); await page.clock.install(); await open(page);
     const row = rowFor(page, cls);
     await row.getByRole('button', { name: '请假', exact: true }).waitFor();
     if (duringConfirm) await row.getByRole('button', { name: '请假', exact: true }).click();
-    // Keep the original signed token, but let the browser clock pass its actual exp.
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url'));
+    const payload = JSON.parse(Buffer.from(session.split('.')[1], 'base64url'));
     let writes = 0;
     page.on('request', r => { if (['PUT', 'DELETE'].includes(r.method()) && /outside-class/.test(r.url())) writes++; });
-    await page.clock.fastForward(payload.exp * 1000 - Date.now() + 2000);
+    const jump = payload.exp * 1000 - Date.now() + 2000;
+    assert.ok(jump > 0 && jump <= 122000, `clock jump ${jump}ms stays within the token's 2 minutes`);
+    await page.clock.fastForward(jump);
+    assert.equal(await row.count(), 1, 'the board stays on the same day after the clock jump');
     if (duringConfirm) await confirm(page, child.name);
     else await page.waitForFunction(() => !document.querySelector('[aria-label="家长课程操作"]'));
     await modalFor(page).getByText('家长登录已过期，请重新登录', { exact: true }).waitFor();
@@ -452,8 +459,28 @@ async function midnightRegressions(base) {
     finally { release?.(); if (context) await context.close(); global.Date = RealDate; }
   }
 }
+// T-1 regression: rerun D3 in a child process whose TIME_ZONE puts the business clock at 13:xx, the
+// afternoon in which the old 12h clock jump crossed midnight, so it is covered at any time of day.
+const businessClock = timeZone => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+function afternoonZone(hour = 13) {
+  const offset = ((hour - new Date().getUTCHours()) % 24 + 24) % 24, east = offset > 14 ? offset - 24 : offset;
+  return east === 0 ? 'Etc/GMT' : `Etc/GMT${east > 0 ? '-' : '+'}${Math.abs(east)}`; // Etc signs are inverted
+}
+async function afternoonRerun() {
+  const timeZone = afternoonZone(), label = `D3-afternoon (TIME_ZONE=${timeZone}, ${businessClock(timeZone)})`;
+  const code = await new Promise((resolve, reject) => spawn(process.execPath, [__filename], { stdio: 'inherit',
+    env: { ...process.env, TIME_ZONE: timeZone, BOARD_CLASS_CASE: 'D3-', BOARD_CLASS_AFTERNOON: '1' } }).on('error', reject).on('exit', resolve));
+  if (code === 0) { passed++; console.log(`PASS ${label}`); }
+  else { failed++; console.error(`FAIL ${label}: rerun exited with ${code}`); }
+}
 async function main() {
   await app.ready();
+  if (process.env.BOARD_CLASS_AFTERNOON) {
+    const clock = businessClock(require('../backend/src/config').timeZone);
+    assert.ok(clock >= '12:00' && clock < '22:00', `the afternoon rerun needs a 12:00-21:59 business clock, got ${clock}`);
+  } else if (!process.env.BOARD_CLASS_CASE || 'D3-afternoon'.startsWith(process.env.BOARD_CLASS_CASE)) {
+    await afternoonRerun(); // Before this process listens, so the child can use the same SMOKE_PORT.
+  }
   const token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() });
   const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
   const api = async (method, url, payload) => {
@@ -462,6 +489,10 @@ async function main() {
   };
   browser = await chromium.launch(launchOptions());
   if (process.env.SMOKE_SCREENSHOT_DIR) fs.mkdirSync(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
+  if (process.env.BOARD_CLASS_AFTERNOON) {
+    // The rerun opens D3 in a cold browser; load the app once so startup does not use D3's 5 s budget.
+    const warm = await browser.newPage(); await warm.goto(base, { waitUntil: 'networkidle', timeout: 30000 }); await warm.close();
+  }
   await regressions(base, token, api);
   await midnightRegressions(base);
   for (const width of process.env.BOARD_CLASS_CASE || process.env.BOARD_CLASS_REGRESSIONS_ONLY ? [] : [390, 1180]) for (const colorScheme of ['light', 'dark']) {
@@ -599,8 +630,9 @@ async function main() {
       failed++; console.error(`FAIL ${width}px ${colorScheme}:`, error);
     } finally { if (childContext) await childContext.close(); await context.close(); }
   }
-  console.log(`board-class-actions: ${passed} passed, ${failed} failed`);
+  console.log(`board-class-actions${process.env.BOARD_CLASS_AFTERNOON ? ' afternoon rerun' : ''}: ${passed} passed, ${failed} failed`);
   assert.equal(failed, 0);
+  if (process.env.BOARD_CLASS_AFTERNOON) assert.equal(passed, 2, 'the afternoon rerun covers D3-open and D3-confirm');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close(); await app.close(); db.close(); fs.rmSync(dir, { recursive: true, force: true });
