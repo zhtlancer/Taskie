@@ -192,10 +192,11 @@
 
 <script setup>
 import ChildTabBar from '../components/ChildTabBar.vue';
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
+import { useCalendarStore } from '../stores/calendar';
 import BadgeWall from '../components/BadgeWall.vue';
 import PointsLog from '../components/PointsLog.vue';
 import SoundToggle from '../components/SoundToggle.vue';
@@ -204,6 +205,10 @@ import { getPendingRedemptions } from '../api/redemptions';
 
 const route = useRoute();
 const childStore = useChildStore();
+const calendar = useCalendarStore();
+watch(() => [calendar.today, calendar.ready], () => {
+  if (calendar.ready) childStore.fetchStats();
+});
 
 const childId = computed(() => route.params.id || childStore.childId);
 // Spendable balance: points held by pending or approved redemptions are excluded.

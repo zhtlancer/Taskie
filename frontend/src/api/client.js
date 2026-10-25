@@ -41,12 +41,12 @@ client.interceptors.response.use(response => response, error => {
   const message = !error.response ? (error.config?.networkErrorMessage || '无法连接服务器，操作未确认。请检查网络后，在原处重试，或到“待确认请求”核对。')
     : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
   const code = error.response?.data?.code;
-  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
+  if (!error.config?.silentError && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status }) : message);
 });
 const request = async (method, url, data, params, signal, options = {}) =>
   (await client.request({ ...options, method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
-const get = (url, params, signal) => request('get', url, undefined, params, signal);
+const get = (url, params, signal, options) => request('get', url, undefined, params, signal, options);
 const post = (url, data, options) => request('post', url, data, undefined, undefined, options);
 const generationHeaders = generation => generation ? { 'X-Taskie-Data-Generation': generation } : {};
 // Non-persisted practice/manual forms keep the same object for an uncertain attempt.
@@ -114,7 +114,7 @@ export const api = {
   deleteTaskTemplate: id => remove(`/task-templates/${id}`),
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
   getUnfinishedStudy: id => get(`/children/${id}/unfinished-study`),
-  getCalendar: () => get('/calendar'),
+  getCalendar: () => get('/calendar', undefined, undefined, { silentError: true }),
   // The running timer, else the latest one paused; pausing keeps it, resuming starts it again.
   getCurrentTimer: id => get(`/children/${id}/current-timer`),
   // target: the timer the bar showed, so a change made meanwhile on another device is not overridden.

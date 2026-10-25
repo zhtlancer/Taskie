@@ -91,7 +91,7 @@
           <router-link :to="`/child/${record.child_id}/homework`" class="text-indigo-600 dark:text-indigo-300">查看学习记录</router-link>
         </div>
       </section>
-      <div v-if="calendar.ready && !loading" class="grid grid-cols-3 gap-2 mb-5" aria-label="今日摘要">
+      <div v-if="calendar.ready && !loading && (!dashboardError || dashboardLoaded)" class="grid grid-cols-3 gap-2 mb-5" aria-label="今日摘要">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">小朋友</p><p class="text-xl font-black text-slate-800 dark:text-slate-100">{{ childrenStats.length }} <span class="text-xs">位</span></p></div>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">今日完成</p><p class="text-xl font-black text-emerald-600 dark:text-emerald-300">{{ overallCompletionRate }}%</p></div>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">累计积分</p><p class="text-xl font-black text-amber-600 dark:text-amber-300">{{ totalPointsIssued }}</p></div>
@@ -379,6 +379,7 @@ onUnmounted(() => {
 });
 const loading = ref(true);
 const dashboardError = ref('');
+const dashboardLoaded = ref(false);
 const adhocForm = ref(null);
 const adhocSaving = ref(false);
 const adhocError = ref('');
@@ -525,6 +526,7 @@ async function loadDashboard() {
     liveSerial++; // A live refresh for the previous cards must not land after this batch.
     [childrenStats.value, skipRequests.value, homeworkRequests.value, completionRequests.value] = result;
     loadedDate = date;
+    dashboardLoaded.value = true;
   } catch (err) {
     if (!current()) return;
     console.error('Failed to load parent dashboard:', err);

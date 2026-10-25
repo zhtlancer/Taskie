@@ -300,7 +300,7 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">日期</label>
-            <input v-model="backfill.date" type="date" required :min="backfill.task.start_date" :max="backfill.maxDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none" />
+            <input v-model="backfill.date" type="date" required :min="backfill.task.start_date" :max="backfillMaxDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none" />
           </div>
         </div>
         <div class="flex justify-end gap-3">
@@ -315,7 +315,7 @@
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
 import { confirmAction } from '../utils/confirmation';
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
@@ -336,6 +336,10 @@ const makeupForm = ref({ date: '', acts_as: 1, note: '', allChildren: true });
 const weekdayName = date => ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date(`${date}T00:00:00Z`).getUTCDay()];
 const taskModal = ref(null);
 const backfill = ref(null);
+const backfillMaxDate = computed(() => {
+  const end = backfill.value?.task.end_date;
+  return end && end < calendar.today ? end : calendar.today;
+});
 
 const statusInfo = {
   active: { label: '进行中', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' },
@@ -368,15 +372,24 @@ async function selectChild(child) {
   await loadPeriods();
 }
 
+let periodsSerial = 0;
 async function loadPeriods() {
-  if (!selectedChild.value) return;
+  const childId = selectedChild.value?.id;
+  if (!childId || !calendar.ready) return;
+  const date = calendar.today, timeZone = calendar.timeZone, serial = ++periodsSerial;
+  const current = () => serial === periodsSerial && selectedChild.value?.id === childId &&
+    calendar.ready && date === calendar.today && timeZone === calendar.timeZone;
   try {
-    [periods.value, goals.value, makeupDays.value] = await Promise.all([api.getChildPeriods(selectedChild.value.id), api.getChildGoals(selectedChild.value.id),
-      api.getMakeupDays(selectedChild.value.id)]);
+    const result = await Promise.all([api.getChildPeriods(childId), api.getChildGoals(childId), api.getMakeupDays(childId)]);
+    if (!current()) return;
+    [periods.value, goals.value, makeupDays.value] = result;
+    error.value = '';
   } catch (err) {
-    showError(err);
+    if (current()) showError(err);
   }
 }
+watch(() => [calendar.today, calendar.ready], loadPeriods);
+onBeforeUnmount(() => { periodsSerial++; });
 
 // Make-up days are per child; siblings at the same school usually share them, so they can be
 // added for everyone at once (a child who already has that day keeps it).
@@ -472,7 +485,7 @@ async function removeTask(task) {
 function openBackfill(task) {
   const today = localToday();
   const maxDate = task.end_date && task.end_date < today ? task.end_date : today;
-  backfill.value = { task, attempt: {}, amount: 1, position: task.done_amount + 1, date: maxDate, maxDate };
+  backfill.value = { task, attempt: {}, amount: 1, position: task.done_amount + 1, date: maxDate };
 }
 
 const closeRestoredForm = () => { backfill.value = null; };
