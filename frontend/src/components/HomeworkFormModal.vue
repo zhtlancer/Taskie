@@ -49,10 +49,10 @@
         ></textarea>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
+      <div class="homework-dates grid grid-cols-2 gap-3">
+        <div class="sm:min-w-0">
           <label for="homework-assigned" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">布置日期</label>
-          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="min-h-[44px] min-w-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
+          <input id="homework-assigned" v-model="form.assigned_date" type="date" :max="today" required class="homework-date-input min-h-[44px] min-w-[44px] w-full sm:block sm:min-w-0 sm:max-w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @change="onAssignedChange" />
           <div class="flex flex-wrap gap-1.5 mt-1.5">
             <button type="button" class="min-h-[44px] min-w-[44px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(today)">今天</button>
             <button v-if="selected?.last_lesson_date && selected.last_lesson_date !== today" type="button" class="min-h-[44px] min-w-[44px] px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="setAssigned(selected.last_lesson_date)">
@@ -60,9 +60,9 @@
             </button>
           </div>
         </div>
-        <div>
+        <div class="sm:min-w-0">
           <label for="homework-due" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期</label>
-          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="min-h-[44px] min-w-[44px] w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
+          <input id="homework-due" v-model="form.due_date" type="date" :min="form.assigned_date" class="homework-date-input min-h-[44px] min-w-[44px] w-full sm:block sm:min-w-0 sm:max-w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" @input="dueTouched = true" />
           <button v-if="dueTouched && suggestion?.due_date && form.due_date !== suggestion.due_date" type="button" class="min-h-[44px] min-w-[44px] mt-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="resetDue">
             恢复默认 {{ dayName(suggestion.due_date) }}
           </button>
@@ -221,3 +221,13 @@ async function save() {
 
 if (!props.record && props.courses.length) selectCourse(props.courses[0]);
 </script>
+
+<style scoped>
+/* Preserve the original two-column phone fields; apply the sizing fix at tablet widths. */
+@media (min-width: 640px) {
+  .homework-dates { grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+  /* type=date retains the native picker while its value fits the available field width. */
+  .homework-date-input { -webkit-appearance: none; appearance: none; }
+  .homework-date-input::-webkit-date-and-time-value { width: 100%; min-width: 0; text-align: left; }
+}
+</style>

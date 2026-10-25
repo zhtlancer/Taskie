@@ -394,6 +394,13 @@ npm run test:browser:carry-over
 npm run test:browser:homework
 ```
 
+作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
+
+```bash
+npm run test:browser:homework-dates
+BROWSER=webkit npm run test:browser:homework-dates
+```
+
 完成时用时专项覆盖手机/平板、浅色/暗色下的默认时长、拖动调整、精确输入、取消、零秒暂停、已有累计用时增加与保留、并发冲突和响应丢失后的重试：
 
 ```bash
