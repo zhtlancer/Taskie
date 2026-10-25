@@ -72,6 +72,9 @@ async function check(name, run) {
       await Promise.all(context.pages().map(page => page.unrouteAll({ behavior: 'wait' })));
       await context.close();
     }
+    // Keep cases independent: accumulating 30 children turns the dashboard into
+    // hundreds of API calls and exhausts its wait budget under injected latency.
+    if (child) { await api('DELETE', `/children/${child.id}`); child = null; }
   }
 }
 async function signal(promise) {
@@ -123,6 +126,8 @@ async function waitForNewStudy(page) {
 async function main() {
   await app.ready();
   token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() }, { expiresIn: '7d' });
+  // Preserve the non-first-child selection coverage in the periods cases.
+  await api('POST', '/children', { name: '列表首位同学' });
   base = await app.listen({ host: '127.0.0.1', port: smokePort() });
   browser = await chromium.launch(launchOptions());
   await check('D1 device 30 seconds ahead: idle list retries after server midnight', async () => {
