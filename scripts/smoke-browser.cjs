@@ -13,6 +13,8 @@ const NEW_PIN = '2580';
 let started = false, browser;
 const docker = args => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const pass = message => console.log(`PASS ${message}`);
+// Match the path only: redirects may add a query such as ?returnTo=.
+const at = path => url => url.pathname === path;
 
 async function main() {
   docker(['run', '-d', '--name', name, '--tmpfs', '/app/data', '-p', '127.0.0.1::3000', process.env.TASKIE_TEST_IMAGE || 'taskie:reliability']);
@@ -46,7 +48,7 @@ async function main() {
   assert.match(code, /^\d{6}$/);
   assert.match(docker(['exec', name, 'node', 'src/cli.js', 'approve-device', code, '冒烟测试浏览器']), /已授权设备/);
   // The pairing page notices the approval and opens the requested page.
-  await page.waitForURL('**/parent/login');
+  await page.waitForURL(at('/parent/login'));
   const deviceCookie = (await context.cookies()).find(cookie => cookie.name === 'taskie_device');
   assert.ok(deviceCookie?.httpOnly, 'the device token must be an HttpOnly cookie');
   const device = { cookie: `taskie_device=${deviceCookie.value}` };
@@ -54,16 +56,16 @@ async function main() {
 
   // --- First login must replace the default parent PIN.
   await page.goto(`${base}/parent/settings`, { waitUntil: 'domcontentloaded' });
-  await page.waitForURL('**/parent/login');
+  await page.waitForURL(at('/parent/login'));
   await page.getByText(`初始 PIN 码为 ${DEFAULT_PIN}`).waitFor();
   await pressPin(DEFAULT_PIN);
-  await page.waitForURL('**/parent/setup-pin');
+  await page.waitForURL(at('/parent/setup-pin'));
   await page.goto(`${base}/parent/dashboard`, { waitUntil: 'domcontentloaded' });
-  await page.waitForURL('**/parent/setup-pin');
+  await page.waitForURL(at('/parent/setup-pin'));
   await pressPin(DEFAULT_PIN);
   await pressPin(NEW_PIN);
   await pressPin(NEW_PIN);
-  await page.waitForURL('**/parent/dashboard');
+  await page.waitForURL(at('/parent/dashboard'));
   assert.ok(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')));
   assert.deepEqual(await (await fetch(`${base}/api/auth/setup`, { headers: device })).json(), { parent_pin_is_default: false });
   pass('browser forces replacing the default parent PIN, then signs in with the new one');
@@ -141,14 +143,14 @@ async function main() {
   await page.getByLabel('当前家长 PIN', { exact: false }).fill(NEW_PIN);
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: '确认恢复', exact: true }).click();
-  await page.waitForURL('**/parent/login');
+  await page.waitForURL(at('/parent/login'));
   assert.equal(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')), null);
   pass('browser backup creation, download, restore and session invalidation');
 
   // --- Child: today's tasks, long-term progress, all done.
   await page.goto(base, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: /浏览器测试孩子/ }).click();
-  await page.waitForURL(`**/child/${child.id}/today`);
+  await page.waitForURL(at(`/child/${child.id}/today`));
   assert.ok(await page.evaluate(() => sessionStorage.getItem('taskie_child_token')));
   // 浏览器口算, the one-off task and the long-term task's daily item.
   await page.getByText('临时', { exact: true }).waitFor();
@@ -239,12 +241,12 @@ async function main() {
   pass('browser child adds a word with a category, may add but not remove categories, and strokes load locally');
 
   await page.goto(`${base}/parent/tasks`, { waitUntil: 'domcontentloaded' });
-  await page.waitForURL('**/parent/login');
+  await page.waitForURL(at('/parent/login'));
   pass('browser password-free child receives credentials and cannot open parent pages');
 
   // --- Parent approves the redemption.
   await pressPin(NEW_PIN);
-  await page.waitForURL('**/parent/dashboard');
+  await page.waitForURL(at('/parent/dashboard'));
   await page.goto(`${base}/parent/rewards`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '✓ 确认兑换', exact: true }).click();
   await page.getByText('已兑换', { exact: true }).waitFor();
@@ -253,7 +255,7 @@ async function main() {
   // --- The parent opens the child's word book from the console and takes a category away.
   await page.goto(`${base}/parent/children`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('link', { name: '📖 字词本' }).click();
-  await page.waitForURL(`**/child/${child.id}/characters`);
+  await page.waitForURL(at(`/child/${child.id}/characters`));
   await page.locator('.font-kai', { hasText: '银' }).first().click();
   const parentDetail = page.getByRole('dialog');
   await parentDetail.getByText('点一下添加或去掉').waitFor();
@@ -313,13 +315,13 @@ async function main() {
     assert.ok(width <= 390, `${path} is ${width}px wide on a 390px phone`);
   };
   await mobile.getByRole('button', { name: /浏览器测试孩子/ }).click();
-  await mobile.waitForURL(`**/child/${child.id}/today`);
+  await mobile.waitForURL(at(`/child/${child.id}/today`));
   for (const tab of ['homework', 'rewards', 'mistakes', 'characters', 'history', 'today']) await fitsWidth(`/child/${child.id}/${tab}`);
   await mobile.getByRole('link', { name: /积分/ }).last().click();
-  await mobile.waitForURL(`**/child/${child.id}/rewards`);
+  await mobile.waitForURL(at(`/child/${child.id}/rewards`));
   await mobile.goto(`${base}/parent/login`, { waitUntil: 'domcontentloaded' });
   for (const digit of NEW_PIN) await mobile.getByRole('button', { name: digit, exact: true }).click();
-  await mobile.waitForURL('**/parent/dashboard');
+  await mobile.waitForURL(at('/parent/dashboard'));
   for (const path of ['/parent/dashboard', '/parent/children', '/parent/tasks', '/parent/periods', '/parent/rewards', '/parent/settings']) await fitsWidth(path);
   assert.equal(errors.length, 0, JSON.stringify(errors));
   pass('phone layout: every child and parent page fits 390px and the child tab bar navigates');
