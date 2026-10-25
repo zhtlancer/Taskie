@@ -206,6 +206,8 @@ async function main() {
   await prepare(childPage);
   await childPage.goto(base, { waitUntil: 'domcontentloaded' });
   await childPage.getByRole('button', { name: /用时验收小明/ }).click();
+  // Navigating before the login response arrives would open the history page without a child session.
+  await childPage.waitForURL(`**/child/${child.id}/today`);
   await childPage.goto(`${base}/child/${child.id}/history`, { waitUntil: 'domcontentloaded' });
   const childSection = childPage.locator('section').filter({ has: childPage.getByRole('heading', { name: '⏱ 我的作业用时（近 7 天）', exact: true }) });
   await childSection.getByText('👍 验收口算 平均比之前快了 10 分钟', { exact: true }).waitFor();
