@@ -78,7 +78,11 @@
 
     <UiDialog v-if="active" :title="`${skillName(active.skill)}练习 · ${active.item.is_early ? '提前巩固（不升级周期）' : active.item.kind === 'review' ? '复习' : '新学'}`" :busy="busy" close-label="关闭练习" @close="closePractice">
       <div class="space-y-4 text-center">
-        <p v-if="dayChanged" role="status" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">已经到新的一天，这次练习结束后会换成今天的清单</p>
+        <div v-if="expiredPractice" role="status" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200 space-y-2">
+          <p>已经到新的一天，昨天的清单不能再记录了。请换成今天的清单继续练习。</p>
+          <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white font-bold disabled:opacity-50" @click="switchToToday">换成今天的清单</button>
+        </div>
+        <p v-else-if="dayChanged" role="status" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">已经到新的一天，这次练习结束后会换成今天的清单</p>
         <p class="text-xs text-slate-500 dark:text-slate-400">{{ active.skill === 'write' ? '先听词或看拼音，在纸上默写，再核对字形与笔顺。' : '先尝试读出字词，再揭晓拼音核对。' }}</p>
         <div v-if="active.skill === 'recognize' || revealed" class="text-4xl font-reading text-slate-800 dark:text-slate-100">{{ active.item.text }}</div>
         <div v-if="active.skill === 'write' || revealed" class="text-xl text-brand-600 dark:text-brand-300">{{ active.item.pinyin || getCharPinyin(active.item.text) }}</div>
@@ -90,12 +94,12 @@
             <HanziGrid :key="`${active.item.id}-${charIndex}`" :character="Array.from(active.item.text)[charIndex]" :size="240" :auto-play="false" />
           </template>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ asParent ? '由家长核对结果' : '请如实自评，系统不自动判定读音或书写正确性' }}；需要提示或答错也算完成本项练习。</p>
-          <div v-if="!feedbackResult" class="flex flex-wrap justify-center gap-2">
+          <div v-if="!feedbackResult && !expiredPractice" class="flex flex-wrap justify-center gap-2">
             <button :disabled="busy" class="p-3 rounded-xl bg-emerald-500 text-white text-sm font-bold disabled:opacity-50" @click="grade('good')">独立完成</button>
             <button :disabled="busy" class="p-3 rounded-xl bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-sm font-bold disabled:opacity-50" @click="grade('hinted')">提示后完成</button>
             <button :disabled="busy" class="p-3 rounded-xl bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm font-bold disabled:opacity-50" @click="grade('again')">还不熟</button>
           </div>
-          <div v-else class="space-y-3">
+          <div v-else-if="feedbackResult" class="space-y-3">
             <p v-if="nextDue" class="text-xs text-brand-600 dark:text-brand-300">下次复习：{{ nextDue }}</p>
             <p class="text-sm text-emerald-700 dark:text-emerald-300">已记录“{{ resultName(feedbackResult) }}”。同日再练不会重复加分或连续升级。</p>
             <button class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold mr-2" @click="revealed = false; feedbackResult = null">再练一次</button>
@@ -128,6 +132,7 @@ const asParent = currentRole() === 'parent';
 const days = ref([]), forms = ref([]), history = ref([]), date = ref('');
 const loading = ref(true), busy = ref(false), error = ref(''), notice = ref(''), showSettings = ref(false);
 const active = ref(null), revealed = ref(false), charIndex = ref(0), feedbackResult = ref(null);
+const expiredPractice = ref(false);
 const nextDue = computed(() => {
   const day = days.value.find(day => day.id === active.value?.dayId);
   return day?.batches.flatMap(batch => batch.items).find(item => item.id === active.value?.item.id)?.next_due_date;
@@ -187,10 +192,16 @@ async function save(form) {
 
 function openItem(day, batch, item) {
   active.value = { dayId: day.id, batchId: batch.id, skill: day.skill, item };
-  revealed.value = false; charIndex.value = 0; feedbackResult.value = null; pendingAttempt.value = null; error.value = '';
+  revealed.value = false; charIndex.value = 0; feedbackResult.value = null; pendingAttempt.value = null; error.value = ''; expiredPractice.value = false;
 }
 function begin(day, batch) { const item = batch.items.find(item => !item.result); if (item) openItem(day, batch, item); }
 function closePractice() { if (!busy.value) { active.value = null; pendingAttempt.value = null; } }
+function switchToToday() {
+  if (busy.value) return;
+  closePractice();
+  calendar.refreshToday();
+  refresh({ silent: true });
+}
 function nextItem() {
   if (dayChanged.value) { closePractice(); return; }
   const day = days.value.find(day => day.id === active.value.dayId);
@@ -199,7 +210,11 @@ function nextItem() {
   if (item) openItem(day, batch, item); else closePractice();
 }
 async function grade(result) {
-  if (busy.value || !active.value) return;
+  if (busy.value || !active.value || expiredPractice.value) return;
+  // Check immediately too: the clock/visibility tick may not have run yet.
+  // Already-sent requests finish below with their original attempt unchanged.
+  calendar.refreshToday();
+  if (dayChanged.value) { expiredPractice.value = true; error.value = ''; return; }
   busy.value = true; error.value = '';
   pendingAttempt.value ||= { result, request_id: requestId() };
   try {
@@ -209,7 +224,10 @@ async function grade(result) {
     pendingAttempt.value = null;
     notice.value = response.points_earned ? `本组完成，获得 ${response.points_earned} 积分。` : '本项练习已记录。';
     history.value = await api.getWordStudyHistory(childId.value);
-  } catch (err) { error.value = message(err); }
+  } catch (err) {
+    if (err === '只能记录今天实际进行的练习') expiredPractice.value = true;
+    else error.value = message(err);
+  }
   finally { busy.value = false; }
 }
 async function extra(day) {

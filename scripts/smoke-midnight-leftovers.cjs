@@ -128,8 +128,8 @@ async function main() {
     await noErrors(page);
     await shot(page, `word-${event}`);
   });
-  await check('L1 active practice survives midnight, accepts score, and close refreshes list', async () => {
-    const page = await open();
+  for (const scheme of ['light', 'dark']) await check(`L1 ${scheme}: yesterday score blocked before HTTP; switch accepts today score`, async () => {
+    const page = await open(scheme);
     await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
     await begin(page).click();
     const dialog = page.getByRole('dialog');
@@ -139,11 +139,42 @@ async function main() {
     await dialog.getByText('已经到新的一天，这次练习结束后会换成今天的清单', { exact: true }).waitFor();
     assert.equal(await dialog.locator('.text-4xl').textContent(), word);
     await shot(page, 'practice-after-midnight');
-    // Required acceptance: the unchanged API currently rejects this yesterday-item score.
-    // Keep the assertion so the policy conflict remains visible instead of reporting a false pass.
-    await grade(page);
-    await page.getByRole('button', { name: '关闭练习', exact: true }).click();
+    const writes = [];
+    page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
+    await dialog.getByRole('button', { name: '我已尝试，揭晓核对' }).click();
+    await dialog.getByRole('button', { name: '独立完成', exact: true }).click();
+    await dialog.getByText('已经到新的一天，昨天的清单不能再记录了。请换成今天的清单继续练习。', { exact: true }).waitFor();
+    assert.deepEqual(writes, [], 'no yesterday write or automatic retry');
+    await noErrors(page);
+    await shot(page, `blocked-yesterday-${scheme}`);
+    await dialog.getByRole('button', { name: '换成今天的清单', exact: true }).click();
     await waitForNewStudy(page); await noErrors(page);
+    await begin(page).click(); await grade(page); await noErrors(page);
+  });
+  await check('L1 server date rejection shows friendly recovery without toast or retry', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    await begin(page).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+    await dialog.getByRole('button', { name: '我已尝试，揭晓核对' }).click();
+    // Server has crossed midnight while the device clock remains on yesterday.
+    now = after;
+    const writes = [];
+    page.on('request', request => { if (request.url().includes('/attempts')) writes.push(request.postDataJSON()); });
+    const rejected = page.waitForResponse(response => response.url().includes('/attempts'));
+    await dialog.getByRole('button', { name: '独立完成', exact: true }).click();
+    assert.equal((await rejected).status(), 403);
+    await dialog.getByText('已经到新的一天，昨天的清单不能再记录了。请换成今天的清单继续练习。', { exact: true }).waitFor();
+    await noErrors(page);
+    assert.equal(writes.length, 1, 'no automatic retry');
+    await shot(page, 'server-date-rejection');
+    // Device clock catches up; switching must refresh its calendar before loading.
+    await page.clock.setSystemTime(new RealDate(after));
+    await dialog.getByRole('button', { name: '换成今天的清单', exact: true }).click();
+    await waitForNewStudy(page); await noErrors(page);
+    await begin(page).click(); await grade(page); await noErrors(page);
+    assert.equal(writes.length, 2, 'only an explicit score on today item is sent');
   });
   await check('L1 settings draft survives midnight; closing triggers silent refresh', async () => {
     const page = await open('dark');

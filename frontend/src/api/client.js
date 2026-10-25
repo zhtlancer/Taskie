@@ -41,7 +41,8 @@ client.interceptors.response.use(response => response, error => {
   const message = !error.response ? (error.config?.networkErrorMessage || '无法连接服务器，操作未确认。请检查网络后，在原处重试，或到“待确认请求”核对。')
     : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
   const code = error.response?.data?.code;
-  if (!error.config?.silentError && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
+  const silentError = typeof error.config?.silentError === 'function' ? error.config.silentError(error) : error.config?.silentError;
+  if (!silentError && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status }) : message);
 });
 const request = async (method, url, data, params, signal, options = {}) =>
@@ -52,12 +53,12 @@ const generationHeaders = generation => generation ? { 'X-Taskie-Data-Generation
 // Non-persisted practice/manual forms keep the same object for an uncertain attempt.
 const requestGenerations = new WeakMap();
 const invalidAttempts = new WeakSet();
-async function idempotentPost(url, data) {
+async function idempotentPost(url, data, options = {}) {
   requireFamilyDate();
   if (invalidAttempts.has(data)) throw '数据已恢复，这次操作没有执行，请核对后重新操作';
   await ensureDataGeneration();
   if (!requestGenerations.has(data)) requestGenerations.set(data, getDataGeneration());
-  try { return await post(url, data, { headers: generationHeaders(requestGenerations.get(data)) }); }
+  try { return await post(url, data, { ...options, headers: generationHeaders(requestGenerations.get(data)) }); }
   catch (error) {
     if (error === '数据已恢复，这次操作没有执行，请核对后重新操作') invalidAttempts.add(data);
     throw error;
@@ -168,7 +169,10 @@ export const api = {
   getWordStudyHistory: id => get(`/children/${id}/word-study/history`),
   saveWordStudyPlan: (id, skill, data) => put(`/children/${id}/word-study/plans/${skill}`, data),
   addWordStudyExtra: (id, requestId) => idempotentPost(`/word-study/days/${id}/extra`, { request_id: requestId }),
-  gradeWordStudyItem: (id, data) => idempotentPost(`/word-study/items/${id}/attempts`, data),
+  gradeWordStudyItem: (id, data) => idempotentPost(`/word-study/items/${id}/attempts`, data, {
+    // The practice dialog provides recovery only for this specific date rejection.
+    silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
+  }),
   getCharacters: (id, mastered = null) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }),
   createCharacter: data => post('/characters', data),
   markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }),

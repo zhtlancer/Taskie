@@ -122,6 +122,21 @@ for (const method of ['addTaskStudy', 'addHomeworkStudy', 'gradeWordStudyItem'])
   assert.equal(sent.at(-1).headers.get('X-Taskie-Data-Generation'), 'created');
 });
 
+for (const [status, error, silent] of [
+  [403, '只能记录今天实际进行的练习', true],
+  [403, '没有权限', false],
+  [503, '操作失败，请重试', false]
+]) test(`practice ${status} ${error}: only date rejection suppresses global toast`, async t => {
+  const { api, sent } = await fixture(t, () => ({ status, data: { error } }));
+  session.saveToken('parent', token(), 'current');
+  const events = [];
+  window.addEventListener('taskie:error', event => events.push(event.detail));
+  await assert.rejects(api.gradeWordStudyItem('item', { request_id: 'practice-1', result: 'good' }), reason => reason === error);
+  assert.equal(sent.length, 1, 'a rejected attempt is not automatically retried');
+  assert.equal(events.length, silent ? 0 : 1);
+  if (!silent) assert.equal(events[0].message, error);
+});
+
 test('a late calibration never overwrites a different login', async t => {
   let release, arrive;
   const arrived = new Promise(resolve => { arrive = resolve; });
