@@ -165,11 +165,15 @@ class WordStudyService {
     if (!item) throw fail(404, '学习内容不存在');
     const day = this.getDay(item.day_id);
     const today = getTodayDate();
-    if (day.date !== today) throw fail(403, '只能记录今天实际进行的练习');
-    let pointsEarned = 0;
+    let pointsEarned = 0, replayed = false;
     this.db.transaction(() => {
       const oldAttempt = this.db.prepare('SELECT item_id, result FROM word_study_attempts WHERE id = ?').get(requestId);
-      if (oldAttempt) { if (oldAttempt.item_id !== itemId || oldAttempt.result !== result) throw fail(409, '请求标识已被使用'); return; }
+      if (oldAttempt) {
+        if (oldAttempt.item_id !== itemId || oldAttempt.result !== result) throw fail(409, '请求标识已被使用');
+        replayed = true;
+        return;
+      }
+      if (day.date !== today) throw fail(403, '只能记录今天实际进行的练习');
       const now = new Date().toISOString();
       this.db.prepare('INSERT INTO word_study_attempts (id, item_id, result, actor, created_at) VALUES (?, ?, ?, ?, ?)').run(requestId, itemId, result, role, now);
       if (item.result) {
@@ -212,7 +216,7 @@ class WordStudyService {
         .run(generateId(), day.child_id, item.is_extra ? null : task?.id || null, pointsEarned, now, day.date, title(day.skill) + (item.is_extra ? ' · 额外学习' : ''), item.batch_id);
       this.rewardsService?.checkAndUnlockBadges(day.child_id);
     })();
-    return { day: this.describeDay(day.id), points_earned: pointsEarned };
+    return { day: this.describeDay(day.id), points_earned: pointsEarned, replayed };
   }
 
   history(childId) {

@@ -213,6 +213,44 @@ test('request replays and parallel submissions do not duplicate batches, state u
   assert.equal(ctx.today()[0].batches.length, 2, 'an unfinished extra batch is resumed, not multiplied');
 });
 
+test('midnight replay confirms the original attempt with current day state and no extra reward', async t => {
+  const ctx = await fixture(t);
+  ctx.add('山'); ctx.plan();
+  const day = ctx.today()[0], item = day.batches[0].items[0], requestId = ctx.request();
+  assert.equal(ctx.grade(item, 'good', requestId).points_earned, 10);
+  ctx.grade(item, 'hinted'); // Replays must describe the current state, not an old response.
+  const snapshot = () => ['word_study_attempts', 'word_study_states', 'point_logs'].map(table =>
+    ctx.db.prepare(`SELECT * FROM ${table} ORDER BY id`).all());
+  const before = snapshot(), currentDay = ctx.study.describeDay(day.id);
+  ctx.advance('2026-10-13');
+  const response = ctx.grade(item, 'good', requestId);
+  assert.equal(response.replayed, true);
+  assert.equal(response.points_earned, 0);
+  assert.deepEqual(response.day, currentDay);
+  assert.deepEqual(snapshot(), before);
+});
+
+test('midnight new request id still rejects yesterday practice with 403', async t => {
+  const ctx = await fixture(t);
+  ctx.add('山'); ctx.plan();
+  const item = ctx.today()[0].batches[0].items[0];
+  ctx.grade(item);
+  ctx.advance('2026-10-13');
+  assert.throws(() => ctx.grade(item), error => error.status === 403);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM word_study_attempts').get().n, 1);
+});
+
+test('midnight reused request id with different result or item still returns 409', async t => {
+  const ctx = await fixture(t);
+  ctx.add('山'); ctx.add('水'); ctx.plan({ new_target: 2 });
+  const [item, other] = ctx.today()[0].batches[0].items, requestId = ctx.request();
+  ctx.grade(item, 'good', requestId);
+  ctx.advance('2026-10-13');
+  assert.throws(() => ctx.grade(item, 'again', requestId), error => error.status === 409);
+  assert.throws(() => ctx.grade(other, 'good', requestId), error => error.status === 409);
+  assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM word_study_attempts').get().n, 1);
+});
+
 test('permissions cover own study, cross-child and encoded routes; generic check-off cannot bypass practice', async t => {
   const ctx = await fixture(t);
   ctx.add('山'); ctx.plan();

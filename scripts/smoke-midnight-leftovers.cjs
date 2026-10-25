@@ -22,8 +22,15 @@ const app = buildApp({ db, logger: false, deviceAuth: false, backupIntervalHours
   authorizedTokensFile: path.join(dir, 'tokens'), clientDistDir: path.resolve(__dirname, '../frontend/dist') });
 let browser, base, token, child, passes = 0, failures = 0;
 const contexts = [], errors = [];
+const apiDelay = Number(process.env.SMOKE_API_DELAY_MS || 0);
+assert.ok(Number.isFinite(apiDelay) && apiDelay >= 0, 'SMOKE_API_DELAY_MS must be nonnegative');
+app.addHook('onRequest', async request => {
+  if (apiDelay && request.url.startsWith('/api/') && !request.headers['x-smoke-seed']) {
+    await new Promise(resolve => setTimeout(resolve, apiDelay));
+  }
+});
 async function api(method, url, payload) {
-  const response = await app.inject({ method, url: `/api${url}`, payload, headers: { authorization: `Bearer ${token}` } });
+  const response = await app.inject({ method, url: `/api${url}`, payload, headers: { authorization: `Bearer ${token}`, 'x-smoke-seed': '1' } });
   assert.ok(response.statusCode < 300, `${url}: ${response.body}`);
   return response.json();
 }
@@ -51,13 +58,21 @@ async function shot(page, name) {
   await page.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, `leftovers-${name}.png`), fullPage: true });
 }
 async function check(name, run) {
+  if (process.env.SMOKE_CASE_FILTER && !new RegExp(process.env.SMOKE_CASE_FILTER).test(name)) return;
   try { await run(); passes++; console.log(`PASS ${name}`); }
   catch (error) {
     failures++; console.error(`FAIL ${name}: ${error.stack}`);
     const page = contexts.at(-1)?.pages().at(-1);
     if (page) await shot(page, `failure-${name.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 90)}`);
   }
-  finally { await Promise.all(contexts.splice(0).map(context => context.close())); }
+  finally {
+    for (const context of contexts.splice(0)) {
+      // Scores now return before background history; finish intercepted requests
+      // before disposing their request context, including under API latency.
+      await Promise.all(context.pages().map(page => page.unrouteAll({ behavior: 'wait' })));
+      await context.close();
+    }
+  }
 }
 async function signal(promise) {
   let timer;
@@ -79,14 +94,14 @@ async function midnight(page, event = 'clock') {
 async function seedWords() {
   await api('POST', '/characters', { child_id: child.id, char: '山', pinyin: 'shān' });
   await api('POST', '/characters', { child_id: child.id, char: '水', pinyin: 'shuǐ' });
-  await api('PUT', `/children/${child.id}/word-study/plans/recognize`, { new_target: 1, review_target: 1,
+  await api('PUT', `/children/${child.id}/word-study/plans/recognize`, { new_target: 2, review_target: 1,
     days_of_week: [0, 1, 2, 3, 4, 5, 6] });
 }
 const studyUrl = () => `/child/${child.id}/word-study`;
 const begin = page => page.getByRole('button', { name: '开始 / 继续学习 →', exact: true });
 async function studyReady(page) {
   await begin(page).waitFor();
-  await page.getByText('基础目标 0/1', { exact: true }).waitFor();
+  await page.getByText('基础目标 0/2', { exact: true }).waitFor();
   await page.getByText('最近学习记录', { exact: true }).click();
 }
 async function grade(page) {
@@ -102,7 +117,7 @@ async function noErrors(page) {
 }
 async function waitForNewStudy(page) {
   // Wait for the actual new dated API batch and Vue rendering before negative assertions.
-  await page.getByText(/2026-10-22 · 认读/).waitFor();
+  await page.locator('main > section').getByText(/2026-10-22 · 认读/).waitFor();
   await begin(page).waitFor();
 }
 async function main() {
@@ -110,6 +125,184 @@ async function main() {
   token = app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() }, { expiresIn: '7d' });
   base = await app.listen({ host: '127.0.0.1', port: smokePort() });
   browser = await chromium.launch(launchOptions());
+  await check('D1 device 30 seconds ahead: idle list retries after server midnight', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    now = before + 40000; // Server 23:59:40, device 00:00:10.
+    const old = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/word-study'));
+    await page.clock.fastForward(70000);
+    assert.equal((await old).status(), 200);
+    await page.waitForTimeout(apiDelay + 100);
+    now += 30000;
+    const retry = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/word-study'));
+    await page.clock.runFor(5000);
+    assert.equal((await (await retry).json()).date, '2026-10-22');
+    await waitForNewStudy(page);
+    await noErrors(page);
+  });
+  for (const delay of [300, 1200]) for (const rollover of [false, true]) {
+    await check(`D2 history ${delay}ms: one next click ${rollover ? 'returns to today' : 'opens second item'}`, async () => {
+      const page = await open();
+      await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+      await begin(page).click();
+      const dialog = page.getByRole('dialog');
+      const word = await dialog.locator('.text-4xl').textContent();
+      await page.route('**/api/children/*/word-study/history', async route => {
+        const response = await route.fetch();
+        await new Promise(resolve => setTimeout(resolve, delay));
+        await route.fulfill({ response });
+      });
+      if (rollover) {
+        // Accept on yesterday, deliver after midnight, before the slow history read.
+        await page.route('**/api/word-study/items/*/attempts', async route => {
+          const response = await route.fetch();
+          await midnight(page);
+          await route.fulfill({ response });
+        });
+      }
+      await grade(page);
+      const next = dialog.getByRole('button', { name: '下一项 / 返回清单', exact: true });
+      assert.equal(await next.isDisabled(), false);
+      await next.click();
+      // Assert immediately: a second click after history arrives must not be needed.
+      if (rollover) {
+        assert.equal(await dialog.count(), 0);
+        await waitForNewStudy(page);
+      } else {
+        assert.notEqual(await dialog.locator('.text-4xl').textContent(), word);
+        assert.equal(await dialog.getByRole('button', { name: '我已尝试，揭晓核对' }).count(), 1);
+      }
+      await noErrors(page);
+    });
+  }
+  for (const rollover of [false, true]) await check(`A1 lost accepted response: ${rollover ? 'midnight' : 'same day'} retry keeps request id and rewards once`, async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    await begin(page).click();
+    // Finish the first item so the uncertain second item pays the batch reward.
+    await grade(page);
+    await page.getByRole('button', { name: '下一项 / 返回清单', exact: true }).click();
+    const attempts = [];
+    await page.route('**/api/word-study/items/*/attempts', async route => {
+      attempts.push({ item: new URL(route.request().url()).pathname, ...route.request().postDataJSON() });
+      const response = await route.fetch();
+      if (attempts.length === 1) { assert.equal(response.status(), 200); await route.abort('failed'); }
+      else await route.fulfill({ response });
+    });
+    await page.getByRole('button', { name: '我已尝试，揭晓核对' }).click();
+    await page.getByRole('button', { name: '独立完成', exact: true }).click();
+    await page.getByRole('dialog').getByRole('alert').filter({ hasText: '无法连接服务器' }).waitFor();
+    await page.getByRole('button', { name: '关闭错误提示', exact: true }).click();
+    const snapshot = () => ({
+      attempts: db.prepare('SELECT a.* FROM word_study_attempts a JOIN word_study_items i ON i.id = a.item_id JOIN word_study_batches b ON b.id = i.batch_id JOIN word_study_days d ON d.id = b.day_id WHERE d.child_id = ? ORDER BY a.id').all(child.id),
+      points: db.prepare('SELECT * FROM point_logs WHERE child_id = ? ORDER BY id').all(child.id)
+    });
+    const accepted = snapshot();
+    assert.equal(accepted.attempts.length, 2);
+    assert.equal(accepted.points.length, 1);
+    assert.equal(accepted.points[0].points, 10);
+    if (rollover) await midnight(page);
+    const saved = page.waitForResponse(r => r.url().includes('/attempts'));
+    await page.getByRole('button', { name: '重试确认这次练习', exact: true }).click();
+    const response = await saved;
+    assert.equal(response.status(), 200);
+    assert.equal((await response.json()).replayed, true);
+    await page.getByRole('dialog').getByText('这次练习已经记下了', { exact: true }).waitFor();
+    assert.equal(attempts.length, 2);
+    assert.deepEqual(attempts[1], attempts[0]);
+    assert.deepEqual(snapshot(), accepted, 'retry adds no attempt, state change or reward');
+    await page.getByRole('button', { name: '下一项 / 返回清单', exact: true }).click();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    if (rollover) await waitForNewStudy(page);
+  });
+  await check('D2 stale history response cannot overwrite a later score history', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    await begin(page).click();
+    let release, arrived, held = false;
+    const gate = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { arrived = resolve; });
+    await page.route('**/api/children/*/word-study/history', async route => {
+      if (held) return route.fallback();
+      held = true;
+      const response = await route.fetch();
+      arrived(); await gate; await route.fulfill({ response });
+    });
+    const history = page.locator('main > details');
+    try {
+      await grade(page); await signal(ready);
+      await page.getByRole('button', { name: '下一项 / 返回清单', exact: true }).click();
+      await grade(page);
+      await history.getByText(/基础 2\/2 项/).waitFor();
+    } finally { release(); }
+    await page.unrouteAll({ behavior: 'wait' });
+    await page.waitForTimeout(100);
+    assert.equal(await history.getByText(/基础 2\/2 项/).count(), 1);
+    assert.equal(await history.getByText(/基础 1\/2 项/).count(), 0);
+  });
+  for (const action of ['practice', 'navigate', 'date']) await check(`D1 retry stops on ${action}`, async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    now = before + 40000;
+    const old = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/word-study'));
+    await page.clock.fastForward(70000); await old;
+    await page.waitForTimeout(apiDelay + 100);
+    const reads = [];
+    page.on('request', r => { if (new URL(r.url()).pathname.endsWith('/word-study')) reads.push(r.url()); });
+    if (action === 'practice') await begin(page).click();
+    if (action === 'navigate') await page.goto(`${base}/child/${child.id}/today`);
+    if (action === 'date') {
+      // Reverting to the displayed day must cancel the timer for the future day.
+      await page.clock.setSystemTime(new RealDate(before));
+      await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+    }
+    await page.clock.runFor(10000); await page.waitForTimeout(apiDelay + 100);
+    assert.equal(reads.length, 0);
+  });
+  await check('D1 server remains behind: retries stop after 24 attempts', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    now = before + 40000;
+    const reads = [];
+    page.on('request', r => { if (new URL(r.url()).pathname.endsWith('/word-study')) reads.push(r.url()); });
+    for (let i = 0; i <= 24; i++) {
+      const response = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/word-study'));
+      if (i === 0) await page.clock.fastForward(70000);
+      else await page.clock.runFor(5000);
+      await response;
+      await page.waitForTimeout(apiDelay + 100);
+    }
+    assert.equal(reads.length, 25, 'initial read plus 24 bounded retries');
+    await page.clock.runFor(120000); await page.waitForTimeout(apiDelay + 100);
+    assert.equal(reads.length, 25, 'no unbounded background reads');
+  });
+  await check('A1 lost unaccepted request: midnight confirmation returns friendly 403 without retry', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    await begin(page).click();
+    const writes = [];
+    await page.route('**/api/word-study/items/*/attempts', async route => {
+      writes.push(route.request().postDataJSON());
+      if (writes.length === 1) await route.abort('failed');
+      else await route.continue();
+    });
+    await page.getByRole('button', { name: '我已尝试，揭晓核对' }).click();
+    await page.getByRole('button', { name: '独立完成', exact: true }).click();
+    await page.getByRole('dialog').getByRole('alert').filter({ hasText: '无法连接服务器' }).waitFor();
+    await page.getByRole('button', { name: '关闭错误提示', exact: true }).click();
+    await midnight(page);
+    const rejected = page.waitForResponse(r => r.url().includes('/attempts'));
+    await page.getByRole('button', { name: '重试确认这次练习', exact: true }).click();
+    assert.equal((await rejected).status(), 403);
+    await page.getByRole('dialog').getByText('这次练习没有记录，昨天的清单不能再记录了。', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '关闭错误提示', exact: true }).count(), 0);
+    await page.clock.runFor(10000); await page.waitForTimeout(apiDelay + 100);
+    assert.equal(writes.length, 2);
+    assert.deepEqual(writes[1], writes[0]);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM word_study_attempts WHERE id = ?').get(writes[0].request_id).n, 0);
+    await page.getByRole('button', { name: '换成今天的清单', exact: true }).click();
+    await waitForNewStudy(page);
+  });
   for (const event of ['clock', 'visibilitychange', 'pageshow']) await check(`L1 ${event}: idle list rolls over and accepts practice`, async () => {
     const page = await open(event === 'visibilitychange' ? 'dark' : 'light');
     await seedWords();
@@ -167,6 +360,8 @@ async function main() {
     assert.equal((await rejected).status(), 403);
     await dialog.getByText('已经到新的一天，昨天的清单不能再记录了。请换成今天的清单继续练习。', { exact: true }).waitFor();
     await noErrors(page);
+    await page.clock.runFor(10000);
+    await page.waitForTimeout(apiDelay + 100);
     assert.equal(writes.length, 1, 'no automatic retry');
     await shot(page, 'server-date-rejection');
     // Keep the device date stale: recovery must use the server's current list.
@@ -179,7 +374,7 @@ async function main() {
     now = after + 86400000;
     await page.clock.setSystemTime(new RealDate(now));
     await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
-    await page.getByText(/2026-10-23 · 认读/).waitFor();
+    await page.locator('main > section').getByText(/2026-10-23 · 认读/).waitFor();
     await begin(page).click(); await grade(page); await noErrors(page);
   });
   await check('L1 settings draft survives midnight; closing triggers silent refresh', async () => {
@@ -192,6 +387,7 @@ async function main() {
     page.on('request', r => { if (new URL(r.url()).pathname.endsWith('/word-study')) reads.push(r.url()); });
     await midnight(page);
     assert.equal(await target.inputValue(), '7');
+    await page.waitForTimeout(apiDelay + 300);
     assert.equal(reads.length, 0);
     await page.getByRole('button', { name: '收起设置', exact: true }).click();
     await waitForNewStudy(page); await noErrors(page);

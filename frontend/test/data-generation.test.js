@@ -137,6 +137,14 @@ for (const [status, error, silent] of [
   if (!silent) assert.equal(events[0].message, error);
 });
 
+test('only a practice network failure marks the attempt as uncertain', async t => {
+  const { api } = await fixture(t, config => { throw { config }; });
+  session.saveToken('parent', token(), 'current');
+  await assert.rejects(api.gradeWordStudyItem('item', { request_id: 'practice-network', result: 'good' }), error =>
+    error.networkFailure === true && error.message.includes('无法连接服务器'));
+  await assert.rejects(api.getWordStudy('a'), error => typeof error === 'string');
+});
+
 test('a late calibration never overwrites a different login', async t => {
   let release, arrive;
   const arrived = new Promise(resolve => { arrive = resolve; });

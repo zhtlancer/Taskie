@@ -43,6 +43,7 @@ client.interceptors.response.use(response => response, error => {
   const code = error.response?.data?.code;
   const silentError = typeof error.config?.silentError === 'function' ? error.config.silentError(error) : error.config?.silentError;
   if (!silentError && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
+  if (error.config?.preserveNetworkError && !error.response) return Promise.reject(Object.assign(new Error(message), { networkFailure: true }));
   return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status }) : message);
 });
 const request = async (method, url, data, params, signal, options = {}) =>
@@ -170,6 +171,7 @@ export const api = {
   saveWordStudyPlan: (id, skill, data) => put(`/children/${id}/word-study/plans/${skill}`, data),
   addWordStudyExtra: (id, requestId) => idempotentPost(`/word-study/days/${id}/extra`, { request_id: requestId }),
   gradeWordStudyItem: (id, data) => idempotentPost(`/word-study/items/${id}/attempts`, data, {
+    preserveNetworkError: true,
     // The practice dialog provides recovery only for this specific date rejection.
     silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
   }),

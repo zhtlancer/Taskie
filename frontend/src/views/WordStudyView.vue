@@ -50,6 +50,7 @@
         </section>
         <section v-for="day in days" :key="day.id" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3"><h2 class="font-black text-slate-800 dark:text-slate-100">{{ day.title }}</h2><span class="text-xs font-bold" :class="day.base_done ? 'text-emerald-600 dark:text-emerald-300' : 'text-brand-600 dark:text-brand-300'">{{ day.base_done ? '基础目标已完成 ✓' : `基础目标 ${day.base_completed}/${day.base_total}` }}</span></div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">{{ day.date }} · {{ skillName(day.skill) }}</p>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ day.required ? '每日必做' : '可选学习' }} · 新学 {{ baseCount(day, 'new') }} 项，复习 {{ baseCount(day, 'review') }} 项 · 基础完成 +{{ day.points }} 分</p>
           <p class="text-xs text-amber-700 dark:text-amber-300">基础清单以外：还有 {{ day.remaining_due }} 项到期复习、{{ day.remaining_new }} 项待新学。达标不代表已复习完全部内容。</p>
           <button v-if="day.batches.some(batch => !batch.completed_at)" :disabled="busy" class="w-full min-h-[48px] rounded-xl bg-brand-500 text-white font-bold disabled:opacity-50" @click="begin(day, day.batches.find(batch => !batch.completed_at))">开始 / 继续学习 →</button>
@@ -95,15 +96,19 @@
           </template>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ asParent ? '由家长核对结果' : '请如实自评，系统不自动判定读音或书写正确性' }}；需要提示或答错也算完成本项练习。</p>
           <div v-if="!feedbackResult && !expiredPractice" class="flex flex-wrap justify-center gap-2">
+            <button v-if="uncertainAttempt" :disabled="busy" class="p-3 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50" @click="grade(pendingAttempt.result)">重试确认这次练习</button>
+            <template v-else>
             <button :disabled="busy" class="p-3 rounded-xl bg-emerald-500 text-white text-sm font-bold disabled:opacity-50" @click="grade('good')">独立完成</button>
             <button :disabled="busy" class="p-3 rounded-xl bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-sm font-bold disabled:opacity-50" @click="grade('hinted')">提示后完成</button>
             <button :disabled="busy" class="p-3 rounded-xl bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm font-bold disabled:opacity-50" @click="grade('again')">还不熟</button>
+            </template>
           </div>
           <div v-else-if="feedbackResult" class="space-y-3">
+            <p v-if="confirmedAttempt" role="status" class="text-sm text-emerald-700 dark:text-emerald-300">这次练习已经记下了</p>
             <p v-if="nextDue" class="text-xs text-brand-600 dark:text-brand-300">下次复习：{{ nextDue }}</p>
             <p class="text-sm text-emerald-700 dark:text-emerald-300">已记录“{{ resultName(feedbackResult) }}”。同日再练不会重复加分或连续升级。</p>
-            <button class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold mr-2" @click="revealed = false; feedbackResult = null">再练一次</button>
-            <button class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold" @click="nextItem">下一项 / 返回清单</button>
+            <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold mr-2 disabled:opacity-50" @click="revealed = false; feedbackResult = null">再练一次</button>
+            <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50" @click="nextItem">下一项 / 返回清单</button>
           </div>
         </template>
         <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
@@ -138,17 +143,33 @@ const nextDue = computed(() => {
   return day?.batches.flatMap(batch => batch.items).find(item => item.id === active.value?.item.id)?.next_due_date;
 });
 const pendingAttempt = ref(null);
+const pendingItemId = ref(null), attemptUnknown = ref(false), confirmedAttempt = ref(false);
+const uncertainAttempt = computed(() => attemptUnknown.value && pendingAttempt.value && pendingItemId.value === active.value?.item.id);
 // A date-rejection recovery may return the server's today while the device clock
 // still lags. Trust that snapshot until the device's family date changes again.
 const recoveredDeviceDate = ref('');
 const dayChanged = computed(() => calendar.ready && Boolean(date.value) && calendar.today !== date.value && calendar.today !== recoveredDeviceDate.value);
-let studySerial = 0, pendingDate = null, loaded = false;
+let studySerial = 0, historySerial = 0, pendingDate = null, loaded = false;
+let retryTimer, retryCount = 0;
+function stopRetry() { clearTimeout(retryTimer); retryTimer = undefined; }
+function retryEarlierServerDate() {
+  if (retryTimer || retryCount >= 24 || !canReload()) return;
+  const serial = studySerial;
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined;
+    if (serial !== studySerial || !canReload()) return;
+    retryCount++;
+    refresh({ silent: loaded });
+  }, 5000);
+}
 const canReload = () => calendar.ready && !active.value && !pendingAttempt.value && !showSettings.value && !busy.value;
 function reloadStudyDay() {
   if (canReload() && (!loaded || dayChanged.value) && pendingDate !== calendar.today) refresh({ silent: loaded });
 }
-watch(() => [calendar.today, calendar.ready, active.value, pendingAttempt.value, showSettings.value, busy.value], reloadStudyDay);
-onBeforeUnmount(() => { studySerial++; });
+watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value], () => { stopRetry(); retryCount = 0; historySerial++; });
+watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, active.value, pendingAttempt.value, showSettings.value, busy.value], reloadStudyDay);
+watch(() => [active.value, showSettings.value, busy.value], () => { if (!canReload()) stopRetry(); });
+onBeforeUnmount(() => { studySerial++; historySerial++; stopRetry(); });
 const closeRestoredForm = () => { active.value = null; pendingAttempt.value = null; };
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
@@ -157,22 +178,37 @@ const requestId = () => globalThis.crypto?.randomUUID?.() || `study-${Date.now()
 const skillName = skill => skill === 'write' ? '书写' : '认读';
 const resultName = result => ({ good: '独立完成', hinted: '提示后完成', again: '还不熟' }[result] || '待学习');
 const baseCount = (day, kind) => day.batches.find(batch => !batch.is_extra)?.items.filter(item => item.kind === kind).length || 0;
-const message = err => typeof err === 'string' ? err : '操作失败，请重试';
+const message = err => typeof err === 'string' ? err : err?.message || '操作失败，请重试';
+
+async function refreshHistory() {
+  const serial = ++historySerial, id = childId.value, requestedDate = calendar.today, timeZone = calendar.timeZone;
+  try {
+    const recent = await api.getWordStudyHistory(id);
+    if (serial === historySerial && id === childId.value && calendar.ready && requestedDate === calendar.today && timeZone === calendar.timeZone) history.value = recent;
+  } catch { /* The accepted score remains usable; the API reports history errors. */ }
+}
 
 async function load({ recoverDate = false } = {}) {
   if (!calendar.ready) return;
+  stopRetry();
   const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value, settingsOpen = showSettings.value;
+  const recentSerial = ++historySerial;
   pendingDate = requestedDate;
   const current = () => serial === studySerial && calendar.ready && requestedDate === calendar.today &&
     timeZone === calendar.timeZone && id === childId.value;
   try {
     const [overview, recent] = await Promise.all([api.getWordStudy(id), api.getWordStudyHistory(id)]);
     const sameRecoveredDate = recoveredDeviceDate.value === requestedDate && overview.date === date.value;
-    if (!current() || (!recoverDate && !sameRecoveredDate && overview.date !== requestedDate) || active.value || (!settingsOpen && showSettings.value)) return;
+    if (!current() || active.value || (!settingsOpen && showSettings.value)) return;
+    if (!recoverDate && !sameRecoveredDate && overview.date !== requestedDate) {
+      if (overview.date < requestedDate) retryEarlierServerDate();
+      return;
+    }
+    retryCount = 0;
     recoveredDeviceDate.value = overview.date === requestedDate ? '' : requestedDate;
     days.value = overview.days;
     date.value = overview.date;
-    history.value = recent;
+    if (recentSerial === historySerial) history.value = recent;
     if (!showSettings.value) forms.value = ['recognize', 'write'].map(skill => {
       const existing = overview.plans.find(plan => plan.skill === skill);
       return { skill, enabled: false, required: true, include_mastered: false, start_date: overview.date, new_target: 3, review_target: 10,
@@ -196,8 +232,9 @@ async function save(form) {
 }
 
 function openItem(day, batch, item) {
+  stopRetry();
   active.value = { dayId: day.id, batchId: batch.id, skill: day.skill, item };
-  revealed.value = false; charIndex.value = 0; feedbackResult.value = null; pendingAttempt.value = null; error.value = ''; expiredPractice.value = false;
+  revealed.value = false; charIndex.value = 0; feedbackResult.value = null; pendingAttempt.value = null; pendingItemId.value = null; attemptUnknown.value = false; confirmedAttempt.value = false; error.value = ''; expiredPractice.value = false;
 }
 function begin(day, batch) { const item = batch.items.find(item => !item.result); if (item) openItem(day, batch, item); }
 function closePractice() { if (!busy.value) { active.value = null; pendingAttempt.value = null; } }
@@ -208,6 +245,7 @@ function switchToToday() {
   refresh({ silent: true, recoverDate: true });
 }
 function nextItem() {
+  if (busy.value || !active.value) return;
   if (dayChanged.value) { closePractice(); return; }
   const day = days.value.find(day => day.id === active.value.dayId);
   const batch = day?.batches.find(batch => batch.id === active.value.batchId);
@@ -219,18 +257,24 @@ async function grade(result) {
   // Check immediately too: the clock/visibility tick may not have run yet.
   // Already-sent requests finish below with their original attempt unchanged.
   calendar.refreshToday();
-  if (dayChanged.value) { expiredPractice.value = true; error.value = ''; return; }
+  if (dayChanged.value && !uncertainAttempt.value) { expiredPractice.value = true; error.value = ''; return; }
   busy.value = true; error.value = '';
+  const confirmingUnknown = Boolean(uncertainAttempt.value);
   pendingAttempt.value ||= { result, request_id: requestId() };
+  pendingItemId.value = active.value.item.id;
+  const attempt = pendingAttempt.value;
+  attemptUnknown.value = false;
   try {
-    const response = await api.gradeWordStudyItem(active.value.item.id, pendingAttempt.value);
+    const response = await api.gradeWordStudyItem(active.value.item.id, attempt);
     days.value = days.value.map(day => day.id === response.day.id ? response.day : day);
-    feedbackResult.value = pendingAttempt.value.result;
+    feedbackResult.value = attempt.result;
+    confirmedAttempt.value = response.replayed === true;
     pendingAttempt.value = null;
     notice.value = response.points_earned ? `本组完成，获得 ${response.points_earned} 积分。` : '本项练习已记录。';
-    history.value = await api.getWordStudyHistory(childId.value);
+    refreshHistory();
   } catch (err) {
-    if (err === '只能记录今天实际进行的练习') expiredPractice.value = true;
+    attemptUnknown.value = err?.networkFailure === true;
+    if (err === '只能记录今天实际进行的练习') { expiredPractice.value = true; pendingAttempt.value = null; if (confirmingUnknown) error.value = '这次练习没有记录，昨天的清单不能再记录了。'; }
     else error.value = message(err);
   }
   finally { busy.value = false; }
