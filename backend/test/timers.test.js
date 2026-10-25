@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -409,7 +410,7 @@ test('v26 migration remembers timers running during the upgrade; backups keep th
   candidate.pragma('user_version = 25');
   await backup.restore(pack());
   candidate.close();
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   // An older backup has no latest timer: the paused session simply shows again once restarted.
   assert.deepEqual({ ...latest() }, { kind: null, id: null });
 });

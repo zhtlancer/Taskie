@@ -286,6 +286,8 @@ async function main() {
   await pastStudy.getByRole('button', { name: '保存本次', exact: true }).click();
   await pastStudy.getByText('家长补记昨天学习', { exact: true }).waitFor();
   await pastStudy.getByRole('button', { name: '完成任务', exact: true }).click();
+  // Timed tasks confirm the total first; keeping it completes without adding time.
+  await parentPage.getByRole('dialog', { name: '⏱ 用了多久？', exact: true }).getByRole('button', { name: '保持已有用时，直接完成', exact: true }).click();
   await pastStudy.getByText('✓ 任务已完成', { exact: true }).waitFor();
   const pastDetail = await api('GET', `/daily-tasks/${past.id}/study`);
   assert.equal(pastDetail.total_seconds, 300);

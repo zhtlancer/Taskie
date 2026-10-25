@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -170,7 +171,7 @@ test('v28 imports only explicit old check-ins with unknown durations; attendance
     await backup.restore(pack());
     summary = (await stats()).summary;
     assert.deepEqual([summary.attended, summary.absent, summary.total_fee_cents, summary.unknown_duration_lessons], [1, 0, null, 1]);
-    assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
+    assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   } finally { candidate.close(); }
 });
 

@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createTestApp, cleanupTestApp } = require('./helper');
@@ -66,7 +67,7 @@ test('v19 homework backups gain stable course keys; damaged v20 backups are reje
   assert.deepEqual(homework.list(child.id), before);
   legacy.pragma('user_version = 19');
   await backup.restore(pack());
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   assert.deepEqual(homework.summary(child.id).courses.map(row => [row.course_key, row.total]).sort(),
     [[`class:${live.id}`, 1], ['class:archived:游泳课', 2], ['school:科学', 1]].sort());
   schedule.deleteClass(live.id);

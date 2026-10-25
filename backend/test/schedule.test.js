@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createTestApp, cleanupTestApp, familyInstant } = require('./helper');
@@ -321,6 +322,6 @@ test('v27 upgrades old classes without changing their dates; backups preserve co
     candidate.pragma('user_version = 26');
     await backup.restore(pack());
     assert.deepEqual({ ...row() }, { total_lessons: null, end_date: day(14) });
-    assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
+    assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   } finally { candidate.close(); }
 });

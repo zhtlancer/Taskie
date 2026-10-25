@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -175,7 +176,7 @@ test('backfill markers and audit survive backup restore; v14 migrates and damage
   const legacy = gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }));
   db.close();
   assert.equal((await restore(legacy)).statusCode, 200);
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   assert.equal((await ctx.list()).json().events.length, 0);
 });
 

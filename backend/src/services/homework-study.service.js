@@ -9,7 +9,7 @@ class HomeworkStudyService extends StudySessionsService {
     const record = this.homework.get(recordId);
     if (!record.task) throw fail(409, '请先由家长生成打卡任务');
     const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(record.task.id);
-    return { record, task };
+    return { record: { ...record, task: { ...record.task, track_time: Boolean(task.track_time), expected_minutes: task.expected_minutes } }, task };
   }
 
   complete(recordId, actor) {

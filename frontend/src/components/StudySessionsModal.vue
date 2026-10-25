@@ -75,10 +75,15 @@
       </template>
     </div>
   </UiDialog>
+  <DurationModal v-if="durationPrompt" :key="durationPrompt.total" :title="study.record.content" :initial-seconds="durationPrompt.initial"
+    additive :recorded-seconds="durationPrompt.total" :note="durationPrompt.note"
+    :expected-minutes="study.record.task.expected_minutes" :busy="busy" :error="error"
+    @close="durationPrompt = false" @submit="completeWithDuration" />
 </template>
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
 import UiDialog from './UiDialog.vue';
+import DurationModal from './DurationModal.vue';
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import api from '../api/client';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
@@ -92,13 +97,15 @@ const studyApi = {
   pause: sid => props.taskId ? api.pauseTaskStudy(props.taskId, sid) : api.pauseHomeworkStudy(props.recordId, sid),
   finish: (sid, data) => props.taskId ? api.finishTaskStudy(props.taskId, sid, data) : api.finishHomeworkStudy(props.recordId, sid, data),
   legacy: data => props.taskId ? api.correctTaskLegacy(props.taskId, data) : api.correctHomeworkLegacy(props.recordId, data),
-  complete: () => props.taskId ? api.completeTaskStudy(props.taskId) : api.completeHomework(props.recordId),
+  complete: (data, options) => props.taskId ? api.completeTaskStudy(props.taskId, data, options) : api.completeHomework(props.recordId, data, options),
   add: data => props.taskId ? api.addTaskStudy(props.taskId, data) : api.addHomeworkStudy(props.recordId, data),
   edit: (sid, data) => props.taskId ? api.editTaskStudy(props.taskId, sid, data) : api.editHomeworkStudy(props.recordId, sid, data)
 };
 const emit = defineEmits(['close', 'saved']);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const study = ref(null), error = ref(''), notice = ref(''), busy = ref(false), note = ref(''), now = ref(Date.now());
+const durationPrompt = ref(false);
+let completionAttempt = null;
 const manualOpen = ref(false), manualDate = ref(calendar.today), manualMinutes = ref(0), manualNote = ref(''), manualId = ref(requestId()), editing = ref(null);
 let manualAttempt = null;
 const closeRestoredForm = () => { manualAttempt = null; manualOpen.value = false; manualId.value = requestId(); emit('close'); };
@@ -146,7 +153,7 @@ async function act(fn) {
     emit('saved');
   }
   catch (err) {
-    error.value = typeof err === 'string' ? err : '操作失败，请重试';
+    error.value = typeof err === 'string' ? err : err?.message || '操作失败，请重试';
     // A save may have committed before the response was lost or completion failed.
     try { study.value = hydrate(await studyApi.get()); emit('saved'); } catch { /* Keep input for retry. */ }
   }
@@ -163,8 +170,44 @@ async function saveLegacy() {
   else if (legacyEdit.value && study.value) legacyEdit.value.expected = study.value.legacy_seconds;
 }
 async function finish(complete) {
+  if (busy.value) return;
+  const active = study.value.active;
+  const emptyPaused = active && !active.timer_started_at && active.duration_seconds === 0;
+  if (complete && study.value.record.task.track_time && (!active || emptyPaused)) {
+    error.value = ''; completionAttempt = null; openDurationPrompt();
+    return;
+  }
   await act(() => study.value.active ? studyApi.finish(study.value.active.id, { note: note.value, complete }) : studyApi.complete());
   if (!error.value) note.value = '';
+}
+function openDurationPrompt() {
+  const total = study.value.total_seconds;
+  durationPrompt.value = { total, initial: total || (study.value.record.task.expected_minutes ? study.value.record.task.expected_minutes * 60 : null),
+    note: total ? `已有累计用时 ${formatDuration(total)}，可补充增加，不能减少已有记录。原来的学习记录会保留。` : '' };
+}
+async function completeWithDuration(seconds) {
+  if (busy.value) return;
+  // An uncertain response stays tied to the same amount and id, including on retry.
+  if (completionAttempt && completionAttempt.duration_seconds !== seconds) {
+    error.value = '上次完成操作尚未确认，请先按原用时重试确认，再通过学习记录更正。';
+    return;
+  }
+  completionAttempt ||= { duration_seconds: seconds, expected_total_seconds: durationPrompt.value.total, request_id: requestId(), note: note.value };
+  let uncertain = false;
+  await act(() => studyApi.complete(completionAttempt, { preserveNetworkError: true })
+    .catch(err => { uncertain = Boolean(err?.networkFailure); throw err; }));
+  const addedTime = seconds !== null && seconds > completionAttempt.expected_total_seconds;
+  const confirmed = addedTime ? study.value?.sessions.some(session => session.id === completionAttempt.request_id)
+    : study.value?.record.task.is_completed || study.value?.record.completion_requested_at;
+  if (!error.value || confirmed) {
+    durationPrompt.value = false; completionAttempt = null; note.value = '';
+  } else if (!uncertain) {
+    // The server answered and refused: nothing was saved, so another amount is a new attempt.
+    completionAttempt = null;
+    const active = study.value?.active;
+    if (study.value?.record.task.is_completed || (active && (active.timer_started_at || active.duration_seconds > 0))) durationPrompt.value = false;
+    else openDurationPrompt();
+  }
 }
 async function manual() {
   manualAttempt ||= { request_id: manualId.value };

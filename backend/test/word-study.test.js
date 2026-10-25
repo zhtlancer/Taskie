@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -324,7 +325,7 @@ test('study snapshots, memory, attempts and points survive backup; missing v17 d
   for (const table of ['word_study_attempts', 'word_study_items', 'word_study_batches', 'word_study_days', 'word_study_states', 'word_study_plans']) legacy.exec(`DROP TABLE ${table}`);
   legacy.pragma('user_version = 16');
   await backup.restore(gzipSync(JSON.stringify({ ...data, database: legacy.serialize().toString('base64') })));
-  assert.equal(ctx.db.pragma('user_version', { simple: true }), 30);
+  assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   assert.deepEqual(ctx.study.plans(ctx.child.id), []);
   legacy.close();
 });

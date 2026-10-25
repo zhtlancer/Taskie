@@ -1,3 +1,4 @@
+const { SCHEMA_VERSION } = require('../src/db');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -205,7 +206,7 @@ test('v16 backup preserves policy, classification and awards; v15 upgrades and d
   assert.equal(ctx.row(0).earned_points, 10);
   assert.equal(ctx.tasks.getTemplate(ctx.template.id).allow_extra, false);
   initDb(old);
-  assert.equal(old.pragma('user_version', { simple: true }), 30);
+  assert.equal(old.pragma('user_version', { simple: true }), SCHEMA_VERSION);
   assert.equal(old.prepare('SELECT earned_points FROM daily_tasks WHERE id = ?').get(ctx.rows[0].id).earned_points, 10);
   assert.equal(old.prepare('SELECT earned_points FROM daily_tasks WHERE id = ?').get(ctx.rows[1].id).earned_points, 3);
   assert.equal(old.prepare('SELECT allow_extra FROM task_templates WHERE id = ?').get(ctx.template.id).allow_extra, 0);

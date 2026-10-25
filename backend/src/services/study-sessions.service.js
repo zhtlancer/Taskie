@@ -78,6 +78,14 @@ class StudySessionsService {
     this.db.prepare('UPDATE homework_sessions SET ended_at = ? WHERE id = ?').run(new Date().toISOString(), row.id);
   }
 
+  // A paused session that never counted a second is not study: drop it rather than keep a 0-second record.
+  discardEmptyActive(taskId) {
+    const row = this.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(taskId);
+    if (!row || row.timer_started_at || row.duration_seconds > 0) return;
+    this.db.prepare('DELETE FROM homework_session_days WHERE session_id = ?').run(row.id);
+    this.db.prepare('DELETE FROM homework_sessions WHERE id = ?').run(row.id);
+  }
+
   start(recordId) {
     this.db.transaction(() => {
       const { task } = this.task(recordId);
@@ -167,6 +175,69 @@ class StudySessionsService {
       message: details.record.task.is_completed ? '任务已完成' : details.record.completion_requested_at ? '已申请全部完成，等待家长确认' : '学习已保存，如需完成任务请单独操作'
     };
     return details;
+  }
+
+  completeWithDuration(recordId, body, actor) {
+    this.db.transaction(() => {
+      const { record, task } = this.task(recordId);
+      const requestId = body.request_id;
+      if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw fail(400, '记录标识无效');
+      if (body.duration_seconds !== undefined && body.duration_seconds !== null && (!Number.isSafeInteger(body.duration_seconds) || body.duration_seconds <= 0)) throw fail(400, '累计用时须为大于 0 的整数秒');
+      if (body.expected_total_seconds !== undefined && (!Number.isSafeInteger(body.expected_total_seconds) || body.expected_total_seconds < 0)) throw fail(400, '原累计用时格式无效');
+      const note = this.validateNote(body.note);
+      const fingerprint = JSON.stringify([body.duration_seconds ?? null, body.expected_total_seconds ?? null, note]);
+      const receipt = requestId && this.db.prepare('SELECT * FROM study_completion_requests WHERE id = ?').get(requestId);
+      if (receipt) {
+        if (receipt.task_id !== task.id || receipt.request_fingerprint !== fingerprint) throw fail(409, '记录标识已使用，请核对原操作');
+        return; // Read-only replay, even if completion was undone or the course request rejected.
+      }
+      const remember = () => {
+        if (requestId) this.db.prepare('INSERT INTO study_completion_requests(id, task_id, request_fingerprint, created_at) VALUES (?, ?, ?, ?)')
+          .run(requestId, task.id, fingerprint, new Date().toISOString());
+      };
+      // Omitted duration preserves the existing complete-without-time behavior.
+      if (body.duration_seconds === undefined || body.duration_seconds === null) {
+        if (body.expected_total_seconds !== undefined) {
+          const details = this.details(recordId);
+          if (details.total_seconds !== body.expected_total_seconds) throw fail(409, '累计用时已变化，请刷新后重试');
+          if (details.active && (details.active.timer_started_at || details.active.duration_seconds > 0)) throw fail(409, '请先结束本次学习，再完成任务');
+        }
+        this.discardEmptyActive(task.id);
+        this.complete(recordId, actor); remember(); return;
+      }
+      const seconds = body.duration_seconds;
+      if (!requestId) throw fail(400, '缺少有效的记录标识');
+      this.checkActor(task, actor, 'manual');
+      const details = this.details(recordId);
+      const expected = body.expected_total_seconds === undefined ? 0 : body.expected_total_seconds;
+      const delta = seconds - expected;
+      const existing = this.db.prepare('SELECT * FROM homework_sessions WHERE id = ?').get(body.request_id);
+      if (existing) {
+        if (existing.task_id !== task.id || existing.duration_seconds !== delta || existing.note !== note || existing.completion_action !== 1) throw fail(409, '记录标识已使用，请核对原操作');
+        remember(); // Compatibility with additions saved before independent receipts existed.
+        return; // A lost response, including after undo, must not add time or complete again.
+      }
+      if (delta < 0) throw fail(409, '累计用时不能低于已有记录');
+      if (delta > MAX_SECONDS) throw fail(400, '单次补充用时不能超过 12 小时');
+      if (expected !== details.total_seconds) throw fail(409, '累计用时已变化，请刷新后重试');
+      if (delta === 0 && task.is_completed) { remember(); return; }
+      if (!task.track_time || task.is_completed) throw fail(409, '任务状态已变化，请核对最新记录后重试');
+      if (details.active) {
+        if (details.active.timer_started_at || details.active.duration_seconds > 0) throw fail(409, '请先结束本次学习，再调整累计用时');
+        this.discardEmptyActive(task.id);
+      }
+      // A parent completing late records the time on the last day it was due, where the backfilled
+      // completion belongs; any other completion records today's time.
+      const today = getTodayDate(), due = record.task.due_date;
+      const date = actor === 'parent' && !this.tasks.childMayActOn(task) && due < today ? due : today;
+      if (delta > 0) {
+        this.manual(recordId, { request_id: body.request_id, date, duration_seconds: delta, note }, actor);
+        this.db.prepare('UPDATE homework_sessions SET completion_action = 1 WHERE id = ?').run(body.request_id);
+      }
+      this.complete(recordId, actor);
+      remember(); // Receipt, optional added time and completion commit or roll back together.
+    })();
+    return this.details(recordId);
   }
 
   manual(recordId, body, actor) {

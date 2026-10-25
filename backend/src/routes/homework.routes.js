@@ -31,10 +31,7 @@ async function homeworkRoutes(fastify, options) {
   fastify.post('/homework/:id/sessions/:sid/finish', handle(async r => study.finish(r.params.id, r.params.sid, r.body || {}, actor(r))));
   fastify.post('/homework/:id/sessions', generationWrite(fastify, r => study.manual(r.params.id, r.body || {}, actor(r))));
   fastify.put('/homework/:id/sessions/:sid', handle(async r => study.edit(r.params.id, r.params.sid, r.body || {}, actor(r))));
-  fastify.post('/homework/:id/complete', handle(async r => {
-    fastify.db.transaction(() => study.complete(r.params.id, actor(r)))();
-    return study.details(r.params.id);
-  }));
+  fastify.post('/homework/:id/complete', generationWrite(fastify, r => study.completeWithDuration(r.params.id, r.body || {}, actor(r))));
   fastify.post('/homework/:id/reject-completion', handle(async r => study.reject(r.params.id)));
   fastify.get('/homework-completion-requests', handle(async () => homeworkService.query('r.completion_requested_at IS NOT NULL AND d.is_completed = 0', [])));
 

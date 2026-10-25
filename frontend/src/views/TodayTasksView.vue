@@ -266,6 +266,7 @@
       v-if="durationAsk"
       :title="durationAsk.task.title"
       :initial-seconds="durationAsk.initialSeconds"
+      :expected-minutes="durationAsk.task.expected_minutes"
       :editing="durationAsk.editing"
       :note="durationAsk.note"
       :busy="durationBusy"
@@ -585,7 +586,7 @@ async function handleTaskToggle(task, durationBody = null) {
     durationError.value = '';
     durationAsk.value = seconds > LONG_TIMER_SECONDS
       ? { task, initialSeconds: seconds, note: `计时已经走了 ${formatDuration(seconds)}，是不是忘了暂停？请改成实际用了多久。` }
-      : { task, initialSeconds: task.expected_minutes ? task.expected_minutes * 60 : null };
+      : { task, initialSeconds: task.expected_minutes ? task.expected_minutes * 60 : null, note: seconds > 0 ? '计时不足 1 分钟，可以补填实际用时。' : '' };
     return;
   }
   try {

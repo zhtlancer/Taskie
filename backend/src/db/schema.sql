@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS daily_tasks (
 CREATE INDEX IF NOT EXISTS idx_daily_tasks_child_date ON daily_tasks(child_id, date);
 CREATE INDEX IF NOT EXISTS idx_daily_tasks_date ON daily_tasks(date);
 
+-- Completion receipts are separate from study sessions: completing without additional time still
+-- needs an idempotency key, and undoing completion must not make an old request executable again.
+CREATE TABLE IF NOT EXISTS study_completion_requests (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  request_fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES daily_tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_study_completion_requests_task ON study_completion_requests(task_id);
+
 -- Points earning logs
 CREATE TABLE IF NOT EXISTS point_logs (
   id TEXT PRIMARY KEY,

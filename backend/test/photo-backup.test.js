@@ -485,7 +485,7 @@ test('retained v1 scans skip large embedded payloads, cache manifests and keep r
   assert.ok(fs.existsSync(service.photos.path('legacy.jpg')));
 });
 
-test('v29 upgrades to v30, legacy manifests gain expectations, and incomplete v30 backups are refused', async t => {
+test('v29 upgrades through v30 to the current schema, legacy manifests gain expectations, and incomplete v30 backups are refused', async t => {
   const { ctx, addPhoto } = await fixture(t), service = ctx.app.backupService;
   addPhoto('upgrade.jpg', 'upgrade');
   const data = JSON.parse(gunzipSync(fs.readFileSync(service.getPath((await service.create()).name))));
@@ -497,8 +497,8 @@ test('v29 upgrades to v30, legacy manifests gain expectations, and incomplete v3
     db.pragma('user_version = 29');
     const old = { ...data, database: db.serialize().toString('base64') };
     initDb(db);
-    assert.equal(SCHEMA_VERSION, 30);
-    assert.equal(db.pragma('user_version', { simple: true }), 30);
+    assert.ok(SCHEMA_VERSION >= 30, 'v30 remains part of the current schema');
+    assert.equal(db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'trigger'").get().n, 6);
     await service.restore(gzipSync(JSON.stringify(old)));
     assert.equal(service.expectations().get('upgrade.jpg').sha256, data.photo_manifest[0].sha256);
@@ -510,8 +510,8 @@ test('v29 upgrades to v30, legacy manifests gain expectations, and incomplete v3
       broken.close();
       await assert.rejects(() => service.restore(gzipSync(JSON.stringify(invalid))), { statusCode: 400 });
     }
-    db.pragma('user_version = 31');
-    assert.throws(() => initDb(db), /v31/);
+    db.pragma(`user_version = ${SCHEMA_VERSION + 1}`);
+    assert.throws(() => initDb(db), /高于当前程序支持/);
     await assert.rejects(() => service.restore(gzipSync(JSON.stringify({ ...data, database: db.serialize().toString('base64') }))), { statusCode: 400 });
   } finally { db.close(); }
 });
