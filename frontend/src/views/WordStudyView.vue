@@ -138,7 +138,10 @@ const nextDue = computed(() => {
   return day?.batches.flatMap(batch => batch.items).find(item => item.id === active.value?.item.id)?.next_due_date;
 });
 const pendingAttempt = ref(null);
-const dayChanged = computed(() => calendar.ready && Boolean(date.value) && calendar.today !== date.value);
+// A date-rejection recovery may return the server's today while the device clock
+// still lags. Trust that snapshot until the device's family date changes again.
+const recoveredDeviceDate = ref('');
+const dayChanged = computed(() => calendar.ready && Boolean(date.value) && calendar.today !== date.value && calendar.today !== recoveredDeviceDate.value);
 let studySerial = 0, pendingDate = null, loaded = false;
 const canReload = () => calendar.ready && !active.value && !pendingAttempt.value && !showSettings.value && !busy.value;
 function reloadStudyDay() {
@@ -156,7 +159,7 @@ const resultName = result => ({ good: '独立完成', hinted: '提示后完成',
 const baseCount = (day, kind) => day.batches.find(batch => !batch.is_extra)?.items.filter(item => item.kind === kind).length || 0;
 const message = err => typeof err === 'string' ? err : '操作失败，请重试';
 
-async function load() {
+async function load({ recoverDate = false } = {}) {
   if (!calendar.ready) return;
   const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value, settingsOpen = showSettings.value;
   pendingDate = requestedDate;
@@ -164,7 +167,9 @@ async function load() {
     timeZone === calendar.timeZone && id === childId.value;
   try {
     const [overview, recent] = await Promise.all([api.getWordStudy(id), api.getWordStudyHistory(id)]);
-    if (!current() || overview.date !== requestedDate || active.value || (!settingsOpen && showSettings.value)) return;
+    const sameRecoveredDate = recoveredDeviceDate.value === requestedDate && overview.date === date.value;
+    if (!current() || (!recoverDate && !sameRecoveredDate && overview.date !== requestedDate) || active.value || (!settingsOpen && showSettings.value)) return;
+    recoveredDeviceDate.value = overview.date === requestedDate ? '' : requestedDate;
     days.value = overview.days;
     date.value = overview.date;
     history.value = recent;
@@ -200,7 +205,7 @@ function switchToToday() {
   if (busy.value) return;
   closePractice();
   calendar.refreshToday();
-  refresh({ silent: true });
+  refresh({ silent: true, recoverDate: true });
 }
 function nextItem() {
   if (dayChanged.value) { closePractice(); return; }
@@ -242,10 +247,10 @@ async function extra(day) {
   } catch (err) { error.value = message(err); }
   finally { busy.value = false; }
 }
-async function refresh({ silent = false } = {}) {
+async function refresh({ silent = false, recoverDate = false } = {}) {
   if (!calendar.ready) { loading.value = false; return; }
   loading.value = !silent; error.value = '';
-  await load();
+  await load({ recoverDate });
 }
 onMounted(() => { loadLearningFont(); refresh(); });
 </script>

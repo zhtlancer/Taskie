@@ -169,12 +169,18 @@ async function main() {
     await noErrors(page);
     assert.equal(writes.length, 1, 'no automatic retry');
     await shot(page, 'server-date-rejection');
-    // Device clock catches up; switching must refresh its calendar before loading.
-    await page.clock.setSystemTime(new RealDate(after));
+    // Keep the device date stale: recovery must use the server's current list.
     await dialog.getByRole('button', { name: '换成今天的清单', exact: true }).click();
     await waitForNewStudy(page); await noErrors(page);
     await begin(page).click(); await grade(page); await noErrors(page);
     assert.equal(writes.length, 2, 'only an explicit score on today item is sent');
+    // Once the device catches up, ordinary midnight refresh remains enabled.
+    await page.getByRole('button', { name: '关闭练习', exact: true }).click();
+    now = after + 86400000;
+    await page.clock.setSystemTime(new RealDate(now));
+    await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+    await page.getByText(/2026-10-23 · 认读/).waitFor();
+    await begin(page).click(); await grade(page); await noErrors(page);
   });
   await check('L1 settings draft survives midnight; closing triggers silent refresh', async () => {
     const page = await open('dark');
