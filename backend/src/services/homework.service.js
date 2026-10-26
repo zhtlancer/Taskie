@@ -367,7 +367,7 @@ class HomeworkService {
         .run(content, assigned, due, points, priority, new Date().toISOString(), id);
       if (taskOpen) {
         const title = taskTitle({ ...record, content });
-        this.db.prepare('UPDATE daily_tasks SET title = ?, points = ?, due_date = ?, priority = ? WHERE id = ? AND is_completed = 0')
+        this.db.prepare('UPDATE daily_tasks SET title = ?, points = ?, due_date = ?, priority = ?, priority_override = NULL WHERE id = ? AND is_completed = 0')
           .run(title, points, due > task.date ? due : null, priority, task.id);
       }
     })();

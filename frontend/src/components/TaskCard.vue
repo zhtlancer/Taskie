@@ -157,7 +157,8 @@ const menuActions = computed(() => {
   const actions = skipPending.value
     ? (props.asParent ? [] : [{ label: '撤回申请', event: 'cancel-skip' }])
     : canSkip.value ? [{ label: props.asParent ? '跳过任务' : '今天没有？', event: 'skip' }] : [];
-  if (props.asParent && !props.task.is_completed && ['template', 'adhoc'].includes(props.task.origin)) {
+  // A live homework record owns priority; a detached task can be edited on its card.
+  if (props.asParent && !props.task.is_completed && ['template', 'adhoc'].includes(props.task.origin) && !props.task.homework) {
     actions.push({ label: '调整优先级', event: 'edit-priority' });
   }
   return actions;

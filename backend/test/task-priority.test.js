@@ -94,7 +94,7 @@ test('priority endpoint is parent-only, validates input, respects restore genera
   assert.throws(() => c.tasksService.setDailyPriority('missing', 2), e => e.status === 404);
 });
 
-test('homework priority belongs to the parent, snapshots into deferred tasks and preserves occurrence overrides', async t => {
+test('homework priority belongs to the parent, snapshots into deferred tasks and is edited only on the record', async t => {
   const c = await fixture(t);
   const body = { subject: '数学', content: '练习册', due_date: shiftDate(c.today, 1), create_task: true };
   assert.throws(() => c.homeworkService.create(c.child.id, { ...body, priority: 2 }, 'child'), e => e.status === 403);
@@ -103,17 +103,55 @@ test('homework priority belongs to the parent, snapshots into deferred tasks and
   c.homeworkService.update(record.id, { priority: 2 }, 'parent');
   const attached = c.homeworkService.createTask(record.id);
   assert.equal(attached.task.priority, 2);
-  c.tasksService.setDailyPriority(attached.task.id, 0);
+  // The record is the only place to change a course homework task's priority.
+  assert.throws(() => c.tasksService.setDailyPriority(attached.task.id, 0), e => e.status === 400);
+  assert.equal((await c.app.inject({ method: 'PUT', url: `/api/daily-tasks/${attached.task.id}/priority`, payload: { priority: 0 } })).statusCode, 400);
+  assert.equal(c.row(attached.task.id).priority_override, null);
+  c.db.prepare('UPDATE daily_tasks SET priority_override = 0 WHERE id = ?').run(attached.task.id); // An override saved before this rule.
   c.homeworkService.update(record.id, { priority: 1 }, 'parent');
-  assert.equal(c.homeworkService.get(record.id).task.priority, 0);
-  assert.equal(c.homeworkService.get(record.id).task.default_priority, 1);
-  c.tasksService.setDailyPriority(attached.task.id, null);
-  assert.equal(c.homeworkService.get(record.id).task.priority, 1);
+  assert.equal(c.homeworkService.get(record.id).task.priority, 1, 'editing the record replaces an earlier occurrence override');
+  assert.equal(c.row(attached.task.id).priority_override, null);
   c.db.prepare('UPDATE daily_tasks SET is_completed = 1 WHERE id = ?').run(attached.task.id);
   c.homeworkService.update(record.id, { priority: 2 }, 'parent');
   assert.equal(c.row(attached.task.id).priority, 1);
   const immediate = c.homeworkService.create(c.child.id, { ...body, priority: 0 }, 'parent');
   assert.equal(immediate.task.priority, 0);
+});
+
+test('retaining a task after deleting its homework record restores parent priority editing without losing provenance or time', async t => {
+  const c = await fixture(t);
+  const record = c.homeworkService.create(c.child.id, {
+    subject: '数学', content: '删除记录后保留任务', due_date: c.today, create_task: true, priority: 2, track_time: true
+  }, 'parent');
+  const taskId = record.task.id;
+  c.homeworkStudyService.manual(record.id, { request_id: 'detached-priority-study', duration_seconds: 120 }, 'parent');
+  const url = `/api/daily-tasks/${taskId}/priority`;
+  // A live relationship, rather than the historical marker, must enforce the single editing entry.
+  c.db.prepare('UPDATE daily_tasks SET is_course_homework = 0 WHERE id = ?').run(taskId);
+  assert.equal((await c.app.inject({ method: 'PUT', url, payload: { priority: 0 } })).statusCode, 400);
+  c.db.prepare('UPDATE daily_tasks SET is_course_homework = 1 WHERE id = ?').run(taskId);
+  assert.equal((await c.app.inject({ method: 'DELETE', url: `/api/homework/${record.id}` })).statusCode, 200);
+  const detached = c.tasksService.getDailyTasks(c.child.id).find(task => task.id === taskId);
+  assert.equal(detached.homework, null);
+  assert.equal(detached.is_course_homework, 1);
+  const before = c.row(taskId);
+  const sessions = c.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ?').all(taskId);
+  const statsBefore = c.timeStatsService.stats(c.child.id, c.today, c.today).summary;
+  const childToken = c.app.jwt.sign({ role: 'child', child_id: c.child.id, epoch: c.app.sessionEpoch() });
+  assert.equal((await c.rawInject({ method: 'PUT', url, payload: { priority: 0 }, headers: { authorization: `Bearer ${childToken}` } })).statusCode, 403);
+  const edited = await c.app.inject({ method: 'PUT', url, payload: { priority: 0 } });
+  assert.equal(edited.statusCode, 200, edited.body);
+  assert.equal(edited.json().priority, 0);
+  assert.equal(c.row(taskId).priority_override, 0);
+  const reset = await c.app.inject({ method: 'PUT', url, payload: { priority: null } });
+  assert.equal(reset.statusCode, 200, reset.body);
+  assert.equal(reset.json().priority, 2);
+  assert.deepEqual(c.row(taskId), before, 'reset changes no task fields beyond restoring the original priority');
+  assert.deepEqual(c.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ?').all(taskId), sessions);
+  assert.deepEqual(c.timeStatsService.stats(c.child.id, c.today, c.today).summary, statsBefore);
+  assert.equal(c.rewardsService.getTotalPoints(c.child.id), 0);
+  c.tasksService.completeDailyTask(taskId);
+  assert.equal((await c.app.inject({ method: 'PUT', url, payload: { priority: 0 } })).statusCode, 409);
 });
 
 test('goal defaults update only pending current/future daily snapshots', async t => {

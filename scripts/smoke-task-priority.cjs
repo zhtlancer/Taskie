@@ -96,6 +96,11 @@ async function main() {
       const goalIds = await page.locator('[data-timer-id]').evaluateAll(nodes => nodes.filter(n => n.textContent.includes('有截止长期') || n.textContent.includes('低优先长期无截止')).map(n => n.textContent));
       assert.match(goalIds[0], /有截止长期/);
       assert.match(goalIds[1], /低优先长期无截止/);
+      // Course homework priority is edited on its record, so its card offers no occurrence override.
+      await card('数学：低优先先截止').getByRole('button', { name: '更多任务操作' }).click();
+      await page.getByRole('button', { name: '跳过任务', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: '调整优先级', exact: true }).count(), 0);
+      await page.getByRole('button', { name: '关闭任务菜单' }).click();
       await card('低优先临时').getByRole('button', { name: '更多任务操作' }).click();
       await page.getByRole('button', { name: '调整优先级', exact: true }).click();
       dialog = page.getByRole('dialog', { name: '调整优先级' });
@@ -119,6 +124,30 @@ async function main() {
         await page.screenshot({ path: path.join(process.env.PRIORITY_SCREENSHOT_DIR, `priority-${width}-${theme}.png`), fullPage: true });
       }
       console.log(`PASS ${engine.name()} ${width}/${theme}: deadline/state/priority ordering, stable ties, occurrence override/reset and touch layout`);
+
+      // Deleting only the record leaves a task whose historical course marker must not hide editing.
+      const detachedRecord = app.services.homeworkService.create(child.id, {
+        subject: '数学', content: '保留的作业任务', due_date: shiftDate(today, 2), create_task: true, priority: 0
+      }, 'parent');
+      const deleted = await page.request.delete(`${base}/api/homework/${detachedRecord.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      assert.equal(deleted.status(), 200);
+      await goto(`/child/${child.id}/today`);
+      const detachedCard = card('数学：保留的作业任务');
+      await detachedCard.getByRole('button', { name: '更多任务操作' }).click();
+      await page.getByRole('button', { name: '调整优先级', exact: true }).click();
+      await page.getByRole('dialog').getByRole('radio', { name: '高', exact: true }).check();
+      await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await detachedCard.getByLabel('高优先级').waitFor();
+      assert.equal(db.prepare('SELECT is_course_homework FROM daily_tasks WHERE id = ?').get(detachedRecord.task.id).is_course_homework, 1);
+      await detachedCard.getByRole('button', { name: '更多任务操作' }).click();
+      await page.getByRole('button', { name: '调整优先级', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: '恢复默认（低）', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await detachedCard.getByLabel('低优先级').waitFor();
+      console.log(`PASS ${engine.name()} ${width}/${theme}: deleting only the record restores task priority editing/reset and retains course provenance`);
 
       // Timer refresh must not reorder ties or reset an active learning session.
       app.services.taskStudyService.start(normal.id);

@@ -796,6 +796,10 @@ class TasksService {
     const row = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id);
     if (!row || this.isUnassignedTodayTask(row)) throw { status: 404, message: '任务不存在或已取消' };
     if (!['template', 'adhoc'].includes(row.origin)) throw { status: 400, message: '此类任务的优先级请在来源设置中调整' };
+    // The source marker survives record deletion for statistics; only a live record owns priority.
+    if (this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(id)) {
+      throw { status: 400, message: '课程作业的优先级请在作业记录中调整' };
+    }
     if (row.is_completed || row.skipped_at || (row.date < getTodayDate() && !this.childMayActOn(row))) {
       throw { status: 409, message: '已完成、已跳过或已过期的任务保留原有优先级' };
     }
