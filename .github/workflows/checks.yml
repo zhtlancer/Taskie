@@ -114,7 +114,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-dates, completion-duration, task-priority, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-count, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
+        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-dates, completion-duration, task-priority, board-workflow, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-count, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
     env:
       # The files of Ubuntu's fonts-noto-cjk, from pinned upstream tags: Sans2.004 is byte-identical in
       # Ubuntu 24.04 and 26.04, Serif2.003 is the one in 26.04. A version change needs new checksums.

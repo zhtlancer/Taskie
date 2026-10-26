@@ -203,6 +203,21 @@
             </div>
           </div>
 
+          <section :aria-label="`${item.child.name}的待办摘要`" class="mb-4">
+            <div v-if="item.attention" class="grid grid-cols-2 gap-2">
+              <div class="rounded-xl border border-amber-100 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 text-amber-800 dark:text-amber-200">
+                <p class="text-xs font-bold">今天到期</p><p class="mt-1 text-lg font-black tabular-nums">{{ item.attention.due_today }} <span class="text-xs">项待办</span></p>
+              </div>
+              <div class="rounded-xl border border-rose-100 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-3 text-rose-700 dark:text-rose-300">
+                <p class="text-xs font-bold">高优先级</p><p class="mt-1 text-lg font-black tabular-nums">{{ item.attention.high_priority_pending }} <span class="text-xs">项待办</span></p>
+              </div>
+            </div>
+            <p v-if="item.attention" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">不含已完成、已跳过和额外挑战；长期任务当天记过进度后不计入。</p>
+            <div v-else role="status" class="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <span>待办摘要暂不可用</span><button type="button" class="min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold" @click="reloadLive">重新读取摘要</button>
+            </div>
+          </section>
+
           <!-- Today's homework time and when it was finished -->
           <router-link
             v-if="item.time && (item.time.summary.sessions || todayFinishedAt(item))"
@@ -339,6 +354,7 @@ import { formatMinutes } from '../utils/timeStats.js';
 import TimingFields from '../components/TimingFields.vue';
 import PriorityFields from '../components/PriorityFields.vue';
 import PriorityBadge from '../components/PriorityBadge.vue';
+import { taskAttention } from '../utils/taskOrdering.js';
 import { courseLabel } from '../utils/homework.js';
 import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerTarget, withClock } from '../utils/taskTimer.js';
 const calendar = useCalendarStore();
@@ -349,6 +365,8 @@ const childrenStats = ref([]);
 // then, and on returning to the page.
 const now = ref(Date.now());
 const loadTimer = id => api.getCurrentTimer(id).then(result => result.timer && withClock(result.timer)).catch(() => null);
+const loadAttention = (id, date) => Promise.all([api.getDailyTasks(id), api.getChildGoals(id)])
+  .then(([tasks, goals]) => taskAttention(tasks, goals, date)).catch(() => null);
 const loadClassOverview = id => api.getOutsideClassStats(id).then(rows => ({ count: rows.length,
   attended: rows.reduce((n, row) => n + row.attended, 0), pending: rows.reduce((n, row) => n + row.pending, 0),
   next: rows.filter(row => row.next_lesson).map(row => ({ ...row.next_lesson, title: row.title }))
@@ -360,9 +378,11 @@ const timerTone = timer => !timer.timer_running ? 'bg-slate-50 dark:bg-slate-800
 let liveSerial = 0;
 async function reloadLive() {
   if (document.hidden) return;
-  const items = childrenStats.value, serial = ++liveSerial;
-  const live = await Promise.all(items.map(item => Promise.all([loadTimer(item.child.id), loadClassOverview(item.child.id)])));
-  if (serial === liveSerial) items.forEach((item, index) => { [item.timer, item.classOverview] = live[index]; });
+  const items = childrenStats.value, serial = ++liveSerial, date = today.value, zone = calendar.timeZone;
+  const live = await Promise.all(items.map(item => Promise.all([loadTimer(item.child.id), loadClassOverview(item.child.id), loadAttention(item.child.id, date)])));
+  if (serial === liveSerial && items === childrenStats.value && date === today.value && zone === calendar.timeZone && calendar.ready) {
+    items.forEach((item, index) => { [item.timer, item.classOverview, item.attention] = live[index]; });
+  }
 }
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 const poll = setInterval(reloadLive, 60000);
@@ -520,9 +540,9 @@ async function loadDashboard() {
     const children = await api.getChildren();
     if (!current()) return;
     const statsPromises = children.map(async (child) => {
-      const [stats, week, adhoc, goals, time, timer, classOverview] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
-        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, date, date).catch(() => null), loadTimer(child.id), loadClassOverview(child.id)]);
-      return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer, classOverview };
+      const [stats, week, adhoc, goals, time, timer, classOverview, tasks] = await Promise.all([api.getChildStats(child.id), api.getWeeklySummary(child.id),
+        api.getAdhocTasks(child.id), api.getChildGoals(child.id), api.getTimeStats(child.id, date, date).catch(() => null), loadTimer(child.id), loadClassOverview(child.id), api.getDailyTasks(child.id).catch(() => null)]);
+      return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer, classOverview, attention: tasks ? taskAttention(tasks, goals, date) : null };
     });
     const result = await Promise.all([Promise.all(statsPromises), api.getSkipRequests('pending', { limit: 200 }), api.getHomeworkRequests(), api.getHomeworkCompletionRequests()]);
     if (!current()) return;

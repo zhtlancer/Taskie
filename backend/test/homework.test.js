@@ -106,6 +106,22 @@ async function fixture(t) {
   return { ctx, today, day, child, createChild, loginAs, headers, asParent, asChild, record, board };
 }
 
+test('a homework record can be read directly by its parent or owner, never another child', async t => {
+  const { ctx, child, createChild, loginAs, asParent, asChild, record } = await fixture(t);
+  const saved = (await record({ content: '直接读取作业', create_task: true, priority: 2 })).json();
+  const url = `/api/homework/${saved.id}`;
+  const parentRead = await asParent('GET', url);
+  assert.equal(parentRead.statusCode, 200, parentRead.body);
+  assert.equal(parentRead.json().child_id, child.id);
+  assert.equal(parentRead.json().priority, 2);
+  assert.equal(parentRead.json().task.id, saved.task.id);
+  assert.equal((await asChild('GET', url)).statusCode, 200);
+  const other = await createChild('另一个孩子');
+  assert.equal((await asChild('GET', url, undefined, await loginAs(other))).statusCode, 403);
+  assert.equal((await ctx.rawInject({ method: 'GET', url })).statusCode, 401);
+  assert.equal((await asParent('GET', '/api/homework/missing-record')).statusCode, 404);
+});
+
 test('homework is due the day before the next lesson, and its task starts on the board today', async t => {
   const { today, day, child, asParent, record, board } = await fixture(t);
   const courses = (await asParent('GET', `/api/children/${child.id}/homework/courses`)).json();

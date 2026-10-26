@@ -107,7 +107,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration', 'edit-priority']);
+const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration', 'edit-priority', 'edit-homework']);
 
 const activeParticles = ref([]);
 const card = ref(null), menuOpen = ref(false), menuTrigger = ref(null), menuPanel = ref(null);
@@ -153,12 +153,12 @@ const skipTurnedDown = computed(() => !props.task.is_completed && ['rejected', '
 const canSkip = computed(() => !props.task.is_extra && !props.task.is_completed && !props.task.is_skipped && !skipPending.value &&
   (props.asParent || !skipTurnedDown.value));
 const menuActions = computed(() => {
-  if (props.task.is_skipped) return props.asParent ? [{ label: '撤销跳过', event: 'unskip' }] : [];
-  const actions = skipPending.value
+  const actions = props.task.is_skipped ? (props.asParent ? [{ label: '撤销跳过', event: 'unskip' }] : []) : skipPending.value
     ? (props.asParent ? [] : [{ label: '撤回申请', event: 'cancel-skip' }])
     : canSkip.value ? [{ label: props.asParent ? '跳过任务' : '今天没有？', event: 'skip' }] : [];
   // A live homework record owns priority; a detached task can be edited on its card.
-  if (props.asParent && !props.task.is_completed && ['template', 'adhoc'].includes(props.task.origin) && !props.task.homework) {
+  if (props.asParent && props.task.homework) actions.push({ label: '修改作业', event: 'edit-homework' });
+  if (props.asParent && !props.task.is_completed && !props.task.is_skipped && ['template', 'adhoc'].includes(props.task.origin) && !props.task.homework) {
     actions.push({ label: '调整优先级', event: 'edit-priority' });
   }
   return actions;

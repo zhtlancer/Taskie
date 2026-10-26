@@ -8,11 +8,30 @@ export function sortTasks(tasks) {
 }
 
 export function sortGoals(goals, dailyRows = {}) {
-  const entries = goals.map(goal => ({ goal, ...dailyRows[goal.id],
-    priority: dailyRows[goal.id]?.priority ?? goal.priority,
+  return sortTasks(goals.map(goal => goalBoardTask(goal, dailyRows[goal.id]))).map(entry => entry.goal);
+}
+
+export function goalBoardTask(goal, dailyRow) {
+  return { ...dailyRow, goal, subject: goal.subject,
+    priority: dailyRow?.priority ?? goal.priority,
     is_completed: goal.is_completed || goal.today_logged,
-    is_skipped: Boolean(dailyRows[goal.id]?.is_skipped), is_optional: !goal.daily_required,
+    is_skipped: Boolean(dailyRow?.is_skipped), is_optional: !goal.daily_required,
     // A daily obligation affects the state group; its overall deadline stays the goal's end.
-    date: null, due_date: null, sort_due_date: goal.end_date ?? null }));
-  return sortTasks(entries).map(entry => entry.goal);
+    date: null, due_date: null, sort_due_date: goal.end_date ?? null };
+}
+
+export function matchesTaskFilters(task, { subject = '全部', unfinishedOnly = false, highPriorityOnly = false } = {}) {
+  return (subject === '全部' || task.subject === subject) &&
+    (!unfinishedOnly || !task.is_completed && !task.is_skipped) &&
+    (!highPriorityOnly || task.priority === 2);
+}
+
+export function taskAttention(tasks, goals, today) {
+  const dailyRows = Object.fromEntries(tasks.filter(task => task.origin === 'goal').map(task => [task.goal_id, task]));
+  const pending = [
+    ...tasks.filter(task => task.origin !== 'goal' && !task.is_extra),
+    ...goals.filter(goal => goal.status === 'active').map(goal => goalBoardTask(goal, dailyRows[goal.id]))
+  ].filter(task => matchesTaskFilters(task, { unfinishedOnly: true }));
+  return { due_today: pending.filter(task => deadline(task) === today).length,
+    high_priority_pending: pending.filter(task => task.priority === 2).length };
 }

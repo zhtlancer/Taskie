@@ -85,7 +85,7 @@
         <span class="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300">💰 今日已得 {{ todayPoints }} 分</span>
         <router-link to="/" class="ml-auto px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 whitespace-nowrap" @click="playClick(); childStore.switchAccount()">🔄 切换</router-link>
       </div>
-      <div class="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
+      <div ref="subjectList" class="flex gap-2 overflow-x-auto pb-1 -mx-3 px-3">
         <button
           v-for="sub in subjects"
           :key="sub.name"
@@ -99,6 +99,16 @@
           <span class="text-xs opacity-70">{{ getSubjectTaskCount(sub.name) }}</span>
         </button>
       </div>
+      <div role="group" aria-label="筛选任务" class="flex flex-wrap items-center gap-2">
+        <button type="button" :aria-pressed="unfinishedOnly" class="min-h-[44px] px-3 rounded-xl border text-xs font-bold"
+          :class="unfinishedOnly ? 'bg-brand-50 dark:bg-brand-900/40 border-brand-400 text-brand-700 dark:text-brand-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+          @click="unfinishedOnly = !unfinishedOnly">仅看未完成</button>
+        <button type="button" :aria-pressed="highPriorityOnly" class="min-h-[44px] px-3 rounded-xl border text-xs font-bold"
+          :class="highPriorityOnly ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+          @click="highPriorityOnly = !highPriorityOnly">高优先级</button>
+        <button v-if="isNarrowed" type="button" class="min-h-[44px] px-3 text-xs font-bold text-slate-500 dark:text-slate-400" @click="clearFilters">清除筛选</button>
+      </div>
+      <p class="text-xs text-slate-500 dark:text-slate-400">区内先列必做、再列可选、最后列已完成或跳过；同组按截止日期从近到远、优先级从高到低排列。</p>
     </div>
 
     <!-- Main Layout (Two Columns on iPad landscape) -->
@@ -134,7 +144,7 @@
           <!-- Long-term tasks (reading a book, holiday homework), with the holiday banner during a period -->
           <GoalTasksPanel
             :child-name="childStore.childName"
-            v-if="!loading && (activePeriod || activeGoals.length)"
+            v-if="!loading && (activeGoals.length || activePeriod && !isNarrowed)"
             :goals="activeGoals"
             :period="activePeriod"
             :today="todayString"
@@ -153,16 +163,17 @@
 
           <!-- Empty state -->
           <div
-            v-if="!loading && !tasksError && filteredTasks.length === 0 && extraTasks.length === 0 && !activePeriod && !activeGoals.length"
+            v-if="!loading && !tasksError && !visibleTaskCount && (isNarrowed || !activePeriod)"
             class="flex flex-col items-center justify-center h-64 text-slate-400"
           >
             <span class="text-5xl mb-3">🏖️</span>
-            <span class="text-base font-bold text-slate-600 dark:text-slate-300">当前分类下暂无任务</span>
-            <span class="text-xs text-slate-400 mt-1">可以选择“全部”查看或在家长端添加任务</span>
+            <span class="text-base font-bold text-slate-600 dark:text-slate-300">{{ isNarrowed ? '没有符合筛选条件的任务' : '当前分类下暂无任务' }}</span>
+            <button v-if="isNarrowed" type="button" class="mt-2 min-h-[44px] px-4 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-200 text-sm font-bold" @click="clearFilters">查看全部任务</button>
+            <span v-else class="text-xs text-slate-400 mt-1">可以选择“全部”查看或在家长端添加任务</span>
           </div>
 
           <div
-            v-if="!loading && !tasksError && (activePeriod || activeGoals.length) && filteredTasks.length === 0 && extraTasks.length === 0"
+            v-if="!loading && !tasksError && !isNarrowed && (activePeriod || activeGoals.length) && filteredTasks.length === 0 && extraTasks.length === 0"
             class="text-center py-6 text-sm font-bold text-slate-400"
           >
             {{ activePeriod ? '假期中，今天没有日常任务～' : '今天没有日常任务～' }}
@@ -180,6 +191,7 @@
               @toggle="handleTaskToggle"
               @timer="handleTimer"
               @edit-priority="priorityTarget = { ...$event }"
+              @edit-homework="homeworkEditId = $event.homework.id"
               @edit-duration="openDurationEdit"
               v-on="skipHandlers"
             />
@@ -191,13 +203,13 @@
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <TaskCard v-for="task in extraTasks" :key="task.id" :data-timer-id="task.id" :task="task" :as-parent="asParent" :now="now"
-                @toggle="handleTaskToggle" @timer="handleTimer" @edit-duration="openDurationEdit" @edit-priority="priorityTarget = { ...$event }" />
+                @toggle="handleTaskToggle" @timer="handleTimer" @edit-duration="openDurationEdit" @edit-priority="priorityTarget = { ...$event }" @edit-homework="homeworkEditId = $event.homework.id" />
             </div>
           </section>
         </div>
 
         <!-- Keep the rest-day message visible when daily tasks were skipped, including goal logs. -->
-        <div v-if="totalCount > 0 || skippedCount > 0 || !(activePeriod || activeGoals.length)" class="mt-3 shrink-0">
+        <div v-if="totalCount > 0 || skippedCount > 0 || !(activePeriod || boardGoals.length)" class="mt-3 shrink-0">
           <!-- When all completed -->
           <div
             v-if="allDone"
@@ -295,6 +307,8 @@
       initial-char="学"
     />
     <TaskPriorityModal v-if="priorityTarget" :task="priorityTarget" @close="priorityTarget = null" @saved="priorityTarget = null; refreshBoard()" />
+    <HomeworkEditModal v-if="homeworkEditId && asParent" :key="homeworkEditId" :record-id="homeworkEditId" :child-id="childId" :today="todayString"
+      @close="homeworkEditId = null" @saved="homeworkEditId = null; refreshBoard()" />
     <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null; loadUnfinished()" @saved="refreshStudy" />
     <StudySessionsModal v-if="studyTask" :task-id="studyTask" :as-parent="asParent" @close="studyTask = null; loadUnfinished()" @saved="refreshStudy" />
   </div>
@@ -310,7 +324,8 @@ import { useChildStore } from '../stores/child';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
 import TaskCard from '../components/TaskCard.vue';
 import TaskPriorityModal from '../components/TaskPriorityModal.vue';
-import { sortTasks, sortGoals } from '../utils/taskOrdering.js';
+import HomeworkEditModal from '../components/HomeworkEditModal.vue';
+import { sortTasks, sortGoals, goalBoardTask, matchesTaskFilters } from '../utils/taskOrdering.js';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import StudySessionsModal from '../components/StudySessionsModal.vue';
 import ProgressRing from '../components/ProgressRing.vue';
@@ -348,7 +363,9 @@ const { asParent } = useParentSession();
 
 const tasks = ref([]);
 const priorityTarget = ref(null);
-watch(childId, () => { priorityTarget.value = null; });
+const homeworkEditId = ref(null);
+watch(childId, () => { priorityTarget.value = null; homeworkEditId.value = null; });
+watch(asParent, parent => { if (!parent) homeworkEditId.value = null; });
 // The placeholder only covers a board that has nothing to show yet. Later refreshes update the
 // cards in place: swapping them for the placeholder shrinks the page and loses the scroll position.
 const loading = ref(true);
@@ -358,7 +375,8 @@ const periods = ref([]);
 const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
 // Running long-term tasks, plus any finished today so the child sees the celebration.
-const activeGoals = computed(() => sortGoals(goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString.value), goalRows.value));
+const boardGoals = computed(() => goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString.value));
+const activeGoals = computed(() => sortGoals(boardGoals.value.filter(goal => matchesTaskFilters(goalBoardTask(goal, goalRows.value[goal.id]), taskFilters.value)), goalRows.value));
 const timeZone = computed(() => calendar.timeZone);
 const unfinished = ref([]);
 let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, loadSerial = 0;
@@ -366,7 +384,7 @@ let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, lo
 // Keep task timers and the next-class reminder current even when no task timer is running.
 const now = ref(Date.now());
 const todayString = computed(() => calendar.today);
-watch(todayString, () => { priorityTarget.value = null; });
+watch(todayString, () => { priorityTarget.value = null; homeworkEditId.value = null; });
 // Only sessions whose task left today's board; a task still due (carried over, homework) keeps its card.
 const unfinishedAttention = computed(() => loading.value ? [] : unfinished.value.filter(item => !tasks.value.some(task => task.id === item.task_id)));
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
@@ -419,6 +437,16 @@ async function refreshGoals() {
   if (!wasAllDone && allDone.value) fireCelebration(true);
 }
 const selectedSubject = ref('全部');
+const subjectList = ref(null);
+const unfinishedOnly = ref(false), highPriorityOnly = ref(false);
+const taskFilters = computed(() => ({ subject: selectedSubject.value, unfinishedOnly: unfinishedOnly.value,
+  highPriorityOnly: highPriorityOnly.value }));
+const isNarrowed = computed(() => unfinishedOnly.value || highPriorityOnly.value || selectedSubject.value !== '全部');
+function clearFilters() {
+  selectedSubject.value = '全部'; unfinishedOnly.value = false; highPriorityOnly.value = false;
+  if (subjectList.value) subjectList.value.scrollLeft = 0;
+}
+watch(childId, clearFilters);
 const streakRef = ref(null);
 
 const streakDays = computed(() => childStore.stats.current_streak ?? 0);
@@ -438,10 +466,9 @@ const formattedDate = computed(() => businessDayLabel(todayString.value));
 // (they still count towards today's progress).
 const cardTasks = computed(() => tasks.value.filter(t => t.origin !== 'goal'));
 const goalRows = computed(() => Object.fromEntries(tasks.value.filter(t => t.origin === 'goal').map(t => [t.goal_id, t])));
-const filteredTasks = computed(() => sortTasks(cardTasks.value.filter(t => !t.is_extra &&
-  (selectedSubject.value === '全部' || t.subject === selectedSubject.value))));
-const extraTasks = computed(() => sortTasks(cardTasks.value.filter(t => t.is_extra &&
-  (selectedSubject.value === '全部' || t.subject === selectedSubject.value))));
+const filteredTasks = computed(() => sortTasks(cardTasks.value.filter(t => !t.is_extra && matchesTaskFilters(t, taskFilters.value))));
+const extraTasks = computed(() => sortTasks(cardTasks.value.filter(t => t.is_extra && matchesTaskFilters(t, taskFilters.value))));
+const visibleTaskCount = computed(() => activeGoals.value.length + filteredTasks.value.length + extraTasks.value.length);
 
 // Flexible weekly tasks only count once done and skipped tasks never count, so neither blocks
 // the all-done celebration.
@@ -462,8 +489,8 @@ function selectSubject(subjName) {
 }
 
 function getSubjectTaskCount(subjName) {
-  if (subjName === '全部') return cardTasks.value.length;
-  return cardTasks.value.filter(t => t.subject === subjName).length;
+  return [...cardTasks.value, ...boardGoals.value.map(goal => goalBoardTask(goal, goalRows.value[goal.id]))]
+    .filter(task => matchesTaskFilters(task, { ...taskFilters.value, subject: subjName })).length;
 }
 
 // --- Today's classes: the header entry, tomorrow's things to bring ---

@@ -93,6 +93,7 @@
         </div>
       </div>
       <PriorityFields v-if="asParent" v-model="form.priority" />
+      <p v-if="asParent && record?.task && record.task_state !== 'open'" class="text-xs text-slate-500 dark:text-slate-400">已完成、已跳过或已过期的任务保留原有优先级；这里仅修改作业记录。</p>
       <TimingFields v-if="asParent && !record && form.create_task" v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">

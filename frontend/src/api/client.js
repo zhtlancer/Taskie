@@ -211,6 +211,7 @@ export const api = {
   rejectHomeworkCompletion: id => post(`/homework/${id}/reject-completion`),
   getHomeworkCompletionRequests: () => get('/homework-completion-requests'),
   getHomework: (childId, params = {}) => get(`/children/${childId}/homework`, params),
+  getHomeworkRecord: (id, signal) => get(`/homework/${id}`, undefined, signal, { silentError: true }),
   getHomeworkCourses: childId => get(`/children/${childId}/homework/courses`),
   getHomeworkSummary: (childId, params = {}) => get(`/children/${childId}/homework/summary`, params),
   suggestHomework: (childId, params) => get(`/children/${childId}/homework/suggest`, params),
