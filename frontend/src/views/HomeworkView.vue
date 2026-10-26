@@ -109,6 +109,7 @@
               <li v-for="record in group.records" :key="record.id" class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
                 <div class="flex flex-wrap items-center gap-2 mb-1.5">
                   <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300' : 'bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'">{{ courseLabel(record) }}</span>
+                  <PriorityBadge :priority="record.task?.priority ?? record.priority" />
                   <span class="text-xs font-bold" :class="dueClass(record)">{{ dueText(record) }}</span>
                   <span class="ml-auto px-2 py-0.5 rounded-lg text-xs font-black" :class="STATE[record.task_state].class">{{ record.task_state === 'open' && record.study_count ? '进行中' : STATE[record.task_state].label }}</span>
                 </div>
@@ -247,6 +248,7 @@
 </template>
 
 <script setup>
+import PriorityBadge from '../components/PriorityBadge.vue';
 import { useCalendarStore } from '../stores/calendar';
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';

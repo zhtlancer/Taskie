@@ -92,6 +92,7 @@
           <p class="mt-1 text-xs font-bold text-slate-400">默认按课程，可以在「课程默认积分」里设置</p>
         </div>
       </div>
+      <PriorityFields v-if="asParent" v-model="form.priority" />
       <TimingFields v-if="asParent && !record && form.create_task" v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
@@ -109,6 +110,7 @@
 import { computed, reactive, ref } from 'vue';
 import api from '../api/client';
 import TimingFields from './TimingFields.vue';
+import PriorityFields from './PriorityFields.vue';
 import UiDialog from './UiDialog.vue';
 import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, shortDate } from '../utils/schedule.js';
 import { courseLabel } from '../utils/homework.js';
@@ -136,8 +138,8 @@ const dueTouched = ref(false);
 const pointsTouched = ref(false);
 const createTouched = ref(false);
 const form = reactive(props.record
-  ? { content: props.record.content, assigned_date: props.record.assigned_date, due_date: props.record.due_date || '', points: props.record.points, create_task: false }
-  : { content: '', assigned_date: today.value, due_date: '', points: 10, create_task: false, track_time: false, expected_minutes: null });
+  ? { content: props.record.content, assigned_date: props.record.assigned_date, due_date: props.record.due_date || '', priority: props.record.priority ?? 1, points: props.record.points, create_task: false }
+  : { content: '', assigned_date: today.value, due_date: '', priority: 1, points: 10, create_task: false, track_time: false, expected_minutes: null });
 
 const otherSubjects = computed(() => SCHOOL_SUBJECTS.filter(subject => !props.courses.some(c => c.kind === 'school' && c.subject === subject)));
 const canCreateTask = computed(() => Boolean(form.due_date) && form.due_date >= today.value);
@@ -201,14 +203,14 @@ async function save() {
     let saved;
     if (props.record) {
       saved = await api.updateHomework(props.record.id, { content: form.content, assigned_date: form.assigned_date, due_date: form.due_date || null,
-        ...(props.asParent ? { points: form.points || 0 } : {}) });
+        ...(props.asParent ? { priority: form.priority, points: form.points || 0 } : {}) });
     } else {
       const { kind, subject, class_id } = selected.value;
       const createTask = form.create_task && canCreateTask.value;
       saved = await api.createHomework(props.childId, {
         course_kind: kind, subject: kind === 'school' ? subject : undefined, class_id: class_id ?? undefined,
         content: form.content, assigned_date: form.assigned_date, due_date: form.due_date || null, create_task: createTask,
-        ...(props.asParent ? { points: form.points || 0, ...(createTask ? { track_time: form.track_time, expected_minutes: form.track_time ? form.expected_minutes : null } : {}) } : {})
+        ...(props.asParent ? { priority: form.priority, points: form.points || 0, ...(createTask ? { track_time: form.track_time, expected_minutes: form.track_time ? form.expected_minutes : null } : {}) } : {})
       });
     }
     emit('saved', saved);

@@ -273,7 +273,7 @@
             <ul v-else class="space-y-1.5">
               <li v-for="task in item.adhoc" :key="task.id" class="flex items-center gap-2 text-xs">
                 <span class="w-12 shrink-0 font-bold" :class="task.date === today ? 'text-orange-600 dark:text-orange-300' : 'text-slate-400'">{{ dayLabel(task.date) }}</span>
-                <span class="flex-1 truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'">{{ task.subject }} · {{ task.title }}</span>
+                <span class="flex-1 truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'">{{ task.subject }} · {{ task.title }}</span><PriorityBadge :priority="task.priority" />
                 <span v-if="task.due_date" class="shrink-0 text-xs font-bold text-sky-600 dark:text-sky-300">截止 {{ dayLabel(task.due_date) }}</span>
                 <span class="text-amber-500 dark:text-amber-400 font-black shrink-0">★{{ task.points }}</span>
                 <button type="button" class="w-10 h-10 -my-2 -mr-2 shrink-0 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40" :aria-label="`删除 ${task.title}`" title="删除" @click="removeAdhoc(item, task)">✕</button>
@@ -318,6 +318,7 @@
           <input v-model="adhocForm.due_date" type="date" :min="adhocForm.date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
           <p class="mt-1 text-xs font-bold text-slate-400">填了的话，截止前每天都可以做，比如周三布置、周五交的手抄报</p>
         </div>
+        <PriorityFields v-model="adhocForm.priority" />
         <TimingFields v-model:track-time="adhocForm.track_time" v-model:expected-minutes="adhocForm.expected_minutes" />
         <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
           <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="adhocForm = null">取消</button>
@@ -336,6 +337,8 @@ import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { formatMinutes } from '../utils/timeStats.js';
 import TimingFields from '../components/TimingFields.vue';
+import PriorityFields from '../components/PriorityFields.vue';
+import PriorityBadge from '../components/PriorityBadge.vue';
 import { courseLabel } from '../utils/homework.js';
 import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerTarget, withClock } from '../utils/taskTimer.js';
 const calendar = useCalendarStore();
@@ -415,7 +418,7 @@ function dayLabel(date) {
 function openAdhoc(child) {
   calendar.refreshToday();
   adhocError.value = '';
-  adhocForm.value = { child, title: '', subject: '语文', date: today.value, due_date: '', points: 10, track_time: false, expected_minutes: null };
+  adhocForm.value = { child, title: '', subject: '语文', date: today.value, due_date: '', points: 10, priority: 1, track_time: false, expected_minutes: null };
 }
 
 const activeGoals = goals => goals.filter(goal => goal.status === 'active');
@@ -427,8 +430,8 @@ async function saveAdhoc() {
   adhocSaving.value = true;
   adhocError.value = '';
   try {
-    const { child, title, subject, date, due_date, points, track_time, expected_minutes } = adhocForm.value;
-    await api.createAdhocTask(child.id, { title, subject, date, due_date: due_date && due_date > date ? due_date : null, points: points || 0,
+    const { child, title, subject, date, due_date, points, priority, track_time, expected_minutes } = adhocForm.value;
+    await api.createAdhocTask(child.id, { title, subject, date, due_date: due_date && due_date > date ? due_date : null, points: points || 0, priority,
       track_time, expected_minutes: track_time ? expected_minutes : null });
     await loadDashboard();
     adhocForm.value = null;

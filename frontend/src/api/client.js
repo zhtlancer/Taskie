@@ -115,6 +115,7 @@ export const api = {
   updateTaskTemplate: (id, data) => put(`/task-templates/${id}`, data),
   deleteTaskTemplate: id => remove(`/task-templates/${id}`),
   getDailyTasks: (id, date) => get('/daily-tasks', { child_id: id, date }),
+  setTaskPriority: (id, priority, generation) => put(`/daily-tasks/${id}/priority`, { priority }, { headers: generationHeaders(generation) }),
   getUnfinishedStudy: id => get(`/children/${id}/unfinished-study`),
   getCalendar: () => get('/calendar', undefined, undefined, { silentError: true }),
   // The running timer, else the latest one paused; pausing keeps it, resuming starts it again.

@@ -6,6 +6,7 @@
     <header class="flex items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-1.5 min-w-0">
         <span class="px-2 py-1 rounded-lg text-xs font-bold font-chinese" :class="subjectBadgeClass(task.subject)">{{ task.subject }}</span>
+        <PriorityBadge :priority="task.priority" />
         <span v-if="task.origin === 'adhoc'" class="px-2 py-1 rounded-lg text-xs font-bold bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300">{{ task.homework ? '作业' : '临时' }}</span>
         <span v-if="task.origin === 'class'" class="px-2 py-1 rounded-lg text-xs font-bold bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300">课外班</span>
       </div>
@@ -84,6 +85,7 @@ import { useCalendarStore } from '../stores/calendar';
 import { ref, computed, nextTick } from 'vue';
 import { playTaskComplete, playTaskUncomplete } from '../utils/sound';
 import TaskTimer from './TaskTimer.vue';
+import PriorityBadge from './PriorityBadge.vue';
 import { formatClock, formatDuration, liveSeconds, needsDurationPrompt, usesStudySessions } from '../utils/taskTimer.js';
 import { deadlineText } from '../utils/schedule.js';
 const calendar = useCalendarStore();
@@ -105,7 +107,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration']);
+const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration', 'edit-priority']);
 
 const activeParticles = ref([]);
 const card = ref(null), menuOpen = ref(false), menuTrigger = ref(null), menuPanel = ref(null);
@@ -152,9 +154,13 @@ const canSkip = computed(() => !props.task.is_extra && !props.task.is_completed 
   (props.asParent || !skipTurnedDown.value));
 const menuActions = computed(() => {
   if (props.task.is_skipped) return props.asParent ? [{ label: '撤销跳过', event: 'unskip' }] : [];
-  // A parent answers a pending request from the buttons on the card itself.
-  if (skipPending.value) return props.asParent ? [] : [{ label: '撤回申请', event: 'cancel-skip' }];
-  return canSkip.value ? [{ label: props.asParent ? '跳过任务' : '今天没有？', event: 'skip' }] : [];
+  const actions = skipPending.value
+    ? (props.asParent ? [] : [{ label: '撤回申请', event: 'cancel-skip' }])
+    : canSkip.value ? [{ label: props.asParent ? '跳过任务' : '今天没有？', event: 'skip' }] : [];
+  if (props.asParent && !props.task.is_completed && ['template', 'adhoc'].includes(props.task.origin)) {
+    actions.push({ label: '调整优先级', event: 'edit-priority' });
+  }
+  return actions;
 });
 async function toggleMenu() {
   if (menuOpen.value) { closeMenu(); return; }

@@ -179,6 +179,7 @@
               :now="now"
               @toggle="handleTaskToggle"
               @timer="handleTimer"
+              @edit-priority="priorityTarget = { ...$event }"
               @edit-duration="openDurationEdit"
               v-on="skipHandlers"
             />
@@ -190,7 +191,7 @@
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <TaskCard v-for="task in extraTasks" :key="task.id" :data-timer-id="task.id" :task="task" :as-parent="asParent" :now="now"
-                @toggle="handleTaskToggle" @timer="handleTimer" @edit-duration="openDurationEdit" />
+                @toggle="handleTaskToggle" @timer="handleTimer" @edit-duration="openDurationEdit" @edit-priority="priorityTarget = { ...$event }" />
             </div>
           </section>
         </div>
@@ -293,6 +294,7 @@
       :child-id="childId"
       initial-char="学"
     />
+    <TaskPriorityModal v-if="priorityTarget" :task="priorityTarget" @close="priorityTarget = null" @saved="priorityTarget = null; refreshBoard()" />
     <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null; loadUnfinished()" @saved="refreshStudy" />
     <StudySessionsModal v-if="studyTask" :task-id="studyTask" :as-parent="asParent" @close="studyTask = null; loadUnfinished()" @saved="refreshStudy" />
   </div>
@@ -307,6 +309,8 @@ import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
 import TaskCard from '../components/TaskCard.vue';
+import TaskPriorityModal from '../components/TaskPriorityModal.vue';
+import { sortTasks, sortGoals } from '../utils/taskOrdering.js';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import StudySessionsModal from '../components/StudySessionsModal.vue';
 import ProgressRing from '../components/ProgressRing.vue';
@@ -343,6 +347,8 @@ const childAvatar = computed(() => childStore.childAvatar);
 const { asParent } = useParentSession();
 
 const tasks = ref([]);
+const priorityTarget = ref(null);
+watch(childId, () => { priorityTarget.value = null; });
 // The placeholder only covers a board that has nothing to show yet. Later refreshes update the
 // cards in place: swapping them for the placeholder shrinks the page and loses the scroll position.
 const loading = ref(true);
@@ -352,7 +358,7 @@ const periods = ref([]);
 const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);
 // Running long-term tasks, plus any finished today so the child sees the celebration.
-const activeGoals = computed(() => goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString.value));
+const activeGoals = computed(() => sortGoals(goals.value.filter(goal => goal.status === 'active' || goal.completed_on === todayString.value), goalRows.value));
 const timeZone = computed(() => calendar.timeZone);
 const unfinished = ref([]);
 let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, loadSerial = 0;
@@ -360,6 +366,7 @@ let taskSerial = 0, goalSerial = 0, scheduleSerial = 0, unfinishedSerial = 0, lo
 // Keep task timers and the next-class reminder current even when no task timer is running.
 const now = ref(Date.now());
 const todayString = computed(() => calendar.today);
+watch(todayString, () => { priorityTarget.value = null; });
 // Only sessions whose task left today's board; a task still due (carried over, homework) keeps its card.
 const unfinishedAttention = computed(() => loading.value ? [] : unfinished.value.filter(item => !tasks.value.some(task => task.id === item.task_id)));
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
@@ -431,14 +438,10 @@ const formattedDate = computed(() => businessDayLabel(todayString.value));
 // (they still count towards today's progress).
 const cardTasks = computed(() => tasks.value.filter(t => t.origin !== 'goal'));
 const goalRows = computed(() => Object.fromEntries(tasks.value.filter(t => t.origin === 'goal').map(t => [t.goal_id, t])));
-const filteredTasks = computed(() => {
-  if (selectedSubject.value === '全部') {
-    return cardTasks.value.filter(t => !t.is_extra);
-  }
-  return cardTasks.value.filter(t => !t.is_extra && t.subject === selectedSubject.value);
-});
-
-const extraTasks = computed(() => cardTasks.value.filter(t => t.is_extra && (selectedSubject.value === '全部' || t.subject === selectedSubject.value)));
+const filteredTasks = computed(() => sortTasks(cardTasks.value.filter(t => !t.is_extra &&
+  (selectedSubject.value === '全部' || t.subject === selectedSubject.value))));
+const extraTasks = computed(() => sortTasks(cardTasks.value.filter(t => t.is_extra &&
+  (selectedSubject.value === '全部' || t.subject === selectedSubject.value))));
 
 // Flexible weekly tasks only count once done and skipped tasks never count, so neither blocks
 // the all-done celebration.

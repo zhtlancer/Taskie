@@ -1,3 +1,4 @@
+const { validatePriority } = require('../utils/priority');
 const { generateId } = require('../utils/crypto');
 const { getTodayDate, getDateRangeList, parseDate, shiftDate } = require('../utils/date');
 const { completedOn } = require('../utils/goals');
@@ -247,11 +248,11 @@ class PeriodsService {
     const id = generateId();
     return this.db.transaction(() => {
       this.db.prepare(`INSERT INTO period_tasks (id, period_id, child_id, title, subject, mode, input_mode, total_amount, unit, points,
-          completion_bonus, start_date, end_date, daily_required, completed_at, created_at, track_time, expected_minutes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
+          completion_bonus, start_date, end_date, daily_required, completed_at, created_at, track_time, expected_minutes, priority)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`)
         .run(id, fields.period_id, fields.child_id, fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit,
           fields.points, fields.completion_bonus, fields.start_date, fields.end_date, fields.daily_required ? 1 : 0, new Date().toISOString(),
-          fields.track_time ? 1 : 0, fields.expected_minutes);
+          fields.track_time ? 1 : 0, fields.expected_minutes, fields.priority);
       return this.describeTask(this.getTask(id));
     })();
   }
@@ -273,12 +274,14 @@ class PeriodsService {
     return this.db.transaction(() => {
       // Turning timing off drops the timer.
       this.db.prepare(`UPDATE period_tasks SET title = ?, subject = ?, mode = ?, input_mode = ?, total_amount = ?, unit = ?, points = ?,
-          completion_bonus = ?, start_date = ?, end_date = ?, daily_required = ?, track_time = ?, expected_minutes = ?,
+          completion_bonus = ?, start_date = ?, end_date = ?, daily_required = ?, track_time = ?, expected_minutes = ?, priority = ?,
           timer_started_at = CASE WHEN ? THEN timer_started_at END, timer_elapsed_seconds = CASE WHEN ? THEN timer_elapsed_seconds ELSE 0 END
         WHERE id = ?`)
         .run(fields.title, fields.subject, fields.mode, fields.input_mode, fields.total_amount, fields.unit, fields.points,
           fields.completion_bonus, dates.start_date, dates.end_date, fields.daily_required ? 1 : 0,
-          fields.track_time ? 1 : 0, fields.expected_minutes, fields.track_time ? 1 : 0, fields.track_time ? 1 : 0, id);
+          fields.track_time ? 1 : 0, fields.expected_minutes, fields.priority, fields.track_time ? 1 : 0, fields.track_time ? 1 : 0, id);
+      this.db.prepare('UPDATE daily_tasks SET priority = ? WHERE goal_id = ? AND date >= ? AND is_completed = 0 AND skipped_at IS NULL')
+        .run(fields.priority, id, getTodayDate());
       this.prunePendingDailyRows(this.getTask(id));
       return this.describeTask(this.getTask(id));
     })();
@@ -310,7 +313,7 @@ class PeriodsService {
       .run(task.id, getTodayDate(), task.start_date, task.end_date, task.end_date, finishedOn, finishedOn);
   }
 
-  validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false, track_time, expected_minutes }) {
+  validateTask({ title, subject, mode = 'check', input_mode = 'increment', total_amount, unit, points = 0, completion_bonus = 0, daily_required = false, track_time, expected_minutes, priority = 1 }) {
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
     if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
     if (!MODES.includes(mode)) throw { status: 400, message: '完成方式无效' };
@@ -318,7 +321,7 @@ class PeriodsService {
     if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
     if (!Number.isSafeInteger(completion_bonus) || completion_bonus < 0 || completion_bonus > 100000) throw { status: 400, message: '完成奖励必须为 0 至 100000 的整数' };
     if (typeof daily_required !== 'boolean') throw { status: 400, message: '“每天要记录”设置无效' };
-    const common = { title: title.trim(), subject: subject.trim(), mode, points, completion_bonus, daily_required, ...validateTiming({ track_time, expected_minutes }) };
+    const common = { priority: validatePriority(priority), title: title.trim(), subject: subject.trim(), mode, points, completion_bonus, daily_required, ...validateTiming({ track_time, expected_minutes }) };
     if (mode === 'check') return { ...common, input_mode: 'increment', total_amount: 1, unit: null };
     if (!Number.isSafeInteger(total_amount) || total_amount < 1 || total_amount > 100000) throw { status: 400, message: '总量必须为 1 至 100000 的整数' };
     if (typeof unit !== 'string' || !unit.trim() || unit.trim().length > 10) throw { status: 400, message: '请填写单位，如 页、篇、次' };
@@ -501,9 +504,9 @@ class PeriodsService {
 // do); it only makes logging that day a required task.
 function insertGoalDailyRow(db, task, date, completed = false) {
   db.prepare(`INSERT INTO daily_tasks (id, child_id, template_id, title, subject, points, date, is_completed, completed_at,
-      schedule_type, weekly_target_times, origin, goal_id)
-    VALUES (?, ?, NULL, ?, ?, 0, ?, ?, ?, 'fixed_days', NULL, 'goal', ?)`)
-    .run(generateId(), task.child_id, task.title, task.subject, date, completed ? 1 : 0, completed ? new Date().toISOString() : null, task.id);
+      schedule_type, weekly_target_times, origin, goal_id, priority)
+    VALUES (?, ?, NULL, ?, ?, 0, ?, ?, ?, 'fixed_days', NULL, 'goal', ?, ?)`)
+    .run(generateId(), task.child_id, task.title, task.subject, date, completed ? 1 : 0, completed ? new Date().toISOString() : null, task.id, task.priority);
 }
 
 module.exports = PeriodsService;

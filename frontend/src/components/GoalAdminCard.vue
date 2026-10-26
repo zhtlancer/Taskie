@@ -7,6 +7,7 @@
       </span>
     </div>
     <div class="flex flex-wrap gap-1 mb-1.5 text-xs font-bold">
+      <PriorityBadge :priority="task.priority" />
       <span class="px-1.5 py-0.5 rounded-md" :class="statusInfo[task.status].class">{{ statusInfo[task.status].label }}</span>
       <span v-if="!task.period_id" class="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
         {{ task.start_date.slice(5) }} 起{{ task.end_date ? ` · ${task.end_date.slice(5)} 截止` : ' · 不设截止' }}
@@ -39,6 +40,7 @@
 </template>
 
 <script setup>
+import PriorityBadge from './PriorityBadge.vue';
 import { computed } from 'vue';
 const props = defineProps({ task: { type: Object, required: true } });
 // Keep the entry that must be undone first visible even when it was backfilled far in the past.

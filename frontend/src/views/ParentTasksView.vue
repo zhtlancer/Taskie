@@ -59,6 +59,7 @@
                 {{ tmpl.subject }}
               </span>
 
+              <PriorityBadge :priority="tmpl.priority" />
               <span class="text-sm font-black text-amber-500 dark:text-amber-400 flex items-center gap-1">
                 <span>★</span>
                 <span>{{ tmpl.points }} 积分</span>
@@ -195,6 +196,8 @@
               </button>
             </div>
           </div>
+
+          <PriorityFields v-model="form.priority" />
 
           <!-- Assigned Children -->
           <div>
@@ -442,6 +445,8 @@ import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import TimingFields from '../components/TimingFields.vue';
+import PriorityFields from '../components/PriorityFields.vue';
+import PriorityBadge from '../components/PriorityBadge.vue';
 
 const templates = ref([]);
 const children = ref([]);
@@ -471,6 +476,7 @@ const form = ref({
   extra_points: 0,
   extra_reward_limit: 0,
   points: 10,
+  priority: 1,
   days_of_week: [1, 2, 3, 4, 5],
   child_ids: null,
   track_time: false,
@@ -553,6 +559,7 @@ function openAddModal() {
     extra_points: 0,
     extra_reward_limit: 0,
     points: 10,
+    priority: 1,
     days_of_week: [1, 2, 3, 4, 5],
     child_ids: null,
     track_time: false,
@@ -574,6 +581,7 @@ function openEditModal(tmpl) {
     extra_points: tmpl.extra_points ?? 0,
     extra_reward_limit: tmpl.extra_reward_limit ?? 0,
     points: tmpl.points,
+    priority: tmpl.priority ?? 1,
     days_of_week: Array.isArray(tmpl.days_of_week) ? [...tmpl.days_of_week] : [1, 2, 3, 4, 5],
     // Drop children deleted since the template was assigned.
     child_ids: Array.isArray(tmpl.child_ids) ? assignedChildren(tmpl).map(child => child.id) : null,
@@ -597,6 +605,7 @@ async function submitTemplateForm() {
       extra_points: form.value.extra_points,
       extra_reward_limit: form.value.extra_reward_limit,
       points: form.value.points,
+      priority: form.value.priority,
       days_of_week: form.value.days_of_week,
       child_ids: form.value.child_ids,
       track_time: form.value.track_time,

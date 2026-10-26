@@ -277,6 +277,7 @@
             <span class="block text-xs text-slate-400">勾选后它成为每天的必做项，当天记录一次进度才算全勤</span>
           </span>
         </label>
+        <PriorityFields v-model="taskModal.priority" />
         <TimingFields v-model:track-time="taskModal.track_time" v-model:expected-minutes="taskModal.expected_minutes" />
         <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
           <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="taskModal = null">取消</button>
@@ -320,6 +321,7 @@ import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
 import TimingFields from '../components/TimingFields.vue';
+import PriorityFields from '../components/PriorityFields.vue';
 const calendar = useCalendarStore();
 
 const children = ref([]);
@@ -457,19 +459,19 @@ function openTaskModal(period, task = null) {
   const periodId = period?.id ?? task?.period_id ?? null;
   taskModal.value = task
     ? { id: task.id, periodId, title: task.title, subject: task.subject, mode: task.mode, input_mode: task.input_mode, total_amount: task.total_amount,
-        unit: task.unit || '页', points: task.points, completion_bonus: task.completion_bonus, daily_required: task.daily_required,
+        unit: task.unit || '页', priority: task.priority ?? 1, points: task.points, completion_bonus: task.completion_bonus, daily_required: task.daily_required,
         track_time: task.track_time, expected_minutes: task.expected_minutes,
         start_date: task.start_date, end_date: task.end_date || '', locked: task.logs.length > 0 }
     : periodId
       ? { id: null, periodId, title: '', subject: '语文', mode: 'progress', input_mode: 'increment', total_amount: 40, unit: '页', points: 2,
-          completion_bonus: 0, daily_required: false, track_time: false, expected_minutes: null, locked: false }
+          priority: 1, completion_bonus: 0, daily_required: false, track_time: false, expected_minutes: null, locked: false }
       : { id: null, periodId: null, title: '', subject: '语文', mode: 'progress', input_mode: 'position', total_amount: 200, unit: '页', points: 0,
-          completion_bonus: 50, daily_required: true, track_time: false, expected_minutes: null, start_date: localToday(), end_date: '', locked: false };
+          priority: 1, completion_bonus: 50, daily_required: true, track_time: false, expected_minutes: null, start_date: localToday(), end_date: '', locked: false };
 }
 
 async function saveTask() {
-  const { id, periodId, title, subject, mode, input_mode, total_amount, unit, points, completion_bonus, daily_required, track_time, expected_minutes, start_date, end_date } = taskModal.value;
-  const payload = { title, subject, mode, input_mode, total_amount, unit, points: points || 0, completion_bonus: completion_bonus || 0, daily_required,
+  const { id, periodId, title, subject, mode, input_mode, total_amount, unit, points, priority, completion_bonus, daily_required, track_time, expected_minutes, start_date, end_date } = taskModal.value;
+  const payload = { title, subject, mode, input_mode, total_amount, unit, priority, points: points || 0, completion_bonus: completion_bonus || 0, daily_required,
     track_time, expected_minutes: track_time ? expected_minutes : null };
   if (!periodId) Object.assign(payload, { start_date, end_date: end_date || null });
   const save = () => id ? api.updatePeriodTask(id, payload)

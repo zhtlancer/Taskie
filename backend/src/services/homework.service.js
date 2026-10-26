@@ -1,3 +1,4 @@
+const { validatePriority } = require('../utils/priority');
 const { generateId } = require('../utils/crypto');
 const { getTodayDate, parseDate, shiftDate } = require('../utils/date');
 const { validateTiming } = require('../utils/timer');
@@ -176,10 +177,10 @@ class HomeworkService {
   // --- Records ---
 
   describe(row) {
-    const { task_id, task_date, task_completed, task_skipped_at, task_points, task_due_date, ...record } = row;
+    const { task_id, task_date, task_completed, task_skipped_at, task_points, task_due_date, task_priority, task_default_priority, task_priority_override, ...record } = row;
     const today = getTodayDate();
     const task = task_id ? {
-      id: task_id, date: task_date, points: task_points, due_date: task_due_date ?? task_date,
+      priority: task_priority, default_priority: task_default_priority, priority_override: task_priority_override, id: task_id, date: task_date, points: task_points, due_date: task_due_date ?? task_date,
       is_completed: Boolean(task_completed), is_skipped: Boolean(task_skipped_at) && !task_completed
     } : null;
     // pending: a child asked for a task; open, done, skipped or missed: the task's state; none: record only.
@@ -192,6 +193,7 @@ class HomeworkService {
   query(where, params) {
     return this.db.prepare(`SELECT r.*, d.id AS task_id, d.date AS task_date, d.is_completed AS task_completed, d.skipped_at AS task_skipped_at,
       d.points AS task_points, d.due_date AS task_due_date,
+      COALESCE(d.priority_override, d.priority) AS task_priority, d.priority AS task_default_priority, d.priority_override AS task_priority_override,
       COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds,
       (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count,
       EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running, c.name AS child_name, c.avatar_emoji AS child_avatar_emoji
@@ -265,6 +267,8 @@ class HomeworkService {
   // created at once for a parent, or requested for a child; past-due homework is only recorded.
   create(childId, body, actor) {
     this.requireChild(childId);
+    if (actor !== 'parent' && Object.hasOwn(body, 'priority')) throw fail(403, '只有家长可以设置优先级');
+    const priority = validatePriority(body.priority);
     const course = this.resolveCourse(childId, body);
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     if (!content) throw fail(400, '请填写作业内容');
@@ -283,9 +287,9 @@ class HomeworkService {
     const now = new Date().toISOString();
     this.db.transaction(() => {
       this.db.prepare(`INSERT INTO homework_records (id, child_id, course_kind, course_key, subject, class_id, assigned_date, due_date, content, points,
-        created_by, task_requested, daily_task_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`)
+        created_by, task_requested, daily_task_id, created_at, updated_at, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
         .run(id, childId, course.kind, courseKey(course), course.subject, course.class_id, assigned, due, content, points, actor,
-          body.create_task && actor !== 'parent' ? 1 : 0, now, now);
+          body.create_task && actor !== 'parent' ? 1 : 0, now, now, priority);
       if (timing) this.attachTask(id, timing);
     })();
     return this.get(id);
@@ -299,7 +303,7 @@ class HomeworkService {
     if (record.daily_task_id) throw fail(409, '这条作业已经生成了任务');
     if (!record.due_date || record.due_date < today) throw fail(409, record.due_date ? '截止日期已过，不能生成任务' : '没有截止日期，不能生成任务');
     const task = this.tasksService.createAdhocTask(record.child_id, { title: taskTitle(record), subject: taskSubject(record), points: record.points,
-      date: later(record.assigned_date, today), due_date: record.due_date, ...timing });
+      date: later(record.assigned_date, today), due_date: record.due_date, priority: record.priority, ...timing });
     this.db.prepare('UPDATE daily_tasks SET homework_legacy_seconds = 0, is_course_homework = 1 WHERE id = ?').run(task.id);
     this.db.prepare('UPDATE homework_records SET daily_task_id = ?, task_requested = 0, updated_at = ? WHERE id = ?').run(task.id, new Date().toISOString(), id);
   }
@@ -309,11 +313,11 @@ class HomeworkService {
     const record = this.get(id);
     const timing = validateTiming(body);
     this.db.transaction(() => {
-      if (body.points !== undefined || body.due_date !== undefined) {
+      if (body.points !== undefined || body.due_date !== undefined || body.priority !== undefined) {
         const points = body.points === undefined ? record.points : validatePoints(body.points);
         const due = body.due_date === undefined ? record.due_date : body.due_date;
         this.validateDates(record.assigned_date, due, getTodayDate());
-        this.db.prepare('UPDATE homework_records SET points = ?, due_date = ? WHERE id = ?').run(points, due, id);
+        this.db.prepare('UPDATE homework_records SET points = ?, due_date = ?, priority = ? WHERE id = ?').run(points, due, validatePriority(body.priority === undefined ? record.priority : body.priority), id);
       }
       this.attachTask(id, timing);
     })();
@@ -338,6 +342,8 @@ class HomeworkService {
   update(id, body, actor) {
     const record = this.get(id);
     this.requireEditable(record, actor);
+    if (actor !== 'parent' && Object.hasOwn(body, 'priority')) throw fail(403, '只有家长可以设置优先级');
+    const priority = validatePriority(body.priority === undefined ? record.priority : body.priority);
     const today = getTodayDate();
     let content = record.content;
     if (body.content !== undefined) {
@@ -357,12 +363,12 @@ class HomeworkService {
       if (due < task.date) throw fail(400, `截止日期不能早于任务开始的日子（${task.date}）`);
     }
     this.db.transaction(() => {
-      this.db.prepare('UPDATE homework_records SET content = ?, assigned_date = ?, due_date = ?, points = ?, updated_at = ? WHERE id = ?')
-        .run(content, assigned, due, points, new Date().toISOString(), id);
+      this.db.prepare('UPDATE homework_records SET content = ?, assigned_date = ?, due_date = ?, points = ?, priority = ?, updated_at = ? WHERE id = ?')
+        .run(content, assigned, due, points, priority, new Date().toISOString(), id);
       if (taskOpen) {
         const title = taskTitle({ ...record, content });
-        this.db.prepare('UPDATE daily_tasks SET title = ?, points = ?, due_date = ? WHERE id = ? AND is_completed = 0')
-          .run(title, points, due > task.date ? due : null, task.id);
+        this.db.prepare('UPDATE daily_tasks SET title = ?, points = ?, due_date = ?, priority = ? WHERE id = ? AND is_completed = 0')
+          .run(title, points, due > task.date ? due : null, priority, task.id);
       }
     })();
     return this.get(id);

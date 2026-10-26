@@ -1,3 +1,4 @@
+const { generationWrite } = require('../utils/data-generation');
 const { getTodayDate } = require('../utils/date');
 
 async function dailyTasksRoutes(fastify, options) {
@@ -57,6 +58,9 @@ async function dailyTasksRoutes(fastify, options) {
       }
     });
   }
+
+  fastify.put('/:id/priority', generationWrite(fastify, request =>
+    tasksService.setDailyPriority(request.params.id, request.body?.priority)));
 
   fastify.post('/:id/complete', async (request, reply) => {
     try {

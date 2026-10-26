@@ -31,6 +31,7 @@
           <span v-if="goal.points" class="text-xs font-black text-amber-500 dark:text-amber-400 shrink-0">★ {{ goal.points }}{{ goal.mode === 'progress' ? `/${goal.unit}` : '' }}</span>
         </div>
         <div class="flex flex-wrap gap-1 mb-1.5">
+          <PriorityBadge :priority="dailyRow(goal)?.priority ?? goal.priority" />
           <span v-if="goal.period_name && !period" class="px-1.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-xs font-bold">{{ goal.period_name }}</span>
           <span v-if="goal.daily_required && dailyRow(goal)?.is_skipped && !goal.today_logged" class="px-1.5 py-0.5 rounded-md text-xs font-black bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
             ⏭️ 今天已跳过 · {{ dailyRow(goal).skip_reason }}
@@ -151,6 +152,7 @@
 </template>
 
 <script setup>
+import PriorityBadge from './PriorityBadge.vue';
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
 import { playTaskComplete, playAllDone, playClick } from '../utils/sound';

@@ -112,7 +112,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 31;
+const SCHEMA_VERSION = 32;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -511,6 +511,20 @@ function initDb(db) {
   }
   // v31: study completion receipts are declared in schema.sql and survive completion undo.
   if (db.pragma('user_version', { simple: true }) < 31) db.pragma('user_version = 31');
+  // v32: source defaults, daily snapshots and optional per-occurrence overrides.
+  if (db.pragma('user_version', { simple: true }) < 32) {
+    db.transaction(() => {
+      for (const table of ['task_templates', 'daily_tasks', 'homework_records', 'period_tasks']) {
+        if (!db.pragma(`table_info(${table})`).some(c => c.name === 'priority')) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN priority INTEGER NOT NULL DEFAULT 1 CHECK (priority IN (0, 1, 2))`);
+        }
+      }
+      if (!db.pragma('table_info(daily_tasks)').some(c => c.name === 'priority_override')) {
+        db.exec('ALTER TABLE daily_tasks ADD COLUMN priority_override INTEGER CHECK (priority_override IN (0, 1, 2))');
+      }
+      db.pragma('user_version = 32');
+    })();
+  }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new

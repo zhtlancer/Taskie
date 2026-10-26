@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createTestApp, cleanupTestApp } = require('./helper');
+const { SCHEMA_VERSION } = require('../src/db');
 const { getTodayDate, shiftDate } = require('../src/utils/date');
 
 async function fixture(t, kind, overdue = false) {
@@ -199,7 +200,7 @@ test('completion receipts survive backup restore; v30 upgrades and broken v31 ba
     candidate.pragma('user_version = 30');
     const old = gzipSync(JSON.stringify({ ...data, database: candidate.serialize().toString('base64') }));
     await service.restore(old);
-    assert.equal(c.db.pragma('user_version', { simple: true }), 31);
+    assert.equal(c.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
     assert.equal(c.db.prepare('SELECT COUNT(*) n FROM study_completion_requests').get().n, 0);
     c.taskStudyService.completeWithDuration(c.task.id, { ...body, request_id: 'after-v30-upgrade' }, 'child');
     assert.equal(c.details().record.task.is_completed, true);
