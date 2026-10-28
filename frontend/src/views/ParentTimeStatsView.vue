@@ -1,12 +1,13 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col select-none">
+  <div class="time-stats-page min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col select-none">
     <ParentNavBar />
 
-    <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
+    <main class="time-stats-main max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
+      <div class="time-stats-screen">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2"><span>⏱</span><span>用时统计</span></h2>
-          <p class="text-xs font-bold text-slate-400 mt-0.5">只统计打开了“记录用时”的任务；平均值只用有记录的次数，没记录的按这项任务自己的平均用时估算</p>
+          <p class="text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">按家庭时区统计；平均值只用已记录用时，缺失用时在样本充足时单独估算</p>
         </div>
         <router-link to="/parent/dashboard" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">← 数据总览</router-link>
       </div>
@@ -17,7 +18,8 @@
           v-for="child in children"
           :key="child.id"
           type="button"
-          class="px-4 py-2 rounded-xl text-sm font-bold border font-chinese"
+          class="min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold border font-chinese"
+          :aria-pressed="selectedChild?.id === child.id"
           :class="selectedChild?.id === child.id ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'"
           @click="selectChild(child)"
         >
@@ -28,27 +30,50 @@
           v-for="range in ranges"
           :key="range.key"
           type="button"
-          class="px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
+          class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
+          :aria-pressed="rangeKey === range.key"
           :class="rangeKey === range.key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
           @click="selectRange(range.key)"
         >
           {{ range.label }}
         </button>
+        <button type="button" class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border" :aria-pressed="rangeKey === 'custom'"
+          :class="rangeKey === 'custom' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+          @click="selectCustomRange">自定义日期</button>
       </div>
 
-      <p v-if="error" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
+      <form v-if="rangeKey === 'custom'" class="mb-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4" novalidate @submit.prevent="applyCustomRange">
+        <div class="stats-custom-range gap-3 items-end">
+          <label class="min-w-0 text-sm font-bold">开始日期<input v-model="customDraft.from" type="date" required class="stats-date-input ui-input block w-full mt-1" /></label>
+          <label class="min-w-0 text-sm font-bold">结束日期<input v-model="customDraft.to" type="date" required class="stats-date-input ui-input block w-full mt-1" /></label>
+          <button type="submit" :disabled="!selectedChild" class="ui-button-primary">更新统计</button>
+        </div>
+        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">含首尾日期，最多 366 天。修改后点击“更新统计”应用。</p>
+        <p v-if="rangeError" role="alert" class="mt-2 text-sm text-rose-600 dark:text-rose-300">{{ rangeError }}</p>
+      </form>
+
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <button type="button" :disabled="!canExport" class="ui-button-secondary" @click="downloadCsv('daily')">按日导出 CSV</button>
+        <button type="button" :disabled="!canExport" class="ui-button-secondary" @click="downloadCsv('tasks')">按任务导出 CSV</button>
+        <button type="button" :disabled="!canExport" class="ui-button-secondary" @click="printReport">打印报告</button>
+        <p v-if="customDirty" class="text-xs text-slate-500 dark:text-slate-400">日期尚未应用，请先更新统计。</p>
+      </div>
+      <p v-if="downloadError" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ downloadError }}</p>
+      <p v-if="error" role="alert" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }} <button v-if="selectedChild" type="button" class="min-h-[44px] px-3 underline" @click="load">重新读取</button></p>
       <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold"><span class="animate-spin mr-2">⏳</span> 正在统计...</div>
 
       <template v-else-if="stats">
+        <p class="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2" data-stats-range>{{ selectedChild.name }} · {{ stats.from }} 至 {{ stats.to }} · {{ calendar.timeZone }}</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">{{ TIME_STATS_NOTE }}</p>
         <!-- Headline numbers -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
           <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
-            <div class="text-xs font-bold text-slate-400">记录的用时</div>
+            <div class="text-xs font-bold text-slate-400">已记录用时</div>
             <div class="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">{{ formatMinutes(stats.summary.recorded_seconds) }}</div>
             <div class="text-xs font-bold text-slate-400 mt-0.5">
-              <template v-if="stats.summary.estimated_seconds > stats.summary.recorded_seconds">含估算约 {{ formatMinutes(stats.summary.estimated_seconds) }} · </template>
               {{ compareText }}
             </div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">系统补估 {{ formatMinutes(estimateSeconds(stats.summary)) }} · 含估算 {{ formatMinutes(stats.summary.estimated_seconds) }}</div>
           </div>
           <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
             <div class="text-xs font-bold text-slate-400">平均每天（含估算）</div>
@@ -57,8 +82,8 @@
           </div>
           <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
             <div class="text-xs font-bold text-slate-400">没记录用时</div>
-            <div class="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">{{ stats.summary.missing }} <span class="text-sm">项</span></div>
-            <div class="text-xs font-bold text-slate-400 mt-0.5">共 {{ stats.summary.sessions }} 项计时任务，{{ stats.summary.estimated_missing }} 项已估算</div>
+            <div class="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">{{ stats.summary.missing }} <span class="text-sm">次</span></div>
+            <div class="text-xs font-bold text-slate-400 mt-0.5">共 {{ stats.summary.sessions }} 次，{{ stats.summary.estimated_missing }} 次已估算，{{ unestimatedCount(stats.summary) }} 次未能估算</div>
           </div>
           <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
             <div class="text-xs font-bold text-slate-400">平均几点写完</div>
@@ -91,7 +116,7 @@
                   <span class="flex items-center gap-1.5 text-slate-700 dark:text-slate-200"><span class="w-2.5 h-2.5 rounded-sm" :style="{ background: SUBJECT_COLORS[subject.subject] }"></span>{{ subject.subject }}</span>
                   <span class="text-slate-500 dark:text-slate-400">
                     {{ formatMinutes(subject.recorded_seconds) }}
-                    <template v-if="subject.estimated_seconds > subject.recorded_seconds">（约 {{ formatMinutes(subject.estimated_seconds) }}）</template>
+                    <template v-if="subject.estimated_seconds > subject.recorded_seconds">（含估算 {{ formatMinutes(subject.estimated_seconds) }}）</template>
                     · {{ subject.share }}%
                   </span>
                 </div>
@@ -200,6 +225,8 @@
           </div>
         </section>
       </template>
+      </div>
+      <TimeStatsReport v-if="canExport" :stats="stats" :child-name="selectedChild.name" :time-zone="calendar.timeZone || 'UTC'" />
     </main>
   </div>
 </template>
@@ -213,7 +240,9 @@ import ParentNavBar from '../components/ParentNavBar.vue';
 import TimeDailyChart from '../components/TimeDailyChart.vue';
 import FinishTimeChart from '../components/FinishTimeChart.vue';
 import Sparkline from '../components/Sparkline.vue';
+import TimeStatsReport from '../components/TimeStatsReport.vue';
 import { SUBJECT_COLORS, formatMinutes, formatPerUnit, minutesDelta, rangePresets, subjectOf } from '../utils/timeStats.js';
+import { validateStatsRange, estimateSeconds, unestimatedCount, timeStatsCsv, timeStatsFilename, TIME_STATS_NOTE } from '../utils/timeStatsReport.js';
 import { shortDate } from '../utils/schedule.js';
 const calendar = useCalendarStore();
 
@@ -222,7 +251,12 @@ const children = ref([]);
 const selectedChild = ref(null);
 const timetables = ref([]);
 const rangeKey = ref('7');
+const appliedCustom = ref(null);
+const customDraft = ref({ from: '', to: '' });
+const rangeError = ref('');
+const downloadError = ref('');
 const stats = ref(null);
+const statsChildId = ref(null);
 const loading = ref(true);
 const error = ref('');
 let statsRequest = 0;
@@ -230,9 +264,13 @@ let childRequest = 0;
 let disposed = false;
 let statsController;
 let timetableController;
+const downloads = new Map();
 
 const ranges = computed(() => rangePresets(timetables.value, calendar.today));
-const range = computed(() => ranges.value.find(r => r.key === rangeKey.value) || ranges.value[0]);
+const range = computed(() => rangeKey.value === 'custom' && appliedCustom.value ? appliedCustom.value : ranges.value.find(r => r.key === rangeKey.value) || ranges.value[0]);
+const customDirty = computed(() => rangeKey.value === 'custom' && (customDraft.value.from !== range.value.from || customDraft.value.to !== range.value.to));
+const canExport = computed(() => Boolean(stats.value && !loading.value && !error.value && !rangeError.value && !customDirty.value &&
+  statsChildId.value === selectedChild.value?.id && stats.value.from === range.value.from && stats.value.to === range.value.to));
 const workDays = computed(() => stats.value ? stats.value.days.filter(day => day.sessions).length : 0);
 const compareText = computed(() => {
   const delta = minutesDelta(stats.value.summary.recorded_seconds, stats.value.previous.recorded_seconds);
@@ -262,9 +300,12 @@ async function load() {
   const { from, to } = range.value;
   loading.value = true;
   error.value = '';
+  downloadError.value = '';
+  stats.value = null;
+  statsChildId.value = null;
   try {
-    const result = await api.getTimeStats(childId, from, to, controller.signal);
-    if (request === statsRequest) stats.value = result;
+    const result = await api.getTimeStats(childId, from, to, controller.signal, { silentError: true });
+    if (request === statsRequest) { stats.value = result; statsChildId.value = childId; }
   } catch (err) {
     if (request === statsRequest) error.value = typeof err === 'string' ? err : '加载失败，请重试';
   } finally {
@@ -293,7 +334,7 @@ async function selectChild(child) {
   }
   if (request !== childRequest) return;
   timetables.value = result;
-  if (!ranges.value.some(r => r.key === rangeKey.value)) rangeKey.value = '7';
+  if (rangeKey.value !== 'custom' && !ranges.value.some(r => r.key === rangeKey.value)) rangeKey.value = '7';
   await load();
 }
 
@@ -301,9 +342,47 @@ watch(() => calendar.today, () => { if (selectedChild.value) load(); });
 
 function selectRange(key) {
   calendar.refreshToday();
+  rangeError.value = '';
   rangeKey.value = key;
   load();
 }
+
+function selectCustomRange() {
+  if (rangeKey.value === 'custom') return;
+  const { from, to } = range.value;
+  appliedCustom.value = { from, to };
+  customDraft.value = { from, to };
+  rangeError.value = '';
+  rangeKey.value = 'custom';
+}
+
+function applyCustomRange() {
+  rangeError.value = validateStatsRange(customDraft.value.from, customDraft.value.to);
+  if (rangeError.value) return;
+  appliedCustom.value = { ...customDraft.value };
+  load();
+}
+
+function downloadCsv(kind) {
+  if (!canExport.value) return;
+  downloadError.value = '';
+  let url;
+  const link = document.createElement('a');
+  try {
+    url = URL.createObjectURL(new Blob([timeStatsCsv(stats.value, selectedChild.value.name, calendar.timeZone || 'UTC', kind)], { type: 'text/csv;charset=utf-8' }));
+    link.href = url;
+    link.download = timeStatsFilename(stats.value, selectedChild.value.name, kind);
+    document.body.append(link);
+    link.click();
+    // Safari may consume the blob after click returns; keep it alive until the download starts.
+    downloads.set(url, setTimeout(() => { URL.revokeObjectURL(url); downloads.delete(url); }, 60000));
+  } catch {
+    if (url) URL.revokeObjectURL(url);
+    downloadError.value = '导出失败，请重试';
+  } finally { link.remove(); }
+}
+
+function printReport() { if (canExport.value) window.print(); }
 
 onMounted(async () => {
   try {
@@ -326,5 +405,26 @@ onUnmounted(() => {
   ++childRequest;
   statsController?.abort();
   timetableController?.abort();
+  for (const [url, timer] of downloads) { clearTimeout(timer); URL.revokeObjectURL(url); }
+  downloads.clear();
 });
 </script>
+
+<style scoped>
+.stats-custom-range { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.stats-date-input { min-width: 0; max-width: 100%; appearance: none; }
+.stats-date-input::-webkit-date-and-time-value { text-align: left; }
+.stats-date-input::-webkit-datetime-edit { min-width: 0; padding: 0; }
+@media print {
+  .time-stats-page > :deep(header) { display: none !important; }
+  .time-stats-screen { display: none !important; }
+  .time-stats-page { page: taskie-time-stats; }
+  .time-stats-page, .time-stats-main { display: block; min-height: 0; margin: 0; padding: 0; max-width: none; background: white !important; }
+}
+</style>
+<style>
+@media print {
+  @page taskie-time-stats { size: A4; margin: 12mm; }
+  body:has(.time-stats-page), body:has(.time-stats-page) .app-shell, body:has(.time-stats-page) #app { background: white !important; min-height: 0; height: auto; padding: 0; }
+}
+</style>

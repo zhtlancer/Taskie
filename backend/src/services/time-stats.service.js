@@ -195,6 +195,7 @@ class TimeStatsService {
       const expected = latest.expected_minutes;
       const judged = expected ? recorded.filter(s => s.expected_minutes && (!s.task_instance_id || s.is_completed)) : [];
       return {
+        ...totals(list),
         key, kind: latest.kind, title: latest.title, subject: latest.subject,
         sessions: list.length, recorded: recorded.length,
         average_seconds: average(seconds),

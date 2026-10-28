@@ -42,9 +42,11 @@ test('averages use recorded times only; totals add an estimate from tasks with a
   const oral = result.tasks.find(task => task.title === '口算');
   assert.deepEqual([oral.sessions, oral.recorded, oral.average_seconds, oral.min_seconds, oral.max_seconds], [5, 3, 760, 600, 960]);
   assert.deepEqual([oral.expected_minutes, oral.judged, oral.over_expected], [15, 3, 1]);
+  assert.deepEqual([oral.recorded_seconds, oral.estimated_seconds, oral.missing, oral.estimated_missing], [2280, 3800, 2, 2]);
   assert.deepEqual(oral.points, [{ date: day(0), seconds: 600 }, { date: day(1), seconds: 720 }, { date: day(2), seconds: 960 }]);
   const reading = result.tasks.find(task => task.title === '阅读');
   assert.deepEqual([reading.sessions, reading.recorded, reading.average_seconds], [2, 1, 1200]);
+  assert.deepEqual([reading.recorded_seconds, reading.estimated_seconds, reading.missing, reading.estimated_missing], [1200, 1200, 1, 0]);
   assert.equal(result.tasks.some(task => task.title === '整理书包'), false, 'untimed tasks are not in time stats');
 
   // Two 口算 times are estimated at its average; 阅读 has too few records to estimate.

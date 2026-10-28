@@ -242,7 +242,7 @@ export const api = {
   logPeriodProgress: (taskId, data, { childId, childName, title, backfill = false, attempt }) => pendingWrite({ kind: backfill ? 'backfill' : 'progress', child_id: childId, child_name: childName, task_id: taskId, title, payload: data }, attempt),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
   getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
-  getTimeStats: (id, from, to, signal) => get(`/children/${id}/time-stats`, { from, to }, signal),
+  getTimeStats: (id, from, to, signal, options) => get(`/children/${id}/time-stats`, { from, to }, signal, options),
   getTimetables: (childId, signal) => get(`/children/${childId}/timetables`, undefined, signal),
   createTimetable: (childId, data) => post(`/children/${childId}/timetables`, data),
   updateTimetable: (id, data) => put(`/timetables/${id}`, data),
