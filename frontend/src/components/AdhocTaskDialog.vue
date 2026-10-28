@@ -51,6 +51,7 @@ import TimingFields from './TimingFields.vue';
 import FormDraftNotice from './FormDraftNotice.vue';
 import { useFormDraft } from '../composables/useFormDraft';
 import { restoreFormFields } from '../utils/formDrafts';
+import { confirmAction } from '../utils/confirmation';
 const props = defineProps({ child: { type: Object, required: true }, task: { type: Object, default: null } });
 const emit = defineEmits(['close', 'saved']);
 const calendar = useCalendarStore();
@@ -73,6 +74,7 @@ const draft = useFormDraft({ kind: 'adhoc', child_id: props.child.id, record_id:
   }, invalidated: () => emit('close')
 });
 async function reload() {
+  if (!await confirmAction('重新读取会用服务器中的最新内容替换当前输入，并丢弃这份本机草稿。需要保留的文字请先复制。确定继续吗？')) return;
   saving.value = true;
   try {
     const fresh = await api.getAdhocTask(props.task.id);

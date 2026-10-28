@@ -29,6 +29,7 @@ import UiDialog from './UiDialog.vue';
 import FormDraftNotice from './FormDraftNotice.vue';
 import { useFormDraft } from '../composables/useFormDraft';
 import { restoreFormFields } from '../utils/formDrafts';
+import { confirmAction } from '../utils/confirmation';
 const props = defineProps({ childId: { type: String, required: true }, record: { type: Object, default: null } });
 const emit = defineEmits(['close', 'saved']);
 const baseline = ref(props.record);
@@ -46,6 +47,7 @@ const draft = useFormDraft({ kind: 'mistake', child_id: props.childId, record_id
   }, invalidated: () => emit('close')
 });
 async function reload() {
+  if (!await confirmAction('重新读取会用服务器中的最新内容替换当前输入，并丢弃这份本机草稿。需要保留的文字请先复制。确定继续吗？')) return;
   saving.value = true;
   try {
     const fresh = await api.getMistake(props.record.id);

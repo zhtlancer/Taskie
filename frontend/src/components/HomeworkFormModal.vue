@@ -121,6 +121,7 @@ import FormDraftNotice from './FormDraftNotice.vue';
 import { useFormDraft } from '../composables/useFormDraft';
 import { restoreFormFields } from '../utils/formDrafts';
 import { getDataGeneration } from '../utils/session';
+import { confirmAction } from '../utils/confirmation';
 
 const props = defineProps({
   childId: { type: String, required: true },
@@ -199,10 +200,11 @@ const draft = useFormDraft({ kind: 'homework', child_id: props.childId, record_i
     if (props.record) baseline.value = { ...baseline.value, edit_version: data.baseVersion };
     else if (data.selected && ['school', 'class'].includes(data.selected.kind)) {
       selected.value = props.courses.find(course => course.course_key === data.selected.course_key) || data.selected;
-    }
+    } else selected.value = null;
   }, invalidated: () => emit('close')
 });
 async function reloadRecord() {
+  if (!await confirmAction('重新读取会用服务器中的最新内容替换当前输入，并丢弃这份本机草稿。需要保留的文字请先复制。确定继续吗？')) return;
   saving.value = true;
   try {
     const fresh = await api.getHomeworkRecord(props.record.id);

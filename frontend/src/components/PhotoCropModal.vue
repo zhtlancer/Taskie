@@ -277,7 +277,7 @@
               <!-- Filter: Enhanced (Default) -->
               <button
                 type="button"
-                :disabled="saving || filterProcessing"
+                :disabled="saving || filterProcessing || photoLocked"
                 @click="switchFilter('enhanced')"
                 class="h-14 rounded-2xl font-bold text-xs border-2 flex flex-col items-center justify-center transition-all"
                 :class="[
@@ -296,7 +296,7 @@
               <!-- Filter: Black & White Document -->
               <button
                 type="button"
-                :disabled="saving || filterProcessing"
+                :disabled="saving || filterProcessing || photoLocked"
                 @click="switchFilter('bw')"
                 class="h-14 rounded-2xl font-bold text-xs border-2 flex flex-col items-center justify-center transition-all"
                 :class="[
@@ -315,7 +315,7 @@
               <!-- Filter: Original -->
               <button
                 type="button"
-                :disabled="saving || filterProcessing"
+                :disabled="saving || filterProcessing || photoLocked"
                 @click="switchFilter('original')"
                 class="h-14 rounded-2xl font-bold text-xs border-2 flex flex-col items-center justify-center transition-all"
                 :class="[
@@ -361,7 +361,8 @@
 
         <!-- Right: Form Fields (Subject, Description & Save) (45% width) -->
         <div class="w-full lg:w-5/12 p-4 lg:p-6 flex flex-col justify-between gap-4">
-          <FormDraftNotice :draft="draft" :busy="saving || filterProcessing" />
+          <FormDraftNotice :draft="draft" :busy="saving || filterProcessing" @retry="saveMistakeRecord" />
+          <p v-if="draft.pending && !submittedPhoto" class="text-sm text-amber-700 dark:text-amber-300">图片未保存在草稿中，请使用原图片、裁剪和滤镜重试。若已保存，重试不会重复创建；图片不同会提示核对记录。</p>
           <div class="space-y-5">
             <!-- Subject Selection (≥ 48px touch buttons) -->
             <div>
@@ -373,7 +374,7 @@
                   v-for="sub in ['语文', '数学', '英语', '其他']"
                   :key="sub"
                   type="button"
-                  :disabled="saving || draft.available"
+                  :disabled="saving || draft.available || draft.pending"
                   @click="formSubject = sub"
                   class="h-12 rounded-xl text-xs font-black border transition-all active:scale-95 flex items-center justify-center"
                   :class="[
@@ -395,7 +396,7 @@
               <textarea
                 id="crop-description"
                 v-model="formDescription"
-                :disabled="saving || draft.available"
+                :disabled="saving || draft.available || draft.pending"
                 rows="6"
                 placeholder="记录题目重点、为什么做错、或正解要点（例如：看错审题条件、计算混合运算顺序有误...）"
                 class="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-3.5 text-sm font-chinese text-slate-700 dark:text-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none resize-none bg-white dark:bg-slate-900 shadow-sm"
@@ -416,7 +417,7 @@
           <div class="pt-4 border-t border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3">
             <button
               type="button"
-              :disabled="saving || filterProcessing"
+              :disabled="saving || filterProcessing || photoLocked"
               @click="step = 'crop'"
               class="h-12 px-5 rounded-xl border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs flex items-center gap-1 active:scale-95 transition-all"
             >
@@ -426,7 +427,7 @@
 
             <button
               type="button"
-              :disabled="saving || filterProcessing || draft.available || !formDescription.trim() || !compressionResult"
+              :disabled="saving || filterProcessing || draft.available || draft.pending || !formDescription.trim() || !compressionResult"
               @click="saveMistakeRecord"
               class="h-12 flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-sm shadow-button disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2"
             >
@@ -441,7 +442,7 @@
 
 <script setup>
 import UiDialog from './UiDialog.vue';
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue';
+import { ref, shallowRef, computed, reactive, onMounted, onUnmounted, watch } from 'vue';
 import {
   createRotatedCanvas,
   cropCanvasRegion,
@@ -452,7 +453,6 @@ import api from '../api/client';
 import { playCameraShutter, playClick } from '../utils/sound';
 import FormDraftNotice from './FormDraftNotice.vue';
 import { useFormDraft } from '../composables/useFormDraft';
-import { newRequestId } from '../utils/requestId';
 
 const props = defineProps({
   childId: {
@@ -528,7 +528,10 @@ const draft = useFormDraft({ kind: 'photo-mistake', child_id: props.childId }, {
     if (typeof data.form?.description === 'string') formDescription.value = data.form.description;
   }, invalidated: () => emit('close')
 });
-let photoAttemptId;
+// Persist only the text and request ID. Keep the exact uploaded binary in memory for retries.
+const submittedPhoto = shallowRef(null);
+const photoLocked = computed(() => draft.pending && Boolean(submittedPhoto.value));
+watch(() => draft.pending, pending => { if (!pending) submittedPhoto.value = null; }, { flush: 'sync' });
 
 let workspaceResize;
 watch(cropContainerRef, element => {
@@ -591,6 +594,7 @@ function onDropFile(e) {
 }
 
 function loadSourceFile(file) {
+  if (saving.value || photoLocked.value) return;
   const reader = new FileReader();
   reader.onload = (event) => {
     const img = new Image();
@@ -776,7 +780,7 @@ async function proceedToFilter() {
 }
 
 async function switchFilter(mode) {
-  if (saving.value || filterProcessing.value || activeFilter.value === mode) return;
+  if (saving.value || filterProcessing.value || photoLocked.value || activeFilter.value === mode) return;
   activeFilter.value = mode;
   await renderFilterPreview();
 }
@@ -806,25 +810,25 @@ function formatFileSize(bytes) {
 
 // Save Mistake Record
 async function saveMistakeRecord() {
-  if (saving.value || filterProcessing.value || !formDescription.value.trim() || !compressionResult.value) return;
+  if (saving.value || filterProcessing.value || draft.available || !formDescription.value.trim() || !compressionResult.value) return;
 
   saving.value = true;
   saveError.value = '';
   try {
-    const { file, dataUrl } = compressionResult.value;
-
+    const attempt = draft.prepare({ child_id: props.childId, subject: formSubject.value, description: formDescription.value.trim() });
+    if (!submittedPhoto.value) submittedPhoto.value = compressionResult.value;
+    const { file } = submittedPhoto.value;
     const newMistake = await api.createMistake({
-      child_id: props.childId,
-      subject: formSubject.value,
-      description: formDescription.value.trim(),
+      ...attempt.body,
       photo_file: file,
-      photo_data_url: dataUrl,
-      request_id: photoAttemptId ||= newRequestId()
+      request_id: attempt.request_id
     });
 
     draft.complete(); playCameraShutter();
     emit('saved', newMistake);
   } catch (err) {
+    draft.failed(err);
+    if (err.code === 'FORM_SUBMISSION_CONFLICT') submittedPhoto.value = null;
     console.error('Failed to save mistake:', err);
     saveError.value = typeof err === 'string' ? err : err.message || '保存错题失败，请重试';
   } finally {

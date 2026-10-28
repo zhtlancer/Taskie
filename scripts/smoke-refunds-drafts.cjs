@@ -64,6 +64,66 @@ async function main(){
    await asRole('child',other);await goto(`/child/${other.id}/mistakes`);await page.getByRole('button',{name:'文字录入',exact:false}).click();dialog=page.getByRole('dialog');assert.equal(await dialog.getByRole('button',{name:'恢复草稿'}).count(),0);assert.equal(await dialog.getByLabel('题目内容与错误原因描述').inputValue(),'');await dialog.getByRole('button',{name:'关闭',exact:true}).click();
    await asRole('child',child);await goto(`/child/${child.id}/mistakes`);await page.getByRole('button',{name:'文字录入',exact:false}).click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'恢复草稿'}).waitFor();await dialog.getByRole('button',{name:'丢弃已存草稿'}).click();await dialog.getByRole('button',{name:'关闭',exact:true}).click();
    pass(`${width}/${theme}: switching children isolates drafts and returning to the same identity recovers them`);
+   const png = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 600; canvas.height = 400;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 600, 400);
+    ctx.fillStyle = 'black'; ctx.font = '30px sans-serif'; ctx.fillText('12 + 8 = 20', 100, 200);
+    return canvas.toDataURL('image/png').split(',')[1];
+   });
+   const photo = { name: 'worksheet.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') };
+   const openPhoto = async () => {
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: /相册选图/ }).first().click()]);
+    await chooser.setFiles(photo);
+    const modal = page.getByRole('dialog'); await modal.getByLabel('裁剪选区', { exact: true }).waitFor();
+    await modal.getByRole('button', { name: /下一步/ }).click(); await modal.getByAltText('裁剪增强预览').waitFor();
+    return modal;
+   };
+   dialog = await openPhoto(); await dialog.getByRole('textbox').fill('照片保存响应丢失后恢复');
+   let lostPhotos = 2; const photoIds = [];
+   const photoRoute = async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const body = route.request().postDataBuffer().toString();
+    photoIds.push(body.match(/name="request_id"\r\n\r\n([^\r\n]+)/)?.[1]);
+    if (lostPhotos-- > 0) { await route.fetch(); await route.abort(); } else await route.continue();
+   };
+   await page.route('**/api/mistakes', photoRoute);
+   await dialog.getByRole('button', { name: /确认保存至错题本/ }).click();
+   await dialog.getByRole('alert').filter({ hasText: '连接中断' }).waitFor();
+   for (const control of [dialog.getByRole('textbox'), dialog.getByRole('button', { name: /原图模式/ }), dialog.getByRole('button', { name: /重新裁剪/ })]) assert.equal(await control.isDisabled(), true);
+   await dialog.getByRole('button', { name: '按原内容重试' }).click();
+   await dialog.getByRole('alert').filter({ hasText: '连接中断' }).waitFor();
+   assert.equal(db.prepare('SELECT COUNT(*) n FROM mistake_records WHERE child_id = ? AND description = ?').get(child.id, '照片保存响应丢失后恢复').n, 1);
+   const photoDraft = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('taskie_form_draft_v1:')).map(key => JSON.parse(localStorage.getItem(key))).find(entry => entry.scope.kind === 'photo-mistake'));
+   assert.deepEqual(Object.keys(photoDraft.attempt.body).sort(), ['child_id', 'description', 'subject']);
+   await page.reload({ waitUntil: 'networkidle' }); dialog = await openPhoto();
+   await dialog.getByRole('button', { name: '恢复草稿' }).click();
+   await dialog.getByRole('button', { name: '按原内容重试' }).click(); await dialog.waitFor({ state: 'hidden' });
+   await page.unroute('**/api/mistakes', photoRoute);
+   assert.equal(photoIds.length, 3); assert.ok(photoIds[0]); assert.ok(photoIds.every(id => id === photoIds[0]));
+   assert.equal(db.prepare('SELECT COUNT(*) n FROM mistake_records WHERE child_id = ? AND description = ?').get(child.id, '照片保存响应丢失后恢复').n, 1);
+   pass(`${width}/${theme}: photo retries freeze the original upload and retain its receipt across reload without storing binary`);
+   dialog = await openPhoto(); await dialog.getByRole('textbox').fill('照片重选内容不同需核对');
+   lostPhotos = 1; await page.route('**/api/mistakes', photoRoute);
+   await dialog.getByRole('button', { name: /确认保存至错题本/ }).click();
+   await dialog.getByRole('alert').filter({ hasText: '连接中断' }).waitFor();
+   await page.reload({ waitUntil: 'networkidle' }); dialog = await openPhoto();
+   await dialog.getByRole('button', { name: /黑白文档/ }).click();
+   await dialog.getByRole('button', { name: '恢复草稿' }).click();
+   await dialog.getByRole('button', { name: '按原内容重试' }).click();
+   await dialog.getByRole('alert').filter({ hasText: '原提交内容已改变' }).waitFor();
+   assert.equal(db.prepare('SELECT COUNT(*) n FROM mistake_records WHERE child_id = ? AND description = ?').get(child.id, '照片重选内容不同需核对').n, 1);
+   const uncertain = photoIds.at(-1);
+   await dialog.getByRole('button', { name: '丢弃已存草稿' }).click();
+   let confirmation = page.getByRole('dialog', { name: '确认操作', exact: true });
+   await confirmation.getByRole('button', { name: '取消', exact: true }).click(); await confirmation.waitFor({ state: 'hidden' });
+   assert.equal(await dialog.getByRole('textbox').inputValue(), '照片重选内容不同需核对');
+   await dialog.getByRole('button', { name: '丢弃已存草稿' }).click();
+   await confirmation.getByRole('button', { name: '确认', exact: true }).click(); await confirmation.waitFor({ state: 'hidden' });
+   assert.equal(await dialog.getByRole('textbox').inputValue(), '');
+   assert.equal(await dialog.getByRole('button', { name: /确认保存至错题本/ }).isDisabled(), true);
+   assert.equal(photoIds.at(-1), uncertain);
+   await page.unroute('**/api/mistakes', photoRoute); await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+   pass(`${width}/${theme}: changed recovered photo is refused without duplication; discarding uncertain input requires consent`);
    await asRole('parent',child);await goto('/parent/dashboard');let card=page.locator(`[data-child-summary="${child.id}"]`);
    await card.getByRole('button',{name:'➕ 添加',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('任务名称').fill('临时任务草稿');await dialog.getByRole('button',{name:'关闭',exact:true}).click();
    await page.reload({waitUntil:'networkidle'});card=page.locator(`[data-child-summary="${child.id}"]`);await card.getByRole('button',{name:'➕ 添加',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'恢复草稿'}).click();assert.equal(await dialog.getByLabel('任务名称').inputValue(),'临时任务草稿');
@@ -84,6 +144,25 @@ async function main(){
    assert.deepEqual(homeworkBodies[0],homeworkBodies[1]);assert.equal(db.prepare('SELECT COUNT(*) n FROM homework_records WHERE child_id = ? AND content = ?').get(child.id,'需要恢复的课程作业').n,1);
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
    pass(`${width}/${theme}: homework course, dates and points recover; lost response creates one record and task`);
+   const homework = app.services.homeworkService;
+   const record = homework.list(child.id).find(item => item.content === '需要恢复的课程作业');
+   await page.locator('li').filter({ hasText: record.content }).getByRole('button', { name: '修改', exact: true }).click();
+   dialog = page.getByRole('dialog', { name: '✏️ 修改作业记录', exact: true });
+   await dialog.getByLabel('作业内容', { exact: true }).fill('需要保留的旧作业草稿');
+   homework.update(record.id, { content: '另一设备最新作业', expected_version: record.edit_version }, 'parent');
+   await dialog.getByRole('button', { name: '保存', exact: true }).click();
+   await dialog.getByText(/其他设备/).waitFor();
+   await dialog.getByRole('button', { name: '重新读取作业', exact: true }).click();
+   confirmation = page.getByRole('dialog', { name: '确认操作', exact: true });
+   await confirmation.getByRole('button', { name: '取消', exact: true }).click(); await confirmation.waitFor({ state: 'hidden' });
+   assert.equal(await dialog.getByLabel('作业内容', { exact: true }).inputValue(), '需要保留的旧作业草稿');
+   assert.ok(await page.evaluate(id => Object.keys(localStorage).filter(key => key.startsWith('taskie_form_draft_v1:'))
+    .map(key => JSON.parse(localStorage.getItem(key))).some(entry => entry.scope.record_id === id && entry.payload.form.content === '需要保留的旧作业草稿'), record.id));
+   await dialog.getByRole('button', { name: '重新读取作业', exact: true }).click();
+   await confirmation.getByRole('button', { name: '确认', exact: true }).click(); await confirmation.waitFor({ state: 'hidden' });
+   await page.waitForFunction(() => document.querySelector('#homework-content')?.value === '另一设备最新作业');
+   await dialog.getByRole('button', { name: '关闭', exact: true }).click();
+   pass(`${width}/${theme}: homework conflict reload preserves input and draft until explicit replacement consent`);
   }catch(error){await reportBrowserFailure(`Refunds and drafts ${width}/${theme}`,error,context);throw error;}
   finally{await context.close();}
  }

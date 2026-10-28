@@ -21,6 +21,19 @@ async function snapshot(page, name) {
   fs.mkdirSync(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
   await page.screenshot({ path: path.join(process.env.SMOKE_SCREENSHOT_DIR, name + '.png') });
 }
+async function reloadWithConsent(page, dialog, button, label, original, fresh) {
+  await dialog.getByRole('button', { name: button, exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: '确认操作', exact: true });
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click();
+  await confirmation.waitFor({ state: 'hidden' });
+  assert.equal(await dialog.getByLabel(label).inputValue(), original);
+  assert.ok(await page.evaluate(value => Object.keys(localStorage).filter(key => key.startsWith('taskie_form_draft_v1:'))
+    .some(key => Object.values(JSON.parse(localStorage.getItem(key)).payload.form).includes(value)), original));
+  await dialog.getByRole('button', { name: button, exact: true }).click();
+  await confirmation.getByRole('button', { name: '确认', exact: true }).click();
+  await confirmation.waitFor({ state: 'hidden' });
+  await page.waitForFunction(value => [...document.querySelectorAll('input, textarea')].some(input => input.value === value), fresh);
+}
 async function main() {
   await app.ready();
   const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
@@ -92,7 +105,7 @@ async function main() {
       await dialog.getByRole('alert').filter({ hasText: '其他设备' }).waitFor();
       assert.equal(await dialog.getByLabel('任务名称').inputValue(), '本机未保存');
       assert.equal(tasks.getAdhocTask(task.id).title, '另一家长已修改');
-      await dialog.getByRole('button', { name: '重新读取任务' }).click();
+      await reloadWithConsent(page, dialog, '重新读取任务', '任务名称', '本机未保存', '另一家长已修改');
       await dialog.getByLabel('任务名称').fill('核对后的临时任务');
       await dialog.getByRole('radio', { name: '低', exact: true }).check();
       let release, seen = 0;
@@ -154,7 +167,7 @@ async function main() {
       await dialog.getByRole('button', { name: '保存修改', exact: true }).click();
       await dialog.getByRole('alert').filter({ hasText: '其他设备' }).waitFor();
       assert.equal(await dialog.getByLabel('题目内容与错误原因描述').inputValue(), '孩子保留的草稿');
-      await dialog.getByRole('button', { name: '重新读取错题' }).click();
+      await reloadWithConsent(page, dialog, '重新读取错题', '题目内容与错误原因描述', '孩子保留的草稿', '另一设备最新错题');
       await dialog.getByLabel('选择学科').selectOption('英语');
       await dialog.getByLabel('题目内容与错误原因描述').fill('孩子核对后的订正');
       await dialog.getByRole('button', { name: '保存修改', exact: true }).click();
