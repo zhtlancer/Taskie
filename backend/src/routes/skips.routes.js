@@ -4,7 +4,7 @@ async function skipsRoutes(fastify, options) {
     try {
       return await fn(request, reply);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   };
 

@@ -25,7 +25,7 @@ async function mistakesRoutes(fastify, options) {
   fastify.get('/:id', async (request, reply) => {
     const mistake = mistakesService.getMistake(request.params.id);
     if (!mistake) {
-      return reply.code(404).send({ error: 'Mistake record not found' });
+      return reply.code(404).send({ error: '错题记录不存在' });
     }
     return reply.send(mistake);
   });
@@ -68,7 +68,7 @@ async function mistakesRoutes(fastify, options) {
             if (!isImageExtensionSupported(ext)) {
               // Drain remaining file to avoid hanging
               part.file.resume();
-              return reply.code(400).send({ error: 'Only JPG, PNG and WebP images are allowed' });
+              return reply.code(400).send({ error: '仅支持 JPG、PNG 和 WebP 格式的图片' });
             }
 
             // Buffer uploaded file data
@@ -120,7 +120,7 @@ async function mistakesRoutes(fastify, options) {
       committed = Boolean(photo_path && result?.photo_path === photo_path);
       return result;
     } catch (err) {
-      return reply.code(err.statusCode || err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.statusCode || err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     } finally {
       if (!committed) for (const file of writtenFiles) await fs.promises.unlink(file).catch(() => {});
     }
@@ -141,7 +141,7 @@ async function mistakesRoutes(fastify, options) {
       const updated = mistakesService.markMastered(request.params.id, isMastered);
       return reply.send(updated);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -155,7 +155,7 @@ async function mistakesRoutes(fastify, options) {
       });
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 }

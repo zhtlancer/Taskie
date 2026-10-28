@@ -8,20 +8,20 @@ class AuthService {
 
   loginChild(childId, pin) {
     if (!childId) {
-      return { success: false, status: 400, error: 'child_id is required' };
+      return { success: false, status: 400, error: '请选择孩子' };
     }
 
     const child = this.db.prepare('SELECT id, name, avatar_emoji, pin_hash, session_epoch FROM children WHERE id = ?').get(childId);
     if (!child) {
-      return { success: false, status: 404, error: 'Child not found' };
+      return { success: false, status: 404, error: '孩子不存在' };
     }
 
     if (child.pin_hash) {
       if (!pin) {
-        return { success: false, status: 401, error: 'PIN is required for this child' };
+        return { success: false, status: 401, error: '请输入孩子的 PIN 码' };
       }
       if (!verifyPin(pin, child.pin_hash)) {
-        return { success: false, status: 401, error: 'Invalid PIN' };
+        return { success: false, status: 401, error: 'PIN 码不正确' };
       }
     }
 
@@ -38,16 +38,16 @@ class AuthService {
 
   loginParent(pin) {
     if (!pin) {
-      return { success: false, status: 400, error: 'PIN is required' };
+      return { success: false, status: 400, error: '请输入 PIN 码' };
     }
 
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('parent_pin_hash');
     if (!row || !row.value) {
-      return { success: false, status: 500, error: 'Parent PIN is not configured' };
+      return { success: false, status: 500, error: '尚未设置家长 PIN 码' };
     }
 
     if (!verifyPin(pin, row.value)) {
-      return { success: false, status: 401, error: 'Invalid parent PIN' };
+      return { success: false, status: 401, error: '家长 PIN 码不正确' };
     }
 
     return {
@@ -75,7 +75,7 @@ class AuthService {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get('parent_pin_hash');
     if (row && row.value) {
       if (!oldPin || !verifyPin(oldPin, row.value)) {
-        return { success: false, status: 401, error: 'Current parent PIN is incorrect' };
+        return { success: false, status: 401, error: '当前家长 PIN 码不正确' };
       }
     }
 
@@ -91,7 +91,7 @@ class AuthService {
       `).run();
     })();
 
-    return { success: true, message: 'Parent PIN updated successfully' };
+    return { success: true, message: '家长 PIN 码已更新' };
   }
 }
 

@@ -36,7 +36,7 @@ class ChildrenService {
 
   createChild({ name, avatar_emoji, pin }) {
     if (!name || typeof name !== 'string' || name.trim() === '') {
-      throw { status: 400, message: 'Child name is required' };
+      throw { status: 400, message: '请输入孩子姓名' };
     }
 
     const id = generateId();
@@ -61,13 +61,13 @@ class ChildrenService {
   updateChild(id, { name, avatar_emoji, pin }) {
     const existing = this.getChild(id);
     if (!existing) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     let newName = existing.name;
     if (name !== undefined) {
       if (typeof name !== 'string' || name.trim() === '') {
-        throw { status: 400, message: 'Child name cannot be empty' };
+        throw { status: 400, message: '孩子姓名不能为空' };
       }
       newName = name.trim();
     }
@@ -96,7 +96,7 @@ class ChildrenService {
   deleteChild(id) {
     const existing = this.getChild(id);
     if (!existing) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     const photos = this.db.prepare('SELECT photo_path FROM mistake_records WHERE child_id = ?').all(id);

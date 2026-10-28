@@ -23,7 +23,7 @@ class StatsService {
     this.wordStudyService?.ensureScheduled(childId);
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     const to = toDate || getTodayDate();
@@ -104,7 +104,7 @@ class StatsService {
     this.wordStudyService?.ensureScheduled(childId);
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     const currentWeekRange = getWeekRange(referenceDate);

@@ -83,7 +83,7 @@ async function authRoutes(fastify, options) {
   fastify.post('/logout', async (request, reply) => {
     return reply.send({
       success: true,
-      message: 'Logged out successfully'
+      message: '已退出登录'
     });
   });
 

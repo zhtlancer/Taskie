@@ -10,7 +10,7 @@ async function statsRoutes(fastify, options) {
       const range = defaultRange(request.query.to || undefined);
       return reply.send(timeStatsService.stats(request.params.id, request.query.from || range.from, request.query.to || range.to));
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -26,7 +26,7 @@ async function statsRoutes(fastify, options) {
       const history = statsService.getHistory(request.params.id, start, end);
       return reply.send(history);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -36,7 +36,7 @@ async function statsRoutes(fastify, options) {
       const summary = statsService.getWeeklySummary(request.params.id, date);
       return reply.send(summary);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 }

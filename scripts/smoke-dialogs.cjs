@@ -58,6 +58,26 @@ async function signal(promise) {
   try { await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Request was not intercepted')), 10000); })]); }
   finally { clearTimeout(timer); }
 }
+async function emptyLookupCheck(page, modal) {
+  const input = modal.getByRole('textbox');
+  const add = modal.getByRole('button', { name: /加入生字生词本/ });
+  await input.fill('秋天');
+  assert.equal(await add.isEnabled(), true);
+  await modal.getByTitle('清空', { exact: true }).click();
+  assert.equal(await input.inputValue(), '');
+  assert.equal(await add.isDisabled(), true, 'clearing must disable adding the previously displayed word');
+  await modal.getByText('请输入汉字或词语', { exact: true }).waitFor();
+  for (const text of ['', '   ', 'abc']) {
+    await input.fill('秋天');
+    await input.fill(text);
+    assert.equal(await add.isDisabled(), true, `invalid input ${JSON.stringify(text)} must clear the current entry`);
+    // Native disabled buttons must not send a stale entry even when clicked programmatically.
+    await add.evaluate(button => button.click());
+    await render(page);
+  }
+  await input.fill('秋天');
+  assert.equal(await add.isEnabled(), true, 'entering a new valid word enables adding again');
+}
 async function main() {
   await c.app.ready();
   const api = async (method, url, payload) => {
@@ -129,6 +149,9 @@ async function main() {
     return input.getBoundingClientRect().right - parseFloat(getComputedStyle(input).paddingRight) - clear.getBoundingClientRect().left;
   });
   assert.ok(clearOverlap <= 0, `the clear button covers ${clearOverlap}px of the typed text`);
+  await emptyLookupCheck(page, modal);
+  assert.deepEqual((await api('GET', `/characters?child_id=${child.id}`)).map(row => row.char), ['山'], 'empty input must not add a stale word');
+  await modal.getByRole('textbox').fill('春天');
   await failOnce(page, '**/api/characters', () => modal.getByRole('button', { name: /加入生字生词本/ }).click(), modal,
     async () => assert.equal(await modal.getByRole('textbox').inputValue(), '春天'));
   let release, arrive; const gate = new Promise(resolve => { release = resolve; }); const ready = new Promise(resolve => { arrive = resolve; });
@@ -141,7 +164,7 @@ async function main() {
   await modal.getByText('已在生字生词本', { exact: true }).waitFor();
   await page.keyboard.press('Escape'); await modal.waitFor({ state: 'detached' });
   assert.equal(await page.getByTitle('实时查笔画', { exact: true }).evaluate(el => el === document.activeElement), true);
-  pass('stroke lookup retains failed text, blocks closure while adding and restores its opener');
+  pass('stroke lookup clears stale words, retains failed text, blocks closure while adding and restores its opener');
 
   await goto('characters');
   const openCharacter = async () => {
@@ -227,6 +250,7 @@ async function main() {
       await goto('today'); modal = await openSkip(); await shot(`${device}-${theme}-skip`); await page.keyboard.press('Escape');
       modal = await openDuration(); await shot(`${device}-${theme}-duration`); await page.keyboard.press('Escape');
       await page.getByTitle('实时查笔画', { exact: true }).click(); modal = page.getByRole('dialog');
+      await emptyLookupCheck(page, modal);
       await keyboardCheck(page, modal); await shot(`${device}-${theme}-lookup`); await page.keyboard.press('Escape');
       await goto('characters'); modal = await openCharacter(); await keyboardCheck(page, modal);
       const paper = modal.locator('div.touch-none').first();

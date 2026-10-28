@@ -181,10 +181,10 @@ class TasksService {
 
   createTemplate({ title, subject, days_of_week, points, schedule_type = 'fixed_days', weekly_target_times = null, child_ids = null, track_time, expected_minutes, carry_over = false, allow_extra = false, extra_points = 0, extra_reward_limit = 0, priority = 1 }) {
     if (!title || typeof title !== 'string' || title.trim() === '') {
-      throw { status: 400, message: 'Template title is required' };
+      throw { status: 400, message: '请输入任务模板名称' };
     }
     if (!subject || typeof subject !== 'string' || subject.trim() === '') {
-      throw { status: 400, message: 'Template subject is required' };
+      throw { status: 400, message: '请选择任务模板科目' };
     }
 
     if (!['fixed_days', 'weekly_times'].includes(schedule_type) ||
@@ -220,7 +220,7 @@ class TasksService {
   updateTemplate(id, { title, subject, days_of_week, points, schedule_type, weekly_target_times, child_ids, track_time, expected_minutes, carry_over, allow_extra, extra_points, extra_reward_limit, priority }) {
     const existing = this.getTemplate(id);
     if (!existing) {
-      throw { status: 404, message: 'Template not found' };
+      throw { status: 404, message: '任务模板不存在' };
     }
 
     const newPriority = validatePriority(priority === undefined ? existing.priority : priority);
@@ -293,7 +293,7 @@ class TasksService {
   deleteTemplate(id) {
     const existing = this.getTemplate(id);
     if (!existing) {
-      throw { status: 404, message: 'Template not found' };
+      throw { status: 404, message: '任务模板不存在' };
     }
 
     this.db.prepare('DELETE FROM task_templates WHERE id = ?').run(id);
@@ -385,13 +385,13 @@ class TasksService {
 
   getDailyTasks(childId, targetDate) {
     if (!childId) {
-      throw { status: 400, message: 'child_id is required' };
+      throw { status: 400, message: '请选择孩子' };
     }
 
     // Verify child exists
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     const date = targetDate || getTodayDate();
@@ -761,7 +761,7 @@ class TasksService {
   // It is an ordinary daily task for that day: required, counted in all-done, history, weekly
   // completion and the streak, and checked off like any other.
   createAdhocTask(childId, { title, subject, points = 10, date, due_date = null, track_time, expected_minutes, priority = 1 }) {
-    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: 'Child not found' };
+    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
     if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
     if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
@@ -993,7 +993,7 @@ class TasksService {
     `).get(taskId);
 
     if (!task) {
-      throw { status: 404, message: 'Daily task not found' };
+      throw { status: 404, message: '任务不存在' };
     }
 
     const courseHomework = this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId);
@@ -1090,7 +1090,7 @@ class TasksService {
     `).get(taskId);
 
     if (!task) {
-      throw { status: 404, message: 'Daily task not found' };
+      throw { status: 404, message: '任务不存在' };
     }
     if (task.origin === 'study') throw { status: 409, message: '请在字词学习中逐项练习，不能直接打卡或撤销' };
     if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里撤销今天的进度' };
@@ -1148,7 +1148,7 @@ class TasksService {
   // Correcting or clearing the duration of a done timed task.
   setDuration(taskId, durationSeconds) {
     const task = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
-    if (!task) throw { status: 404, message: 'Daily task not found' };
+    if (!task) throw { status: 404, message: '任务不存在' };
     if (task.homework_legacy_seconds !== null || this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId)) throw { status: 409, message: '请修改单次学习记录的用时' };
     if (!task.track_time) throw { status: 409, message: '这项任务不记录用时' };
     if (!task.is_completed) throw { status: 409, message: '完成任务后才能填写用时' };

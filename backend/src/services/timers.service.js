@@ -160,7 +160,7 @@ class TimersService {
   // action: start, pause or reset; kind: task (a daily task) or goal (a long-term task).
   apply(kind, id, action) {
     const spec = this.kinds[kind];
-    if (!spec || !['start', 'pause', 'reset'].includes(action)) throw { status: 404, message: 'Not found' };
+    if (!spec || !['start', 'pause', 'reset'].includes(action)) throw { status: 404, message: '请求的内容不存在' };
     if (kind === 'task' && action === 'pause') {
       // The old pause button must still stop its own timer after midnight; the time moves to a study session.
       const stale = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id);

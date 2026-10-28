@@ -92,7 +92,7 @@ class RewardsService {
     // Verify child exists
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     let today = referenceDate || getTodayDate();
@@ -150,7 +150,7 @@ class RewardsService {
   getChildBadges(childId) {
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     return this.db.prepare(`

@@ -104,6 +104,7 @@
 
         <!-- 3. Ultra-large Mi-Zi-Ge Hanzi Writer (Size 300px for iPad touch) -->
         <HanziGrid
+          v-if="currentChar"
           :key="`${selectedIndex}-${currentChar}`"
           :character="currentChar"
           :size="300"
@@ -111,6 +112,9 @@
           :auto-play="true"
           @ready="onGridReady"
         />
+        <div v-else class="w-[300px] max-w-full aspect-square rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm font-bold text-slate-400">
+          请输入汉字或词语
+        </div>
 
         <!-- 4. Core Action Button: ⭐ 加入生字生词本 / ✅ 已在生字生词本 -->
         <div class="w-full max-w-md mt-6 pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-col items-center">
@@ -235,11 +239,10 @@ const isAlreadyInBook = computed(() => {
 // Typing shows the latest character's strokes, as before; the whole entry is what gets added.
 function onInputChanged() {
   const clean = cleanEntry(inputRaw.value);
-  if (clean) {
-    entry.value = clean;
-    selectedIndex.value = entryChars(clean).length - 1;
-    dynamicStrokes.value = null;
-  }
+  entry.value = clean;
+  selectedIndex.value = Math.max(0, entryChars(clean).length - 1);
+  dynamicStrokes.value = null;
+  toastMessage.value = ''; toastError.value = false;
 }
 
 function pickChar(index) {
@@ -273,6 +276,7 @@ function clearInput() {
   if (isSubmitting.value) return;
   playClick();
   inputRaw.value = '';
+  onInputChanged();
   if (charInputRef.value) charInputRef.value.focus();
 }
 

@@ -112,7 +112,7 @@ class RedemptionsService {
     }
     let id;
     this.db.transaction(() => {
-      if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: 'Child not found' };
+      if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
       const item = rewardId && this.getItem(rewardId);
       if (!item || !item.is_active) throw { status: 404, message: '奖励不存在或已下架' };
       const available = this.rewardsService.getAvailablePoints(childId);

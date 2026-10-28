@@ -496,7 +496,7 @@ class PeriodsService {
   }
 
   requireChild(childId) {
-    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: 'Child not found' };
+    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
   }
 }
 

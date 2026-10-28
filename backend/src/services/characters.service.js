@@ -29,7 +29,7 @@ class CharactersService {
 
   listCharacters({ child_id, is_mastered, category }) {
     if (!child_id) {
-      throw { status: 400, message: 'child_id is required' };
+      throw { status: 400, message: '请选择孩子' };
     }
 
     if (category && !CATEGORIES.includes(category)) throw { status: 400, message: '分类无效' };
@@ -56,17 +56,17 @@ class CharactersService {
   // An entry is a single character or a word of up to 8 Chinese characters.
   createCharacter({ child_id, char, pinyin, strokes, radical, categories }) {
     if (!child_id) {
-      throw { status: 400, message: 'child_id is required' };
+      throw { status: 400, message: '请选择孩子' };
     }
 
     // Check if child exists
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(child_id);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     if (!char || typeof char !== 'string') {
-      throw { status: 400, message: 'char is required' };
+      throw { status: 400, message: '请输入汉字或词语' };
     }
 
     const trimmedChar = char.trim();
@@ -79,7 +79,7 @@ class CharactersService {
     // Check duplicate
     const existing = this.db.prepare('SELECT id FROM characters WHERE child_id = ? AND char = ?').get(child_id, trimmedChar);
     if (existing) {
-      throw { status: 409, message: 'Character already exists in character book' };
+      throw { status: 409, message: '该字词已在生字生词本中，请勿重复添加' };
     }
 
     const id = generateId();
@@ -97,7 +97,7 @@ class CharactersService {
       `).run(id, child_id, trimmedChar, finalPinyin, finalStrokes, finalRadical, createdAt, JSON.stringify(initialCategories));
     } catch (err) {
       if (err.message && err.message.includes('UNIQUE constraint failed')) {
-        throw { status: 409, message: 'Character already exists in character book' };
+        throw { status: 409, message: '该字词已在生字生词本中，请勿重复添加' };
       }
       throw err;
     }
@@ -108,7 +108,7 @@ class CharactersService {
   markMastered(id, isMastered = null) {
     const existing = this.getCharacter(id);
     if (!existing) {
-      throw { status: 404, message: 'Character not found' };
+      throw { status: 404, message: '该字词不存在，可能已被移出，请刷新后重试' };
     }
 
     const targetMastered = isMastered !== null && isMastered !== undefined
@@ -131,7 +131,7 @@ class CharactersService {
   setCategories(id, categories, { role } = {}) {
     const existing = this.getCharacter(id);
     if (!existing) {
-      throw { status: 404, message: 'Character not found' };
+      throw { status: 404, message: '该字词不存在，可能已被移出，请刷新后重试' };
     }
     const next = normalizeCategories(categories ?? []);
     if (role !== 'parent' && existing.categories.some(key => !next.includes(key))) {
@@ -145,7 +145,7 @@ class CharactersService {
   deleteCharacter(id, { role } = {}) {
     const existing = this.getCharacter(id);
     if (!existing) {
-      throw { status: 404, message: 'Character not found' };
+      throw { status: 404, message: '该字词不存在，可能已被移出，请刷新后重试' };
     }
     if (role !== 'parent' && existing.categories.length) {
       throw { status: 403, message: '这个字词有分类标记，需要家长移出' };

@@ -62,7 +62,7 @@ class ScheduleService {
 
   requireChild(childId) {
     const child = this.db.prepare('SELECT id, created_at FROM children WHERE id = ?').get(childId);
-    if (!child) throw fail(404, 'Child not found');
+    if (!child) throw fail(404, '孩子不存在');
     return child;
   }
 

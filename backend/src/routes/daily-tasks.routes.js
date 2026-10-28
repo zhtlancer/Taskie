@@ -23,7 +23,7 @@ async function dailyTasksRoutes(fastify, options) {
     const { child_id, date } = request.query || {};
 
     if (!child_id) {
-      return reply.code(400).send({ error: 'child_id query parameter is required' });
+      return reply.code(400).send({ error: '请选择孩子' });
     }
 
     try {
@@ -31,7 +31,7 @@ async function dailyTasksRoutes(fastify, options) {
       const tasks = tasksService.getDailyTasks(child_id, date);
       return reply.send(tasks);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -71,7 +71,7 @@ async function dailyTasksRoutes(fastify, options) {
       const result = tasksService[method](request.params.id, { duration_seconds: request.body?.duration_seconds });
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -82,7 +82,7 @@ async function dailyTasksRoutes(fastify, options) {
       const result = tasksService.uncompleteDailyTask(request.params.id, { allowNegativeBalance: request.user.role === 'parent' });
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 }

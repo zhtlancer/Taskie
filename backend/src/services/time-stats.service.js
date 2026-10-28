@@ -132,7 +132,7 @@ class TimeStatsService {
   }
 
   stats(childId, from, to) {
-    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw fail(404, 'Child not found');
+    if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw fail(404, '孩子不存在');
     for (const [value, label] of [[from, '开始日期'], [to, '结束日期']]) {
       try { parseDate(value); } catch { throw fail(400, `${label}必须为 YYYY-MM-DD`); }
     }

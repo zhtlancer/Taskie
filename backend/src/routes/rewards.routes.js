@@ -20,7 +20,7 @@ async function rewardsRoutes(fastify, options) {
       const stats = rewardsService.getChildStats(request.params.id, request.query.date);
       return reply.send(stats);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -29,7 +29,7 @@ async function rewardsRoutes(fastify, options) {
       const badges = rewardsService.getChildBadges(request.params.id);
       return reply.send(badges);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 }

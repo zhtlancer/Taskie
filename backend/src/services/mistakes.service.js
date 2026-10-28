@@ -49,18 +49,18 @@ class MistakesService {
 
   createMistake({ child_id, subject, description, photo_path }) {
     if (!child_id) {
-      throw { status: 400, message: 'child_id is required' };
+      throw { status: 400, message: '请选择孩子' };
     }
     if (!subject || typeof subject !== 'string' || subject.trim() === '') {
-      throw { status: 400, message: 'subject is required' };
+      throw { status: 400, message: '请选择科目' };
     }
     if (!description || typeof description !== 'string' || description.trim() === '') {
-      throw { status: 400, message: 'description is required' };
+      throw { status: 400, message: '请输入错题描述' };
     }
 
     const child = this.db.prepare('SELECT id FROM children WHERE id = ?').get(child_id);
     if (!child) {
-      throw { status: 404, message: 'Child not found' };
+      throw { status: 404, message: '孩子不存在' };
     }
 
     const id = generateId();
@@ -96,7 +96,7 @@ class MistakesService {
   markMastered(id, isMastered = true) {
     const existing = this.getMistake(id);
     if (!existing) {
-      throw { status: 404, message: 'Mistake record not found' };
+      throw { status: 404, message: '错题记录不存在' };
     }
 
     const now = isMastered ? new Date().toISOString() : null;
@@ -114,7 +114,7 @@ class MistakesService {
   deleteMistake(id) {
     const existing = this.getMistake(id);
     if (!existing) {
-      throw { status: 404, message: 'Mistake record not found' };
+      throw { status: 404, message: '错题记录不存在' };
     }
 
     // Try deleting photo if local file exists

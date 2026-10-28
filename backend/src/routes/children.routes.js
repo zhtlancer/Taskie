@@ -11,7 +11,7 @@ async function childrenRoutes(fastify, options) {
   fastify.get('/:id', async (request, reply) => {
     const child = childrenService.getChild(request.params.id);
     if (!child) {
-      return reply.code(404).send({ error: 'Child not found' });
+      return reply.code(404).send({ error: '孩子不存在' });
     }
     return reply.send(child);
   });
@@ -21,7 +21,7 @@ async function childrenRoutes(fastify, options) {
       const child = childrenService.createChild(request.body || {});
       return reply.code(201).send(child);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -30,7 +30,7 @@ async function childrenRoutes(fastify, options) {
       const child = childrenService.updateChild(request.params.id, request.body || {});
       return reply.send(child);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -42,7 +42,7 @@ async function childrenRoutes(fastify, options) {
       });
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 }

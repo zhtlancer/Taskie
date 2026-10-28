@@ -9,7 +9,7 @@ async function templatesRoutes(fastify, options) {
   fastify.get('/:id', async (request, reply) => {
     const tmpl = tasksService.getTemplate(request.params.id);
     if (!tmpl) {
-      return reply.code(404).send({ error: 'Template not found' });
+      return reply.code(404).send({ error: '任务模板不存在' });
     }
     return reply.send(tmpl);
   });
@@ -19,7 +19,7 @@ async function templatesRoutes(fastify, options) {
       const tmpl = tasksService.createTemplate(request.body || {});
       return reply.code(201).send(tmpl);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -28,7 +28,7 @@ async function templatesRoutes(fastify, options) {
       const tmpl = tasksService.updateTemplate(request.params.id, request.body || {});
       return reply.send(tmpl);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 
@@ -37,7 +37,7 @@ async function templatesRoutes(fastify, options) {
       const result = tasksService.deleteTemplate(request.params.id);
       return reply.send(result);
     } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || 'Internal server error' });
+      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
     }
   });
 }
