@@ -106,7 +106,8 @@
           <section v-for="group in groups" :key="group.date">
             <h3 class="px-1 mb-2 text-xs font-black text-slate-500 dark:text-slate-400">{{ group.date === today ? '今天' : dayName(group.date) }} 布置</h3>
             <ul class="space-y-2">
-              <li v-for="record in group.records" :key="record.id" class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+              <li v-for="record in group.records" :key="record.id" :id="`homework-${record.id}`" class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-700/80 shadow-sm scroll-mt-4"
+                :class="{ 'ring-2 ring-sky-500': route.hash === `#homework-${record.id}` }" :data-linked="route.hash === `#homework-${record.id}` || undefined">
                 <div class="flex flex-wrap items-center gap-2 mb-1.5">
                   <span class="px-2 py-0.5 rounded-lg text-xs font-bold font-chinese" :class="record.course_kind === 'class' ? 'bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300' : 'bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'">{{ courseLabel(record) }}</span>
                   <PriorityBadge :priority="record.task?.priority ?? record.priority" />
@@ -115,7 +116,7 @@
                 </div>
                 <p class="text-sm font-bold text-slate-700 dark:text-slate-200 whitespace-pre-line break-words font-chinese">{{ record.content }}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold">
-                  <span class="text-slate-400">{{ record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
+                  <span class="text-slate-400">{{ record.auto_lesson_date ? '确认上课后自动生成' : record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
                   <span v-if="record.study_running" class="text-indigo-600 dark:text-indigo-300">⏱ 正在计时</span>
                   <span v-if="record.task" class="text-indigo-600 dark:text-indigo-300">已学 {{ record.study_count || 0 }} 次 · 累计 {{ Math.round((record.study_seconds || 0) / 60) }} 分钟</span>
                   <span v-if="record.completion_requested_at && !record.task?.is_completed" class="text-amber-600 dark:text-amber-300">全部完成待家长确认</span>
@@ -250,7 +251,7 @@
 <script setup>
 import PriorityBadge from '../components/PriorityBadge.vue';
 import { useCalendarStore } from '../stores/calendar';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
@@ -404,7 +405,11 @@ async function load() {
     loadError.value = true;
     actionError.value = typeof err === 'string' ? err : '加载失败，请刷新重试';
   } finally {
-    if (serial === loadSerial) loading.value = false;
+    if (serial === loadSerial) {
+      loading.value = false;
+      await nextTick();
+      if (serial === loadSerial && !loadError.value && route.hash.startsWith('#homework-')) document.getElementById(route.hash.slice(1))?.scrollIntoView({ block: 'center' });
+    }
   }
 }
 

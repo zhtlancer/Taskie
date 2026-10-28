@@ -35,6 +35,7 @@
     "test:browser:dialogs": "node scripts/smoke-dialogs.cjs",
     "test:browser:board-class-actions": "node scripts/smoke-board-class-actions.cjs",
     "test:browser:class-stats": "node scripts/smoke-class-stats.cjs",
+    "test:browser:class-homework": "node scripts/smoke-class-homework.cjs",
     "test:browser:class-count": "node scripts/smoke-class-count.cjs",
     "test:browser:running-timer": "node scripts/smoke-running-timer.cjs",
     "test:browser:rest": "node scripts/smoke-rest.cjs",

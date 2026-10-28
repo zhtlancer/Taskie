@@ -6,4 +6,6 @@ const STUDY_TABLES = ['word_study_plans', 'word_study_states', 'word_study_days'
 const HOMEWORK_TABLES = ['homework_records', 'homework_course_points', 'homework_sessions', 'homework_session_days'];
 const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward_redemptions', ...PERIOD_TABLES, 'task_skip_requests', ...SCHEDULE_TABLES, 'makeup_days', 'task_backfill_events', 'task_day_snapshots', ...STUDY_TABLES, ...HOMEWORK_TABLES, 'study_legacy_corrections', 'outside_class_attendance', 'outside_class_fees', 'outside_class_changes', 'outside_class_revisions', 'photo_expectations', 'study_completion_requests', 'form_submission_receipts'];
 
+TABLES.push('outside_class_homework');
+
 module.exports = { REQUIRED_TABLES, PERIOD_TABLES, SCHEDULE_TABLES, STUDY_TABLES, HOMEWORK_TABLES, TABLES };

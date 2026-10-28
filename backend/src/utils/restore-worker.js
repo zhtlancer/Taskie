@@ -113,6 +113,10 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
       !['id', 'kind', 'child_id', 'actor', 'fingerprint', 'record_id', 'created_at'].every(name => hasColumn('form_submission_receipts', name)))) {
       throw fail('备份缺少兑换撤销记录或表单提交凭据，无法恢复');
     }
+    if (schemaVersion >= 34 && (!hasColumn('outside_classes', 'auto_homework') || !tables.includes('outside_class_homework') ||
+      !['class_id', 'child_id', 'lesson_date', 'actual_date', 'homework_id', 'created_at'].every(name => hasColumn('outside_class_homework', name)))) {
+      throw fail('备份缺少课外班自动作业设置或生成凭据，无法恢复');
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     // initDb also backfills missing attendance/fee revisions on current-schema backups,
     // before the candidate is serialized and copied into the live database.

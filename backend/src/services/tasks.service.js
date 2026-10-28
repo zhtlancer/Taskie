@@ -1035,6 +1035,7 @@ class TasksService {
     const duration = task.track_time && task.homework_legacy_seconds === null ? resolveDuration(task, duration_seconds) : { seconds: null, source: null };
     const now = new Date().toISOString();
     let newBadges = [];
+    let autoHomework = null;
 
     const tx = this.db.transaction(() => {
       if (!courseHomework) this.taskStudyService?.endActive(taskId);
@@ -1050,7 +1051,7 @@ class TasksService {
       cancelPendingSkips(this.db, taskId, now);
 
       // Explicit class check-ins confirm attendance once; parent corrections remain independent.
-      this.classStatsService?.syncCheckin(task);
+      autoHomework = this.classStatsService?.syncCheckin(task) ?? null;
 
       // 2. Insert point log
       this.db.prepare(`
@@ -1076,7 +1077,8 @@ class TasksService {
       success: true,
       task: this.describeTask(updatedTask),
       points_earned: earned,
-      new_badges: newBadges
+      new_badges: newBadges,
+      auto_homework: autoHomework
     };
   }
 

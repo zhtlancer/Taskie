@@ -213,6 +213,7 @@ class ScheduleService {
       ...row,
       days_of_week: JSON.parse(row.days_of_week),
       create_task: Boolean(row.create_task),
+      auto_homework: Boolean(row.auto_homework),
       child_ids: assign_all ? null : childIds,
       exceptions: this.db.prepare(`SELECT * FROM outside_class_exceptions WHERE class_id = ? AND (date >= ? OR new_date >= ?)
         ORDER BY date`).all(row.id, since, since)
@@ -224,10 +225,10 @@ class ScheduleService {
     const id = generateId();
     this.db.transaction(() => {
       this.db.prepare(`INSERT INTO outside_classes (id, title, institution, location, teacher, days_of_week, start_time, end_time,
-          start_date, end_date, bring, note, create_task, points, created_at, total_lessons)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          start_date, end_date, bring, note, create_task, points, created_at, total_lessons, auto_homework)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(id, fields.title, fields.institution, fields.location, fields.teacher, JSON.stringify(fields.days_of_week), fields.start_time,
-          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, new Date().toISOString(), fields.total_lessons);
+          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, new Date().toISOString(), fields.total_lessons, fields.auto_homework ? 1 : 0);
       this.setClassChildren(id, fields.child_ids);
     })();
     return this.getClass(id);
@@ -239,9 +240,9 @@ class ScheduleService {
     const fields = this.validateClass({ ...existing, ...body });
     this.db.transaction(() => {
       this.db.prepare(`UPDATE outside_classes SET title = ?, institution = ?, location = ?, teacher = ?, days_of_week = ?, start_time = ?,
-          end_time = ?, start_date = ?, end_date = ?, bring = ?, note = ?, create_task = ?, points = ?, total_lessons = ? WHERE id = ?`)
+          end_time = ?, start_date = ?, end_date = ?, bring = ?, note = ?, create_task = ?, points = ?, total_lessons = ?, auto_homework = ? WHERE id = ?`)
         .run(fields.title, fields.institution, fields.location, fields.teacher, JSON.stringify(fields.days_of_week), fields.start_time,
-          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, fields.total_lessons, id);
+          fields.end_time, fields.start_date, fields.end_date, fields.bring, fields.note, fields.create_task ? 1 : 0, fields.points, fields.total_lessons, fields.auto_homework ? 1 : 0, id);
       this.setClassChildren(id, fields.child_ids);
       this.pruneClassTasks(id);
     })();
@@ -280,6 +281,8 @@ class ScheduleService {
     if (end && end < start) throw fail(400, '结束日期不能早于开始日期');
     const createTask = body.create_task ?? false;
     if (typeof createTask !== 'boolean') throw fail(400, '“生成打卡任务”设置无效');
+    const autoHomework = body.auto_homework ?? false;
+    if (typeof autoHomework !== 'boolean') throw fail(400, '“确认上课后自动生成作业”设置无效');
     const points = body.points ?? 5;
     if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw fail(400, '积分必须为 0 至 10000 的整数');
     const childIds = body.child_ids ?? null;
@@ -293,7 +296,7 @@ class ScheduleService {
       teacher: text(body.teacher, '老师', 10),
       bring: text(body.bring, '要带的东西', 50),
       note: text(body.note, '备注', 100),
-      create_task: createTask, points, child_ids: childIds === null ? null : [...new Set(childIds)]
+      create_task: createTask, auto_homework: autoHomework, points, child_ids: childIds === null ? null : [...new Set(childIds)]
     };
   }
 
@@ -378,6 +381,8 @@ class ScheduleService {
       return row && (!row.lessonDates || row.lessonDates.includes(e.date));
     });
     const exceptionAt = new Map(exceptions.map(e => [`${e.class_id}|${e.date}`, e]));
+    const homework = new Map((this.classHomeworkService?.records(childId) || [])
+      .map(row => [`${row.class_id}|${row.lesson_date}`, this.classHomeworkService.result(row)]));
     // Keep both undo tombstones and orphan attendance visible if best-effort repair fails.
     repairClassRevisions(this.db, { childId }, { forWrite });
     const attendance = new Map(this.db.prepare(`SELECT r.class_id, r.lesson_date, a.status, a.charged, a.source, r.revision
@@ -401,6 +406,7 @@ class ScheduleService {
       const record = attendance.get(`${row.id}|${sourceDate}`);
       return {
         class_id: row.id, class_lesson_date: sourceDate, date, title: row.title, institution: row.institution, location: row.location, teacher: row.teacher,
+        auto_homework: Boolean(row.auto_homework), homework: homework.get(`${row.id}|${sourceDate}`) ?? null,
         source_date: sourceDate,
         attendance_revision: record?.revision ?? null,
         attendance: record?.status ? {

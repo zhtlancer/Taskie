@@ -96,6 +96,7 @@
                 <div>
                   👶 {{ cls.child_ids === null ? '全部孩子' : children.filter(c => cls.child_ids.includes(c.id)).map(c => c.name).join('、') }}
                   <span v-if="cls.create_task" class="ml-1 px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">打卡 ★{{ cls.points }}</span>
+                  <span v-if="cls.auto_homework" class="ml-1 px-1.5 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-200">确认上课后生成作业</span>
                   <span class="ml-1 text-slate-400">{{ cls.start_date }} 起{{ cls.end_date ? `，到 ${cls.end_date}` : '' }}</span>
                   <span v-if="cls.total_lessons" class="ml-1">共 {{ cls.total_lessons }} 次</span>
                 </div>

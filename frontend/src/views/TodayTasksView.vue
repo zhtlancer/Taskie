@@ -77,6 +77,7 @@
         </router-link>
       </div>
     </header>
+    <ClassHomeworkNotice v-if="classHomeworkNotice" :result="classHomeworkNotice" :child-id="childId" class="shrink-0" />
 
     <!-- Phones: streak, points and subject chips (the iPad layout shows these in the sidebar) -->
     <div class="mt-3 space-y-2.5">
@@ -323,6 +324,7 @@ import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
 import TaskCard from '../components/TaskCard.vue';
+import ClassHomeworkNotice from '../components/ClassHomeworkNotice.vue';
 import TaskPriorityModal from '../components/TaskPriorityModal.vue';
 import HomeworkEditModal from '../components/HomeworkEditModal.vue';
 import { sortTasks, sortGoals, goalBoardTask, matchesTaskFilters } from '../utils/taskOrdering.js';
@@ -362,6 +364,7 @@ const childAvatar = computed(() => childStore.childAvatar);
 const { asParent } = useParentSession();
 
 const tasks = ref([]);
+const classHomeworkNotice = ref(null);
 const priorityTarget = ref(null);
 const homeworkEditId = ref(null);
 watch(childId, () => { priorityTarget.value = null; homeworkEditId.value = null; });
@@ -547,6 +550,7 @@ function onResume() {
   if (date === todayString.value) refreshBoard(); // A changed date is handled by the watcher.
 }
 watch([todayString, childId], ([, id], [, previousId]) => {
+  classHomeworkNotice.value = null;
   tasks.value = []; goals.value = []; periods.value = []; unfinished.value = []; tasksError.value = false;
   boardLoaded = false;
   childStore.statsRequestId++;
@@ -605,6 +609,7 @@ watch([focusId, loading], async ([id, busy]) => {
 // The bar paused or resumed a timer: show the change on the cards too.
 watch(() => timerStore.changedAt, () => refreshGoals());
 async function handleTaskToggle(task, durationBody = null) {
+  const toggledChildId = childId.value;
   if (task.homework) { studyRecord.value = task.homework.id; return; }
   if (task.origin === 'study') { router.push(`/child/${childId.value}/word-study`); return; }
   if ((task.track_time || task.study_sessions) && task.origin !== 'goal') { studyTask.value = task.id; return; }
@@ -622,6 +627,8 @@ async function handleTaskToggle(task, durationBody = null) {
   try {
     if (willComplete) {
       const res = await api.completeDailyTask(task.id, durationBody || undefined);
+      if (toggledChildId !== childId.value) return;
+      if (res.auto_homework) classHomeworkNotice.value = res.auto_homework;
       Object.assign(task, res.task);
 
       if (res && res.task && res.task.weekly_completed_times !== undefined) {
@@ -630,6 +637,10 @@ async function handleTaskToggle(task, durationBody = null) {
       } else if (task.weekly_completed_times !== undefined) {
         task.weekly_completed_times = (task.weekly_completed_times || 0) + 1;
       }
+
+      // A check-in may have added homework; include it before deciding all work is done.
+      const addedHomework = Boolean(res.auto_homework?.created && res.auto_homework.task_id);
+      if (addedHomework) await fetchTasks();
 
       // Check if this was the last remaining task completed
       if (!wasAllDone && allDone.value) {
@@ -641,7 +652,7 @@ async function handleTaskToggle(task, durationBody = null) {
       }
 
       // Refresh child stats & trigger streak shake
-      await fetchTasks();
+      if (!addedHomework) await fetchTasks();
       await childStore.fetchStats();
       if (streakRef.value) {
         streakRef.value.wiggle();

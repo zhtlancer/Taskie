@@ -393,6 +393,10 @@ npm test
 
 v33 在兑换记录中增加 `refund_reason` 和 `refunded_at`，撤销状态为 `refunded`，原 `resolved_at` 保留。可用积分仍按累计获得积分减去待确认及已确认兑换计算；退分不写入新的获得积分记录。备份包含撤销信息，并验证当前版本字段完整性。
 
+v34 为课外班增加布尔设置 `auto_homework`（默认 `false`，创建和编辑接口均支持），并增加 `outside_class_homework`。以 `(class_id, child_id, lesson_date)` 唯一标识原始课次，保存实际上课日期及作业关联；删除作业后关联置空但保留凭据，删除课程后仍保留来源标识，删除孩子时随之清理。旧备份升级默认关闭；当前备份须同时包含设置列及完整凭据表。
+
+确认出勤和上课打卡共用 `ClassHomeworkService`，仅在最终出勤为 `attended` 且已开启设置时生成；家长出勤和上课打卡都须由其他状态变为 `attended`，重新保存已上课记录或对已上课课次打卡只返回已有结果，不补生成。出勤、作业、任务、凭据及打卡积分在同一事务中提交；恢复旧请求校验适用于出勤写入。出勤及打卡完成响应包含 `auto_homework` 结果，日程课次和出勤详情通过 `homework` 返回关联，作业记录通过 `auto_lesson_date`、`auto_lesson_actual_date` 标明来源。无下次课或已超期时只保存记录；不扫描历史出勤，也不在撤销时补生成或删除作业。
+
 新增作业、临时任务、JSON／照片错题可选提交 `request_id`（8～100 位字母、数字、下划线或连字符）。`form_submission_receipts` 在同一事务中保存提交类型、孩子、角色、内容指纹和记录 ID；相同内容重试返回原记录，内容改变返回 `FORM_SUBMISSION_CONFLICT`，记录已删除返回 `FORM_SUBMISSION_GONE`（均为 409）。凭据随备份恢复，恢复前窗口受数据代际校验限制。已有客户端不带凭据时保持兼容。作业修改可带详情返回的 `edit_version` 作为 `expected_version`，拒绝旧草稿覆盖新内容。
 
 ---

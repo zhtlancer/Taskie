@@ -91,6 +91,10 @@ function buildApp(opts = {}) {
   statsService.wordStudyService = wordStudyService;
   rewardsService.wordStudyService = wordStudyService;
   const homeworkService = new HomeworkService(db, tasksService, scheduleService);
+  const ClassHomeworkService = require('./services/class-homework.service');
+  const classHomeworkService = new ClassHomeworkService(db, scheduleService, homeworkService);
+  classStatsService.homeworkService = classHomeworkService;
+  scheduleService.classHomeworkService = classHomeworkService;
   tasksService.homeworkService = homeworkService;
   const homeworkStudyService = new HomeworkStudyService(db, homeworkService, tasksService, timersService);
   const taskStudyService = new TaskStudyService(db, tasksService, timersService);
@@ -115,6 +119,7 @@ function buildApp(opts = {}) {
     timersService,
     scheduleService,
     classStatsService,
+    classHomeworkService,
     timeStatsService,
     wordStudyService,
     homeworkService,

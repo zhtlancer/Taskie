@@ -24,7 +24,7 @@
         <h4 class="text-xs font-black text-violet-600 dark:text-violet-300 mb-1.5">🎨 课外班</h4>
         <DaySchedule :day="{ ...today, holiday: null, school: [] }">
           <template #outside="{ lesson, date }">
-            <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :as-parent="asParent" :disabled="busy || needsRefresh || staleSchedule" @action="action => act(action, lesson, date)" />
+            <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :child-id="childId" :as-parent="asParent" :disabled="busy || needsRefresh || staleSchedule" @action="action => act(action, lesson, date)" />
           </template>
         </DaySchedule>
       </section>
@@ -45,7 +45,7 @@
           <h4 class="text-xs font-black text-violet-600 dark:text-violet-300 mb-1.5">🎨 明天的课外班</h4>
           <DaySchedule v-if="tomorrow.outside.length" :day="{ ...tomorrow, holiday: null, makeup: null, school: [] }">
             <template #outside="{ lesson, date }">
-              <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :as-parent="asParent" :disabled="busy || needsRefresh || staleSchedule" @action="action => act(action, lesson, date)" />
+              <BoardClassControls :lesson="lesson" :date="date" :today="today.date" :child-id="childId" :as-parent="asParent" :disabled="busy || needsRefresh || staleSchedule" @action="action => act(action, lesson, date)" />
             </template>
           </DaySchedule>
           <p v-else class="px-2 py-2 text-xs font-bold text-slate-400">明天没有课外班</p>
@@ -176,7 +176,8 @@ async function perform(action, lesson, date, moved) {
   moveError.value = '';
   const detail = action === 'leave' ? '今天请假会取消当天还没完成的打卡任务；请假默认不扣课时，如需扣课时请到课外班统计修改。'
     : action === 'move' ? `调到 ${moved.date} ${moved.start}–${moved.end}。`
-    : action === 'attended' ? '将按默认规则扣除本次课时。' : '';
+    : action === 'attended' ? `将按默认规则扣除本次课时。${lesson.auto_homework ? '确认后自动生成本课次作业，默认截止到下次实际课当天。' : ''}`
+    : action === 'undoAttendance' && lesson.homework?.record_id ? '本课次已生成的作业会保留，需要时可到作业本删除。' : '';
   try {
     awaitingConfirmation = true;
     if (!await confirmAction(`确定${classActionLabels[action]}「${lesson.title}」（${date} ${lesson.start_time}–${lesson.end_time}）吗？只对 ${props.childName} 生效。${detail}`)) return;

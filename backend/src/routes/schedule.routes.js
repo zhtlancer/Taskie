@@ -1,3 +1,6 @@
+const { generationWrite } = require('../utils/data-generation');
+const { repairClassRevisions } = require('../db/class-revisions');
+
 async function scheduleRoutes(fastify, options) {
   const { scheduleService, classStatsService } = options;
   const handle = fn => async (request, reply) => {
@@ -21,7 +24,13 @@ async function scheduleRoutes(fastify, options) {
   fastify.get('/outside-classes', handle(async () => scheduleService.listClasses()));
   fastify.get('/outside-classes/stats', handle(async request => classStatsService.list(request.query.child_id)));
   fastify.get('/outside-classes/:id/stats', handle(async request => classStatsService.details(request.params.id, request.query.child_id, request.query.from, request.query.to)));
-  fastify.put('/outside-classes/:id/attendance', handle(async request => classStatsService.setAttendance(request.params.id, request.body?.child_id, request.body?.lesson_date, request.body || {})));
+  const saveAttendance = generationWrite(fastify, request => classStatsService.setAttendance(request.params.id, request.body?.child_id, request.body?.lesson_date, request.body || {}));
+  fastify.put('/outside-classes/:id/attendance', handle(async (request, reply) => {
+    // Repair metadata independently: a rejected stale edit must still leave orphan records with
+    // durable versions. The actual attendance/homework write remains guarded and atomic.
+    repairClassRevisions(fastify.db, { classId: request.params.id, childId: request.body?.child_id }, { forWrite: true });
+    return saveAttendance(request, reply);
+  }));
   fastify.put('/outside-classes/:id/fee', handle(async request => classStatsService.setFee(request.params.id, request.body?.child_id, request.body || {})));
   fastify.post('/outside-classes', handle(async (request, reply) => reply.code(201).send(scheduleService.createClass(request.body || {}))));
   fastify.put('/outside-classes/:id', handle(async request => scheduleService.updateClass(request.params.id, request.body || {})));

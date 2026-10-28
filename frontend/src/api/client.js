@@ -250,7 +250,11 @@ export const api = {
   getOutsideClasses: () => get('/outside-classes'),
   getOutsideClassStats: childId => get('/outside-classes/stats', { child_id: childId }),
   getOutsideClassDetails: (id, childId, from, to) => get(`/outside-classes/${id}/stats`, { child_id: childId, from, to }),
-  setClassAttendance: (id, data, options) => put(`/outside-classes/${id}/attendance`, data, options),
+  async setClassAttendance(id, data, options = {}) {
+    requireFamilyDate();
+    await ensureDataGeneration();
+    return put(`/outside-classes/${id}/attendance`, data, { ...options, headers: { ...generationHeaders(getDataGeneration()), ...options.headers } });
+  },
   setClassFee: (id, data) => put(`/outside-classes/${id}/fee`, data),
   createOutsideClass: data => post('/outside-classes', data),
   updateOutsideClass: (id, data) => put(`/outside-classes/${id}`, data),

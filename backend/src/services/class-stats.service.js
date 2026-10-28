@@ -32,7 +32,9 @@ class ClassStatsService {
     // lessons before attendance tracking began. They can still be recorded, just not counted pending.
     const tracking = this.db.prepare("SELECT value FROM settings WHERE key = 'class_attendance_since'").get()?.value;
     const since = [cls.start_date, formatDate(new Date(child.created_at)), formatDate(new Date(cls.created_at)), tracking].filter(Boolean).sort().at(-1);
-    return { cls, childId, enrolled, since, hasFeeRow: Boolean(fee), records: new Map(records.map(r => [r.lesson_date, r])), fee: fee?.total_fee_cents ?? null, feeRevision: revisions.get('fee:') ?? null, revisions, exceptions };
+    const homework = new Map((this.homeworkService?.records(childId) || []).filter(row => row.class_id === classId)
+      .map(row => [row.lesson_date, this.homeworkService.result(row)]));
+    return { cls, childId, enrolled, since, homework, hasFeeRow: Boolean(fee), records: new Map(records.map(r => [r.lesson_date, r])), fee: fee?.total_fee_cents ?? null, feeRevision: revisions.get('fee:') ?? null, revisions, exceptions };
   }
   validSource(cls, date) {
     return date >= cls.start_date && (!cls.end_date || date <= cls.end_date) && cls.days_of_week.includes(getDayOfWeek(date));
@@ -62,6 +64,7 @@ class ClassStatsService {
       note: record?.note ?? e?.note ?? '',
       lesson_number: cls.total_lessons && this.validSource(cls, source) ? this.countThrough(cls, source) : null,
       historical: !this.validSource(cls, source), confirmed: Boolean(record),
+      homework: ctx.homework.get(source) ?? null,
       // The version a parent edits; a save based on an older one is refused.
       revision: ctx.revisions.get(`attendance:${source}`) ?? null
     };
@@ -179,6 +182,7 @@ class ClassStatsService {
     if (body.charged !== undefined && typeof body.charged !== 'boolean') throw fail(400, '是否消课必须为是或否');
     if (body.note !== undefined && (typeof body.note !== 'string' || body.note.trim().length > 200)) throw fail(400, '备注不超过 200 个字');
     const attendanceOf = row => (row ? { status: row.status, charged: Boolean(row.charged), note: row.note } : null);
+    let autoHomework = null;
     this.db.transaction(() => {
       const before = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, source);
       this.checkVersion(this.revision(classId, childId, 'attendance', source), body.expected_revision, '这节课的出勤刚被其他设备修改过，请看最新记录后再改');
@@ -194,8 +198,14 @@ class ClassStatsService {
       if (body.status === 'pending' && !before) this.touchRevision(classId, childId, 'attendance', source);
       this.recordChange(classId, childId, 'attendance', source, attendanceOf(before), attendanceOf(after));
       this.schedule.pruneClassTasks(classId);
+      // Only a change into attended generates; re-saving a lesson attended before the setting was
+      // enabled (a note or charge edit) must not backfill homework. The receipt is still reported.
+      if (body.status === 'attended') {
+        autoHomework = before?.status === 'attended' ? this.homeworkService?.result(this.homeworkService.get(classId, childId, source)) ?? null
+          : this.homeworkService?.ensure(classId, childId, source) ?? null;
+      }
     })();
-    return this.summary(this.context(classId, childId, { allowEmpty: true }));
+    return { ...this.summary(this.context(classId, childId, { allowEmpty: true })), auto_homework: autoHomework };
   }
   setFee(classId, childId, body) {
     this.context(classId, childId, { forWrite: true });
@@ -213,16 +223,23 @@ class ClassStatsService {
     })();
     return this.summary(this.context(classId, childId, { allowEmpty: true }));
   }
-  syncCheckin(task) {
+  syncCheckin(task, { generateHomework = true } = {}) {
     if (task.origin !== 'class' || !task.class_id) return;
-    const lesson = this.schedule.outsideLessons(task.child_id, { forWrite: true })(task.date).find(l => l.class_id === task.class_id && l.class_lesson_date === (task.class_lesson_date ?? task.date) && ['scheduled', 'moved_in'].includes(l.status));
+    const source = task.class_lesson_date ?? task.date;
+    const lesson = this.schedule.outsideLessons(task.child_id, { forWrite: true })(task.date).find(l => l.class_id === task.class_id && l.class_lesson_date === source && ['scheduled', 'moved_in'].includes(l.status));
+    const before = this.db.prepare('SELECT status FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(task.class_id, task.child_id, source);
     this.db.prepare(`INSERT INTO outside_class_attendance
       (class_id, child_id, lesson_date, actual_date, start_time, end_time, duration_minutes, status, charged, source, task_id, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'attended', 1, 'checkin', ?, ?)
       ON CONFLICT(class_id, child_id, lesson_date) DO UPDATE SET status = 'attended', charged = 1, task_id = excluded.task_id, updated_at = excluded.updated_at
       WHERE outside_class_attendance.source = 'checkin'`)
-      .run(task.class_id, task.child_id, task.class_lesson_date ?? task.date, task.date, lesson?.start_time ?? null, lesson?.end_time ?? null,
+      .run(task.class_id, task.child_id, source, task.date, lesson?.start_time ?? null, lesson?.end_time ?? null,
         lesson ? minutes(lesson.start_time, lesson.end_time) : null, task.id, new Date().toISOString());
+    if (!generateHomework) return null;
+    // Match parent confirmation: a later check-in cannot backfill an already-attended lesson.
+    return before?.status === 'attended'
+      ? this.homeworkService?.result(this.homeworkService.get(task.class_id, task.child_id, source)) ?? null
+      : this.homeworkService?.ensure(task.class_id, task.child_id, source) ?? null;
   }
   undoCheckin(taskId) {
     const record = this.db.prepare("SELECT * FROM outside_class_attendance WHERE task_id = ? AND source = 'checkin'").get(taskId);
@@ -233,7 +250,7 @@ class ClassStatsService {
     const other = this.db.prepare(`SELECT * FROM daily_tasks WHERE class_id = ? AND child_id = ?
       AND COALESCE(class_lesson_date, date) = ? AND is_completed = 1 AND id != ?
       ORDER BY completed_at DESC, rowid DESC LIMIT 1`).get(record.class_id, record.child_id, record.lesson_date, taskId);
-    if (other) this.syncCheckin(other);
+    if (other) this.syncCheckin(other, { generateHomework: false });
   }
 }
 module.exports = ClassStatsService;

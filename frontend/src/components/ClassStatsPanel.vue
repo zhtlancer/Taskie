@@ -56,7 +56,7 @@
         <span class="text-xs flex-1">{{ details.from }} 至 {{ details.to }}</span>
         <button type="button" :disabled="busy || fetching" class="min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold" @click="changeRange(30)">往后 30 天</button>
       </div>
-      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">过去的课程不会自动算作出勤。上课打卡默认同步确认，家长更正优先。这里的更正只用于出勤统计，不改变打卡、全勤或积分；只有把今天的课记为请假，会取消今天的上课打卡。请假、缺席是否消课可单独确认。</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">过去的课程不会自动算作出勤。上课打卡默认同步确认，家长更正优先。更正不改变打卡、全勤或积分；只有把今天的课记为请假，会取消今天的上课打卡。开启自动作业的课程在确认已上课后生成作业；更正出勤会保留已生成的作业。请假、缺席是否消课可单独确认。</p>
       <p v-if="!details.lessons.length" class="py-4 text-sm text-slate-500">这段时间没有课程记录。</p>
       <div class="space-y-2">
         <div v-for="lesson in details.lessons" :key="lesson.lesson_date" class="rounded-2xl border border-slate-200 dark:border-slate-700 p-3 text-sm" :data-lesson-date="lesson.lesson_date">
@@ -68,6 +68,7 @@
             </div>
             <button type="button" :disabled="busy || fetching || lesson.actual_date > details.summary.today" class="min-h-[44px] px-3 rounded-xl text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/40 font-bold disabled:opacity-40" @click="edit(lesson)">{{ lesson.actual_date > details.summary.today ? '未到上课日' : '记录出勤' }}</button>
           </div>
+          <ClassHomeworkNotice :result="lesson.homework" :child-id="child.id" :retained="lesson.status !== 'attended'" :disabled="busy || fetching" />
           <form v-if="draft?.lesson_date === lesson.lesson_date" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 space-y-3" @submit.prevent="saveAttendance">
             <label class="block text-xs font-bold">出勤状态
               <select v-model="draft.status" aria-label="出勤状态" :disabled="busy" class="block w-full min-h-[44px] mt-1 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700" @change="draft.charged = draft.status === 'attended'">
@@ -89,6 +90,7 @@
 import { useCalendarStore } from '../stores/calendar';
 import { ref, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
+import ClassHomeworkNotice from './ClassHomeworkNotice.vue';
 import api from '../api/client';
 import { addDays } from '../utils/schedule.js';
 import { attendanceLabels, changeText, feeText, parseFee } from '../utils/classStats.js';

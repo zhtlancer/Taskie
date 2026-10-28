@@ -118,6 +118,14 @@
         </div>
       </div>
 
+      <div class="rounded-2xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 p-3">
+        <label class="flex items-center gap-2 min-h-[44px] text-sm font-bold cursor-pointer">
+          <input v-model="form.auto_homework" aria-label="确认上课后自动生成作业" type="checkbox" class="w-5 h-5 accent-sky-600" />确认上课后自动生成作业
+        </label>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">家长确认已上课或完成上课打卡后，每个孩子、每次课生成一份作业，内容如“10月28日‘钢琴课’作业”，默认截止到下次实际课当天。积分沿用作业本的课程默认积分，生成后可修改内容、日期和优先级，并分次学习或计时。</p>
+        <p v-if="form.auto_homework" class="mt-2 text-xs text-sky-800 dark:text-sky-200">找不到未来 120 天内的下次课时，只保存无截止日期的作业记录；补记已过期的作业也只保存记录。开启后不批量补生成，已确认上课的课再次保存或之后打卡也不补生成，更正出勤或关闭开关保留已有作业，删除后不自动补回；之后调课不自动修改已生成作业的截止日期。</p>
+      </div>
+
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
         <button type="button" :disabled="saving" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
         <button type="submit" :disabled="saving || !form.days_of_week.length || form.child_ids?.length === 0 || (scheduleMode === 'count' && !preview.length)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{{ saving ? '保存中...' : '保存' }}</button>
@@ -142,11 +150,11 @@ const props = defineProps({
 const emit = defineEmits(['close', 'saved']);
 const scheduleMode = ref(props.cls && !props.cls.total_lessons ? 'date' : 'count');
 
-const fields = ['title', 'institution', 'location', 'teacher', 'start_time', 'end_time', 'start_date', 'end_date', 'bring', 'note', 'create_task', 'points'];
+const fields = ['title', 'institution', 'location', 'teacher', 'start_time', 'end_time', 'start_date', 'end_date', 'bring', 'note', 'create_task', 'points', 'auto_homework'];
 const form = ref(props.cls
-  ? { ...Object.fromEntries(fields.map(field => [field, props.cls[field] ?? ''])), total_lessons: props.cls.total_lessons ?? 20, days_of_week: [...props.cls.days_of_week], child_ids: props.cls.child_ids && [...props.cls.child_ids] }
+  ? { ...Object.fromEntries(fields.map(field => [field, props.cls[field] ?? (field === 'auto_homework' ? false : '')])), total_lessons: props.cls.total_lessons ?? 20, days_of_week: [...props.cls.days_of_week], child_ids: props.cls.child_ids && [...props.cls.child_ids] }
   : { title: '', institution: '', location: '', teacher: '', start_time: '16:30', end_time: '17:30', start_date: calendar.today, end_date: '', bring: '', note: '',
-      create_task: false, points: 5, days_of_week: [], child_ids: null, total_lessons: 20 });
+      create_task: false, auto_homework: false, points: 5, days_of_week: [], child_ids: null, total_lessons: 20 });
 const preview = computed(() => lessonDates(form.value.start_date, form.value.days_of_week, form.value.total_lessons));
 const saving = ref(false);
 const error = ref('');

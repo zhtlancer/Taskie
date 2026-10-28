@@ -198,8 +198,10 @@ class HomeworkService {
       COALESCE(d.priority_override, d.priority) AS task_priority, d.priority AS task_default_priority, d.priority_override AS task_priority_override,
       COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds,
       (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count,
-      EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running, c.name AS child_name, c.avatar_emoji AS child_avatar_emoji
+      EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running, c.name AS child_name, c.avatar_emoji AS child_avatar_emoji,
+      a.lesson_date AS auto_lesson_date, a.actual_date AS auto_lesson_actual_date
       FROM homework_records r JOIN children c ON c.id = r.child_id LEFT JOIN daily_tasks d ON d.id = r.daily_task_id
+      LEFT JOIN outside_class_homework a ON a.homework_id = r.id
       WHERE ${where} ORDER BY r.assigned_date DESC, r.created_at DESC`).all(...params).map(row => this.describe(row));
   }
 
@@ -269,9 +271,15 @@ class HomeworkService {
   // created at once for a parent, or requested for a child; past-due homework is only recorded.
   create(childId, body, actor) {
     this.requireChild(childId);
+    return this.createRecord(childId, body, actor, this.resolveCourse(childId, body));
+  }
+
+  // Internal callers may supply a confirmed historical class snapshot, even after reassignment.
+  // HTTP creation always resolves the course through create() above.
+  createRecord(childId, body, actor, course) {
+    this.requireChild(childId);
     if (actor !== 'parent' && Object.hasOwn(body, 'priority')) throw fail(403, '只有家长可以设置优先级');
     const priority = validatePriority(body.priority);
-    const course = this.resolveCourse(childId, body);
     const content = typeof body.content === 'string' ? body.content.trim() : '';
     if (!content) throw fail(400, '请填写作业内容');
     if (content.length > MAX_CONTENT) throw fail(400, `作业内容不超过 ${MAX_CONTENT} 个字`);

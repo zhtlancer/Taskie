@@ -558,6 +558,19 @@ CREATE TABLE IF NOT EXISTS homework_records (
 CREATE INDEX IF NOT EXISTS idx_homework_child_date ON homework_records(child_id, assigned_date);
 CREATE INDEX IF NOT EXISTS idx_homework_task ON homework_records(daily_task_id);
 
+-- One automatic homework per child and original lesson. Deleting homework retains a tombstone.
+-- class_id is an immutable provenance key, retained even if the course is deleted.
+CREATE TABLE IF NOT EXISTS outside_class_homework (
+  class_id TEXT NOT NULL,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  lesson_date TEXT NOT NULL,
+  actual_date TEXT NOT NULL,
+  homework_id TEXT UNIQUE REFERENCES homework_records(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(class_id, child_id, lesson_date)
+);
+CREATE INDEX IF NOT EXISTS idx_outside_class_homework_child ON outside_class_homework(child_id);
+
 -- Default points of a homework task per course: 'school:<subject>' or 'class:<outside class id>'.
 CREATE TABLE IF NOT EXISTS homework_course_points (
   course_key TEXT PRIMARY KEY,
