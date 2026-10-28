@@ -44,7 +44,7 @@ client.interceptors.response.use(response => response, error => {
   const silentError = typeof error.config?.silentError === 'function' ? error.config.silentError(error) : error.config?.silentError;
   if (!silentError && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   if (error.config?.preserveNetworkError && !error.response) return Promise.reject(Object.assign(new Error(message), { networkFailure: true }));
-  return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status }) : message);
+  return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status, code }) : message);
 });
 const request = async (method, url, data, params, signal, options = {}) =>
   (await client.request({ ...options, method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
@@ -155,6 +155,8 @@ export const api = {
   getWeeklySummary: id => get(`/children/${id}/weekly-summary`),
   getPointLogs: id => get(`/children/${id}/point-logs`),
   getMistakes: (id, subject) => get('/mistakes', { child_id: id, subject: subject === '全部' ? undefined : subject }),
+  getMistake: id => get(`/mistakes/${id}`),
+  updateMistake: (id, data, generation) => put(`/mistakes/${id}`, data, { headers: generationHeaders(generation), preserveError: true, silentError: true }),
   createMistake(data) {
     let payload = data;
     if (!(data instanceof FormData) && (data.photo_file || data.photoFile)) {
@@ -198,6 +200,8 @@ export const api = {
   rejectRedemption: id => post(`/redemptions/${id}/reject`),
   cancelRedemption: id => post(`/redemptions/${id}/cancel`),
   getAdhocTasks: id => get(`/children/${id}/adhoc-tasks`),
+  getAdhocTask: id => get(`/adhoc-tasks/${id}`),
+  updateAdhocTask: (id, data, generation) => put(`/adhoc-tasks/${id}`, data, { headers: generationHeaders(generation), preserveError: true, silentError: true }),
   createAdhocTask: (childId, data) => post(`/children/${childId}/adhoc-tasks`, data),
   deleteAdhocTask: id => remove(`/adhoc-tasks/${id}`),
   getHomeworkStudy: id => get(`/homework/${id}/study`),

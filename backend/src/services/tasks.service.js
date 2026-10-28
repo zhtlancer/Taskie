@@ -7,6 +7,7 @@ const { cancelPendingSkips } = require('../utils/skips');
 const { classLessonKey } = require('../utils/schedule');
 const { describeTimer, resolveDuration, timerSeconds, validateDuration, validateTiming } = require('../utils/timer');
 const { schoolCalendar, dueDateOf, MAX_CARRY_DAYS } = require('./calendar');
+const { editVersion, requireEditVersion } = require('../utils/edit-version');
 
 function normalizeDaysOfWeek(days) {
   if (Array.isArray(days)) {
@@ -812,7 +813,66 @@ class TasksService {
   // One-off tasks from a date on, including earlier ones whose due date has not passed.
   listAdhocTasks(childId, fromDate = getTodayDate()) {
     return this.db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND origin = 'adhoc' AND (date >= ? OR due_date >= ?) ORDER BY date, rowid")
-      .all(childId, fromDate, fromDate).map(row => ({ ...row, ...describePriority(row), is_completed: Boolean(row.is_completed) }));
+      .all(childId, fromDate, fromDate).map(row => this.describeAdhocTask(row));
+  }
+
+  describeAdhocTask(row) {
+    const homework = this.db.prepare('SELECT id FROM homework_records WHERE daily_task_id = ?').get(row.id);
+    return { ...describeRow(row), homework_id: homework?.id ?? null,
+      can_edit: !homework && !row.is_completed && !row.skipped_at && (row.due_date || row.date) >= getTodayDate(),
+      edit_version: editVersion([row.title, row.subject, row.points, row.date, row.due_date,
+        row.track_time, row.expected_minutes, row.priority, row.priority_override]) };
+  }
+
+  getAdhocTask(id) {
+    const row = this.db.prepare("SELECT * FROM daily_tasks WHERE id = ? AND origin = 'adhoc'").get(id);
+    if (!row) throw { status: 404, message: '临时任务不存在' };
+    return this.describeAdhocTask(row);
+  }
+
+  updateAdhocTask(id, body) {
+    const existing = this.getAdhocTask(id);
+    if (existing.homework_id) throw { status: 409, message: '课程作业请到作业本修改' };
+    if (!existing.can_edit) throw { status: 409, message: '已完成、已跳过或已过期的临时任务保留原记录' };
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key =>
+      !['title', 'subject', 'points', 'due_date', 'track_time', 'expected_minutes', 'priority', 'expected_version'].includes(key))) {
+      throw { status: 400, message: '修改内容无效，布置日期和已有学习记录不能在此更改' };
+    }
+    requireEditVersion(body.expected_version, existing.edit_version);
+    const value = key => body[key] === undefined ? existing[key] : body[key];
+    const title = value('title'), subject = value('subject'), points = value('points');
+    if (typeof title !== 'string' || !title.trim() || title.trim().length > 50 ||
+        typeof subject !== 'string' || !subject.trim() || subject.trim().length > 50) {
+      throw { status: 400, message: '任务名称和学科不能为空，且不超过 50 字' };
+    }
+    if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
+    const timing = validateTiming({ track_time: value('track_time'), expected_minutes: value('expected_minutes') });
+    const priority = validatePriority(value('priority'));
+    // An unrelated edit (including a full form echoing the effective value) must keep
+    // the original default and occurrence override available to "restore default".
+    const priorityChanged = priority !== existing.priority;
+    const defaultPriority = priorityChanged ? priority : existing.default_priority;
+    const priorityOverride = priorityChanged ? null : existing.priority_override;
+    const due = value('due_date');
+    if (due !== null) {
+      parseDate(due);
+      if (due < existing.date || due < getTodayDate() || due > shiftDate(existing.date, MAX_CARRY_DAYS)) {
+        throw { status: 400, message: `截止日期须不早于布置日期和今天，且在布置后 ${MAX_CARRY_DAYS} 天内` };
+      }
+    } else if (existing.date < getTodayDate()) {
+      throw { status: 400, message: '过去布置的任务不能清空截止日期' };
+    }
+    if (timing.track_time !== existing.track_time && (existing.timer_started_at ||
+        this.db.prepare('SELECT 1 FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(id))) {
+      throw { status: 409, message: '请先结束本次学习，再修改记录用时开关' };
+    }
+    // Keep the task identity, all study sessions, legacy time, and rewards intact.
+    if (!timing.track_time && existing.track_time) this.taskStudyService?.preserveTime(id, { endActive: true });
+    this.db.prepare(`UPDATE daily_tasks SET title = ?, subject = ?, points = ?, due_date = ?,
+      track_time = ?, expected_minutes = ?, priority = ?, priority_override = ? WHERE id = ?`)
+      .run(title.trim(), subject.trim(), points, due && due > existing.date ? due : null,
+        timing.track_time ? 1 : 0, timing.expected_minutes, defaultPriority, priorityOverride, id);
+    return this.getAdhocTask(id);
   }
 
   // Removing a one-off task also removes the points it earned (its point log goes with it).

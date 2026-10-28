@@ -4,6 +4,7 @@ const { generateId } = require('../utils/crypto');
 const { isImageExtensionSupported, processOrFallbackPhoto } = require('../utils/image');
 const config = require('../config');
 const { queuedDeletion } = require('../utils/queued-deletion');
+const { generationWrite } = require('../utils/data-generation');
 
 async function mistakesRoutes(fastify, options) {
   const { mistakesService } = options;
@@ -108,6 +109,12 @@ async function mistakesRoutes(fastify, options) {
       if (!committed) for (const file of writtenFiles) await fs.promises.unlink(file).catch(() => {});
     }
   });
+
+  fastify.put('/:id', generationWrite(fastify, request => {
+    const record = mistakesService.getMistake(request.params.id);
+    if (record) fastify.requireChildAccess(request, record.child_id);
+    return mistakesService.updateMistake(request.params.id, request.body);
+  }));
 
   fastify.put('/:id/master', async (request, reply) => {
     const isMastered = request.body && request.body.is_mastered !== undefined

@@ -285,3 +285,28 @@ describe('Mistakes API (/api/mistakes)', () => {
     assert.ok(body.error);
   });
 });
+
+test('editing mistake text preserves its photo, ownership and independent mastery state', async t => {
+  const ctx = createTestApp(); t.after(() => cleanupTestApp(ctx)); await ctx.app.ready();
+  const child = ctx.app.services.childrenService.createChild({ name: '编辑错题' });
+  const other = ctx.app.services.childrenService.createChild({ name: '其他孩子' });
+  const record = ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: '原题', photo_path: '/uploads/keep.webp' });
+  const childHeaders = { authorization: `Bearer ${ctx.app.jwt.sign({ role: 'child', child_id: child.id, epoch: ctx.app.sessionEpoch() })}` };
+  const otherHeaders = { authorization: `Bearer ${ctx.app.jwt.sign({ role: 'child', child_id: other.id, epoch: ctx.app.sessionEpoch() })}` };
+  const edit = (payload, headers) => ctx.app.inject({ method: 'PUT', url: `/api/mistakes/${record.id}`, payload: { expected_version: record.edit_version, ...payload }, ...(headers ? { headers } : {}) });
+  assert.equal((await edit({ description: '越权' }, otherHeaders)).statusCode, 403);
+  for (const payload of [{ description: '' }, { subject: [] }, { description: '字'.repeat(10001) }, { photo_path: '/uploads/replace.webp' }, { child_id: other.id }, { is_mastered: true }]) {
+    assert.equal((await edit(payload)).statusCode, 400, JSON.stringify(payload));
+  }
+  // Mastery may change independently while the text editor is open.
+  ctx.app.services.mistakesService.markMastered(record.id, true);
+  const updated = await edit({ description: ' 补充正确解法 ', subject: '英语' }, childHeaders);
+  assert.equal(updated.statusCode, 200, updated.body);
+  assert.deepEqual([updated.json().id, updated.json().child_id, updated.json().photo_path, updated.json().created_at, updated.json().is_mastered], [record.id, child.id, record.photo_path, record.created_at, true]);
+  assert.equal(updated.json().description, '补充正确解法');
+  assert.equal((await edit({ description: '旧设备覆盖' })).statusCode, 409);
+  assert.equal((await ctx.app.inject({ method: 'PUT', url: `/api/mistakes/${record.id}`, payload: { description: '缺少版本' } })).statusCode, 400);
+  assert.equal((await ctx.app.inject({ method: 'PUT', url: '/api/mistakes/missing', payload: {} })).statusCode, 404);
+  const parentEdit = await ctx.app.inject({ method: 'PUT', url: `/api/mistakes/${record.id}`, payload: { subject: '数学', expected_version: updated.json().edit_version } });
+  assert.equal(parentEdit.statusCode, 200);
+});

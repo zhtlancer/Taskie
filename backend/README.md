@@ -333,6 +333,7 @@ npm test
   - 静态访问地址：`http://<host>:<port>/uploads/<filename>`；
   - 参数：`child_id`, `subject`, `description`, `file` (可选)。
 - **`PUT /api/mistakes/:id/master`**：标记错题已掌握
+- **`PUT /api/mistakes/:id`**：家长或所属孩子修改 `subject`、`description`，提交列表或详情返回的 `edit_version` 作为 `expected_version`。内容已被其他设备修改时返回 409 和 `EDIT_CONFLICT`；照片、孩子归属、掌握状态与创建时间保留，不接受这些字段的修改。
 - **`DELETE /api/mistakes/:id`**：删除错题（自动同步删除本地图片文件）
 
 ---
@@ -381,6 +382,7 @@ npm test
 | `GET/POST /api/children/:id/redemptions` | 孩子的兑换记录、申请兑换（积分先冻结） |
 | `GET /api/redemptions?status=pending`，`POST /api/redemptions/:id/{approve,reject,cancel}` | 待确认列表、确认、拒绝、撤回 |
 | `GET/POST /api/children/:id/adhoc-tasks`，`DELETE /api/adhoc-tasks/:id` | 临时任务（某一天的一次性任务） |
+| `GET/PUT /api/adhoc-tasks/:id` | 仅家长读取编辑详情或原地修改独立临时任务；PUT 需 `expected_version`，版本冲突返回 409 和 `EDIT_CONFLICT`，其他业务 409 可调整内容后重试；支持名称、学科、积分、截止日、优先级及用时设置。已完成、跳过、过期或仍属于课程作业的任务拒绝修改，布置日期和学习记录保留 |
 | `GET/POST /api/children/:id/goals` | 长期任务列表（含假期任务）、新建独立长期任务 |
 | `GET/POST /api/children/:id/periods`，`PUT/DELETE /api/periods/:id` | 假期及假期中暂停的模板 |
 | `POST /api/periods/:id/tasks` | 新建假期任务（日期跟随假期） |

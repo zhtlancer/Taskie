@@ -1,5 +1,6 @@
 <template>
   <div
+    data-mistake-card
     class="relative rounded-2xl border-2 p-5 transition-all duration-200 shadow-sm flex flex-col justify-between"
     :class="[
       mistake.is_mastered
@@ -63,12 +64,12 @@
     </div>
 
     <!-- Actions Footer -->
-    <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
+    <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex flex-wrap gap-2 items-center justify-between">
       <!-- Toggle Mastered Button -->
       <button
         type="button"
         @click="$emit('toggle-master', mistake)"
-        class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1"
+        class="min-h-[44px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1"
         :class="[
           mistake.is_mastered
             ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600'
@@ -78,11 +79,12 @@
         <span>{{ mistake.is_mastered ? '标记为未掌握' : '✓ 标记已掌握' }}</span>
       </button>
 
+      <button type="button" class="min-h-[44px] min-w-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold" @click="$emit('edit', mistake)">修改</button>
       <!-- Delete Button -->
       <button
         type="button"
         @click="$emit('delete', mistake.id)"
-        class="text-xs text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 font-semibold p-1 transition-colors"
+        class="min-h-[44px] px-2 text-xs text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 font-semibold transition-colors"
       >
         删除记录
       </button>
@@ -102,7 +104,7 @@ defineProps({
   }
 });
 
-defineEmits(['toggle-master', 'delete', 'preview-photo']);
+defineEmits(['toggle-master', 'delete', 'edit', 'preview-photo']);
 
 function subjectColor(subject) {
   switch (subject) {

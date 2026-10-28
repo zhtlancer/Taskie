@@ -196,6 +196,7 @@
             :mistake="mistake"
             @toggle-master="handleToggleMaster"
             @delete="handleDeleteMistake"
+            @edit="editingMistake = $event"
             @preview-photo="handlePreviewPhoto"
           />
         </div>
@@ -211,81 +212,7 @@
       @saved="onCropMistakeSaved"
     />
 
-    <!-- Text Only Add Mistake Modal -->
-    <div
-      v-if="showAddTextModal"
-      class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
-      @click.self="showAddTextModal = false"
-    >
-      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span>✍️</span>
-            <span>添加纯文字错题记录</span>
-          </h3>
-          <button
-            type="button"
-            @click="showAddTextModal = false"
-            class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold text-lg"
-          >
-            ✕
-          </button>
-        </div>
-
-        <form @submit.prevent="submitAddTextMistake" class="space-y-4">
-          <!-- Subject Select -->
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">选择学科</label>
-            <div class="grid grid-cols-4 gap-2">
-              <button
-                v-for="sub in ['语文', '数学', '英语', '其他']"
-                :key="sub"
-                type="button"
-                @click="formSubject = sub"
-                class="py-2 rounded-xl text-xs font-bold border transition-all"
-                :class="[
-                  formSubject === sub
-                    ? 'bg-brand-500 border-brand-500 text-white shadow-button'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
-                ]"
-              >
-                {{ sub }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Description Textarea -->
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">题目内容与错误原因描述</label>
-            <textarea
-              v-model="formDescription"
-              rows="4"
-              required
-              placeholder="记录题目、做错的原因或正确解题思路..."
-              class="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-3 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none resize-none"
-            ></textarea>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-            <button
-              type="button"
-              @click="showAddTextModal = false"
-              class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              :disabled="submitting || !formDescription.trim()"
-              class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
-            >
-              {{ submitting ? '保存中...' : '确认保存' }}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <MistakeTextDialog v-if="showAddTextModal || editingMistake" :child-id="childId" :record="editingMistake" @close="closeTextDialog" @saved="onTextSaved" />
 
     <!-- Fullscreen Photo Viewer Modal -->
     <div
@@ -315,13 +242,14 @@
 <script setup>
 import { confirmAction } from '../utils/confirmation';
 import ChildTabBar from '../components/ChildTabBar.vue';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import MistakeCard from '../components/MistakeCard.vue';
 import PrivatePhoto from '../components/PrivatePhoto.vue';
 import PhotoCropModal from '../components/PhotoCropModal.vue';
+import MistakeTextDialog from '../components/MistakeTextDialog.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick, playTaskComplete, playTaskUncomplete } from '../utils/sound';
 
@@ -346,9 +274,7 @@ const isPageDragOver = ref(false);
 
 // Text only modal
 const showAddTextModal = ref(false);
-const formSubject = ref('数学');
-const formDescription = ref('');
-const submitting = ref(false);
+const editingMistake = ref(null);
 
 // Fullscreen photo preview
 const enlargedPhotoUrl = ref(null);
@@ -366,18 +292,25 @@ const filteredMistakes = computed(() => {
 onMounted(async () => {
   await loadMistakes();
 });
+watch(childId, () => { closeTextDialog(); closeCropModal(); loadMistakes(); });
+let loadSerial = 0;
+onUnmounted(() => { loadSerial++; });
 
 const loadError = ref(false);
 async function loadMistakes() {
+  const serial = ++loadSerial;
   loading.value = true;
   try {
-    mistakes.value = await api.getMistakes(childId.value);
+    const rows = await api.getMistakes(childId.value);
+    if (serial !== loadSerial) return;
+    mistakes.value = rows;
     loadError.value = false;
   } catch (err) {
+    if (serial !== loadSerial) return;
     loadError.value = true;
     console.error('Failed to load mistakes:', err);
   } finally {
-    loading.value = false;
+    if (serial === loadSerial) loading.value = false;
   }
 }
 
@@ -430,6 +363,7 @@ function closeCropModal() {
 }
 
 function onCropMistakeSaved(newRecord) {
+  if (newRecord.child_id !== childId.value) return;
   mistakes.value.unshift(newRecord);
   closeCropModal();
 }
@@ -466,22 +400,13 @@ async function handleDeleteMistake(id) {
   }
 }
 
-async function submitAddTextMistake() {
-  if (!formDescription.value.trim()) return;
-  submitting.value = true;
-  try {
-    const newRecord = await api.createMistake({
-      child_id: childId.value,
-      subject: formSubject.value,
-      description: formDescription.value.trim()
-    });
-    mistakes.value.unshift(newRecord);
-    showAddTextModal.value = false;
-    formDescription.value = '';
-  } catch (err) {
-    console.error('Failed to add mistake:', err);
-  } finally {
-    submitting.value = false;
-  }
+function closeTextDialog() { showAddTextModal.value = false; editingMistake.value = null; }
+function onTextSaved(record) {
+  if (record.child_id !== childId.value) return;
+  const index = mistakes.value.findIndex(item => item.id === record.id);
+  if (index === -1) mistakes.value.unshift(record);
+  else mistakes.value[index] = record;
+  closeTextDialog();
 }
+
 </script>

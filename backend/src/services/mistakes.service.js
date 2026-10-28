@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { generateId } = require('../utils/crypto');
 const config = require('../config');
+const { editVersion, requireEditVersion } = require('../utils/edit-version');
+
+const describeMistake = row => ({ ...row, is_mastered: Boolean(row.is_mastered),
+  edit_version: editVersion([row.subject, row.description]) });
 
 class MistakesService {
   constructor(db, uploadDir) {
@@ -29,10 +33,7 @@ class MistakesService {
     query += ' ORDER BY created_at DESC';
 
     const rows = this.db.prepare(query).all(...params);
-    return rows.map(r => ({
-      ...r,
-      is_mastered: Boolean(r.is_mastered)
-    }));
+    return rows.map(describeMistake);
   }
 
   getMistake(id) {
@@ -43,10 +44,7 @@ class MistakesService {
     `).get(id);
 
     if (!row) return null;
-    return {
-      ...row,
-      is_mastered: Boolean(row.is_mastered)
-    };
+    return describeMistake(row);
   }
 
   createMistake({ child_id, subject, description, photo_path }) {
@@ -73,6 +71,25 @@ class MistakesService {
       VALUES (?, ?, ?, ?, ?, 0, ?, NULL)
     `).run(id, child_id, subject.trim(), description.trim(), photo_path || null, createdAt);
 
+    return this.getMistake(id);
+  }
+
+  updateMistake(id, body) {
+    const existing = this.getMistake(id);
+    if (!existing) throw { status: 404, message: '错题记录不存在' };
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body).some(key => !['subject', 'description', 'expected_version'].includes(key))) {
+      throw { status: 400, message: '只能修改错题的学科和文字内容' };
+    }
+    requireEditVersion(body.expected_version, existing.edit_version);
+    const subject = body.subject === undefined ? existing.subject : body.subject;
+    const description = body.description === undefined ? existing.description : body.description;
+    if (typeof subject !== 'string' || !subject.trim() || subject.trim().length > 50 ||
+        typeof description !== 'string' || !description.trim() || description.trim().length > 10000) {
+      throw { status: 400, message: '请选择学科并填写题目描述（学科最多 50 字，描述最多 10000 字）' };
+    }
+    this.db.prepare('UPDATE mistake_records SET subject = ?, description = ? WHERE id = ?')
+      .run(subject.trim(), description.trim(), id);
     return this.getMistake(id);
   }
 

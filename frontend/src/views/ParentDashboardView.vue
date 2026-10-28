@@ -16,6 +16,7 @@
         </div>
 
         <div class="flex flex-wrap gap-2">
+          <button type="button" :disabled="refreshing || !calendar.ready" class="min-h-[44px] px-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-bold disabled:opacity-40" @click="loadDashboard()">{{ refreshing ? '刷新中…' : '刷新总览' }}</button>
           <router-link
             to="/parent/time-stats"
             class="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold active:scale-95 transition-all"
@@ -286,12 +287,13 @@
             </div>
             <p v-if="!item.adhoc.length" class="text-xs text-slate-400">今天及以后没有临时任务，老师临时布置的作业可以加在这里。</p>
             <ul v-else class="space-y-1.5">
-              <li v-for="task in item.adhoc" :key="task.id" class="flex items-center gap-2 text-xs">
+              <li v-for="task in item.adhoc" :key="task.id" class="flex flex-wrap items-center gap-2 text-xs">
                 <span class="w-12 shrink-0 font-bold" :class="task.date === today ? 'text-orange-600 dark:text-orange-300' : 'text-slate-400'">{{ dayLabel(task.date) }}</span>
-                <span class="flex-1 truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'">{{ task.subject }} · {{ task.title }}</span><PriorityBadge :priority="task.priority" />
+                <span class="flex-1 min-w-[80px] truncate font-bold font-chinese" :class="task.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'">{{ task.subject }} · {{ task.title }}</span><PriorityBadge :priority="task.priority" />
                 <span v-if="task.due_date" class="shrink-0 text-xs font-bold text-sky-600 dark:text-sky-300">截止 {{ dayLabel(task.due_date) }}</span>
                 <span class="text-amber-500 dark:text-amber-400 font-black shrink-0">★{{ task.points }}</span>
-                <button type="button" class="w-10 h-10 -my-2 -mr-2 shrink-0 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40" :aria-label="`删除 ${task.title}`" title="删除" @click="removeAdhoc(item, task)">✕</button>
+                <button v-if="task.can_edit" type="button" class="min-h-[44px] min-w-[44px] px-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold shrink-0" :aria-label="`修改 ${task.title}`" @click="openAdhoc(item.child, task)">修改</button>
+                <button type="button" class="w-11 h-11 shrink-0 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40" :aria-label="`删除 ${task.title}`" title="删除" @click="removeAdhoc(item, task)">✕</button>
               </li>
             </ul>
           </div>
@@ -299,48 +301,7 @@
       </div>
     </main>
 
-    <!-- Add One-off Task Modal -->
-    <div v-if="adhocForm" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="adhocForm = null">
-      <form class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-4" @submit.prevent="saveAdhoc">
-        <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 font-chinese">➕ 给{{ adhocForm.child.name }}加临时任务</h3>
-        <p v-if="adhocError" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ adhocError }}</p>
-        <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">任务名称</label>
-          <input v-model="adhocForm.title" type="text" maxlength="50" required placeholder="例如：订正数学练习、准备手抄报" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 outline-none font-chinese" />
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">所属学科</label>
-          <div class="grid grid-cols-4 gap-2">
-            <button v-for="sub in ['语文', '数学', '英语', '其他']" :key="sub" type="button" class="py-2 rounded-xl text-xs font-bold border font-chinese" :class="adhocForm.subject === sub ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'" @click="adhocForm.subject = sub">{{ sub }}</button>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">哪一天</label>
-            <input v-model="adhocForm.date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
-            <div class="flex gap-1.5 mt-1.5">
-              <button type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="adhocForm.date = today">今天</button>
-              <button type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="adhocForm.date = addDays(today, 1)">明天</button>
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">奖励积分</label>
-            <input v-model.number="adhocForm.points" type="number" min="0" max="10000" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" />
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期（可不填）</label>
-          <input v-model="adhocForm.due_date" type="date" :min="adhocForm.date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
-          <p class="mt-1 text-xs font-bold text-slate-400">填了的话，截止前每天都可以做，比如周三布置、周五交的手抄报</p>
-        </div>
-        <PriorityFields v-model="adhocForm.priority" />
-        <TimingFields v-model:track-time="adhocForm.track_time" v-model:expected-minutes="adhocForm.expected_minutes" />
-        <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-          <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="adhocForm = null">取消</button>
-          <button type="submit" :disabled="adhocSaving || !adhocForm.title.trim()" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ adhocSaving ? '保存中...' : '确认添加' }}</button>
-        </div>
-      </form>
-    </div>
+    <AdhocTaskDialog v-if="adhocForm" :child="adhocForm.child" :task="adhocForm.task" @close="adhocForm = null" @saved="afterAdhocSaved" />
   </div>
 </template>
 
@@ -351,8 +312,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { formatMinutes } from '../utils/timeStats.js';
-import TimingFields from '../components/TimingFields.vue';
-import PriorityFields from '../components/PriorityFields.vue';
+import AdhocTaskDialog from '../components/AdhocTaskDialog.vue';
 import PriorityBadge from '../components/PriorityBadge.vue';
 import { taskAttention } from '../utils/taskOrdering.js';
 import { courseLabel } from '../utils/homework.js';
@@ -361,12 +321,9 @@ const calendar = useCalendarStore();
 
 const childrenStats = ref([]);
 
-// Each child's current timer ticks locally; it and the outside-class overview are reloaded now and
-// then, and on returning to the page.
+// Timers tick locally; all cards and approval queues refresh together without replacing open forms.
 const now = ref(Date.now());
 const loadTimer = id => api.getCurrentTimer(id).then(result => result.timer && withClock(result.timer)).catch(() => null);
-const loadAttention = (id, date) => Promise.all([api.getDailyTasks(id), api.getChildGoals(id)])
-  .then(([tasks, goals]) => taskAttention(tasks, goals, date)).catch(() => null);
 const loadClassOverview = id => api.getOutsideClassStats(id).then(rows => ({ count: rows.length,
   attended: rows.reduce((n, row) => n + row.attended, 0), pending: rows.reduce((n, row) => n + row.pending, 0),
   next: rows.filter(row => row.next_lesson).map(row => ({ ...row.next_lesson, title: row.title }))
@@ -375,37 +332,30 @@ const loadClassOverview = id => api.getOutsideClassStats(id).then(rows => ({ cou
 const timerSeconds = timer => Math.min(MAX_TIMER_SECONDS, liveSeconds(timer, now.value));
 const timerTone = timer => !timer.timer_running ? 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
   : timerSeconds(timer) > LONG_TIMER_SECONDS ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' : 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300';
-let liveSerial = 0;
 async function reloadLive() {
-  if (document.hidden) return;
-  const items = childrenStats.value, serial = ++liveSerial, date = today.value, zone = calendar.timeZone;
-  const live = await Promise.all(items.map(item => Promise.all([loadTimer(item.child.id), loadClassOverview(item.child.id), loadAttention(item.child.id, date)])));
-  if (serial === liveSerial && items === childrenStats.value && date === today.value && zone === calendar.timeZone && calendar.ready) {
-    items.forEach((item, index) => { [item.timer, item.classOverview, item.attention] = live[index]; });
-  }
+  if (document.hidden || pendingDate !== null) return;
+  await loadDashboard();
 }
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 const poll = setInterval(reloadLive, 60000);
 function onResume() {
   if (document.hidden) return;
   calendar.refreshToday();
-  reloadDashboardDay();
   reloadLive();
 }
 document.addEventListener('visibilitychange', onResume);
 window.addEventListener('pageshow', onResume);
 onUnmounted(() => {
-  dashboardSerial++; liveSerial++;
+  dashboardSerial++;
   clearInterval(clock); clearInterval(poll);
   document.removeEventListener('visibilitychange', onResume);
   window.removeEventListener('pageshow', onResume);
 });
 const loading = ref(true);
+const refreshing = ref(false);
 const dashboardError = ref('');
 const dashboardLoaded = ref(false);
 const adhocForm = ref(null);
-const adhocSaving = ref(false);
-const adhocError = ref('');
 const skipRequests = ref([]);
 const skipBusy = ref(false);
 const skipError = ref('');
@@ -435,32 +385,19 @@ function dayLabel(date) {
   return date.slice(5).replace('-', '/');
 }
 
-function openAdhoc(child) {
+function openAdhoc(child, task = null) {
   calendar.refreshToday();
-  adhocError.value = '';
-  adhocForm.value = { child, title: '', subject: '语文', date: today.value, due_date: '', points: 10, priority: 1, track_time: false, expected_minutes: null };
+  adhocForm.value = { child, task };
+}
+async function afterAdhocSaved() {
+  adhocForm.value = null;
+  await loadDashboard();
 }
 
 const activeGoals = goals => goals.filter(goal => goal.status === 'active');
 // When today's homework was finished: only once every task counted today is done.
 const todayFinishedAt = item => item.stats.today_total_tasks && item.stats.today_completed_tasks === item.stats.today_total_tasks
   ? item.time?.days[0].finished_at ?? null : null;
-
-async function saveAdhoc() {
-  adhocSaving.value = true;
-  adhocError.value = '';
-  try {
-    const { child, title, subject, date, due_date, points, priority, track_time, expected_minutes } = adhocForm.value;
-    await api.createAdhocTask(child.id, { title, subject, date, due_date: due_date && due_date > date ? due_date : null, points: points || 0, priority,
-      track_time, expected_minutes: track_time ? expected_minutes : null });
-    await loadDashboard();
-    adhocForm.value = null;
-  } catch (err) {
-    adhocError.value = typeof err === 'string' ? err : '添加失败，请重试';
-  } finally {
-    adhocSaving.value = false;
-  }
-}
 
 async function removeAdhoc(item, task) {
   const warning = task.is_completed ? '，孩子因此获得的积分也会扣回' : '';
@@ -531,6 +468,7 @@ async function loadDashboard() {
   if (!calendar.ready) { loading.value = false; return; }
   calendar.refreshToday();
   const date = today.value, timeZone = calendar.timeZone, serial = ++dashboardSerial;
+  refreshing.value = true;
   pendingDate = date;
   // Keep cards and open drafts visible during subsequent loads, including for an empty family.
   loading.value = loadedDate === null;
@@ -546,16 +484,15 @@ async function loadDashboard() {
     });
     const result = await Promise.all([Promise.all(statsPromises), api.getSkipRequests('pending', { limit: 200 }), api.getHomeworkRequests(), api.getHomeworkCompletionRequests()]);
     if (!current()) return;
-    liveSerial++; // A live refresh for the previous cards must not land after this batch.
     [childrenStats.value, skipRequests.value, homeworkRequests.value, completionRequests.value] = result;
     loadedDate = date;
     dashboardLoaded.value = true;
   } catch (err) {
     if (!current()) return;
     console.error('Failed to load parent dashboard:', err);
-    dashboardError.value = '暂时无法加载孩子的进展，请重新加载。';
+    dashboardError.value = dashboardLoaded.value ? '刷新失败，当前显示上次读取的数据，请重试。' : '暂时无法加载孩子的进展，请重新加载。';
   } finally {
-    if (serial === dashboardSerial) { loading.value = false; pendingDate = null; }
+    if (serial === dashboardSerial) { loading.value = false; refreshing.value = false; pendingDate = null; }
   }
 }
 watch(() => [calendar.today, calendar.ready], reloadDashboardDay);

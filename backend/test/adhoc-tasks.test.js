@@ -111,3 +111,117 @@ test('backups keep one-off tasks; v6 backups restore and incomplete v7 ones are 
   // Older backups had no one-off tasks: their rows come back as template tasks.
   assert.deepEqual(ctx.db.prepare('SELECT origin FROM daily_tasks').all().map(r => r.origin), ['template']);
 });
+
+test('editing a one-off preserves identity, learning sessions and rewards while changing pending details', async t => {
+  const { ctx, child, addAdhoc, today } = await fixture(t);
+  const created = (await addAdhoc({ title: '手抄报', track_time: true, expected_minutes: 20, due_date: shiftDate(today, 2) })).json();
+  const study = ctx.app.services.taskStudyService;
+  const session = study.start(created.id);
+  const beforeSessions = ctx.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ?').all(created.id);
+  const task = (await ctx.app.inject({ method: 'GET', url: `/api/adhoc-tasks/${created.id}` })).json();
+  const update = await ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${created.id}`, payload: {
+    title: ' 更新手抄报 ', subject: '英语', points: 25, due_date: shiftDate(today, 3), expected_minutes: 30, expected_version: task.edit_version
+  } });
+  assert.equal(update.statusCode, 200, update.body);
+  assert.deepEqual([update.json().id, update.json().title, update.json().subject, update.json().points, update.json().date], [created.id, '更新手抄报', '英语', 25, today]);
+  assert.deepEqual(ctx.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ?').all(created.id), beforeSessions);
+  assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 0);
+  const latest = update.json();
+  assert.equal(latest.due_date, shiftDate(today, 3));
+  const stale = await ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${created.id}`, payload: { title: '旧设备覆盖', expected_version: task.edit_version } });
+  assert.equal(stale.statusCode, 409);
+  assert.equal(stale.json().code, 'EDIT_CONFLICT');
+  const timing = await ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${created.id}`, payload: { track_time: false, expected_version: latest.edit_version } });
+  assert.equal(timing.statusCode, 409);
+  assert.equal(timing.json().code, undefined);
+  assert.ok(session);
+});
+
+test('one-off editing enforces parent-only access, input bounds and immutable dates', async t => {
+  const { ctx, childHeaders, addAdhoc, today } = await fixture(t);
+  const task = (await addAdhoc({ title: '原任务' })).json();
+  const current = (await ctx.app.inject({ method: 'GET', url: `/api/adhoc-tasks/${task.id}` })).json();
+  const edit = payload => ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${task.id}`, payload: { expected_version: current.edit_version, ...payload } });
+  for (const payload of [{ title: '' }, { subject: null }, { title: '字'.repeat(51) }, { points: -1 }, { points: 1.5 }, { date: shiftDate(today, 1) }, { child_id: 'other' }, { duration_seconds: 60 }, { due_date: '2026-02-30' }, { due_date: shiftDate(today, -1) }, { due_date: shiftDate(today, 400) }, { track_time: 1 }, { expected_minutes: 601 }, { priority: 3 }]) {
+    assert.equal((await edit(payload)).statusCode, 400, JSON.stringify(payload));
+  }
+  assert.equal((await ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${task.id}`, payload: { title: '没有版本' } })).statusCode, 400);
+  for (const method of ['GET', 'PUT']) assert.equal((await ctx.rawInject({ method, url: `/api/adhoc-tasks/${task.id}`, headers: childHeaders, ...(method === 'PUT' ? { payload: { expected_version: current.edit_version, title: '越权' } } : {}) })).statusCode, 403);
+  assert.equal((await ctx.app.inject({ method: 'PUT', url: '/api/adhoc-tasks/missing', payload: {} })).statusCode, 404);
+  assert.equal(ctx.app.services.tasksService.getAdhocTask(task.id).title, '原任务');
+});
+
+test('settled, expired, skipped and course-owned tasks cannot be edited as one-offs', async t => {
+  const { ctx, child, addAdhoc, today } = await fixture(t);
+  const tasks = [];
+  const done = (await addAdhoc({ title: '已完成', points: 11 })).json();
+  ctx.app.services.tasksService.completeDailyTask(done.id); tasks.push(done);
+  const skipped = (await addAdhoc({ title: '已跳过' })).json();
+  ctx.db.prepare('UPDATE daily_tasks SET skipped_at = ? WHERE id = ?').run(new Date().toISOString(), skipped.id); tasks.push(skipped);
+  tasks.push((await addAdhoc({ title: '已过期', date: shiftDate(today, -1) })).json());
+  const homework = ctx.app.services.homeworkService.create(child.id, { subject: '数学', content: '课程作业', due_date: shiftDate(today, 2), create_task: true }, 'parent');
+  tasks.push({ id: homework.task.id });
+  for (const task of tasks) {
+    const before = ctx.app.services.tasksService.getAdhocTask(task.id);
+    assert.equal(before.can_edit, false);
+    assert.equal((await ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${task.id}`, payload: { title: '覆盖历史', expected_version: before.edit_version } })).statusCode, 409);
+  }
+  assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 11);
+});
+
+test('carried one-off edits keep legacy time and valid deadlines; disabling timing retains completed sessions', async t => {
+  const { ctx, addAdhoc, today } = await fixture(t);
+  const task = (await addAdhoc({ title: '多日任务', date: shiftDate(today, -1), due_date: shiftDate(today, 1), track_time: true })).json();
+  ctx.db.prepare('UPDATE daily_tasks SET duration_seconds = 180, duration_source = ? WHERE id = ?').run('manual', task.id);
+  ctx.app.services.taskStudyService.manual(task.id, { request_id: 'retained_manual_session', duration_seconds: 120 }, 'parent');
+  const sessions = ctx.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ?').all(task.id);
+  const days = ctx.db.prepare('SELECT * FROM homework_session_days WHERE session_id = ?').all('retained_manual_session');
+  const current = ctx.app.services.tasksService.getAdhocTask(task.id);
+  const edit = payload => ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${task.id}`, payload: { expected_version: current.edit_version, ...payload } });
+  assert.equal((await edit({ due_date: null })).statusCode, 400);
+  const updated = await edit({ title: '延后交', due_date: shiftDate(today, 3), track_time: false });
+  assert.equal(updated.statusCode, 200, updated.body);
+  assert.equal(updated.json().homework_legacy_seconds, 180);
+  assert.equal(updated.json().track_time, false);
+  assert.equal(updated.json().date, shiftDate(today, -1));
+  assert.deepEqual(ctx.db.prepare('SELECT * FROM homework_sessions WHERE task_id = ?').all(task.id), sessions);
+  assert.deepEqual(ctx.db.prepare('SELECT * FROM homework_session_days WHERE session_id = ?').all('retained_manual_session'), days);
+});
+
+test('record editors reject a stale data generation before changing either kind of record', async t => {
+  const { ctx, child, addAdhoc } = await fixture(t);
+  const task = (await addAdhoc({ title: '恢复保护' })).json();
+  const before = ctx.app.services.tasksService.getAdhocTask(task.id);
+  const mistake = ctx.app.services.mistakesService.createMistake({ child_id: child.id, subject: '数学', description: '恢复前内容' });
+  for (const [url, payload] of [
+    [`/api/adhoc-tasks/${task.id}`, { title: '旧窗口覆盖', expected_version: before.edit_version }],
+    [`/api/mistakes/${mistake.id}`, { description: '旧窗口覆盖', expected_version: mistake.edit_version }]
+  ]) {
+    const response = await ctx.app.inject({ method: 'PUT', url, headers: { 'x-taskie-data-generation': 'old-restored-data' }, payload });
+    assert.equal(response.statusCode, 409, response.body);
+    assert.equal(response.json().code, 'DATA_RESTORED');
+  }
+  assert.equal(ctx.app.services.tasksService.getAdhocTask(task.id).title, '恢复保护');
+  assert.equal(ctx.app.services.mistakesService.getMistake(mistake.id).description, '恢复前内容');
+});
+
+test('editing unrelated fields keeps a one-off priority default and occurrence override; explicit changes update priority', async t => {
+  const { ctx, addAdhoc } = await fixture(t);
+  const task = (await addAdhoc({ title: '优先级来源', priority: 1 })).json();
+  const tasks = ctx.app.services.tasksService;
+  const priority = () => { const row = tasks.getAdhocTask(task.id); return [row.priority, row.default_priority, row.priority_override]; };
+  const edit = payload => ctx.app.inject({ method: 'PUT', url: `/api/adhoc-tasks/${task.id}`, payload: { expected_version: tasks.getAdhocTask(task.id).edit_version, ...payload } });
+  tasks.setDailyPriority(task.id, 2);
+  assert.equal((await edit({ title: '仅改标题' })).statusCode, 200);
+  assert.deepEqual(priority(), [2, 1, 2]);
+  assert.equal((await edit({ title: '完整表单保留高优先', priority: 2 })).statusCode, 200);
+  assert.deepEqual(priority(), [2, 1, 2]);
+  tasks.setDailyPriority(task.id, null);
+  assert.deepEqual(priority(), [1, 1, null]);
+  tasks.setDailyPriority(task.id, 2);
+  assert.equal((await edit({ priority: 0 })).statusCode, 200);
+  assert.deepEqual(priority(), [0, 0, null]);
+  tasks.setDailyPriority(task.id, 2);
+  tasks.setDailyPriority(task.id, null);
+  assert.deepEqual(priority(), [0, 0, null]);
+});
