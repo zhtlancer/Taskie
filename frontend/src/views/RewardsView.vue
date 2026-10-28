@@ -138,13 +138,14 @@
             <li
               v-for="r in redemptions"
               :key="r.id"
-              class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800"
+              class="flex flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800"
             >
               <span class="text-sm font-bold text-slate-700 dark:text-slate-200 font-chinese flex items-center gap-2 min-w-0">
                 <span>{{ r.icon_emoji }}</span>
                 <span class="truncate">{{ r.title }}</span>
-                <span class="text-amber-500 dark:text-amber-400 font-black shrink-0">-{{ r.cost }}</span>
+                <span class="font-black shrink-0" :class="r.status === 'refunded' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-500 dark:text-amber-400'">{{ r.status === 'refunded' ? '+' : '-' }}{{ r.cost }}</span>
               </span>
+              <p v-if="r.status === 'refunded'" class="w-full text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-words">已退回原扣积分 · {{ r.refund_reason }}</p>
               <span class="flex items-center gap-2 shrink-0">
                 <span class="px-2 py-0.5 rounded-lg text-xs font-black" :class="statusInfo[r.status].class">
                   {{ statusInfo[r.status].label }}
@@ -227,7 +228,8 @@ const statusInfo = {
   pending: { label: '等待确认', class: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' },
   approved: { label: '已兑换', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' },
   rejected: { label: '未通过', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300' },
-  cancelled: { label: '已撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400' }
+  cancelled: { label: '已撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400' },
+  refunded: { label: '已撤销退分', class: 'bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300' }
 };
 
 const unlockedCount = computed(() => allBadges.value.filter(b => b.is_unlocked).length);

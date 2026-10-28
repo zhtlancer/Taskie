@@ -4,6 +4,7 @@ const { getTodayDate, parseDate, shiftDate } = require('../utils/date');
 const { validateTiming } = require('../utils/timer');
 const { schoolCalendar, MAX_CARRY_DAYS } = require('./calendar');
 const { CLASS_TASK_SUBJECT, weekLabel } = require('./schedule.service');
+const { editVersion, requireEditVersion } = require('../utils/edit-version');
 
 const fail = (status, message) => ({ status, message });
 
@@ -186,7 +187,8 @@ class HomeworkService {
     // pending: a child asked for a task; open, done, skipped or missed: the task's state; none: record only.
     const taskState = task ? (task.is_completed ? 'done' : task.is_skipped ? 'skipped' : task.due_date < today ? 'missed' : 'open')
       : record.task_requested ? 'pending' : 'none';
-    return { ...record, task_requested: Boolean(record.task_requested),
+    return { ...record, edit_version: editVersion([record.content, record.assigned_date, record.due_date, record.points,
+      record.priority, record.daily_task_id, record.task_requested, task_priority_override]), task_requested: Boolean(record.task_requested),
       task, task_state: taskState, can_create_task: !task && Boolean(record.due_date) && record.due_date >= today };
   }
 
@@ -342,6 +344,7 @@ class HomeworkService {
   update(id, body, actor) {
     const record = this.get(id);
     this.requireEditable(record, actor);
+    if (body.expected_version !== undefined) requireEditVersion(body.expected_version, record.edit_version);
     if (actor !== 'parent' && Object.hasOwn(body, 'priority')) throw fail(403, '只有家长可以设置优先级');
     const priority = validatePriority(body.priority === undefined ? record.priority : body.priority);
     const today = getTodayDate();

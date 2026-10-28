@@ -22,7 +22,7 @@ function generationWrite(app, operation) {
       })());
     } catch (error) {
       return reply.code(error.statusCode || error.status || 500).send({
-        error: error.message || '操作失败', ...(['DATA_RESTORED', 'EDIT_CONFLICT'].includes(error.code) ? { code: error.code } : {})
+        error: error.message || '操作失败', ...(['DATA_RESTORED', 'EDIT_CONFLICT', 'FORM_SUBMISSION_CONFLICT', 'FORM_SUBMISSION_GONE'].includes(error.code) ? { code: error.code } : {})
       });
     }
   };

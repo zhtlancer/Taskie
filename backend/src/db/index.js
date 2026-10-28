@@ -112,7 +112,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 32;
+const SCHEMA_VERSION = 33;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -523,6 +523,18 @@ function initDb(db) {
         db.exec('ALTER TABLE daily_tasks ADD COLUMN priority_override INTEGER CHECK (priority_override IN (0, 1, 2))');
       }
       db.pragma('user_version = 32');
+    })();
+  }
+  // v33: keep the original approval timestamp when a parent refunds a redemption.
+  // Form submission receipts are a new table declared in schema.sql.
+  if (db.pragma('user_version', { simple: true }) < 33) {
+    db.transaction(() => {
+      for (const name of ['refund_reason', 'refunded_at']) {
+        if (!db.pragma('table_info(reward_redemptions)').some(c => c.name === name)) {
+          db.exec(`ALTER TABLE reward_redemptions ADD COLUMN ${name} TEXT`);
+        }
+      }
+      db.pragma('user_version = 33');
     })();
   }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.

@@ -35,6 +35,8 @@ async function redemptionsRoutes(fastify, options) {
     redemptionsService.resolveRedemption(request.params.id, 'rejected')));
   fastify.post('/redemptions/:id/cancel', handle(async request =>
     redemptionsService.resolveRedemption(request.params.id, 'cancelled')));
+  fastify.post('/redemptions/:id/refund', generationWrite(fastify, request =>
+    redemptionsService.refundRedemption(request.params.id, request.body || {})));
 }
 
 module.exports = redemptionsRoutes;

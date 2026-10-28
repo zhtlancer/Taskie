@@ -1,9 +1,11 @@
 <template>
   <!-- Record homework (or change a record): the course, when it was set, when it is due, and what it is -->
   <UiDialog :title="record ? '✏️ 修改作业记录' : '📒 记作业'" :busy="saving" wide @close="$emit('close')">
+    <FormDraftNotice :draft="draft" :busy="saving" @retry="save" />
+    <button v-if="conflict" type="button" :disabled="saving" class="min-h-[44px] mb-3 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold" @click="reloadRecord">重新读取作业</button>
     <!-- While saving, the whole form is frozen so nothing typed meanwhile is silently dropped. -->
     <form @submit.prevent="save">
-     <fieldset :disabled="saving" class="space-y-4 min-w-0">
+     <fieldset :disabled="saving || draft.available || draft.pending" class="space-y-4 min-w-0">
       <p v-if="error" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
 
       <div>
@@ -98,7 +100,7 @@
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
         <button type="button" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
-        <button type="submit" :disabled="saving || !form.content.trim() || !(record || selected)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
+        <button type="submit" :disabled="saving || conflict || !form.content.trim() || !(record || selected)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
           {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>
@@ -115,6 +117,10 @@ import PriorityFields from './PriorityFields.vue';
 import UiDialog from './UiDialog.vue';
 import { SCHOOL_SUBJECTS, WEEKDAY_NAMES, shortDate } from '../utils/schedule.js';
 import { courseLabel } from '../utils/homework.js';
+import FormDraftNotice from './FormDraftNotice.vue';
+import { useFormDraft } from '../composables/useFormDraft';
+import { restoreFormFields } from '../utils/formDrafts';
+import { getDataGeneration } from '../utils/session';
 
 const props = defineProps({
   childId: { type: String, required: true },
@@ -134,6 +140,8 @@ const selected = ref(null);
 const suggestion = ref(null);
 const saving = ref(false);
 const error = ref('');
+const baseline = ref(props.record), conflict = ref(false);
+const generation = getDataGeneration();
 // Defaults follow the course and assigned date until the user sets the field.
 const dueTouched = ref(false);
 const pointsTouched = ref(false);
@@ -180,6 +188,30 @@ function resetDue() {
 
 // The default due date, points and whether to create a task, for the course and assigned date.
 let latest = 0;
+const draft = useFormDraft({ kind: 'homework', child_id: props.childId, record_id: props.record?.id ?? null }, {
+  read: () => ({ form: { ...form }, selected: selected.value && { kind: selected.value.kind, subject: selected.value.subject,
+    class_id: selected.value.class_id, course_key: selected.value.course_key }, baseVersion: baseline.value?.edit_version }),
+  hasContent: data => Boolean(data.form.content.trim()),
+  apply: data => {
+    if (props.record && !/^[a-f0-9]{64}$/.test(data.baseVersion)) throw new Error('草稿版本信息不完整，请重新读取作业');
+    latest++; dueTouched.value = true; pointsTouched.value = true; createTouched.value = true;
+    restoreFormFields(form, data.form);
+    if (props.record) baseline.value = { ...baseline.value, edit_version: data.baseVersion };
+    else if (data.selected && ['school', 'class'].includes(data.selected.kind)) {
+      selected.value = props.courses.find(course => course.course_key === data.selected.course_key) || data.selected;
+    }
+  }, invalidated: () => emit('close')
+});
+async function reloadRecord() {
+  saving.value = true;
+  try {
+    const fresh = await api.getHomeworkRecord(props.record.id);
+    baseline.value = fresh;
+    Object.assign(form, { content: fresh.content, assigned_date: fresh.assigned_date, due_date: fresh.due_date || '', priority: fresh.priority, points: fresh.points });
+    draft.discard(); conflict.value = false; error.value = '';
+  } catch (err) { error.value = typeof err === 'string' ? err : err.message; }
+  finally { saving.value = false; }
+}
 async function refresh() {
   if (!selected.value) return;
   const request = ++latest;
@@ -198,25 +230,30 @@ async function refresh() {
 }
 
 async function save() {
+  if (saving.value || conflict.value) return;
   saving.value = true;
   error.value = '';
   try {
     let saved;
     if (props.record) {
-      saved = await api.updateHomework(props.record.id, { content: form.content, assigned_date: form.assigned_date, due_date: form.due_date || null,
-        ...(props.asParent ? { priority: form.priority, points: form.points || 0 } : {}) });
+      const attempt = draft.prepare({ content: form.content, assigned_date: form.assigned_date, due_date: form.due_date || null,
+        expected_version: baseline.value.edit_version, ...(props.asParent ? { priority: form.priority, points: form.points || 0 } : {}) });
+      saved = await api.updateHomework(props.record.id, attempt.body, generation);
     } else {
       const { kind, subject, class_id } = selected.value;
       const createTask = form.create_task && canCreateTask.value;
-      saved = await api.createHomework(props.childId, {
+      const attempt = draft.prepare({
         course_kind: kind, subject: kind === 'school' ? subject : undefined, class_id: class_id ?? undefined,
         content: form.content, assigned_date: form.assigned_date, due_date: form.due_date || null, create_task: createTask,
         ...(props.asParent ? { priority: form.priority, points: form.points || 0, ...(createTask ? { track_time: form.track_time, expected_minutes: form.track_time ? form.expected_minutes : null } : {}) } : {})
       });
+      saved = await api.createHomework(props.childId, { ...attempt.body, request_id: attempt.request_id });
     }
-    emit('saved', saved);
+    draft.complete(); emit('saved', saved);
   } catch (err) {
-    error.value = typeof err === 'string' ? err : '保存失败，请重试';
+    draft.failed(err);
+    conflict.value = ['EDIT_CONFLICT', 'DATA_RESTORED'].includes(err.code);
+    error.value = typeof err === 'string' ? err : err.message || '保存失败，请重试';
   } finally {
     saving.value = false;
   }

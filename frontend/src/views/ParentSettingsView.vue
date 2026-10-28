@@ -116,6 +116,11 @@
         </div>
       </section>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
+        <h3 class="text-lg font-bold">本机表单草稿</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-300">草稿只保存在当前浏览器，最多保留 100 份、7 天。清理前请先核对尚未确认的保存操作；已保存到服务器的记录和其他设备的草稿不受影响。</p>
+        <button type="button" :disabled="busy" class="min-h-[44px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold disabled:opacity-40" @click="clearFormDrafts">清除本机全部草稿</button>
+      </section>
+      <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">修改家长 PIN</h3>
         <form @submit.prevent="changePin" class="flex flex-wrap gap-3 items-end">
           <label>当前 PIN<input v-model="oldPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" required autocomplete="current-password" class="block border rounded-xl p-3 mt-2" /></label>
@@ -136,12 +141,17 @@ import { clearTokens, endSession } from '../utils/session.js';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.js';
 import { businessDate } from '../utils/businessDate.js';
+import { localFormDrafts } from '../utils/formDrafts.js';
 const calendar = useCalendarStore();
 const router = useRouter();
 const info = ref({ backups: [], interval_hours: 0, retention: 7 });
 const busy = ref(false), message = ref(''), file = ref(null), restorePin = ref(''), confirmed = ref(false), oldPin = ref(''), newPin = ref('');
 const failed = ref(false), uploading = ref(false), uploadPercent = ref(null);
 const backupSize = size => size < 1048576 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1048576).toFixed(1)} MiB`;
+async function clearFormDrafts() {
+  if (!await confirmAction('确定清除当前浏览器中所有角色和孩子的草稿吗？尚未确认的操作可能已保存，请先核对记录。')) return;
+  return run(async () => { localFormDrafts.clearAll(); message.value = '本机草稿已清除，已保存记录保持不变。'; });
+}
 // Remove the old device-clock marker; export history now belongs to the server.
 localStorage.removeItem('taskie_photo_export_at');
 const skippedPhotos = ref([]), includedPhotos = ref(0);

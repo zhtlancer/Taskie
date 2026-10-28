@@ -1,4 +1,5 @@
 const { generationWrite } = require('../utils/data-generation');
+const { formSubmission } = require('../utils/form-submission');
 
 async function adhocTasksRoutes(fastify, options) {
   const { tasksService } = options;
@@ -11,8 +12,14 @@ async function adhocTasksRoutes(fastify, options) {
   };
 
   fastify.get('/children/:id/adhoc-tasks', handle(async request => tasksService.listAdhocTasks(request.params.id, request.query.from)));
-  fastify.post('/children/:id/adhoc-tasks', handle(async (request, reply) =>
-    reply.code(201).send(tasksService.createAdhocTask(request.params.id, request.body || {}))));
+  fastify.post('/children/:id/adhoc-tasks', generationWrite(fastify, (request, reply) => {
+    reply.code(201);
+    return formSubmission(fastify.db, request, 'adhoc', request.params.id,
+      body => tasksService.createAdhocTask(request.params.id, body), id => {
+        const row = fastify.db.prepare("SELECT id FROM daily_tasks WHERE id = ? AND origin = 'adhoc'").get(id);
+        return row ? tasksService.getAdhocTask(id) : null;
+      });
+  }));
   fastify.get('/adhoc-tasks/:id', handle(async request => tasksService.getAdhocTask(request.params.id)));
   fastify.put('/adhoc-tasks/:id', generationWrite(fastify, request =>
     tasksService.updateAdhocTask(request.params.id, request.body)));

@@ -75,10 +75,18 @@
             <h3 class="text-base font-black text-slate-800 dark:text-slate-100 mb-3">📜 兑换记录</h3>
             <p v-if="history.length === 0" class="text-xs font-bold text-slate-400 py-4 text-center">还没有兑换记录</p>
             <ul v-else class="space-y-2">
-              <li v-for="r in history" :key="r.id" class="flex items-center justify-between gap-2 text-xs">
+              <li v-for="r in history" :key="r.id" class="space-y-2 border-b border-slate-100 dark:border-slate-700 py-2 text-xs" data-redemption-record>
+                <div class="flex flex-wrap items-center justify-between gap-2">
                 <span class="font-bold text-slate-700 dark:text-slate-200 font-chinese truncate">
                   {{ r.child_avatar_emoji }} {{ r.child_name }} · {{ r.icon_emoji }} {{ r.title }}
                 </span>
+                </div>
+                <p class="text-slate-500 dark:text-slate-400">原兑换 {{ r.cost }} 分 · {{ ['approved', 'refunded'].includes(r.status) ? '确认' : '处理' }}于 {{ formatTime(r.resolved_at) }}</p>
+                <template v-if="r.status === 'refunded'">
+                  <p class="font-bold text-emerald-700 dark:text-emerald-300">已退回 {{ r.cost }} 分 · {{ formatTime(r.refunded_at) }}</p>
+                  <p class="whitespace-pre-wrap break-words text-slate-600 dark:text-slate-300">撤销原因：{{ r.refund_reason }}</p>
+                </template>
+                <button v-else-if="r.status === 'approved'" type="button" class="min-h-[44px] px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 font-bold" @click="refundTarget = r">撤销兑换并退分</button>
                 <span class="px-2 py-0.5 rounded-lg font-black shrink-0" :class="statusInfo[r.status].class">
                   {{ statusInfo[r.status].label }}
                 </span>
@@ -152,6 +160,7 @@
       </div>
     </main>
 
+    <RefundRedemptionDialog v-if="refundTarget" :redemption="refundTarget" @close="refundTarget = null" @saved="afterRefund" />
     <!-- Add/Edit Reward Modal -->
     <div
       v-if="showModal"
@@ -240,6 +249,12 @@ import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import { getPendingRedemptions } from '../api/redemptions';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import RefundRedemptionDialog from '../components/RefundRedemptionDialog.vue';
+import { useCalendarStore } from '../stores/calendar';
+const calendar = useCalendarStore();
+const formatTime = time => time ? new Date(time).toLocaleString('zh-CN', { timeZone: calendar.timeZone, hour12: false }) : '未知';
+const refundTarget = ref(null);
+async function afterRefund() { refundTarget.value = null; await load(); }
 
 const items = ref([]);
 const pending = ref([]);
@@ -262,7 +277,8 @@ const statusInfo = {
   pending: { label: '待确认', class: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' },
   approved: { label: '已兑换', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' },
   rejected: { label: '已拒绝', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300' },
-  cancelled: { label: '孩子撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400' }
+  cancelled: { label: '孩子撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400' },
+  refunded: { label: '已撤销退分', class: 'bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300' }
 };
 
 onMounted(load);

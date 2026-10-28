@@ -1,6 +1,6 @@
 const { generateId } = require('../utils/crypto');
 
-const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'];
+const STATUSES = ['pending', 'approved', 'rejected', 'cancelled', 'refunded'];
 
 function validateItemFields({ title, icon_emoji, cost }, { partial = false } = {}) {
   if (!partial || title !== undefined) {
@@ -133,6 +133,24 @@ class RedemptionsService {
     if (redemption.status !== 'pending') throw { status: 409, message: '该兑换申请已处理' };
     this.db.prepare('UPDATE reward_redemptions SET status = ?, resolved_at = ? WHERE id = ? AND status = ?')
       .run(status, new Date().toISOString(), id, 'pending');
+    return this.getRedemption(id);
+  }
+
+  refundRedemption(id, { reason } = {}) {
+    if (typeof reason !== 'string' || !reason.trim() || reason.trim().length > 200) {
+      throw { status: 400, message: '请填写撤销原因，最多 200 字' };
+    }
+    const redemption = this.getRedemption(id);
+    if (!redemption) throw { status: 404, message: '兑换记录不存在' };
+    if (redemption.status === 'refunded') {
+      if (redemption.refund_reason !== reason.trim()) throw { status: 409, message: '该兑换已被撤销，请核对已有撤销原因' };
+      return redemption;
+    }
+    if (redemption.status !== 'approved') throw { status: 409, message: '只能撤销已经确认的兑换' };
+    // Spendable points exclude only pending/approved rows. No positive point log is added:
+    // changing this single row refunds its original cost exactly once and keeps earned totals intact.
+    this.db.prepare(`UPDATE reward_redemptions SET status = 'refunded', refund_reason = ?, refunded_at = ?
+      WHERE id = ? AND status = 'approved'`).run(reason.trim(), new Date().toISOString(), id);
     return this.getRedemption(id);
   }
 }

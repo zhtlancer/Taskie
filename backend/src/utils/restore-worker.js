@@ -108,6 +108,11 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
       !['id', 'task_id', 'request_fingerprint', 'created_at'].every(name => hasColumn('study_completion_requests', name)))) throw fail('备份缺少任务完成请求凭据，无法恢复');
     if (schemaVersion >= 32 && (!['task_templates', 'daily_tasks', 'homework_records', 'period_tasks'].every(table => hasColumn(table, 'priority')) ||
       !hasColumn('daily_tasks', 'priority_override'))) throw fail('备份缺少任务优先级数据，无法恢复');
+    if (schemaVersion >= 33 && (!['refund_reason', 'refunded_at'].every(name => hasColumn('reward_redemptions', name)) ||
+      !tables.includes('form_submission_receipts') ||
+      !['id', 'kind', 'child_id', 'actor', 'fingerprint', 'record_id', 'created_at'].every(name => hasColumn('form_submission_receipts', name)))) {
+      throw fail('备份缺少兑换撤销记录或表单提交凭据，无法恢复');
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     // initDb also backfills missing attendance/fee revisions on current-schema backups,
     // before the candidate is serialized and copied into the live database.

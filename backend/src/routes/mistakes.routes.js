@@ -5,6 +5,8 @@ const { isImageExtensionSupported, processOrFallbackPhoto } = require('../utils/
 const config = require('../config');
 const { queuedDeletion } = require('../utils/queued-deletion');
 const { generationWrite } = require('../utils/data-generation');
+const { formSubmission } = require('../utils/form-submission');
+const { createHash } = require('node:crypto');
 
 async function mistakesRoutes(fastify, options) {
   const { mistakesService } = options;
@@ -29,10 +31,21 @@ async function mistakesRoutes(fastify, options) {
   });
 
   fastify.post('/', async (request, reply) => {
+    if (!request.isMultipart()) {
+      return generationWrite(fastify, (r, response) => {
+        const body = r.body || {};
+        if (body.photo_path) throw { status: 400, message: '请通过文件上传照片' };
+        fastify.requireChildAccess(r, body.child_id);
+        response.code(201);
+        return formSubmission(fastify.db, r, 'mistake', body.child_id,
+          data => mistakesService.createMistake(data), id => mistakesService.getMistake(id));
+      })(request, reply);
+    }
     let child_id;
     let subject;
     let description;
     let photo_path = null;
+    let requestId, photoFingerprint;
     const writtenFiles = [];
     let committed = false;
 
@@ -72,6 +85,7 @@ async function mistakesRoutes(fastify, options) {
 
             // Process image with Sharp pipeline (auto EXIF orientation, contrast stretch, sharpen, max 1600px, WebP compression)
             const processedResult = await processOrFallbackPhoto(fileBuffer, ext, imageOptions);
+            photoFingerprint = createHash('sha256').update(processedResult.buffer).digest('hex');
 
             const filename = `${generateId()}${processedResult.ext}`;
             const savePath = path.join(uploadDir, filename);
@@ -82,6 +96,7 @@ async function mistakesRoutes(fastify, options) {
             if (part.fieldname === 'child_id') child_id = part.value;
             else if (part.fieldname === 'subject') subject = part.value;
             else if (part.fieldname === 'description') description = part.value;
+            else if (part.fieldname === 'request_id') requestId = part.value;
             else if (part.fieldname === 'photo_path') throw Object.assign(new Error('请通过文件上传照片'), { status: 400 });
           }
         }
@@ -95,14 +110,15 @@ async function mistakesRoutes(fastify, options) {
 
       if (request.user.epoch !== fastify.sessionEpoch()) throw Object.assign(new Error('数据已恢复，请重新登录'), { statusCode: 401 });
       if (request.user.role === 'child') fastify.requireChildAccess(request, child_id);
-      const created = mistakesService.createMistake({
-        child_id,
-        subject,
-        description,
-        photo_path
-      });
-      committed = true;
-      return reply.code(201).send(created);
+      request.body = { child_id, subject, description, request_id: requestId, photo_fingerprint: photoFingerprint };
+      const result = await generationWrite(fastify, (r, response) => {
+        fastify.requireChildAccess(r, child_id);
+        response.code(201);
+        return formSubmission(fastify.db, r, 'mistake-photo', child_id,
+          () => mistakesService.createMistake({ child_id, subject, description, photo_path }), id => mistakesService.getMistake(id));
+      })(request, reply);
+      committed = Boolean(photo_path && result?.photo_path === photo_path);
+      return result;
     } catch (err) {
       return reply.code(err.statusCode || err.status || 500).send({ error: err.message || 'Internal server error' });
     } finally {

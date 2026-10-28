@@ -381,6 +381,7 @@ npm test
 | `GET/POST /api/reward-items`，`PUT/DELETE /api/reward-items/:id` | 奖励列表与管理 |
 | `GET/POST /api/children/:id/redemptions` | 孩子的兑换记录、申请兑换（积分先冻结） |
 | `GET /api/redemptions?status=pending`，`POST /api/redemptions/:id/{approve,reject,cancel}` | 待确认列表、确认、拒绝、撤回 |
+| `POST /api/redemptions/:id/refund` | 仅家长，`{ "reason": "活动取消" }` 撤销已确认兑换，按原金额退回积分；相同原因重复请求返回原结果，不重复退分；不同原因或未确认兑换返回 409 |
 | `GET/POST /api/children/:id/adhoc-tasks`，`DELETE /api/adhoc-tasks/:id` | 临时任务（某一天的一次性任务） |
 | `GET/PUT /api/adhoc-tasks/:id` | 仅家长读取编辑详情或原地修改独立临时任务；PUT 需 `expected_version`，版本冲突返回 409 和 `EDIT_CONFLICT`，其他业务 409 可调整内容后重试；支持名称、学科、积分、截止日、优先级及用时设置。已完成、跳过、过期或仍属于课程作业的任务拒绝修改，布置日期和学习记录保留 |
 | `GET/POST /api/children/:id/goals` | 长期任务列表（含假期任务）、新建独立长期任务 |
@@ -389,6 +390,10 @@ npm test
 | `PUT/DELETE /api/period-tasks/:id` | 修改、删除长期任务或假期任务 |
 | `POST /api/period-tasks/:id/logs` | 记录进度：`{ "amount": 5 }` 或按位置 `{ "position": 57 }`，家长可加 `date` 补记 |
 | `DELETE /api/period-task-logs/:id` | 撤销一条进度记录并扣回积分 |
+
+v33 在兑换记录中增加 `refund_reason` 和 `refunded_at`，撤销状态为 `refunded`，原 `resolved_at` 保留。可用积分仍按累计获得积分减去待确认及已确认兑换计算；退分不写入新的获得积分记录。备份包含撤销信息，并验证当前版本字段完整性。
+
+新增作业、临时任务、JSON／照片错题可选提交 `request_id`（8～100 位字母、数字、下划线或连字符）。`form_submission_receipts` 在同一事务中保存提交类型、孩子、角色、内容指纹和记录 ID；相同内容重试返回原记录，内容改变返回 `FORM_SUBMISSION_CONFLICT`，记录已删除返回 `FORM_SUBMISSION_GONE`（均为 409）。凭据随备份恢复，恢复前窗口受数据代际校验限制。已有客户端不带凭据时保持兼容。作业修改可带详情返回的 `edit_version` 作为 `expected_version`，拒绝旧草稿覆盖新内容。
 
 ---
 

@@ -51,7 +51,7 @@ function installAuthorization(app, db) {
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||
       /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/reward-items') && request.method !== 'GET' ||
-      /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject)\/?$/.test(url) ||
+      /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject|refund)\/?$/.test(url) ||
       /^\/api\/children\/[^/]+\/(?:periods|goals)\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/periods/') || /^\/api\/period-tasks\/[^/]+\/?$/.test(url) ||
       /^\/api\/children\/[^/]+\/adhoc-tasks\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/adhoc-tasks/') ||

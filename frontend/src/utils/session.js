@@ -1,6 +1,7 @@
 import { pendingWriteStore } from './requestId.js';
 
 const key = role => `taskie_${role}_token`;
+const sessionChanged = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('taskie:session-changed')); };
 function tokenPayload(token) {
   try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
   catch { return null; }
@@ -24,13 +25,16 @@ export function saveToken(role, token, generation) {
   clearTokens();
   sessionStorage.setItem(key(role), token);
   if (generation) saveDataGeneration(generation, token);
+  sessionChanged();
 }
 export function clearTokens() {
   for (const role of ['parent', 'child']) sessionStorage.removeItem(key(role));
   sessionStorage.removeItem('parent_auth');
   clearDataGeneration();
+  sessionChanged();
 }
-// Only deliberate logout/account switch and successful data restore discard bodies.
+// Only deliberate logout/account switch and successful restore discard uncertain-operation bodies.
+// Unsubmitted form drafts have their own role/child/epoch scope and bounded lifetime.
 export function endSession() {
   clearTokens();
   pendingWriteStore.clear();

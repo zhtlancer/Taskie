@@ -42,7 +42,7 @@ client.interceptors.response.use(response => response, error => {
     : error.response.data?.error || error.response.data?.message || '操作失败，请重试';
   const code = error.response?.data?.code;
   const silentError = typeof error.config?.silentError === 'function' ? error.config.silentError(error) : error.config?.silentError;
-  if (!silentError && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
+  if ((!silentError || (error.response?.status === 401 && !login)) && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   if (error.config?.preserveNetworkError && !error.response) return Promise.reject(Object.assign(new Error(message), { networkFailure: true }));
   return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status, code }) : message);
 });
@@ -51,6 +51,8 @@ const request = async (method, url, data, params, signal, options = {}) =>
 const get = (url, params, signal, options) => request('get', url, undefined, params, signal, options);
 const post = (url, data, options) => request('post', url, data, undefined, undefined, options);
 const generationHeaders = generation => generation ? { 'X-Taskie-Data-Generation': generation } : {};
+const formOptions = generation => ({ headers: generationHeaders(generation), preserveError: true, silentError: true,
+  networkErrorMessage: '连接中断，保存结果尚未确认，请在当前表单按原内容重试。' });
 // Non-persisted practice/manual forms keep the same object for an uncertain attempt.
 const requestGenerations = new WeakMap();
 const invalidAttempts = new WeakSet();
@@ -156,16 +158,17 @@ export const api = {
   getPointLogs: id => get(`/children/${id}/point-logs`),
   getMistakes: (id, subject) => get('/mistakes', { child_id: id, subject: subject === '全部' ? undefined : subject }),
   getMistake: id => get(`/mistakes/${id}`),
-  updateMistake: (id, data, generation) => put(`/mistakes/${id}`, data, { headers: generationHeaders(generation), preserveError: true, silentError: true }),
+  updateMistake: (id, data, generation) => put(`/mistakes/${id}`, data, formOptions(generation)),
   createMistake(data) {
     let payload = data;
     if (!(data instanceof FormData) && (data.photo_file || data.photoFile)) {
       payload = new FormData();
       for (const field of ['child_id', 'subject', 'description']) payload.append(field, data[field]);
+      if (data.request_id) payload.append('request_id', data.request_id);
       const file = data.photo_file || data.photoFile;
       payload.append('file', file, file.name || 'mistake.webp');
     }
-    return post('/mistakes', payload);
+    return post('/mistakes', payload, formOptions(getDataGeneration()));
   },
   markMistakeMastered: (id, mastered = true) => put(`/mistakes/${id}/master`, { is_mastered: mastered }),
   deleteMistake: id => remove(`/mistakes/${id}`),
@@ -199,10 +202,11 @@ export const api = {
   approveRedemption: id => post(`/redemptions/${id}/approve`),
   rejectRedemption: id => post(`/redemptions/${id}/reject`),
   cancelRedemption: id => post(`/redemptions/${id}/cancel`),
+  refundRedemption: (id, data, generation) => post(`/redemptions/${id}/refund`, data, formOptions(generation)),
   getAdhocTasks: id => get(`/children/${id}/adhoc-tasks`),
   getAdhocTask: id => get(`/adhoc-tasks/${id}`),
-  updateAdhocTask: (id, data, generation) => put(`/adhoc-tasks/${id}`, data, { headers: generationHeaders(generation), preserveError: true, silentError: true }),
-  createAdhocTask: (childId, data) => post(`/children/${childId}/adhoc-tasks`, data),
+  updateAdhocTask: (id, data, generation) => put(`/adhoc-tasks/${id}`, data, formOptions(generation)),
+  createAdhocTask: (childId, data) => post(`/children/${childId}/adhoc-tasks`, data, formOptions(getDataGeneration())),
   deleteAdhocTask: id => remove(`/adhoc-tasks/${id}`),
   getHomeworkStudy: id => get(`/homework/${id}/study`),
   correctHomeworkLegacy: (id, data) => put(`/homework/${id}/study/legacy`, data),
@@ -219,8 +223,8 @@ export const api = {
   getHomeworkCourses: childId => get(`/children/${childId}/homework/courses`),
   getHomeworkSummary: (childId, params = {}) => get(`/children/${childId}/homework/summary`, params),
   suggestHomework: (childId, params) => get(`/children/${childId}/homework/suggest`, params),
-  createHomework: (childId, data) => post(`/children/${childId}/homework`, data),
-  updateHomework: (id, data) => put(`/homework/${id}`, data),
+  createHomework: (childId, data) => post(`/children/${childId}/homework`, data, formOptions(getDataGeneration())),
+  updateHomework: (id, data, generation) => put(`/homework/${id}`, data, formOptions(generation ?? getDataGeneration())),
   deleteHomework: (id, deleteTask = false) => remove(`/homework/${id}${deleteTask ? '?delete_task=1' : ''}`),
   createHomeworkTask: (id, data = {}) => post(`/homework/${id}/task`, data),
   rejectHomeworkTask: id => post(`/homework/${id}/reject-task`),

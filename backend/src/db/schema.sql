@@ -167,6 +167,18 @@ CREATE TABLE IF NOT EXISTS reward_redemptions (
 
 CREATE INDEX IF NOT EXISTS idx_reward_redemptions_child ON reward_redemptions(child_id, status);
 
+-- Keep creation receipts even after the record is deleted, so an old offline retry cannot recreate it.
+CREATE TABLE IF NOT EXISTS form_submission_receipts (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  child_id TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
 -- Holiday and vacation periods, set per child
 CREATE TABLE IF NOT EXISTS periods (
   id TEXT PRIMARY KEY,

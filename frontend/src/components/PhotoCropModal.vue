@@ -1,6 +1,6 @@
 <template>
   <UiDialog :title="step === 'select' ? '拍照或选择错题图片' : step === 'crop' ? '裁剪与旋转' : '增强图片与完善错题'" workspace :busy="saving || filterProcessing" @close="handleClose">
-    <template #subtitle>{{ step === 'select' ? '拍照、选择图片，或拖入图片开始录入' : step === 'crop' ? '拖动裁剪框及边角调整范围，支持旋转' : '选择图片效果，填写学科与错因后保存' }}</template>
+    <template #subtitle>{{ step === 'select' ? '拍照、选择图片，或拖入图片开始录入' : step === 'crop' ? '拖动裁剪框及边角调整范围，支持旋转' : '选择图片效果，填写学科与错因后保存' }}<span v-if="draft.available"> · 有文字草稿，选择图片后可恢复</span></template>
       <!-- Hidden standard file inputs -->
       <input
         ref="cameraInputRef"
@@ -361,6 +361,7 @@
 
         <!-- Right: Form Fields (Subject, Description & Save) (45% width) -->
         <div class="w-full lg:w-5/12 p-4 lg:p-6 flex flex-col justify-between gap-4">
+          <FormDraftNotice :draft="draft" :busy="saving || filterProcessing" />
           <div class="space-y-5">
             <!-- Subject Selection (≥ 48px touch buttons) -->
             <div>
@@ -372,7 +373,7 @@
                   v-for="sub in ['语文', '数学', '英语', '其他']"
                   :key="sub"
                   type="button"
-                  :disabled="saving"
+                  :disabled="saving || draft.available"
                   @click="formSubject = sub"
                   class="h-12 rounded-xl text-xs font-black border transition-all active:scale-95 flex items-center justify-center"
                   :class="[
@@ -394,7 +395,7 @@
               <textarea
                 id="crop-description"
                 v-model="formDescription"
-                :disabled="saving"
+                :disabled="saving || draft.available"
                 rows="6"
                 placeholder="记录题目重点、为什么做错、或正解要点（例如：看错审题条件、计算混合运算顺序有误...）"
                 class="w-full rounded-2xl border border-slate-200 dark:border-slate-700 p-3.5 text-sm font-chinese text-slate-700 dark:text-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none resize-none bg-white dark:bg-slate-900 shadow-sm"
@@ -425,7 +426,7 @@
 
             <button
               type="button"
-              :disabled="saving || filterProcessing || !formDescription.trim() || !compressionResult"
+              :disabled="saving || filterProcessing || draft.available || !formDescription.trim() || !compressionResult"
               @click="saveMistakeRecord"
               class="h-12 flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black text-sm shadow-button disabled:opacity-50 active:scale-95 transition-all flex items-center justify-center gap-2"
             >
@@ -449,6 +450,9 @@ import {
 } from '../utils/imageProcess';
 import api from '../api/client';
 import { playCameraShutter, playClick } from '../utils/sound';
+import FormDraftNotice from './FormDraftNotice.vue';
+import { useFormDraft } from '../composables/useFormDraft';
+import { newRequestId } from '../utils/requestId';
 
 const props = defineProps({
   childId: {
@@ -516,6 +520,15 @@ const compressionResult = ref(null);
 const formSubject = ref('数学');
 const formDescription = ref('');
 const saving = ref(false), saveError = ref('');
+const draft = useFormDraft({ kind: 'photo-mistake', child_id: props.childId }, {
+  read: () => ({ form: { subject: formSubject.value, description: formDescription.value } }),
+  hasContent: data => Boolean(data.form.description.trim()),
+  apply: data => {
+    if (typeof data.form?.subject === 'string') formSubject.value = data.form.subject;
+    if (typeof data.form?.description === 'string') formDescription.value = data.form.description;
+  }, invalidated: () => emit('close')
+});
+let photoAttemptId;
 
 let workspaceResize;
 watch(cropContainerRef, element => {
@@ -805,14 +818,15 @@ async function saveMistakeRecord() {
       subject: formSubject.value,
       description: formDescription.value.trim(),
       photo_file: file,
-      photo_data_url: dataUrl
+      photo_data_url: dataUrl,
+      request_id: photoAttemptId ||= newRequestId()
     });
 
-    playCameraShutter();
+    draft.complete(); playCameraShutter();
     emit('saved', newMistake);
   } catch (err) {
     console.error('Failed to save mistake:', err);
-    saveError.value = '保存错题失败，请重试';
+    saveError.value = typeof err === 'string' ? err : err.message || '保存错题失败，请重试';
   } finally {
     saving.value = false;
   }

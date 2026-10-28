@@ -129,6 +129,7 @@
         <div
           v-for="item in childrenStats"
           :key="item.child.id"
+          :data-child-summary="item.child.id"
           class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card hover:shadow-card-hover transition-all"
         >
           <!-- Top Row: Avatar, Name, Link -->
