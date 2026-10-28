@@ -209,7 +209,9 @@ async function main() {
   assert.ok(Math.abs(preview.width - expectedImage.width) <= 2 && Math.abs(preview.height - expectedImage.height) <= 2, 'the preview uses the selected natural image coordinates after resize');
   await failOnce(page, '**/api/mistakes', () => modal.getByRole('button', { name: /确认保存至错题本/ }).click(), modal,
     async () => assert.equal(await modal.getByRole('textbox').inputValue(), '裁剪保存失败后保留的说明'));
-  await heldSave(page, '**/api/mistakes', () => modal.getByRole('button', { name: /确认保存至错题本/ }).click(), modal);
+  // A 5xx leaves the result unconfirmed, so only the original upload may be retried.
+  assert.equal(await modal.getByRole('button', { name: /确认保存至错题本/ }).isDisabled(), true);
+  await heldSave(page, '**/api/mistakes', () => modal.getByRole('button', { name: '按原内容重试', exact: true }).click(), modal);
   const records = await api('GET', `/mistakes?child_id=${child.id}`);
   assert.equal(records.length, 1); assert.ok(records[0].photo_path);
   const savedSize = await page.evaluate(async ([url, token]) => { const response = await fetch(url, { headers: { authorization: `Bearer ${token}` } }); if (!response.ok) throw new Error(`Photo HTTP ${response.status}`); const bitmap = await createImageBitmap(await response.blob()); const result = { width: bitmap.width, height: bitmap.height }; bitmap.close(); return result; }, [`${base}${records[0].photo_path}`, token]);

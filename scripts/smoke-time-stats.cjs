@@ -267,6 +267,7 @@ async function main() {
       await report.emulateMedia({ media: 'print' });
       assert.equal(await report.locator('.time-stats-report').isVisible(), true);
       assert.equal(await byDay.isVisible(), false);
+      assert.equal(await report.locator('.time-stats-print-unavailable').count(), 0);
       const printed = await report.locator('.time-stats-report').innerText();
       assert.ok(printed.includes(`${child.name} · 用时统计`) && printed.includes(`${shiftDate(today, -2)} 至 ${today}`) && printed.includes('家庭时区：Asia/Shanghai'));
       assert.ok(printed.includes('系统补估') && printed.includes('未能估算') && printed.includes('不等同于全部实测'));
@@ -290,6 +291,12 @@ async function main() {
       assert.equal(await byDay.isDisabled(), true);
       assert.equal(await byTask.isDisabled(), true);
       assert.equal(await report.locator('.time-stats-report').count(), 0, 'failed requests cannot print previous results');
+      const unavailable = report.locator('.time-stats-print-unavailable');
+      assert.equal(await unavailable.isVisible(), false);
+      await report.emulateMedia({ media: 'print' });
+      assert.equal(await unavailable.isVisible(), true, 'printing from the browser menu explains why no report is available');
+      assert.ok((await unavailable.innerText()).includes('更新统计后再打印'));
+      await report.emulateMedia({ media: 'screen' });
       failRead = false;
       await report.getByRole('button', { name: '重新读取', exact: true }).click();
       await download(byDay, '-按日.csv');

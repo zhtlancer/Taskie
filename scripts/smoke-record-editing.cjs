@@ -74,6 +74,9 @@ async function main() {
       await dialog.getByRole('checkbox').check();
       pass(`${width}/${theme}: business rejection keeps draft editable and allows adjusting timing before retry`);
       await snapshot(page, `adhoc-${width}-${theme}`);
+      // A load still in flight could read stats before these writes and queues after them, and it
+      // would make the next poll skip. Start from an idle dashboard so one refresh sees every write.
+      await page.locator('button').filter({ hasText: /^刷新总览$/ }).waitFor();
       tasks.completeDailyTask(done.id);
       app.services.skipsService.requestSkip(skip.id, '另一设备的申请', { role: 'child' });
       homework.create(child.id, { subject: '语文', content: '另一设备记下的作业', due_date: shiftDate(today, 2), create_task: true }, 'child');
@@ -82,9 +85,11 @@ async function main() {
       db.prepare('UPDATE daily_tasks SET date = ?, due_date = ? WHERE id = ?').run(shiftDate(today, -1), shiftDate(today, -1), late.task.id);
       app.services.homeworkStudyService.complete(late.id, 'child');
       await page.clock.fastForward(61000);
-      await page.getByText('理由：另一设备的申请', { exact: true }).last().waitFor();
-      await page.getByText('另一设备记下的作业', { exact: true }).last().waitFor();
-      await page.getByText('全部完成申请', { exact: false }).waitFor();
+      // The approval queues list every child, and earlier viewports left identical requests there.
+      // Only this child's entries prove that the polled refresh has arrived.
+      await page.locator('li').filter({ hasText: child.name }).filter({ hasText: '理由：另一设备的申请' }).waitFor();
+      await page.locator('li').filter({ hasText: child.name }).filter({ hasText: '另一设备记下的作业' }).waitFor();
+      await page.locator('span').filter({ hasText: `${child.name} · ` }).filter({ hasText: '另一设备的超期完成' }).waitFor();
       assert.equal(await dialog.getByLabel('任务名称').inputValue(), '刷新期间保留的输入');
       const card = page.locator('div.grid > div').filter({ has: page.getByRole('heading', { name: child.name, exact: true }) }).first();
       assert.match(await card.innerText(), /今日积分\s*\+7/);

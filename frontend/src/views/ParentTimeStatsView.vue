@@ -227,6 +227,8 @@
       </template>
       </div>
       <TimeStatsReport v-if="canExport" :stats="stats" :child-name="selectedChild.name" :time-zone="calendar.timeZone || 'UTC'" />
+      <!-- Printing from the browser menu while no report is ready would otherwise give a blank page. -->
+      <p v-else class="time-stats-print-unavailable">统计报告尚未就绪：日期未应用、正在加载或读取失败。请在页面上更新统计后再打印。</p>
     </main>
   </div>
 </template>
@@ -415,9 +417,11 @@ onUnmounted(() => {
 .stats-date-input { min-width: 0; max-width: 100%; appearance: none; }
 .stats-date-input::-webkit-date-and-time-value { text-align: left; }
 .stats-date-input::-webkit-datetime-edit { min-width: 0; padding: 0; }
+.time-stats-print-unavailable { display: none; }
 @media print {
   .time-stats-page > :deep(header) { display: none !important; }
   .time-stats-screen { display: none !important; }
+  .time-stats-print-unavailable { display: block; color: #000; font: 12pt/1.5 system-ui, sans-serif; }
   .time-stats-page { page: taskie-time-stats; }
   .time-stats-page, .time-stats-main { display: block; min-height: 0; margin: 0; padding: 0; max-width: none; background: white !important; }
 }
