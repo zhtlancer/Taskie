@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
+const { reportBrowserFailure } = require('./browser-diagnostics.cjs');
 const RealDate = Date;
 const midnight = RealDate.parse('2026-10-22T15:59:30Z');
 let now = midnight;
@@ -51,7 +52,10 @@ async function open(role, width = 390, theme = 'dark') {
 async function check(name, fn) {
   if (process.env.REGRESSION_FILTER && !process.env.REGRESSION_FILTER.split(',').some(part => name.includes(part))) return;
   try { await fn(); results.push({ name, passed: true }); console.log('PASS', name); }
-  catch (err) { results.push({ name, passed: false, error: err.message }); console.error('FAIL', name, err.message); }
+  catch (err) {
+    results.push({ name, passed: false, error: err.message }); console.error('FAIL', name, err);
+    await reportBrowserFailure(name, err, currentContext);
+  }
   finally { await currentContext?.close(); currentContext = null; }
 }
 async function snapshot(page, name) {
@@ -872,6 +876,6 @@ async function main() {
   console.log(`RESULT ${passed} passed, ${results.length - passed} failed`);
   if (results.some(r => !r.passed)) process.exitCode = 1;
 }
-main().catch(err => { console.error(err); process.exitCode = 1; }).finally(async () => {
+main().catch(async err => { console.error(err); await reportBrowserFailure('frontend-recovery setup or cleanup', err, browser); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close(); await app.close(); db.close(); fs.rmSync(dir, { recursive: true, force: true });
 });

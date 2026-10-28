@@ -4,6 +4,7 @@ frontend/dist
 backend/data.sqlite*
 backend/uploads
 logs
+test-results
 *.log
 .git
 .agents

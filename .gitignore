@@ -10,6 +10,7 @@ dist/
 # Runtime logs & PIDs
 *.log
 logs/
+test-results/
 *.pid
 
 # Local SQLite databases (data should not be committed to Git)

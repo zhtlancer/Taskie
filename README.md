@@ -347,7 +347,7 @@ npm run seed:backend
 
 ## 🧪 自动化测试
 
-测试分为前后端逻辑测试、浏览器专项和真实 Docker 验收。当前逻辑测试为后端 **351 项**、前端 **49 项**，合计 **400 项**；数量以实际命令输出为准。浏览器回归单独统计，不包含在这 400 项中：
+测试分为前后端逻辑测试、CI 工具测试、浏览器专项和真实 Docker 验收；数量以实际命令输出为准，各类分别统计：
 
 ```bash
 # 运行后端全量测试
@@ -358,11 +358,22 @@ npm run test:frontend
 
 # 检查仓库是否混入代理运行时元数据
 npm run check:repo
+
+# 验证浏览器 CI 的失败诊断、退出码和日志保留
+npm run test:ci-tools
 ```
 
 CI 运行逻辑测试时额外启用 `scripts/test-annotations.mjs`：每个失败的测试会生成一条 GitHub 注释，包含文件、行号、断言差异，以及失败时的时钟、时区和 CPU 负载。偶发失败无需登录下载日志，也能在检查结果的注释里定位。
 
-浏览器验收会在 Chromium 中走一遍主要流程：首次登录强制修改家长 PIN、周模板保存、添加临时任务、备份下载与恢复、孩子打卡与全勤、按页记录长期任务进度、积分兑换与家长确认、照片上传、孩子权限，以及断网提示与恢复；再以 390px 手机宽度检查所有页面不超出屏幕、孩子端标签栏可用；同时确认容器以普通用户运行。每次推送到 `main` 时 CI 都会自动运行，通过后才会发布镜像。Pull Request 和推送到其他分支时，CI（`.github/workflows/checks.yml`）会运行全部单元测试、每个本地浏览器专项（使用运行器上的 Google Chrome）以及容器数据目录检查；发布前同样要求这些检查通过。本地运行：
+CI 用两个独立作业对前后端锁文件运行 `npm audit --package-lock-only --audit-level=moderate`，覆盖运行依赖和开发依赖。审计失败不阻止其他测试执行，但中危及以上漏洞仍会使整体检查失败并阻止发布。前端使用 Vite 6 和兼容的 Vue 插件；升级锁文件后，应重新执行逻辑测试、生产构建及相关浏览器回归。
+
+只要前后端依赖安装成功且作业未取消，逻辑测试会独立执行；仓库检查或 CI 工具测试失败不会跳过它们，整体检查仍保留失败结果。共享字体动作在工作流调用步骤上整体限时 16 分钟，内部安装命令用 `timeout 12m` 限时；复合动作内部不使用不受 GitHub 支持的 `timeout-minutes` 属性。缓存受分片下载超时和动作整体预算约束，不再单独设置 2 分钟步骤上限。
+
+浏览器专项通过 `node scripts/run-browser-suite.cjs <专项名>` 运行（容器主流程使用 `smoke`）：保留原始退出码、完整 UTF-8 输出日志，并在 GitHub 上为失败输出错误注释。执行器默认限时 5 分钟，可通过 `BROWSER_SUITE_TIMEOUT_MS` 调整；超时返回 124，先终止测试，5 秒后强制结束仍未退出的进程。取消信号会转发给测试；非 Windows 系统同时处理其进程组。异常结束会记录信号和原因，容器冒烟任何非零退出都会收集日志并兜底清理本次 UUID 名称的容器，保留原退出码。冒烟脚本关闭浏览器失败时也会继续尝试删除容器。CI 浏览器步骤另有 7 分钟兜底，并预留上传日志的时间。
+
+容器主流程和 `frontend-recovery` 遇到捕获的异常时，还会在关闭失败页面前尝试保存截图与详细错误。CI 失败或取消时尝试上传对应 `test-results/` 目录，保留 7 天；执行器正常处理超时时会先保留日志，运行器被直接终止时无法保证上传或截图。这些文件仅来自隔离测试数据。直接运行原有 `npm run test:browser:*` 命令仍然可用，设置 `BROWSER_DIAGNOSTICS_DIR` 可启用上述两个专项的截图。
+
+浏览器验收会在 Chromium 中走一遍主要流程：首次登录强制修改家长 PIN、周模板保存、添加临时任务、备份下载与恢复、孩子打卡与全勤、按页记录长期任务进度、积分兑换与家长确认、照片上传、孩子权限，以及断网提示与恢复；再以 390px 手机宽度检查所有页面不超出屏幕、孩子端标签栏可用；同时确认容器以普通用户运行。Pull Request 和分支 CI（`.github/workflows/checks.yml`）都会运行逻辑测试、每个本地浏览器专项以及真实容器验收。容器冒烟和其他浏览器专项共用 `.github/actions/chinese-fonts` 中固定版本、校验和及字体匹配检查。容器数据目录检查和主流程冒烟复用同一次构建的镜像；只要镜像及浏览器环境准备成功，数据目录检查失败后仍继续运行主流程冒烟。推送 `main` 时发布流程调用同一套检查，通过后才会发布镜像。本地运行：
 
 ```bash
 npm install --no-save --package-lock=false playwright@1.64.0
@@ -382,7 +393,7 @@ npm run test:browser:time-stats
 
 该回归直接启动临时本地服务，使用内存数据库，结束后自动清理，无需 Docker。所有本地浏览器专项（`test:browser:*`）共用 `scripts/browser-env.cjs`：`PLAYWRIGHT_MODULE_PATH` 指向项目外的 Playwright 安装（绝对路径），`CHROMIUM_PATH` 指定浏览器（未设置时依次使用系统 Chromium/Chrome，再退回 Playwright 自带浏览器），`SMOKE_PORT` 指定监听端口（默认随机空闲端口）。
 
-浏览器专项会测量按钮和文字的实际尺寸，结果取决于系统字体。CI 在运行专项前安装与 Ubuntu `fonts-noto-cjk` 相同的中文字体，使测量接近真实手机和平板：`scripts/ci-install-fonts.sh` 从 notofonts/noto-cjk 的固定标签下载这四个文件（思源黑体 Sans2.004 常规/粗体，与 Ubuntu 24.04、26.04 软件包逐字节一致；宋体 Serif2.003 常规/粗体，与 26.04 一致），按 `checks.yml` 中写死的 sha256 校验后，连同软件包的 fontconfig 规则装到 apt 相同的位置，并用 `actions/cache` 缓存（缓存键含版本和校验值）。下载或校验失败时才退回 apt（每条命令都有短超时，最多两次）。各阶段用时写在“Chinese fonts”注释（annotation）里，作业日志不可见时也能看到卡在哪一步。升级字体版本时需同时更新 `checks.yml` 中的版本和 sha256。本地运行时也应安装中文字体（Debian/Ubuntu：`sudo apt-get install fonts-noto-cjk`），否则中文会以缺字方框排版，宽度与真实设备不同。字体不能替代控件自身的最小尺寸：专项会单独测量“美”“体”这类单字按钮，确保它们在任何字体下都不小于 44px。
+浏览器专项会测量按钮和文字的实际尺寸，结果取决于系统字体。CI 在运行专项前安装与 Ubuntu `fonts-noto-cjk` 相同的中文字体，使测量接近真实手机和平板：`scripts/ci-install-fonts.sh` 从 notofonts/noto-cjk 的固定标签下载这四个文件（思源黑体 Sans2.004 常规/粗体，与 Ubuntu 24.04、26.04 软件包逐字节一致；宋体 Serif2.003 常规/粗体，与 26.04 一致），按 `.github/actions/chinese-fonts/action.yml` 中写死的 sha256 校验后，连同软件包的 fontconfig 规则装到 apt 相同的位置，并用 `actions/cache` 缓存（缓存键含版本和校验值）。下载或校验失败时才退回 apt（每条命令都有短超时，最多两次）。各阶段用时写在“Chinese fonts”注释（annotation）里，作业日志不可见时也能看到卡在哪一步。升级字体版本时需同时更新 `.github/actions/chinese-fonts/action.yml` 中的版本和 sha256。本地运行时也应安装中文字体（Debian/Ubuntu：`sudo apt-get install fonts-noto-cjk`），否则中文会以缺字方框排版，宽度与真实设备不同。字体不能替代控件自身的最小尺寸：专项会单独测量“美”“体”这类单字按钮，确保它们在任何字体下都不小于 44px。
 
 假期延后任务与调休设置的页面回归也使用相同环境，覆盖模板保存、所有孩子批量添加、已有日期跳过与重试、保留原设置，以及手机布局：
 

@@ -28,17 +28,39 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
-      - run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
-      - run: npm ci --prefix frontend
+      - id: backend-install
+        run: npm ci --prefix backend --omit=dev --engine-strict --ignore-scripts
+      - id: frontend-install
+        run: npm ci --prefix frontend
       - name: Check repository content
         run: npm run check:repo
+      - name: Test CI diagnostics
+        run: npm run test:ci-tools
       - run: npm test
+        if: ${{ !cancelled() && steps.backend-install.outcome == 'success' && steps.frontend-install.outcome == 'success' }}
         env:
           # Each failing test also becomes an annotation with its file, line, diff and clock/time zone,
           # readable through the public API when the job log is not at hand.
           NODE_OPTIONS: >-
             --test-reporter=spec --test-reporter-destination=stdout
             --test-reporter=${{ github.workspace }}/scripts/test-annotations.mjs --test-reporter-destination=stdout
+
+  # Audit failures still block publishing through the shared checks result, while independent
+  # jobs continue to produce their test results. Audit both lockfiles, including build tools.
+  dependency-audit:
+    name: Dependency audit (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [ backend, frontend ]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - run: npm audit --prefix "${{ matrix.package }}" --package-lock-only --audit-level=moderate
 
   backend-time-zones:
     name: Backend (${{ matrix.time-zone }})
@@ -69,19 +91,52 @@ jobs:
 
   # A NAS-style bind-mounted data directory against the real image: ownership, persistence across
   # container replacement, clear refusal of unwritable directories and of newer databases.
+  # Reuse that image for browser smoke checks before a branch can reach main.
   docker-data:
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Leave room for the bounded font fallback, smoke timeout and artifact upload.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Build test image
+        id: image
+        timeout-minutes: 10
         run: docker build -t taskie:reliability .
       - name: Data directory checks
+        timeout-minutes: 5
         run: npm run test:docker-data
+      - name: Chinese fonts
+        id: fonts
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        timeout-minutes: 16
+        uses: ./.github/actions/chinese-fonts
+      - name: Install Playwright (using the runner's Chrome)
+        id: playwright
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        timeout-minutes: 2
+        run: npm install --no-save --package-lock=false playwright@1.64.0
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Container browser smoke
+        if: ${{ !cancelled() && steps.image.outcome == 'success' && steps.fonts.outcome == 'success' && steps.playwright.outcome == 'success' }}
+        timeout-minutes: 7
+        run: node scripts/run-browser-suite.cjs smoke
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+          BROWSER_DIAGNOSTICS_DIR: test-results/container-smoke
+      - name: Upload container browser diagnostics
+        if: ${{ failure() || cancelled() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v7
+        with:
+          name: container-browser-diagnostics
+          path: test-results/container-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Upgrade regression: the backend of 0b4128c (v28, v1 backups) taken from git history writes data
   # and a v1 backup; this backend upgrades it and restores both backup formats. Needs full history.
@@ -109,22 +164,12 @@ jobs:
   browser-suites:
     needs: test
     runs-on: ubuntu-latest
-    # Passing suites take under 3 minutes; the font steps' limits (2 + 12 minutes) still fit.
-    timeout-minutes: 20
+    # Passing suites take under 3 minutes. Reserve time for fonts, the bounded runner and upload.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
         suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-dates, completion-duration, task-priority, board-workflow, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-count, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
-    env:
-      # The files of Ubuntu's fonts-noto-cjk, from pinned upstream tags: Sans2.004 is byte-identical in
-      # Ubuntu 24.04 and 26.04, Serif2.003 is the one in 26.04. A version change needs new checksums.
-      NOTO_CJK_SANS: Sans2.004
-      NOTO_CJK_SERIF: Serif2.003
-      NOTO_CJK_SHA256: |
-        b76b0433203017ca80401b2ee0dd69350349871c4b19d504c34dbdd80541690a  NotoSansCJK-Regular.ttc
-        faa5f3656a78b2e2d450d27fe8382c778bc2b6bb5ea29c986664a6a435056ceb  NotoSansCJK-Bold.ttc
-        5d9c31a059600193c9d7968a998bde886ccdc77e934006ad243b41794c496a7d  NotoSerifCJK-Regular.ttc
-        1505ee3b9c0890fae6302ee0e9c6fd74d690f4a55a6ace1d9944f3f6352d622d  NotoSerifCJK-Bold.ttc
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -136,45 +181,28 @@ jobs:
             frontend/package-lock.json
       - run: npm ci --prefix backend --omit=dev --engine-strict
       - run: npm ci --prefix frontend
-      # Chinese fonts as on real phones and tablets, so text is measured with real glyphs. They do not
-      # stand in for minimum sizes: the suites also measure single-character labels.
-      # apt is not used on the normal path: about a third of the runners stalled for 8-26 minutes in it.
-      # The pinned files come from the cache or a checked download; a broken cache only costs a download.
-      - name: Chinese font cache key
-        id: font-key
-        run: echo "key=noto-cjk-$NOTO_CJK_SANS-$NOTO_CJK_SERIF-$(printf '%s' "$NOTO_CJK_SHA256" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
-      - name: Restore Chinese fonts
-        id: font-cache
-        uses: actions/cache/restore@v6
-        timeout-minutes: 2
-        continue-on-error: true
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
-        with:
-          path: ~/.cache/noto-cjk
-          key: ${{ steps.font-key.outputs.key }}
-      # Normally well under a minute; download (at most 150 s) plus the apt fallback (two attempts of
-      # update 90 s + install 150 s) stay within the step limit. Stage times are in a notice annotation.
-      - name: Install Chinese fonts
-        id: fonts
-        timeout-minutes: 12
-        run: bash scripts/ci-install-fonts.sh
-        env:
-          CACHE_HIT: ${{ steps.font-cache.outputs.cache-hit }}
-      - name: Save Chinese fonts
-        if: steps.fonts.outputs.source == 'download'
-        uses: actions/cache/save@v6
-        timeout-minutes: 2
-        continue-on-error: true
-        with:
-          path: ~/.cache/noto-cjk
-          key: ${{ steps.font-key.outputs.key }}
+      - name: Chinese fonts
+        timeout-minutes: 16
+        uses: ./.github/actions/chinese-fonts
       - run: npm run build
+        timeout-minutes: 3
       - name: Install Playwright (using the runner's Chrome)
+        timeout-minutes: 2
         run: npm install --no-save --package-lock=false playwright@1.64.0
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       - name: Browser suite ${{ matrix.suite }}
-        run: npm run test:browser:${{ matrix.suite }}
+        timeout-minutes: 7
+        run: node scripts/run-browser-suite.cjs "${{ matrix.suite }}"
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
+          BROWSER_DIAGNOSTICS_DIR: test-results/${{ matrix.suite }}
+      - name: Upload browser diagnostics
+        if: ${{ failure() || cancelled() }}
+        timeout-minutes: 2
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-diagnostics-${{ matrix.suite }}
+          path: test-results/${{ matrix.suite }}/
+          if-no-files-found: ignore
+          retention-days: 7

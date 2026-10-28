@@ -6,8 +6,9 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { reportBrowserFailure } = require('./browser-diagnostics.cjs');
 
-const name = `taskie-ui-check-${process.pid}`;
+const name = process.env.TASKIE_SMOKE_CONTAINER || `taskie-ui-check-${process.pid}`;
 const DEFAULT_PIN = '1234';
 const NEW_PIN = '2580';
 let started = false, browser;
@@ -328,7 +329,19 @@ async function main() {
   await phone.close();
 }
 
-main().catch(error => { console.error(error); if (started) console.error(docker(['logs', '--tail', '30', name])); process.exitCode = 1; }).finally(async () => {
-  if (browser) await browser.close();
-  if (started) docker(['rm', '-f', name]);
+main().catch(async error => {
+  console.error(error);
+  await reportBrowserFailure('Container browser smoke', error, browser);
+  if (started) console.error(docker(['logs', '--tail', '30', name]));
+  process.exitCode = 1;
+}).finally(async () => {
+  try {
+    if (browser) await browser.close();
+  } catch (error) {
+    // Container cleanup may throw too; retain the browser error before it can be replaced.
+    console.error('Browser cleanup failed:', error);
+    throw error;
+  } finally {
+    if (started) docker(['rm', '-f', name]);
+  }
 });

@@ -11,34 +11,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Unit tests and every local browser suite; a failure blocks the image.
+  # Shared checks include the real container smoke test; any failure blocks publishing.
   checks:
     uses: ./.github/workflows/checks.yml
     permissions:
       contents: read
 
-  # Builds the image and drives the main family flows in Chromium against a throwaway container.
-  browser-smoke:
-    needs: checks
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-      - name: Build test image
-        run: docker build -t taskie:reliability .
-      - name: Install Playwright and Chromium
-        run: |
-          npm install --no-save --package-lock=false playwright@1.64.0
-          npx playwright install --with-deps chromium
-      - name: Browser smoke test
-        run: npm run test:browser
-
   build-and-push:
-    needs: [checks, browser-smoke]
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
