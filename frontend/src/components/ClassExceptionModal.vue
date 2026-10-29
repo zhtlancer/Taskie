@@ -10,7 +10,7 @@
         <button type="button" class="min-h-11 min-w-11 flex-1 py-2 rounded-xl text-sm font-bold border" :class="form.kind === 'leave' ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'" @click="form.kind = 'leave'">🙋 请假</button>
         <button type="button" class="min-h-11 min-w-11 flex-1 py-2 rounded-xl text-sm font-bold border" :class="form.kind === 'moved' ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'" @click="form.kind = 'moved'">🔁 调课</button>
       </div>
-      <div v-if="form.kind === 'moved'" class="grid grid-cols-3 gap-2">
+      <div v-if="form.kind === 'moved'" class="class-move-fields grid grid-cols-3 gap-2">
         <div class="col-span-3 sm:col-span-1">
           <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">调到哪天</label>
           <input v-model="form.new_date" type="date" required class="min-h-11 w-full px-2 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs outline-none focus:border-violet-500" />
@@ -86,3 +86,19 @@ function restore() {
   return run(() => api.deleteClassException(props.lesson.exception_id));
 }
 </script>
+
+<style scoped>
+@media (min-width: 640px) {
+  /* Safari's native date/time controls can keep an intrinsic width beyond their grid cell. */
+  .class-move-fields > div { min-width: 0; }
+  .class-move-fields input {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .class-move-fields input::-webkit-date-and-time-value { width: 100%; min-width: 0; text-align: left; }
+  .class-move-fields input::-webkit-datetime-edit { min-width: 0; padding: 0; }
+}
+</style>

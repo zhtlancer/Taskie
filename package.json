@@ -37,6 +37,7 @@
     "test:browser:class-stats": "node scripts/smoke-class-stats.cjs",
     "test:browser:class-homework": "node scripts/smoke-class-homework.cjs",
     "test:browser:class-count": "node scripts/smoke-class-count.cjs",
+    "test:browser:class-move-dates": "node scripts/smoke-class-move-dates.cjs",
     "test:browser:running-timer": "node scripts/smoke-running-timer.cjs",
     "test:browser:rest": "node scripts/smoke-rest.cjs",
     "test:browser:photo-backup": "node scripts/smoke-photo-backup.cjs",

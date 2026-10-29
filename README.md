@@ -471,6 +471,12 @@ npm run test:browser:legacy
 npm run test:browser:dialogs
 ```
 
+课外课调课日期布局检查覆盖手机、平板横竖屏和分屏宽度下日期/时间框的边界、浅深色、放大字体与输入编辑。默认使用 Chromium；设置 `BROWSER=webkit` 可运行 WebKit，但不能替代实机 iPad 对原生日期控件的验证：
+
+```bash
+npm run test:browser:class-move-dates
+```
+
 界面回归覆盖浅色、暗色与跟随系统的切换和刷新保留、跨标签同步、存储被禁用时的主题、确认框的键盘焦点与浏览器后退、字词练习弹窗、家长首页加载失败重试，以及手机和平板的导航与布局：
 
 ```bash

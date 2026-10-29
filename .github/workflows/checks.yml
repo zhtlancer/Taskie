@@ -169,7 +169,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-dates, completion-duration, task-priority, board-workflow, record-editing, refunds-drafts, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-homework, class-count, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
+        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-dates, completion-duration, task-priority, board-workflow, record-editing, refunds-drafts, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-homework, class-count, class-move-dates, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
