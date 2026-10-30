@@ -75,10 +75,10 @@
   <UiDialog v-if="moveTarget" title="调整这节课" :busy="busy" @close="moveTarget = null">
     <p class="mb-3 text-sm font-bold text-violet-700 dark:text-violet-300">只对 {{ childName }} 生效 · {{ moveTarget.lesson.title }}</p>
     <form id="board-move-class" class="space-y-3" @submit.prevent="saveMove">
-      <label class="block text-sm font-bold">新日期<input v-model="moveForm.date" type="date" required :disabled="busy" class="input-field mt-1 w-full min-h-11" /></label>
+      <label class="block text-sm font-bold">新日期<input v-model="moveForm.date" type="date" required :disabled="busy" class="ui-date-time mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-violet-500 disabled:opacity-50" /></label>
       <div class="grid grid-cols-2 gap-3">
-        <label class="block text-sm font-bold">开始时间<input v-model="moveForm.start" type="time" required :disabled="busy" class="input-field mt-1 w-full min-h-11" /></label>
-        <label class="block text-sm font-bold">结束时间<input v-model="moveForm.end" type="time" required :disabled="busy" class="input-field mt-1 w-full min-h-11" /></label>
+        <label class="block min-w-0 text-sm font-bold">开始时间<input v-model="moveForm.start" type="time" required :disabled="busy" class="ui-date-time mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-violet-500 disabled:opacity-50" /></label>
+        <label class="block min-w-0 text-sm font-bold">结束时间<input v-model="moveForm.end" type="time" required :disabled="busy" class="ui-date-time mt-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:border-violet-500 disabled:opacity-50" /></label>
       </div>
       <div v-if="moveError" role="alert" class="text-sm text-rose-600 dark:text-rose-300"><p>{{ moveError }}</p><button v-if="needsRefresh" type="button" :disabled="busy" class="min-h-11 underline" @click="refreshOnly">刷新日程和打卡任务</button></div>
       <router-link v-if="!busy && asParent" :to="{ path: '/parent/schedule', query: { child: childId, class: moveTarget.lesson.class_id, date: moveTarget.lesson.source_date || moveTarget.lesson.moved_from || moveTarget.date } }" class="inline-flex items-center min-h-11 text-sm font-bold text-violet-700 dark:text-violet-300 underline">更多设置 →</router-link>

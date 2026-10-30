@@ -174,14 +174,14 @@
             <button v-for="name in ['国庆假期', '寒假', '春节', '五一假期', '暑假']" :key="name" type="button" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-brand-50 dark:hover:bg-brand-900/40" @click="periodModal.name = name">{{ name }}</button>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
-            <input v-model="periodModal.start_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
+        <div class="period-dates grid grid-cols-2 gap-3">
+          <div class="min-w-0">
+            <label for="period-start-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
+            <input id="period-start-date" v-model="periodModal.start_date" type="date" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
           </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">结束日期</label>
-            <input v-model="periodModal.end_date" type="date" required :min="periodModal.start_date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
+          <div class="min-w-0">
+            <label for="period-end-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">结束日期</label>
+            <input id="period-end-date" v-model="periodModal.end_date" type="date" required :min="periodModal.start_date" class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
           </div>
         </div>
         <div>
@@ -248,13 +248,13 @@
           </div>
         </div>
         <div v-if="!taskModal.periodId" class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
-            <input v-model="taskModal.start_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
+          <div class="min-w-0">
+            <label for="goal-start-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
+            <input id="goal-start-date" v-model="taskModal.start_date" type="date" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
           </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期（可不填）</label>
-            <input v-model="taskModal.end_date" type="date" :min="taskModal.start_date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
+          <div class="min-w-0">
+            <label for="goal-end-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">截止日期（可不填）</label>
+            <input id="goal-end-date" v-model="taskModal.end_date" type="date" :min="taskModal.start_date" class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
           </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -291,17 +291,17 @@
       <form class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-4" @submit.prevent="saveBackfill">
         <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 font-chinese">补记「{{ backfill.task.title }}」</h3>
         <div class="grid grid-cols-2 gap-3">
-          <div v-if="backfill.task.mode === 'progress' && backfill.task.input_mode === 'position'">
+          <div v-if="backfill.task.mode === 'progress' && backfill.task.input_mode === 'position'" class="min-w-0">
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">读到第几{{ backfill.task.unit }}</label>
             <input v-model.number="backfill.position" type="number" :min="backfill.task.done_amount + 1" :max="backfill.task.total_amount" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none" />
           </div>
-          <div v-else-if="backfill.task.mode === 'progress'">
+          <div v-else-if="backfill.task.mode === 'progress'" class="min-w-0">
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">数量（{{ backfill.task.unit }}）</label>
             <input v-model.number="backfill.amount" type="number" min="1" :max="backfill.task.remaining_amount" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none" />
           </div>
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">日期</label>
-            <input v-model="backfill.date" type="date" required :min="backfill.task.start_date" :max="backfillMaxDate" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none" />
+          <div class="min-w-0">
+            <label for="goal-log-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">日期</label>
+            <input id="goal-log-date" v-model="backfill.date" type="date" required :min="backfill.task.start_date" :max="backfillMaxDate" class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none" />
           </div>
         </div>
         <div class="flex justify-end gap-3">

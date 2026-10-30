@@ -126,6 +126,20 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color])
   background-color: var(--ui-surface);
 }
 .ui-dialog footer { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+/* Opt in per field: native date/time controls must fit the grid column, including Safari. */
+.ui-date-time {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+}
+@media (min-width: 640px) {
+  .ui-date-time { -webkit-appearance: none; appearance: none; }
+  .ui-date-time::-webkit-date-and-time-value { width: 100%; min-width: 0; text-align: left; }
+  .ui-date-time::-webkit-datetime-edit { min-width: 0; padding: 0; }
+}
 @layer components {
   .ui-input { @apply min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm; }
   .ui-button-primary { @apply min-h-[44px] rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-700 disabled:opacity-50; }

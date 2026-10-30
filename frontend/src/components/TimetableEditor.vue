@@ -9,17 +9,17 @@
 
       <!-- Term -->
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
+        <div class="min-w-0">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">名称</label>
           <input v-model="form.name" type="text" maxlength="30" required placeholder="例如：四年级上学期" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500 font-chinese" />
         </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
-          <input v-model="form.start_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
+        <div class="min-w-0">
+          <label for="timetable-start-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始日期</label>
+          <input id="timetable-start-date" v-model="form.start_date" type="date" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
         </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">结束日期</label>
-          <input v-model="form.end_date" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
+        <div class="min-w-0">
+          <label for="timetable-end-date" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">结束日期</label>
+          <input id="timetable-end-date" v-model="form.end_date" type="date" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
         </div>
       </div>
       <div class="flex flex-wrap items-center gap-3 px-3 py-2.5 rounded-2xl border border-indigo-100 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-950/40">

@@ -477,6 +477,18 @@ npm run test:browser:dialogs
 npm run test:browser:class-move-dates
 ```
 
+假期日期布局检查覆盖手机、平板横竖屏与分屏、浅深色和放大字体，验证新增/编辑假期时两列日期框不溢出或重叠，并通过实际保存核对日期。支持设置 `BROWSER=webkit`：
+
+```bash
+npm run test:browser:period-dates
+```
+
+日期/时间输入框边界检查覆盖长期任务的新增与编辑、按页码及数量补记、假期、学期日期、课外班按课次/日期排课、看板调课，验证控件不越过网格列或表单内边距。覆盖手机、平板、分屏、浅深色和放大字体，并实际保存日期与时间；可设置 `BROWSER=webkit`：
+
+```bash
+npm run test:browser:input-dates
+```
+
 界面回归覆盖浅色、暗色与跟随系统的切换和刷新保留、跨标签同步、存储被禁用时的主题、确认框的键盘焦点与浏览器后退、字词练习弹窗、家长首页加载失败重试，以及手机和平板的导航与布局：
 
 ```bash

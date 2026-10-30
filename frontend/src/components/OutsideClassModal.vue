@@ -34,17 +34,17 @@
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
-        <div>
+        <div class="min-w-0">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">开始时间</label>
-          <input v-model="form.start_time" type="time" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
+          <input v-model="form.start_time" aria-label="开始时间" type="time" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">结束时间</label>
-          <input v-model="form.end_time" type="time" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
+          <input v-model="form.end_time" aria-label="结束时间" type="time" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
         </div>
-        <div>
+        <div class="min-w-0">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">从哪天开始</label>
-          <input v-model="form.start_date" aria-label="从哪天开始" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
+          <input v-model="form.start_date" aria-label="从哪天开始" type="date" required class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
         </div>
         <div class="col-span-2">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">排课方式</label>
@@ -57,9 +57,9 @@
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">总课次</label>
           <input v-model.number="form.total_lessons" aria-label="总课次" type="number" min="1" max="520" required class="w-full min-h-[44px] min-w-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm" />
         </div>
-        <div v-else>
+        <div v-else class="min-w-0">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">到哪天结束（可不填）</label>
-          <input v-model="form.end_date" aria-label="到哪天结束" type="date" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
+          <input v-model="form.end_date" aria-label="到哪天结束" type="date" class="ui-date-time px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500" />
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">老师（可不填）</label>
