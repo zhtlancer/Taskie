@@ -374,6 +374,8 @@ CI 运行逻辑测试时额外启用 `scripts/test-annotations.mjs`：每个失�
 
 CI 用两个独立作业对前后端锁文件运行 `npm audit --package-lock-only --audit-level=moderate`，覆盖运行依赖和开发依赖。审计失败不阻止其他测试执行，但中危及以上漏洞仍会使整体检查失败并阻止发布。前端使用 Vite 6 和兼容的 Vue 插件；升级锁文件后，应重新执行逻辑测试、生产构建及相关浏览器回归。
 
+后端暂时通过 `overrides` 仅将 `@fastify/static` 的 `glob` 依赖升级到 `^14.0.3`，同时带入修复后的 `minimatch`，处理 [glob 的取消绕过漏洞](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)与 [minimatch 的拒绝服务漏洞](https://github.com/advisories/GHSA-g3hv-75wg-m249)。插件发布版本仍声明依赖 `glob 13`；后续升级插件时，应检查是否已原生使用修复版，再移除此定向覆盖，不要用 `npm audit fix --force` 降级 Fastify 插件。
+
 只要前后端依赖安装成功且作业未取消，逻辑测试会独立执行；仓库检查或 CI 工具测试失败不会跳过它们，整体检查仍保留失败结果。共享字体动作在工作流调用步骤上整体限时 16 分钟，内部安装命令用 `timeout 12m` 限时；复合动作内部不使用不受 GitHub 支持的 `timeout-minutes` 属性。缓存受分片下载超时和动作整体预算约束，不再单独设置 2 分钟步骤上限。
 
 浏览器专项通过 `node scripts/run-browser-suite.cjs <专项名>` 运行（容器主流程使用 `smoke`）：保留原始退出码、完整 UTF-8 输出日志，并在 GitHub 上为失败输出错误注释。执行器默认限时 5 分钟，可通过 `BROWSER_SUITE_TIMEOUT_MS` 调整；超时返回 124，先终止测试，5 秒后强制结束仍未退出的进程。取消信号会转发给测试；非 Windows 系统同时处理其进程组。异常结束会记录信号和原因，容器冒烟任何非零退出都会收集日志并兜底清理本次 UUID 名称的容器，保留原退出码。冒烟脚本关闭浏览器失败时也会继续尝试删除容器。CI 浏览器步骤另有 7 分钟兜底，并预留上传日志的时间。
