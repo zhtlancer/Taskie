@@ -22,16 +22,17 @@
           <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400"><span>{{ formatTime(minimumSeconds) }}</span><span>{{ formatTime(sliderMaxSeconds) }}</span></div>
           <p v-if="expectedMinutes" class="mt-2 text-xs text-violet-700 dark:text-violet-300">预计用时 {{ expectedMinutes }} 分钟，请按实际情况调整。</p>
         </div>
+        <p v-if="supplementing" class="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">补充用时（在已有计时基础上）</p>
         <div class="grid grid-cols-3 gap-2 mb-2">
           <button
-            v-for="option in quickMinutes"
-            :key="option"
+            v-for="option in quickDurations"
+            :key="option.minutes"
             type="button"
-            :disabled="busy || option * 60 < minimumSeconds" class="min-h-[44px] min-w-[44px] py-2.5 rounded-xl text-sm font-bold border active:scale-95 disabled:opacity-40"
-            :class="selectedSeconds === option * 60 ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
-            @click="selectedSeconds = Math.max(minimumSeconds, option * 60)"
+            :disabled="busy || option.seconds < minimumSeconds || option.seconds > maximumSeconds" class="min-h-[44px] min-w-[44px] py-2.5 rounded-xl text-sm font-bold border active:scale-95 disabled:opacity-40"
+            :class="selectedSeconds === option.seconds ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+            @click="selectedSeconds = option.seconds"
           >
-            {{ option }} 分钟
+            {{ supplementing ? '+' : '' }}{{ option.minutes }} 分钟
           </button>
         </div>
         <label class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
@@ -86,7 +87,9 @@ const props = defineProps({
 const emit = defineEmits(['close', 'submit']);
 const sliderId = useId();
 
-const quickMinutes = [10, 15, 20, 30, 45, 60];
+const supplementing = computed(() => props.additive && props.recordedSeconds > 0);
+const quickDurations = computed(() => (supplementing.value ? [5, 10, 15, 20, 30, 60] : [10, 15, 20, 30, 45, 60])
+  .map(minutes => ({ minutes, seconds: (supplementing.value ? props.recordedSeconds : 0) + minutes * 60 })));
 const minimumSeconds = computed(() => props.additive && props.recordedSeconds > 0 ? props.recordedSeconds : 60);
 const maximumSeconds = computed(() => (props.additive ? props.recordedSeconds : 0) + 43200);
 const selectedSeconds = ref(props.additive && props.recordedSeconds > 0 ? props.recordedSeconds

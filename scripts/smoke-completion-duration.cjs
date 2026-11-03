@@ -27,6 +27,8 @@ async function main() {
     const paused = add('暂停但零秒', 20), unchanged = add('保持精确累计', 20), stale = add('累计用时发生变化', 20);
     const lost = add('追加响应丢失', 20);
     const fractional = add('整分钟累计后补半分钟', 20), fractionalEmpty = add('未计时补半分钟', 20);
+    const longSaved = add('超过一小时累计', 20);
+    app.services.taskStudyService.manual(longSaved.id, { request_id: `long-saved-${child.id}`, duration_seconds: 3905 }, 'parent');
     app.services.taskStudyService.manual(fractional.id, { request_id: `fractional-${child.id}`, duration_seconds: 120 }, 'parent');
     for (const task of [saved, unchanged, stale, lost]) app.services.taskStudyService.manual(task.id, { request_id: `saved-${task.id}`, duration_seconds: 125 }, 'parent');
     app.services.taskStudyService.start(paused.id);
@@ -51,6 +53,9 @@ async function main() {
       await prompt.getByText(/这项任务当前没有计时记录/).waitFor();
       const slider = prompt.getByRole('slider');
       assert.equal(await slider.inputValue(), '1500');
+      assert.equal(await prompt.getByRole('button', { name: '+5 分钟', exact: true }).count(), 0);
+      await prompt.getByRole('button', { name: '10 分钟', exact: true }).click();
+      assert.equal(await slider.inputValue(), '600', 'without recorded time presets select a total');
       assert.equal(app.services.taskStudyService.details(timed.id).record.task.is_completed, false);
       await prompt.getByRole('button', { name: '取消', exact: true }).click();
       assert.equal(app.services.taskStudyService.details(timed.id).sessions.length, 0);
@@ -87,6 +92,13 @@ async function main() {
       await study.getByRole('button', { name: '完成任务', exact: true }).click();
       assert.equal(await prompt.getByRole('slider').inputValue(), '125');
       assert.equal(await prompt.getByRole('slider').getAttribute('min'), '125');
+      await prompt.getByRole('button', { name: '+5 分钟', exact: true }).click();
+      assert.equal(await slider.inputValue(), '425', 'supplement presets preserve recorded seconds');
+      await prompt.locator('output').getByText('7 分 5 秒', { exact: true }).waitFor();
+      await prompt.getByRole('button', { name: '+5 分钟', exact: true }).click();
+      assert.equal(await slider.inputValue(), '425', 'selecting the same preset twice does not add twice');
+      await prompt.getByRole('button', { name: '+10 分钟', exact: true }).click();
+      assert.equal(await slider.inputValue(), '725', 'switching presets always uses the recorded baseline');
       await prompt.locator('input[type=number]').fill('1');
       assert.equal(await prompt.getByRole('button', { name: '完成', exact: true }).isDisabled(), true);
       await prompt.locator('input[type=number]').fill('5');
@@ -96,6 +108,22 @@ async function main() {
       assert.equal(app.services.taskStudyService.details(saved.id).total_seconds, 300);
       assert.deepEqual(app.services.taskStudyService.details(saved.id).sessions.map(s => s.duration_seconds), [175, 125]);
       console.log(`PASS ${width}/${theme}: optional time, large defaults and increasing totals without changing original records`);
+
+      study = await openTask('超过一小时累计');
+      await study.getByRole('button', { name: '完成任务', exact: true }).click();
+      for (const minutes of [5, 10, 15, 20, 30, 60]) {
+        assert.equal(await prompt.getByRole('button', { name: `+${minutes} 分钟`, exact: true }).isEnabled(), true);
+      }
+      await prompt.locator('input[type=number]').fill('100');
+      await prompt.getByRole('button', { name: '+5 分钟', exact: true }).click();
+      assert.equal(await slider.inputValue(), '4205', 'a preset after manual input still uses the recorded baseline');
+      await prompt.locator('output').getByText('70 分 5 秒', { exact: true }).waitFor();
+      await prompt.getByRole('button', { name: '完成', exact: true }).click();
+      await study.getByText('✓ 任务已完成', { exact: true }).waitFor();
+      const supplemented = app.services.taskStudyService.details(longSaved.id);
+      assert.equal(supplemented.total_seconds, 4205);
+      assert.deepEqual(supplemented.sessions.map(s => s.duration_seconds), [300, 3905]);
+      console.log(`PASS ${width}/${theme}: supplement presets remain available above one hour and save only the added time`);
 
       await study.getByRole('button', { name: '关闭', exact: true }).click();
       const card = page.locator(`[data-timer-id="${homework.task.id}"]`);
