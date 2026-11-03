@@ -214,6 +214,31 @@ const currentMode = ref(props.mode);
 const quizCompleted = ref(false);
 
 let writerInstance = null;
+let loopTimer = null;
+let loopDeadline = 0;
+let loopRemainingMs = 0;
+let isPausedInLoopDelay = false;
+
+function clearLoopTimer() {
+  if (loopTimer) {
+    clearTimeout(loopTimer);
+    loopTimer = null;
+  }
+  loopDeadline = 0;
+  loopRemainingMs = 0;
+  isPausedInLoopDelay = false;
+}
+
+function stopAnimation() {
+  clearLoopTimer();
+  isPlaying.value = false;
+  isPaused.value = false;
+  if (writerInstance) {
+    try {
+      writerInstance.pauseAnimation();
+    } catch (e) {}
+  }
+}
 
 function getSpeedValue() {
   return isSlowSpeed.value ? 0.5 : 1.0;
@@ -224,6 +249,7 @@ async function initWriter() {
   const char = (props.character || '').trim()[0];
   if (!char) return;
 
+  clearLoopTimer();
   isLoading.value = true;
   quizCompleted.value = false;
 
@@ -231,6 +257,7 @@ async function initWriter() {
   writerContainer.value.innerHTML = '';
   if (writerInstance) {
     try {
+      writerInstance.pauseAnimation();
       writerInstance.cancelQuiz();
     } catch (e) {}
     writerInstance = null;
@@ -284,31 +311,71 @@ async function initWriter() {
   }
 }
 
-function playAnimation() {
+function startLoopDelay(delayMs = 2000) {
+  clearLoopTimer();
+  loopRemainingMs = delayMs;
+  loopDeadline = Date.now() + delayMs;
+  loopTimer = setTimeout(() => {
+    loopTimer = null;
+    loopDeadline = 0;
+    loopRemainingMs = 0;
+    isPausedInLoopDelay = false;
+    if (isPlaying.value && currentMode.value === 'animate') {
+      playRound();
+    }
+  }, delayMs);
+}
+
+function playRound() {
   if (!writerInstance) return;
+  clearLoopTimer();
   isPlaying.value = true;
   isPaused.value = false;
   writerInstance.animateCharacter({
-    onComplete: () => {
-      isPlaying.value = false;
-      isPaused.value = false;
+    onComplete: (res) => {
+      if (res?.canceled) return;
+      if (!isPlaying.value || currentMode.value !== 'animate') return;
       emit('complete');
+      startLoopDelay(2000);
     },
   });
+}
+
+function playAnimation() {
+  if (!writerInstance) return;
+  clearLoopTimer();
+  playRound();
 }
 
 function togglePlayPause() {
   if (!writerInstance) return;
   playClick();
   if (isPlaying.value) {
-    writerInstance.pauseAnimation();
     isPlaying.value = false;
     isPaused.value = true;
+    if (loopTimer) {
+      isPausedInLoopDelay = true;
+      loopRemainingMs = Math.max(0, loopDeadline - Date.now());
+      clearTimeout(loopTimer);
+      loopTimer = null;
+    } else {
+      isPausedInLoopDelay = false;
+      writerInstance.pauseAnimation();
+    }
   } else {
     if (isPaused.value) {
-      writerInstance.resumeAnimation();
       isPlaying.value = true;
       isPaused.value = false;
+      if (isPausedInLoopDelay) {
+        isPausedInLoopDelay = false;
+        if (loopRemainingMs > 0) {
+          startLoopDelay(loopRemainingMs);
+        } else {
+          playRound();
+        }
+      } else {
+        writerInstance.resumeAnimation();
+      }
     } else {
       playAnimation();
     }
@@ -318,6 +385,7 @@ function togglePlayPause() {
 function replay() {
   if (!writerInstance) return;
   playClick();
+  clearLoopTimer();
   playAnimation();
 }
 
@@ -325,6 +393,7 @@ function cycleSpeed() {
   playClick();
   isSlowSpeed.value = !isSlowSpeed.value;
   if (writerInstance) {
+    stopAnimation();
     writerInstance.updateColor('strokeColor', '#1E293B');
     initWriter();
   }
@@ -351,6 +420,7 @@ function setMode(newMode) {
   playClick();
   currentMode.value = newMode;
   if (newMode === 'quiz') {
+    stopAnimation();
     startQuiz();
   } else {
     quizCompleted.value = false;
@@ -366,6 +436,7 @@ function setMode(newMode) {
 watch(
   () => props.character,
   () => {
+    stopAnimation();
     initWriter();
   }
 );
@@ -375,6 +446,7 @@ watch(
   (val) => {
     currentMode.value = val;
     if (val === 'quiz') {
+      stopAnimation();
       startQuiz();
     } else if (val === 'animate') {
       playAnimation();
@@ -387,6 +459,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  stopAnimation();
   if (writerInstance) {
     try {
       writerInstance.cancelQuiz();
