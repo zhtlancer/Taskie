@@ -55,7 +55,9 @@ async function main() {
     contexts.push(context);
     await context.addInitScript(value => sessionStorage.setItem('taskie_parent_token', value), token);
     const page = await context.newPage();
-    await page.clock.setFixedTime(new RealDate(fixed));
+    // Pause the browser clock directly so Playwright does not offset ticks against Node's mocked Date.now().
+    await page.clock.install({ time: new RealDate(fixed) });
+    await page.clock.pauseAt(new RealDate(fixed));
     page.setDefaultTimeout(10000);
     page.on('pageerror', error => { errors.push(error.message); console.error('PAGE ERROR', error.message); });
     await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
@@ -81,9 +83,8 @@ async function main() {
     pass('history preserves YYYY-MM-DD and weekday across device time zones');
     assert.match(await page.locator('canvas[aria-label]').first().getAttribute('aria-label'), /10\/21 \(周三/);
     pass('weekly chart labels preserve date and weekday');
-    // The test freezes Date.now; advance it once so Chart.js can finish its animation.
-    await page.clock.setFixedTime(RealDate.parse(instant) + 1500);
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    // Advance the paused clock so Chart.js can finish its animation.
+    await page.clock.runFor(1500);
     await shot(page, 'history-weekly');
     await page.locator(`a[href='/child/${child.id}/today']`).first().click();
     await page.getByText('周三 · 10月21日', { exact: true }).waitFor();
