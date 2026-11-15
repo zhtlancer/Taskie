@@ -96,6 +96,10 @@ function buildApp(opts = {}) {
   classStatsService.homeworkService = classHomeworkService;
   scheduleService.classHomeworkService = classHomeworkService;
   tasksService.homeworkService = homeworkService;
+  const RecurringHomeworkService = require('./services/recurring-homework.service');
+  const recurringHomeworkService = new RecurringHomeworkService(db, homeworkService, skipsService);
+  homeworkService.recurringService = recurringHomeworkService;
+  tasksService.recurringHomeworkService = recurringHomeworkService;
   const homeworkStudyService = new HomeworkStudyService(db, homeworkService, tasksService, timersService);
   const taskStudyService = new TaskStudyService(db, tasksService, timersService);
   tasksService.taskStudyService = taskStudyService;
@@ -123,6 +127,7 @@ function buildApp(opts = {}) {
     timeStatsService,
     wordStudyService,
     homeworkService,
+    recurringHomeworkService,
     homeworkStudyService,
     taskStudyService
   });
@@ -233,7 +238,7 @@ function buildApp(opts = {}) {
   fastify.register(taskStudyRoutes, { prefix: '/api', taskStudyService });
   fastify.register(scheduleRoutes, { prefix: '/api', scheduleService, classStatsService });
   fastify.register(wordStudyRoutes, { prefix: '/api', wordStudyService });
-  fastify.register(homeworkRoutes, { prefix: '/api', homeworkService, homeworkStudyService });
+  fastify.register(homeworkRoutes, { prefix: '/api', homeworkService, homeworkStudyService, recurringHomeworkService });
 
   return fastify;
 }

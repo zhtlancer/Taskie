@@ -2,7 +2,7 @@ const { generationWrite } = require('../utils/data-generation');
 const { formSubmission } = require('../utils/form-submission');
 
 async function homeworkRoutes(fastify, options) {
-  const { homeworkService, homeworkStudyService: study } = options;
+  const { homeworkService, homeworkStudyService: study, recurringHomeworkService: recurring } = options;
   const handle = fn => async (request, reply) => {
     try {
       return await fn(request, reply);
@@ -11,6 +11,18 @@ async function homeworkRoutes(fastify, options) {
     }
   };
   const actor = request => request.user.role;
+
+  fastify.get('/children/:id/recurring-homework', handle(r => recurring.list(r.params.id)));
+  fastify.post('/children/:id/recurring-homework', generationWrite(fastify, (r, reply) => {
+    reply.code(201);
+    return formSubmission(fastify.db, r, 'recurring-homework', r.params.id,
+      body => recurring.create(r.params.id, body), id => {
+        try { return recurring.get(id); } catch { return null; }
+      });
+  }));
+  fastify.put('/recurring-homework/:id', generationWrite(fastify, r => recurring.update(r.params.id, r.body || {})));
+  fastify.delete('/recurring-homework/:id', generationWrite(fastify, r => recurring.remove(r.params.id, r.body || {})));
+  fastify.post('/recurring-homework/:id/skip', generationWrite(fastify, r => recurring.skip(r.params.id, r.body || {})));
 
   fastify.get('/children/:id/homework', handle(async request => homeworkService.list(request.params.id, request.query)));
   fastify.post('/children/:id/homework', generationWrite(fastify, (request, reply) => {

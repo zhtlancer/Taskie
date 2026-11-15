@@ -128,6 +128,7 @@ const displayPoints = computed(() => props.task.is_completed
 
 const homeworkDetail = computed(() => {
   const homework = props.task.homework;
+  if (homework?.recurring_title && !homework.content) return '待补充内容';
   if (!homework || props.task.title === `${homework.subject}：${homework.content}`) return '';
   const [first, ...rest] = homework.content.split('\n');
   return props.task.title === `${homework.subject}：${first}` ? rest.join('\n').trim() : homework.content;

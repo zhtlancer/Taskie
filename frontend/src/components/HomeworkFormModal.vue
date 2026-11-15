@@ -38,6 +38,7 @@
         </template>
       </div>
 
+      <p v-if="record?.recurring_title" class="text-xs font-bold text-slate-500 dark:text-slate-400">{{ record.recurring_title }} · 内容可稍后补充</p>
       <div>
         <label for="homework-content" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">作业内容</label>
         <textarea
@@ -45,7 +46,7 @@
           v-model="form.content"
           rows="4"
           maxlength="500"
-          required
+          :required="!record?.recurring_title"
           placeholder="例如：抄写第 5 课生字两遍，预习第 6 课"
           class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 outline-none font-chinese resize-none"
         ></textarea>
@@ -100,7 +101,7 @@
 
       <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
         <button type="button" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
-        <button type="submit" :disabled="saving || conflict || !form.content.trim() || !(record || selected)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
+        <button type="submit" :disabled="saving || conflict || (!form.content.trim() && !record?.recurring_title) || !(record || selected)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">
           {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>

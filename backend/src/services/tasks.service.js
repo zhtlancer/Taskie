@@ -354,6 +354,7 @@ class TasksService {
   // Saves a date's tasks as its board shows them and returns the schedule used. Today follows the
   // current configuration; a past date already recorded keeps the tasks it had.
   generateDay(childId, date) {
+    if (date === getTodayDate()) this.recurringHomeworkService?.ensure(childId);
     this.wordStudyService?.ensureScheduled(childId);
     const schedule = this.scheduleFor(childId);
     const matching = schedule.assigned.filter(t => schedule.allowedOn(t.id, date));

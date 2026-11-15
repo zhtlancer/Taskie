@@ -571,6 +571,40 @@ CREATE TABLE IF NOT EXISTS outside_class_homework (
 );
 CREATE INDEX IF NOT EXISTS idx_outside_class_homework_child ON outside_class_homework(child_id);
 
+-- Weekly homework rules; each generated record is independent of later rule changes.
+CREATE TABLE IF NOT EXISTS recurring_homework_templates (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  subject TEXT NOT NULL,
+  weekday INTEGER NOT NULL CHECK(weekday BETWEEN 0 AND 6),
+  start_date TEXT NOT NULL,
+  end_date TEXT,
+  points INTEGER NOT NULL CHECK(points BETWEEN 0 AND 10000),
+  priority INTEGER NOT NULL DEFAULT 1 CHECK(priority IN (0, 1, 2)),
+  track_time INTEGER NOT NULL DEFAULT 0 CHECK(track_time IN (0, 1)),
+  expected_minutes INTEGER,
+  pause_on_holidays INTEGER NOT NULL DEFAULT 0 CHECK(pause_on_holidays IN (0, 1)),
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recurring_homework_child ON recurring_homework_templates(child_id);
+
+-- A receipt survives deletion of either the rule or its homework, preventing regeneration.
+-- The Monday key prevents a weekday edit from producing two assignments in the same week.
+CREATE TABLE IF NOT EXISTS recurring_homework_occurrences (
+  template_id TEXT NOT NULL,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  cycle_start TEXT NOT NULL,
+  scheduled_date TEXT NOT NULL,
+  title TEXT NOT NULL,
+  homework_id TEXT UNIQUE REFERENCES homework_records(id) ON DELETE SET NULL,
+  skipped INTEGER NOT NULL DEFAULT 0 CHECK(skipped IN (0, 1)),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(template_id, cycle_start)
+);
+CREATE INDEX IF NOT EXISTS idx_recurring_homework_occurrence_child ON recurring_homework_occurrences(child_id);
+
 -- Default points of a homework task per course: 'school:<subject>' or 'class:<outside class id>'.
 CREATE TABLE IF NOT EXISTS homework_course_points (
   course_key TEXT PRIMARY KEY,

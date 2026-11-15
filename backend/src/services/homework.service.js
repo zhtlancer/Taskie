@@ -36,6 +36,7 @@ const later = (a, b) => (a > b ? a : b);
 // The task a record puts on the board: "语文：抄写第5课生字", cut to the board's title limit.
 function taskTitle(record) {
   const firstLine = record.content.split('\n').map(line => line.trim()).find(Boolean) || '';
+  if (!firstLine && record.recurring_title) return record.recurring_title;
   const title = `${record.subject}：${firstLine}`;
   return title.length > MAX_TASK_TITLE ? `${title.slice(0, MAX_TASK_TITLE - 1)}…` : title;
 }
@@ -199,9 +200,11 @@ class HomeworkService {
       COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds,
       (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count,
       EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running, c.name AS child_name, c.avatar_emoji AS child_avatar_emoji,
-      a.lesson_date AS auto_lesson_date, a.actual_date AS auto_lesson_actual_date
+      a.lesson_date AS auto_lesson_date, a.actual_date AS auto_lesson_actual_date,
+      p.title AS recurring_title, p.template_id AS recurring_template_id
       FROM homework_records r JOIN children c ON c.id = r.child_id LEFT JOIN daily_tasks d ON d.id = r.daily_task_id
       LEFT JOIN outside_class_homework a ON a.homework_id = r.id
+      LEFT JOIN recurring_homework_occurrences p ON p.homework_id = r.id
       WHERE ${where} ORDER BY r.assigned_date DESC, r.created_at DESC`).all(...params).map(row => this.describe(row));
   }
 
@@ -214,6 +217,7 @@ class HomeworkService {
   // A child's records, newest first: by course, by assigned dates, or by words in the content.
   list(childId, { subject, class_id, from, to, q } = {}) {
     this.requireChild(childId);
+    this.recurringService?.ensure(childId);
     const where = ['r.child_id = ?'];
     const params = [childId];
     if (class_id) { where.push('r.course_key = ?'); params.push(`class:${class_id}`); }
@@ -276,12 +280,12 @@ class HomeworkService {
 
   // Internal callers may supply a confirmed historical class snapshot, even after reassignment.
   // HTTP creation always resolves the course through create() above.
-  createRecord(childId, body, actor, course) {
+  createRecord(childId, body, actor, course, { recurringTitle } = {}) {
     this.requireChild(childId);
     if (actor !== 'parent' && Object.hasOwn(body, 'priority')) throw fail(403, '只有家长可以设置优先级');
     const priority = validatePriority(body.priority);
     const content = typeof body.content === 'string' ? body.content.trim() : '';
-    if (!content) throw fail(400, '请填写作业内容');
+    if (!content && !recurringTitle) throw fail(400, '请填写作业内容');
     if (content.length > MAX_CONTENT) throw fail(400, `作业内容不超过 ${MAX_CONTENT} 个字`);
     const today = getTodayDate();
     const assigned = body.assigned_date ?? today;
@@ -300,15 +304,16 @@ class HomeworkService {
         created_by, task_requested, daily_task_id, created_at, updated_at, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
         .run(id, childId, course.kind, courseKey(course), course.subject, course.class_id, assigned, due, content, points, actor,
           body.create_task && actor !== 'parent' ? 1 : 0, now, now, priority);
-      if (timing) this.attachTask(id, timing);
+      if (timing) this.attachTask(id, timing, recurringTitle);
     })();
     return this.get(id);
   }
 
   // The record's one-off task: from the assigned day (today at the earliest, so past days keep their
   // history) until the due date, worth the record's points.
-  attachTask(id, timing) {
-    const record = this.db.prepare('SELECT * FROM homework_records WHERE id = ?').get(id);
+  attachTask(id, timing, recurringTitle) {
+    const record = this.get(id);
+    if (recurringTitle) record.recurring_title = recurringTitle;
     const today = getTodayDate();
     if (record.daily_task_id) throw fail(409, '这条作业已经生成了任务');
     if (!record.due_date || record.due_date < today) throw fail(409, record.due_date ? '截止日期已过，不能生成任务' : '没有截止日期，不能生成任务');
@@ -359,7 +364,7 @@ class HomeworkService {
     let content = record.content;
     if (body.content !== undefined) {
       content = typeof body.content === 'string' ? body.content.trim() : '';
-      if (!content) throw fail(400, '请填写作业内容');
+      if (!content && !record.recurring_title) throw fail(400, '请填写作业内容');
       if (content.length > MAX_CONTENT) throw fail(400, `作业内容不超过 ${MAX_CONTENT} 个字`);
     }
     const assigned = body.assigned_date ?? record.assigned_date;
@@ -419,7 +424,7 @@ class HomeworkService {
 
   // The homework a board task came from, for its card.
   homeworkByTask(childId) {
-    return new Map(this.db.prepare('SELECT r.id, r.daily_task_id, r.subject, r.content, r.assigned_date, r.completion_requested_at, COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds, (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count, EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running FROM homework_records r JOIN daily_tasks d ON d.id = r.daily_task_id WHERE r.child_id = ?')
+    return new Map(this.db.prepare('SELECT r.id, r.daily_task_id, r.subject, r.content, p.title AS recurring_title, r.assigned_date, r.completion_requested_at, COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds, (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count, EXISTS(SELECT 1 FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NULL AND s.timer_started_at IS NOT NULL) AS study_running FROM homework_records r JOIN daily_tasks d ON d.id = r.daily_task_id LEFT JOIN recurring_homework_occurrences p ON p.homework_id = r.id WHERE r.child_id = ?')
       .all(childId).map(({ daily_task_id, ...record }) => [daily_task_id, record]));
   }
 }

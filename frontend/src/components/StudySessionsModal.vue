@@ -5,7 +5,7 @@
       <p v-if="notice" role="status" class="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 rounded-xl p-3 text-sm">{{ notice }}</p>
       <p v-if="!study" class="text-slate-400">正在加载学习记录…</p>
       <template v-else>
-        <p class="whitespace-pre-line text-sm font-bold">{{ study.record.subject }}：{{ study.record.content }}</p>
+        <p class="whitespace-pre-line text-sm font-bold">{{ study.record.content ? `${study.record.subject}：${study.record.content}` : study.record.recurring_title || study.record.subject }}</p>
         <p class="text-xs text-slate-500 dark:text-slate-400">{{ taskId ? '任务' : '作业' }}截止 {{ study.record.task.due_date }} · 已保存累计 {{ formatDuration(study.total_seconds) }} · {{ study.sessions.length }} 次学习</p>
         <p v-if="study.record.task.expected_minutes" class="text-xs text-slate-500 dark:text-slate-400">整项任务预计 {{ study.record.task.expected_minutes }} 分钟<span v-if="pace"> · {{ pace.text }}</span></p>
         <p v-if="study.legacy_seconds" class="text-xs text-slate-400">其中旧累计用时 {{ formatDuration(study.legacy_seconds) }}，没有分次明细，不重新分配到每天。</p>
@@ -75,7 +75,7 @@
       </template>
     </div>
   </UiDialog>
-  <DurationModal v-if="durationPrompt" :key="durationPrompt.total" :title="study.record.content" :initial-seconds="durationPrompt.initial"
+  <DurationModal v-if="durationPrompt" :key="durationPrompt.total" :title="study.record.content || study.record.recurring_title || study.record.subject" :initial-seconds="durationPrompt.initial"
     additive :recorded-seconds="durationPrompt.total" :note="durationPrompt.note"
     :expected-minutes="study.record.task.expected_minutes" :busy="busy" :error="error"
     @close="durationPrompt = false" @submit="completeWithDuration" />

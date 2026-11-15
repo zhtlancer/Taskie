@@ -20,6 +20,7 @@
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2.5 whitespace-nowrap">
+          <button v-if="asParent" type="button" class="min-h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs" @click="recurringOpen = true">🔁 周期作业</button>
           <button
             v-if="asParent"
             type="button"
@@ -114,9 +115,10 @@
                   <span class="text-xs font-bold" :class="dueClass(record)">{{ dueText(record) }}</span>
                   <span class="ml-auto px-2 py-0.5 rounded-lg text-xs font-black" :class="STATE[record.task_state].class">{{ record.task_state === 'open' && record.study_count ? '进行中' : STATE[record.task_state].label }}</span>
                 </div>
-                <p class="text-sm font-bold text-slate-700 dark:text-slate-200 whitespace-pre-line break-words font-chinese">{{ record.content }}</p>
+                <p class="text-sm font-bold text-slate-700 dark:text-slate-200 whitespace-pre-line break-words font-chinese">{{ record.content || record.recurring_title }}</p>
+                <p v-if="record.recurring_title && !record.content" class="text-xs font-bold text-amber-600 dark:text-amber-300 mt-1">待补充内容</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold">
-                  <span class="text-slate-400">{{ record.auto_lesson_date ? '确认上课后自动生成' : record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
+                  <span class="text-slate-400">{{ record.recurring_title ? '周期自动生成' : record.auto_lesson_date ? '确认上课后自动生成' : record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
                   <span v-if="record.study_running" class="text-indigo-600 dark:text-indigo-300">⏱ 正在计时</span>
                   <span v-if="record.task" class="text-indigo-600 dark:text-indigo-300">已学 {{ record.study_count || 0 }} 次 · 累计 {{ Math.round((record.study_seconds || 0) / 60) }} 分钟</span>
                   <span v-if="record.completion_requested_at && !record.task?.is_completed" class="text-amber-600 dark:text-amber-300">全部完成待家长确认</span>
@@ -243,6 +245,7 @@
       </div>
     </UiDialog>
 
+    <RecurringHomeworkPanel v-if="recurringOpen && asParent" :key="childId" :child-id="childId" :today="today" @close="recurringOpen = false; load()" @saved="load" />
     <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null" @saved="load" />
     <ChildTabBar :child-id="childId" />
   </div>
@@ -257,6 +260,7 @@ import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
+import RecurringHomeworkPanel from '../components/RecurringHomeworkPanel.vue';
 import UiDialog from '../components/UiDialog.vue';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
@@ -298,6 +302,7 @@ const loading = ref(true);
 const loadError = ref(false);
 const form = ref(null);
 const studyRecord = ref(null);
+const recurringOpen = ref(false);
 const deleteTarget = ref(null);
 const pointsOpen = ref(false);
 const pointsError = ref('');
@@ -324,7 +329,7 @@ const shown = computed(() => {
   const words = search.value.trim();
   return records.value.filter(record => (courseFilter.value === 'all' || record.course_key === courseFilter.value) &&
     (statusFilter.value === 'all' || ['open', 'pending', 'missed'].includes(record.task_state) || (record.task_state === 'none' && record.due_date >= today.value)) &&
-    (!words || record.content.includes(words)) &&
+    (!words || `${record.content} ${record.recurring_title || ''}`.includes(words)) &&
     (!rangeFilter.value || (record.assigned_date >= rangeFilter.value.from && (!rangeFilter.value.to || record.assigned_date <= rangeFilter.value.to))));
 });
 
