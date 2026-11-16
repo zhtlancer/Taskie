@@ -140,7 +140,7 @@ async function main() {
   await page.getByRole('button', { name: '下载备份', exact: true }).first().click();
   const archive = await (await downloadEvent).path();
   assert.ok(archive);
-  await page.locator('input[type=file]').setInputFiles(archive);
+  await page.locator('input[accept=".gz"]').setInputFiles(archive);
   await page.getByLabel('当前家长 PIN', { exact: false }).fill(NEW_PIN);
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: '确认恢复', exact: true }).click();

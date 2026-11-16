@@ -37,6 +37,7 @@
     "test:browser:class-stats": "node scripts/smoke-class-stats.cjs",
     "test:browser:parent-forms": "node scripts/smoke-parent-forms.cjs",
     "test:browser:parent-schedule": "node scripts/smoke-parent-schedule.cjs",
+    "test:browser:parent-settings": "node scripts/smoke-parent-settings.cjs",
     "test:browser:parent-navigation": "node scripts/smoke-parent-navigation.cjs",
     "test:browser:recurring-homework": "node scripts/smoke-recurring-homework.cjs",
     "test:browser:class-homework": "node scripts/smoke-class-homework.cjs",

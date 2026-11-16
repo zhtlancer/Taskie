@@ -543,7 +543,7 @@ async function main() {
     await page.route('**/api/backups/photos/export-ticket', route => route.fulfill({ json: { url: '/api/test-photo-download', included_count: 4, skipped: [] } }));
     await page.getByRole('button', { name: '下载全部照片', exact: true }).click();
     await warning.waitFor({ state: 'detached' });
-    assert.equal(await page.locator('input[accept*=tar]').count(), 0, 'no skipped or missing photos means no repair entry');
+    assert.equal(await page.locator('input[accept*=tar]').count(), 1, 'photo import remains available when no missing photos are reported');
   });
 
   await check('B-F1 evicted receipt replays the same request without duplicate rewards', async () => {

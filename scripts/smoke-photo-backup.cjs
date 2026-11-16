@@ -234,9 +234,10 @@ async function main() {
     }
     page = await open(away.app, awayBase);
     const alert = page.getByRole('alert').filter({ hasText: '张错题照片需要补齐' });
+    const photoSection = page.locator('[data-settings-section="photos"]');
     for (const [file, left] of (freshFile ? [[allFile, '还缺 1 张。'], [freshFile, '照片已全部齐全。']] : [[allFile, '照片已全部齐全。']])) {
-      await alert.locator('input[type=file]').setInputFiles(file);
-      await alert.getByRole('button', { name: '上传照片包', exact: true }).click();
+      await photoSection.locator('input[type=file]').setInputFiles(file);
+      await photoSection.getByRole('button', { name: '上传照片包', exact: true }).click();
       await page.getByRole('status').getByText(left, { exact: false }).waitFor();
     }
     await alert.waitFor({ state: 'detached' });
