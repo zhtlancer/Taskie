@@ -42,8 +42,8 @@
       <!-- Empty State -->
       <div v-else-if="visibleTemplates.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
         <div class="text-5xl mb-3">📝</div>
-        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">暂无任务模板</h3>
-        <p class="text-xs text-slate-400 mb-6">点击右上角“新增任务模板”为孩子们配置日常作业吧</p>
+        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">{{ templates.length && !showAllTemplates && selectedChild ? `${selectedChild.name} 暂无日常任务模板` : '暂无任务模板' }}</h3>
+        <p class="text-xs text-slate-400 mb-6">{{ templates.length && !showAllTemplates && selectedChild ? '可勾选“显示全部孩子的模板”查看其他孩子的模板，或点击右上角“新增任务模板”添加。' : '点击右上角“新增任务模板”为孩子们配置日常作业吧' }}</p>
       </div>
 
       <!-- Templates Grid -->

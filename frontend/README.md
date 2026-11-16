@@ -91,7 +91,7 @@ frontend/
 │       ├── ParentLoginView.vue  # /parent/login 家长 PIN 登录页
 │       ├── ParentDashboardView.vue # /parent/dashboard 家长总览
 │       ├── ParentChildrenView.vue  # /parent/children 孩子账号管理
-│       └── ParentTasksView.vue     # /parent/tasks 任务模板管理（支持每周特定频次）
+│       └── ParentTasksView.vue     # /parent/tasks 日常任务管理（支持每周特定频次）
 │   test/
 │   └── imageProcess.test.js   # 图像处理算法与滤镜自动化单元测试
 ```

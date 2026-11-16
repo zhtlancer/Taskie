@@ -31,7 +31,7 @@ import { WEEKDAY_NAMES } from '../utils/schedule';
 import { confirmAction } from '../utils/confirmation';
 import { getDataGeneration } from '../utils/session';
 const props = defineProps({ childId: { type: String, required: true }, today: { type: String, required: true } });
-const emit = defineEmits(['close', 'saved', 'busy']);
+const emit = defineEmits(['saved', 'busy']);
 const templates = ref([]), loading = ref(true), loadFailed = ref(false), busy = ref(false), error = ref(''), form = ref(null);
 const generation = getDataGeneration();
 watch(() => busy.value || Boolean(form.value), value => emit('busy', value));
@@ -57,7 +57,7 @@ async function remove(item) {
   await act(() => api.deleteRecurringHomework(item.id, item.edit_version, generation));
 }
 async function saved() { form.value = null; await load(); emit('saved'); }
-const restored = () => emit('close');
+const restored = () => { form.value = null; load(); };
 onMounted(() => { load(); window.addEventListener('taskie:data-restored', restored); });
 onBeforeUnmount(() => { alive = false; window.removeEventListener('taskie:data-restored', restored); });
 </script>
