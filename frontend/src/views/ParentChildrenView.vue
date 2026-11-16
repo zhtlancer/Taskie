@@ -26,6 +26,8 @@
       </div>
 
       <!-- Loading State -->
+      <ParentSectionNav section="management" />
+
       <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
         <span class="animate-spin mr-2">⏳</span> 正在加载孩子账号...
       </div>
@@ -82,7 +84,7 @@
               >
                 📖 字词本
               </router-link>
-              <router-link :to="`/child/${child.id}/word-study`" class="px-3.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-bold text-xs">📚 学习计划</router-link>
+              <router-link :to="{ path: '/parent/word-plans', query: { child: child.id } }" class="px-3.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-bold text-xs">📚 学习计划</router-link>
             </div>
 
             <button
@@ -194,6 +196,7 @@ import { confirmAction } from '../utils/confirmation';
 import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentSectionNav from '../components/ParentSectionNav.vue';
 
 const children = ref([]);
 const loading = ref(true);

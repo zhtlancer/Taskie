@@ -12,20 +12,8 @@
         <router-link to="/parent/dashboard" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">← 数据总览</router-link>
       </div>
 
-      <!-- Filters: child and range, in one row -->
+      <ParentChildPicker :children="children" :model-value="selectedChild" @change="changeChild" />
       <div class="flex flex-wrap items-center gap-2 mb-5">
-        <button
-          v-for="child in children"
-          :key="child.id"
-          type="button"
-          class="min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold border font-chinese"
-          :aria-pressed="selectedChild?.id === child.id"
-          :class="selectedChild?.id === child.id ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'"
-          @click="selectChild(child)"
-        >
-          {{ child.avatar_emoji }} {{ child.name }}
-        </button>
-        <span class="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-700"></span>
         <button
           v-for="range in ranges"
           :key="range.key"
@@ -239,6 +227,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentChildPicker from '../components/ParentChildPicker.vue';
+import { useParentChildSelection } from '../composables/useParentChildSelection';
 import TimeDailyChart from '../components/TimeDailyChart.vue';
 import FinishTimeChart from '../components/FinishTimeChart.vue';
 import Sparkline from '../components/Sparkline.vue';
@@ -251,6 +241,7 @@ const calendar = useCalendarStore();
 const route = useRoute();
 const children = ref([]);
 const selectedChild = ref(null);
+const { initialChild, changeChild } = useParentChildSelection(children, selectedChild, selectChild);
 const timetables = ref([]);
 const rangeKey = ref('7');
 const appliedCustom = ref(null);
@@ -391,7 +382,7 @@ onMounted(async () => {
     const result = await api.getChildren();
     if (disposed) return;
     children.value = result;
-    const wanted = children.value.find(child => child.id === route.query.child) || children.value[0];
+    const wanted = initialChild();
     if (wanted) await selectChild(wanted);
     else loading.value = false;
   } catch (err) {

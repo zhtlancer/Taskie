@@ -109,7 +109,7 @@ async function main() {
   pass('delete confirmation traps keyboard focus, cancels safely and confirms a real deletion');
 
   await goto('/parent/dashboard');
-  await page.getByRole('navigation', { name: '家长导航' }).getByRole('link', { name: '任务', exact: true }).click();
+  await page.getByRole('navigation', { name: '家长导航' }).getByRole('link', { name: '学习安排', exact: true }).click();
   await page.getByRole('button', { name: '删除', exact: true }).first().click();
   await page.getByRole('dialog', { name: '确认操作', exact: true }).waitFor();
   await page.goBack();

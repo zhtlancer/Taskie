@@ -8,7 +8,7 @@
         <div>
           <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
             <span>📝</span>
-            <span>任务模板管理</span>
+            <span>日常任务</span>
           </h2>
           <p class="text-xs font-bold text-slate-400 mt-0.5">
             配置固定星期重复或每周频次目标任务，系统自动生成每日任务实例
@@ -16,9 +16,6 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <router-link to="/parent/periods" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800">
-            🏖️ 假期与长期任务
-          </router-link>
           <button
             type="button"
             @click="openAddModal"
@@ -30,13 +27,20 @@
         </div>
       </div>
 
+      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="showModal" @change="changeChild" />
+      <ParentSectionNav section="learning" :child-id="selectedChild?.id" />
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <p>共享模板的修改会影响所有适用孩子。</p>
+        <label class="inline-flex min-h-11 items-center gap-2"><input v-model="showAllTemplates" type="checkbox" />显示全部孩子的模板</label>
+      </div>
+      <p v-if="loadError" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ loadError }} <button type="button" class="min-h-11 px-3 underline" @click="loadTemplates">重新读取</button></p>
       <!-- Loading State -->
       <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
         <span class="animate-spin mr-2">⏳</span> 正在加载任务模板...
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="templates.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
+      <div v-else-if="visibleTemplates.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
         <div class="text-5xl mb-3">📝</div>
         <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">暂无任务模板</h3>
         <p class="text-xs text-slate-400 mb-6">点击右上角“新增任务模板”为孩子们配置日常作业吧</p>
@@ -45,7 +49,7 @@
       <!-- Templates Grid -->
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div
-          v-for="tmpl in templates"
+          v-for="tmpl in visibleTemplates"
           :key="tmpl.id"
           class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card flex flex-col justify-between hover:shadow-card-hover transition-all"
         >
@@ -441,16 +445,22 @@ const scheduleLabel = days => {
   return [1,2,3,4,5,6,0].filter(day => list.includes(day)).map(day => ['周日','周一','周二','周三','周四','周五','周六'][day]).join('、');
 };
 import { confirmAction } from '../utils/confirmation';
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentChildPicker from '../components/ParentChildPicker.vue';
+import ParentSectionNav from '../components/ParentSectionNav.vue';
+import { useParentChildSelection } from '../composables/useParentChildSelection';
 import TimingFields from '../components/TimingFields.vue';
 import PriorityFields from '../components/PriorityFields.vue';
 import PriorityBadge from '../components/PriorityBadge.vue';
 
 const templates = ref([]);
 const children = ref([]);
-const loading = ref(true);
+const loading = ref(true), loadError = ref(''), selectedChild = ref(null);
+const { initialChild, changeChild } = useParentChildSelection(children, selectedChild, child => { selectedChild.value = child; });
+const showAllTemplates = ref(false);
+const visibleTemplates = computed(() => showAllTemplates.value || !children.value.length ? templates.value : templates.value.filter(t => selectedChild.value && (t.child_ids == null || t.child_ids.includes(selectedChild.value.id))));
 
 const showModal = ref(false);
 const isEditing = ref(false);
@@ -492,8 +502,10 @@ async function loadTemplates() {
   loading.value = true;
   try {
     [templates.value, children.value] = await Promise.all([api.getTaskTemplates(), api.getChildren()]);
+    selectedChild.value = initialChild();
+    loadError.value = '';
   } catch (err) {
-    console.error('Failed to load templates:', err);
+    loadError.value = err.message || String(err);
   } finally {
     loading.value = false;
   }
@@ -561,7 +573,7 @@ function openAddModal() {
     points: 10,
     priority: 1,
     days_of_week: [1, 2, 3, 4, 5],
-    child_ids: null,
+    child_ids: selectedChild.value ? [selectedChild.value.id] : null,
     track_time: false,
     expected_minutes: null,
     carry_over: false

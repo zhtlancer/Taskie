@@ -6,7 +6,7 @@
         <button type="button" class="lg:order-last min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold whitespace-nowrap" aria-label="打开家长设置菜单" :aria-expanded="menuOpen" @click="menuOpen = true">设置 · ⋯</button>
       </div>
       <nav class="grid grid-cols-5 gap-1 lg:flex-1" aria-label="家长导航">
-        <router-link v-for="tab in tabs" :key="tab.to" :to="tab.to" class="flex items-center justify-center rounded-xl min-h-[44px] px-1 lg:px-3 text-xs lg:text-sm font-bold whitespace-nowrap" :class="isActive(tab) ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" :aria-current="isActive(tab) ? 'page' : undefined">{{ tab.label }}</router-link>
+        <router-link v-for="tab in tabs" :key="tab.to" :to="tabLink(tab)" class="flex items-center justify-center rounded-xl min-h-[44px] px-1 lg:px-3 text-xs lg:text-sm font-bold whitespace-nowrap" :class="isActive(tab) ? 'bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'" :aria-current="isActive(tab) ? 'page' : undefined">{{ tab.label }}</router-link>
       </nav>
     </div>
   </header>
@@ -24,17 +24,16 @@ import { ref, watch } from 'vue';
 import SoundToggle from './SoundToggle.vue';
 import ThemeSelect from './ThemeSelect.vue';
 import UiDialog from './UiDialog.vue';
+import { parentTabs, parentTabActive, rememberedParentChild } from '../utils/parentNavigation.js';
 import { useParentStore } from '../stores/parent';
 import { useRouter, useRoute } from 'vue-router';
 const parent = useParentStore(), router = useRouter(), route = useRoute(), menuOpen = ref(false);
 function exitParent() { menuOpen.value = false; parent.logout(); router.push('/'); }
 watch(() => route.fullPath, () => { menuOpen.value = false; });
-const isActive = tab => tab.paths.some(path => path.endsWith('/') ? route.path.startsWith(path) : route.path === path);
-const tabs = [
-  {to:'/parent/dashboard',label:'总览',paths:['/parent/dashboard','/parent/time-stats','/parent/children/']},
-  {to:'/parent/children',label:'孩子',paths:['/parent/children']},
-  {to:'/parent/tasks',label:'任务',paths:['/parent/tasks','/parent/periods']},
-  {to:'/parent/schedule',label:'课表',paths:['/parent/schedule']},
-  {to:'/parent/rewards',label:'奖励',paths:['/parent/rewards']}
-];
+const isActive = tab => parentTabActive(tab, route.path);
+const tabs = parentTabs;
+const tabLink = tab => {
+  const child = route.query.child || rememberedParentChild();
+  return { path: tab.to, query: child && ['/parent/tasks', '/parent/schedule', '/parent/time-stats'].includes(tab.to) ? { child } : {} };
+};
 </script>

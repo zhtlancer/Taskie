@@ -323,7 +323,7 @@ async function main() {
   await mobile.goto(`${base}/parent/login`, { waitUntil: 'domcontentloaded' });
   for (const digit of NEW_PIN) await mobile.getByRole('button', { name: digit, exact: true }).click();
   await mobile.waitForURL(at('/parent/dashboard'));
-  for (const path of ['/parent/dashboard', '/parent/children', '/parent/tasks', '/parent/periods', '/parent/rewards', '/parent/settings']) await fitsWidth(path);
+  for (const path of ['/parent/dashboard', '/parent/children', '/parent/tasks', '/parent/calendar', '/parent/goals', '/parent/recurring-homework', '/parent/word-plans', '/parent/time-stats', '/parent/rewards', '/parent/settings']) await fitsWidth(path);
   assert.equal(errors.length, 0, JSON.stringify(errors));
   pass('phone layout: every child and parent page fits 390px and the child tab bar navigates');
   await phone.close();

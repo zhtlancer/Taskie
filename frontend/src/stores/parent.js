@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
+import { rememberParentChild } from '../utils/parentNavigation.js';
 import { hasSession, clearTokens, setMustChangePin } from '../utils/session.js';
 import { pendingWriteStore } from '../utils/requestId.js';
 
@@ -31,6 +32,7 @@ export const useParentStore = defineStore('parent', {
     },
 
     resetSession() {
+      rememberParentChild(null);
       this.isAuthenticated = false;
       this.pendingPin = null;
       sessionStorage.removeItem('parent_auth');

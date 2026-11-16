@@ -27,7 +27,7 @@
             to="/parent/tasks"
             class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button active:scale-95 transition-all"
           >
-            📝 管理任务模板
+            📝 学习安排
           </router-link>
         </div>
       </div>

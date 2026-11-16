@@ -382,10 +382,10 @@ async function main() {
     await page.locator('main > section').getByText(/2026-10-23 · 认读/).waitFor();
     await begin(page).click(); await grade(page); await noErrors(page);
   });
-  await check('L1 settings draft survives midnight; closing triggers silent refresh', async () => {
+  await check('L1 parent plan draft survives midnight; returning to study loads today', async () => {
     const page = await open('dark');
     await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
-    await page.getByRole('button', { name: '自动学习设置', exact: true }).click();
+    await page.getByRole('link', { name: '管理字词计划', exact: true }).click();
     const target = page.getByRole('spinbutton', { name: '每日新学目标' }).first();
     await target.fill('7');
     const reads = [];
@@ -394,7 +394,7 @@ async function main() {
     assert.equal(await target.inputValue(), '7');
     await page.waitForTimeout(apiDelay + 300);
     assert.equal(reads.length, 0);
-    await page.getByRole('button', { name: '收起设置', exact: true }).click();
+    await page.getByRole('link', { name: '查看今日字词学习 →', exact: true }).click();
     await waitForNewStudy(page); await noErrors(page);
   });
   await check('L1 accepted in-flight score survives midnight with one unchanged attempt', async () => {
@@ -433,7 +433,7 @@ async function main() {
     } else {
       await api('POST', `/children/${child.id}/goals`, { title: '延迟阅读', subject: '语文', mode: 'progress',
         total_amount: 100, unit: '页', start_date: '2026-10-20', end_date: '2026-10-23' });
-      await page.goto(`${base}/parent/periods`);
+      await page.goto(`${base}/parent/goals`);
       await page.getByRole('button', { name: new RegExp(child.name) }).click();
       await page.getByText(/还剩 3 天，今天建议/).waitFor();
     }
@@ -475,7 +475,7 @@ async function main() {
     await api('POST', `/children/${child.id}/goals`, { title: '跨夜阅读', subject: '语文', mode: 'progress',
       input_mode: 'position', total_amount: 100, unit: '页', start_date: '2026-10-21', end_date: '2026-10-23' });
     await api('POST', `/children/${child.id}/periods`, { name: '今晚结束的假期', start_date: '2026-10-20', end_date: '2026-10-21' });
-    await page.goto(`${base}/parent/periods`);
+    await page.goto(`${base}/parent/goals`);
     await page.getByRole('button', { name: new RegExp(child.name) }).click();
     await page.getByText(/还剩 3 天，今天建议/).waitFor();
     await page.getByRole('button', { name: '补记进度', exact: true }).click();

@@ -3,6 +3,7 @@
     <ParentNavBar />
     <main class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
       <h2 class="text-2xl font-bold">数据备份与账号设置</h2>
+      <ParentSectionNav section="management" />
       <p v-if="message" :role="failed ? 'alert' : 'status'" class="p-4 rounded-xl" :class="failed ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'">{{ message }}</p>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
         <h3 class="text-lg font-bold">备份学习记录</h3>
@@ -139,6 +140,7 @@ import { useRouter } from 'vue-router';
 import api from '../api/client';
 import { clearTokens, endSession } from '../utils/session.js';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentSectionNav from '../components/ParentSectionNav.vue';
 import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.js';
 import { businessDate } from '../utils/businessDate.js';
 import { localFormDrafts } from '../utils/formDrafts.js';

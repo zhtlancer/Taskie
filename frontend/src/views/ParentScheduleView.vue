@@ -13,19 +13,8 @@
         </div>
       </div>
 
-      <!-- Child Selector -->
-      <div class="flex flex-wrap gap-2 mb-5">
-        <button
-          v-for="child in children"
-          :key="child.id"
-          type="button"
-          class="px-4 py-2 rounded-xl text-sm font-bold border transition-all font-chinese"
-          :class="selectedChild?.id === child.id ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'"
-          @click="selectChild(child)"
-        >
-          {{ child.avatar_emoji }} {{ child.name }}
-        </button>
-      </div>
+      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="Boolean(classModal || exceptionModal || timetableModal)" @change="changeChild" />
+      <ParentSectionNav section="calendar" :child-id="selectedChild?.id" />
 
       <p v-if="error" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
       <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold"><span class="animate-spin mr-2">⏳</span> 正在加载...</div>
@@ -164,6 +153,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentChildPicker from '../components/ParentChildPicker.vue';
+import ParentSectionNav from '../components/ParentSectionNav.vue';
+import { useParentChildSelection } from '../composables/useParentChildSelection';
 import TimetableEditor from '../components/TimetableEditor.vue';
 import OutsideClassModal from '../components/OutsideClassModal.vue';
 import ClassExceptionModal from '../components/ClassExceptionModal.vue';
@@ -175,6 +167,7 @@ const today = computed(() => calendar.today);
 const route = useRoute();
 const children = ref([]);
 const selectedChild = ref(null);
+const { initialChild, changeChild } = useParentChildSelection(children, selectedChild, selectChild);
 const timetables = ref([]);
 const classes = ref([]);
 const classStats = ref([]);
@@ -363,7 +356,7 @@ onMounted(async () => {
   try {
     children.value = await api.getChildren();
     if (children.value.length) {
-      selectedChild.value = children.value.find(child => child.id === route.query.child) || children.value[0];
+      selectedChild.value = initialChild();
       await reload();
     }
   } catch (err) {

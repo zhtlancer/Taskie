@@ -59,7 +59,7 @@ async function main() {
       assert.equal((await adhocSaved).status(), 201);
       assert.equal(app.services.tasksService.listAdhocTasks(child.id).find(t => t.title === '低优先临时').priority, 0);
 
-      await goto('/parent/periods');
+      await goto('/parent/goals');
       await page.getByRole('button', { name: child.name, exact: false }).click();
       await page.getByRole('button', { name: '新增长期任务', exact: false }).click();
       form = page.locator('form').filter({ has: page.getByPlaceholder('例如：寒假作业、读完《西游记》') });

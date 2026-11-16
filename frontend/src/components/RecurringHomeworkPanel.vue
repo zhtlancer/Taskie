@@ -1,5 +1,5 @@
 <template>
-  <UiDialog title="周期作业" wide :busy="busy" @close="$emit('close')">
+  <section data-recurring-panel aria-label="周期作业模板">
     <div class="space-y-3">
       <p class="text-sm text-slate-500 dark:text-slate-400">每周自动生成作业，内容可之后补充。停用或删除模板会保留已经生成的作业。</p>
       <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
@@ -20,21 +20,21 @@
         </li>
       </ul>
     </div>
-  </UiDialog>
+  </section>
   <RecurringHomeworkForm v-if="form" :child-id="childId" :today="today" :template="form.template" @close="form = null; load()" @saved="saved" />
 </template>
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
-import UiDialog from './UiDialog.vue';
 import RecurringHomeworkForm from './RecurringHomeworkForm.vue';
 import { WEEKDAY_NAMES } from '../utils/schedule';
 import { confirmAction } from '../utils/confirmation';
 import { getDataGeneration } from '../utils/session';
 const props = defineProps({ childId: { type: String, required: true }, today: { type: String, required: true } });
-const emit = defineEmits(['close', 'saved']);
+const emit = defineEmits(['close', 'saved', 'busy']);
 const templates = ref([]), loading = ref(true), loadFailed = ref(false), busy = ref(false), error = ref(''), form = ref(null);
 const generation = getDataGeneration();
+watch(() => busy.value || Boolean(form.value), value => emit('busy', value));
 let alive = true;
 async function load() {
   loading.value = true; loadFailed.value = false;

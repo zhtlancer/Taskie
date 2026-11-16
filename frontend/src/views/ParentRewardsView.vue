@@ -25,6 +25,8 @@
         </button>
       </div>
 
+      <ParentSectionNav section="management" />
+
       <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
         <span class="animate-spin mr-2">⏳</span> 正在加载奖励数据...
       </div>
@@ -249,6 +251,7 @@ import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import { getPendingRedemptions } from '../api/redemptions';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentSectionNav from '../components/ParentSectionNav.vue';
 import RefundRedemptionDialog from '../components/RefundRedemptionDialog.vue';
 import { useCalendarStore } from '../stores/calendar';
 const calendar = useCalendarStore();

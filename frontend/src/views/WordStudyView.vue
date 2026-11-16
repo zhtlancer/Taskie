@@ -6,47 +6,18 @@
         <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm font-bold [&>a]:inline-flex [&>a]:items-center [&>a]:min-h-[44px] [&>button]:min-h-[44px] text-brand-600 dark:text-brand-300">
           <router-link :to="`/child/${childId}/characters`">生字生词本</router-link>
           <router-link :to="`/child/${childId}/today`">今日看板</router-link>
-          <button :disabled="busy || loading || active || showSettings" @click="refresh">刷新安排</button>
-          <button v-if="asParent" :disabled="busy" @click="showSettings = !showSettings">{{ showSettings ? '收起设置' : '自动学习设置' }}</button>
+          <button :disabled="busy || loading || active" @click="refresh">刷新安排</button>
+          <router-link v-if="asParent" :to="{ path: '/parent/word-plans', query: { child: childId } }">管理字词计划</router-link>
         </div>
       </header>
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="notice" role="status" class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
-      <p v-if="dayChanged && showSettings && !active" role="status" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">已经到新的一天，关闭设置后会换成今天的清单</p>
       <p v-if="loading" class="text-center py-12 text-brand-600 dark:text-brand-300">正在安排学习…</p>
-
-      <section v-if="asParent && showSettings" class="space-y-4">
-        <p class="text-xs text-slate-500 dark:text-slate-400">自动从字词本选词，新加入的字词进入后续清单。每个字词条算一项；认读、书写分别安排。设置变更作用于下一份清单，今天已经生成的清单保持不变。</p>
-        <form v-for="form in forms" :key="form.skill" class="rounded-2xl border bg-white dark:bg-slate-900 p-4 space-y-3" @submit.prevent="save(form)">
-          <h2 class="font-black text-slate-800 dark:text-slate-100">{{ skillName(form.skill) }}计划</h2>
-          <div class="flex flex-wrap gap-4 text-sm">
-            <label><input v-model="form.enabled" type="checkbox" /> 开启自动学习</label>
-            <label><input v-model="form.required" type="checkbox" /> 基础目标计入每日必做</label>
-            <label><input v-model="form.include_mastered" type="checkbox" /> 纳入字词本中已掌握的内容</label>
-          </div>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">开始日期 <input v-model="form.start_date" type="date" :disabled="form.existing" :min="date" required class="p-2 border rounded-lg" /></label>
-          <div class="flex flex-wrap gap-3 text-xs font-bold text-slate-600 dark:text-slate-300">
-            <label>每日新学目标 <input v-model.number="form.new_target" type="number" min="0" max="30" required class="w-16 border rounded-lg p-2" /> 项</label>
-            <label>每日复习目标 <input v-model.number="form.review_target" type="number" min="0" max="100" required class="w-16 border rounded-lg p-2" /> 项</label>
-          </div>
-          <p class="text-xs text-slate-400">按实际可学数量安排，不足时不凑数；超过目标的到期复习不会强塞进当天必做量。</p>
-          <div class="flex flex-wrap gap-3 text-xs"><label v-for="(label, index) in weekdays" :key="index"><input v-model="form.days_of_week" type="checkbox" :value="index" /> {{ label }}</label></div>
-          <div class="flex flex-wrap gap-3 text-xs"><span>纳入分类（不选即全部）：</span><label v-for="category in CATEGORIES" :key="category.key"><input v-model="form.categories" type="checkbox" :value="category.key" /> {{ category.label }}</label></div>
-          <div class="flex flex-wrap gap-3 text-xs font-bold text-slate-600 dark:text-slate-300">
-            <label>基础完成奖励 <input v-model.number="form.points" type="number" min="0" max="10000" required class="w-20 border rounded-lg p-2" /> 分</label>
-            <label>额外每组奖励 <input v-model.number="form.extra_points" type="number" min="0" max="10000" required class="w-20 border rounded-lg p-2" /> 分</label>
-            <label>每天最多奖励额外 <input v-model.number="form.extra_reward_limit" type="number" min="0" max="20" required class="w-16 border rounded-lg p-2" /> 组</label>
-          </div>
-          <p class="text-xs text-slate-400">额外每组最多 3 项，奖励默认关闭；超过奖励名额仍能学习。奖励完成练习，不要求每项都答对。</p>
-          <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50">保存{{ skillName(form.skill) }}计划</button>
-        </form>
-        <p class="text-xs text-slate-500 dark:text-slate-400">独立答对后逐步采用 1、3、7、14、30 天的复习间隔；需要提示或答错时安排次日复习。具体间隔是可迭代的初始规则，并非适合所有孩子的固定最佳周期。不自动修改字词本的“已掌握”或分类标记。</p>
-      </section>
 
       <template v-if="!loading">
         <section v-if="!days.length" class="bg-white dark:bg-slate-900 border rounded-2xl p-6 text-sm text-slate-500 dark:text-slate-400">
           今天没有基础学习清单：可能还未开启计划、今天不是学习日，或当前没有需要新学/复习的字词。
-          <p v-if="!asParent" class="mt-2">可以请家长从字词本进入本页，开启自动学习计划。</p>
+          <p v-if="!asParent" class="mt-2">可以请家长在“学习安排 → 字词计划”中开启自动学习。</p>
         </section>
         <section v-for="day in days" :key="day.id" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3"><h2 class="font-black text-slate-800 dark:text-slate-100">{{ day.title }}</h2><span class="text-xs font-bold" :class="day.base_done ? 'text-emerald-600 dark:text-emerald-300' : 'text-brand-600 dark:text-brand-300'">{{ day.base_done ? '基础目标已完成 ✓' : `基础目标 ${day.base_completed}/${day.base_total}` }}</span></div>
@@ -127,15 +98,14 @@ import ChildTabBar from '../components/ChildTabBar.vue';
 import UiDialog from '../components/UiDialog.vue';
 import HanziGrid from '../components/HanziGrid.vue';
 import { getCharPinyin, speakHanzi } from '../utils/hanzi';
-import { CATEGORIES } from '../utils/wordBook';
 import { currentRole } from '../utils/session';
 import { loadLearningFont } from '../utils/learningFont';
 
 const route = useRoute(), childId = computed(() => route.params.id);
 const calendar = useCalendarStore();
 const asParent = currentRole() === 'parent';
-const days = ref([]), forms = ref([]), history = ref([]), date = ref('');
-const loading = ref(true), busy = ref(false), error = ref(''), notice = ref(''), showSettings = ref(false);
+const days = ref([]), history = ref([]), date = ref('');
+const loading = ref(true), busy = ref(false), error = ref(''), notice = ref('');
 const active = ref(null), revealed = ref(false), charIndex = ref(0), feedbackResult = ref(null);
 const expiredPractice = ref(false);
 const nextDue = computed(() => {
@@ -162,18 +132,17 @@ function retryEarlierServerDate() {
     refresh({ silent: loaded });
   }, 5000);
 }
-const canReload = () => calendar.ready && !active.value && !pendingAttempt.value && !showSettings.value && !busy.value;
+const canReload = () => calendar.ready && !active.value && !pendingAttempt.value && !busy.value;
 function reloadStudyDay() {
   if (canReload() && (!loaded || dayChanged.value) && pendingDate !== calendar.today) refresh({ silent: loaded });
 }
 watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value], () => { stopRetry(); retryCount = 0; historySerial++; });
-watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, active.value, pendingAttempt.value, showSettings.value, busy.value], reloadStudyDay);
-watch(() => [active.value, showSettings.value, busy.value], () => { if (!canReload()) stopRetry(); });
+watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, active.value, pendingAttempt.value, busy.value], reloadStudyDay);
+watch(() => [active.value, busy.value], () => { if (!canReload()) stopRetry(); });
 onBeforeUnmount(() => { studySerial++; historySerial++; stopRetry(); });
 const closeRestoredForm = () => { active.value = null; pendingAttempt.value = null; };
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
-const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const skillName = skill => skill === 'write' ? '书写' : '认读';
 const resultName = result => ({ good: '独立完成', hinted: '提示后完成', again: '还不熟' }[result] || '待学习');
@@ -191,7 +160,7 @@ async function refreshHistory() {
 async function load({ recoverDate = false } = {}) {
   if (!calendar.ready) return;
   stopRetry();
-  const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value, settingsOpen = showSettings.value;
+  const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value;
   const recentSerial = ++historySerial;
   pendingDate = requestedDate;
   const current = () => serial === studySerial && calendar.ready && requestedDate === calendar.today &&
@@ -199,7 +168,7 @@ async function load({ recoverDate = false } = {}) {
   try {
     const [overview, recent] = await Promise.all([api.getWordStudy(id), api.getWordStudyHistory(id)]);
     const sameRecoveredDate = recoveredDeviceDate.value === requestedDate && overview.date === date.value;
-    if (!current() || active.value || (!settingsOpen && showSettings.value)) return;
+    if (!current() || active.value) return;
     if (!recoverDate && !sameRecoveredDate && overview.date !== requestedDate) {
       if (overview.date < requestedDate) retryEarlierServerDate();
       return;
@@ -209,26 +178,12 @@ async function load({ recoverDate = false } = {}) {
     days.value = overview.days;
     date.value = overview.date;
     if (recentSerial === historySerial) history.value = recent;
-    if (!showSettings.value) forms.value = ['recognize', 'write'].map(skill => {
-      const existing = overview.plans.find(plan => plan.skill === skill);
-      return { skill, enabled: false, required: true, include_mastered: false, start_date: overview.date, new_target: 3, review_target: 10,
-        points: 10, extra_points: 0, extra_reward_limit: 0, days_of_week: [1, 2, 3, 4, 5], categories: [], ...existing, existing: Boolean(existing) };
-    });
-    if (!loaded && asParent && !overview.plans.length) showSettings.value = true;
     loaded = true;
   } catch (err) {
     if (current()) error.value = message(err);
   } finally {
     if (serial === studySerial) { loading.value = false; pendingDate = null; }
   }
-}
-
-async function save(form) {
-  if (busy.value) return;
-  busy.value = true; error.value = ''; notice.value = '';
-  try { const saved = await api.saveWordStudyPlan(childId.value, form.skill, form); Object.assign(form, saved, { existing: true }); await load(); notice.value = '设置已保存；已经生成的今日清单保持不变。'; }
-  catch (err) { error.value = message(err); }
-  finally { busy.value = false; }
 }
 
 function openItem(day, batch, item) {

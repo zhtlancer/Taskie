@@ -20,7 +20,7 @@
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-2.5 whitespace-nowrap">
-          <button v-if="asParent" type="button" class="min-h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs" @click="recurringOpen = true">🔁 周期作业</button>
+          <router-link v-if="asParent" :to="{ path: '/parent/recurring-homework', query: { child: childId } }" class="inline-flex items-center min-h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs">管理周期规则</router-link>
           <button
             v-if="asParent"
             type="button"
@@ -245,7 +245,6 @@
       </div>
     </UiDialog>
 
-    <RecurringHomeworkPanel v-if="recurringOpen && asParent" :key="childId" :child-id="childId" :today="today" @close="recurringOpen = false; load()" @saved="load" />
     <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null" @saved="load" />
     <ChildTabBar :child-id="childId" />
   </div>
@@ -260,7 +259,6 @@ import api from '../api/client';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import HomeworkFormModal from '../components/HomeworkFormModal.vue';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
-import RecurringHomeworkPanel from '../components/RecurringHomeworkPanel.vue';
 import UiDialog from '../components/UiDialog.vue';
 import { playClick } from '../utils/sound';
 import { currentRole } from '../utils/session.js';
@@ -302,7 +300,6 @@ const loading = ref(true);
 const loadError = ref(false);
 const form = ref(null);
 const studyRecord = ref(null);
-const recurringOpen = ref(false);
 const deleteTarget = ref(null);
 const pointsOpen = ref(false);
 const pointsError = ref('');

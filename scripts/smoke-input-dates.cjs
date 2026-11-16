@@ -81,7 +81,7 @@ async function main() {
       const goalForm = () => page.locator('form').filter({ has: page.getByPlaceholder('例如：寒假作业、读完《西游记》', { exact: true }) });
       const goalCard = goal => page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) });
 
-      await goto('/parent/periods');
+      await goto('/parent/goals');
       await page.getByRole('button', { name: /新增长期任务/ }).click();
       let form = goalForm();
       await checkSizes(page, form, 'input[type=date]', 2, true);
@@ -110,6 +110,7 @@ async function main() {
           await form.waitFor({ state: 'detached' });
         } else await cancel(form);
       }
+      await goto(`/parent/calendar?child=${child.id}`);
       // The earlier holiday fix now uses the same opt-in style, so retain its layout checks.
       await page.getByRole('button', { name: /新增假期/ }).click();
       form = page.locator('form').filter({ has: page.getByPlaceholder('例如：寒假', { exact: true }) });

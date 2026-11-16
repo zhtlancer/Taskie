@@ -271,7 +271,7 @@ async function main() {
       await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
       await page.getByRole('dialog', { name: '⏱ 用了多久？', exact: true }).getByRole('button', { name: '完成', exact: true }).click();
     } else if (kind === 'backfill') {
-      await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+      await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
       const card = page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) });
       await card.getByRole('button', { name: '补记进度', exact: true }).click();
       const form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
@@ -297,7 +297,7 @@ async function main() {
       await page.goto(`${base}/parent/login`, { waitUntil: 'networkidle' });
       assert.equal(await page.getByRole('complementary', { name: '待确认请求' }).count(), 0, 'auth pages do not show pending child data');
       assert.deepEqual(await pending(page), before);
-      await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+      await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     }
     await page.reload({ waitUntil: 'networkidle' });
     const recovery = page.getByRole('complementary', { name: '待确认请求' });
@@ -393,7 +393,7 @@ async function main() {
       bodies.push(route.request().postDataJSON()); const response = await route.fetch();
       if (lose) await route.abort(); else await route.fulfill({ response });
     });
-    await page.goto(kind === 'backfill' ? `${base}/parent/periods` : `${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
+    await page.goto(kind === 'backfill' ? `${base}/parent/goals` : `${base}/child/${child.id}/today`, { waitUntil: 'networkidle' });
     let form, submit;
     if (kind === 'progress') {
       await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
@@ -450,7 +450,7 @@ async function main() {
       bodies.push(route.request().postDataJSON()); const response = await route.fetch();
       if (lose) await route.abort(); else await route.fulfill({ response });
     });
-    const url = kind === 'backfill' ? `${base}/parent/periods` : `${base}/child/${child.id}/${goal ? 'today' : 'rewards'}`;
+    const url = kind === 'backfill' ? `${base}/parent/goals` : `${base}/child/${child.id}/${goal ? 'today' : 'rewards'}`;
     await page.goto(url, { waitUntil: 'networkidle' });
     const perform = async () => {
       if (kind === 'progress') await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
@@ -580,7 +580,7 @@ async function main() {
       bodies.push(route.request().postDataJSON());
       if (lose) await route.abort(); else await route.continue();
     });
-    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
     await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
     await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
@@ -590,7 +590,7 @@ async function main() {
     await page.locator(`a[href="/child/${other.id}/today"]`).first().click();
     await page.waitForFunction(id => JSON.parse(sessionStorage.getItem('current_child'))?.id === id, other.id);
     assert.deepEqual(await pending(page), [first], 'viewing B must preserve the parent request for A');
-    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     lose = false;
     await page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
     await page.getByRole('status').getByText('操作已确认。', { exact: true }).waitFor();
@@ -685,7 +685,7 @@ async function main() {
 
   await check('I3 parent 401 and same parent login retain requests targeting any child', async () => {
     const page = await open('parent');
-    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     const first = await seedIdentityRequest(page);
     await page.evaluate(expired => sessionStorage.setItem('taskie_parent_token', expired), app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch() }, { expiresIn: -1 }));
     await page.getByRole('complementary', { name: '待确认请求' }).getByRole('button', { name: '确认这次操作' }).click();
@@ -790,7 +790,7 @@ async function main() {
       writes++;
       await route.fulfill({ status: 409, json: { code: 'DATA_RESTORED', error: '数据已恢复，这次操作没有执行，请核对后重新操作' } });
     });
-    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     const card = page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) });
     await card.getByRole('button', { name: '补记进度', exact: true }).click();
     const form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
@@ -807,7 +807,7 @@ async function main() {
     const goal = await api('POST', `/children/${child.id}/goals`, { title: '跨页恢复隔离', subject: '数学', mode: 'progress', input_mode: 'increment', total_amount: 100, unit: '页', points: 1, start_date: shiftDate(today, -10) });
     const backup = await app.backupService.create();
     const page = await open('parent');
-    await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
+    await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     const restorePage = await currentContext.newPage();
     await restorePage.goto(`${base}/parent/settings`, { waitUntil: 'networkidle' });
     const url = `**/api/period-tasks/${goal.id}/logs`;

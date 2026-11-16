@@ -14,6 +14,7 @@ const ParentDashboardView = () => import('../views/ParentDashboardView.vue');
 const ParentChildrenView = () => import('../views/ParentChildrenView.vue');
 const ParentTasksView = () => import('../views/ParentTasksView.vue');
 const ParentRewardsView = () => import('../views/ParentRewardsView.vue');
+const ParentLearningView = () => import('../views/ParentLearningView.vue');
 const ParentPeriodsView = () => import('../views/ParentPeriodsView.vue');
 const ParentScheduleView = () => import('../views/ParentScheduleView.vue');
 const ParentTimeStatsView = () => import('../views/ParentTimeStatsView.vue');
@@ -96,8 +97,12 @@ const routes = [
   {
     path: '/parent/periods',
     name: 'ParentPeriods',
-    component: ParentPeriodsView
+    redirect: to => ({ path: '/parent/calendar', query: to.query })
   },
+  { path: '/parent/goals', component: ParentPeriodsView, props: { mode: 'goals' } },
+  { path: '/parent/calendar', component: ParentPeriodsView, props: { mode: 'calendar' } },
+  { path: '/parent/recurring-homework', component: ParentLearningView, props: { mode: 'recurring' } },
+  { path: '/parent/word-plans', component: ParentLearningView, props: { mode: 'words' } },
   {
     path: '/parent/time-stats',
     name: 'ParentTimeStats',

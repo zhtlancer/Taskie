@@ -33,8 +33,8 @@ async function main() {
       const page = await context.newPage(); page.setDefaultTimeout(15000);
       page.on('pageerror', error => errors.push(error.message));
       await page.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'networkidle' });
-      await page.getByRole('button', { name: '🔁 周期作业', exact: true }).click();
-      let panel = page.getByRole('dialog', { name: '周期作业', exact: true });
+      await page.getByRole('link', { name: '管理周期规则', exact: true }).click();
+      let panel = page.locator('[data-recurring-panel]');
       await panel.getByRole('button', { name: '新增周期作业', exact: true }).click();
       let form = page.getByRole('dialog', { name: '新增周期作业', exact: true });
       await form.getByLabel('课程名称', { exact: true }).fill('书法托管');
@@ -59,7 +59,7 @@ async function main() {
       const [record] = app.services.homeworkService.list(child.id);
       assert.ok(record.daily_task_id); assert.equal(record.content, '');
       assert.equal(record.due_date, shiftDate(today, 7));
-      await panel.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.getByRole('link', { name: '查看作业本 →', exact: true }).click();
       let card = page.locator(`#homework-${record.id}`);
       await card.getByText('待补充内容', { exact: true }).waitFor();
       app.services.homeworkStudyService.manual(record.id, { request_id: `recurring_ui_${child.id}`, duration_seconds: 125 }, 'parent');
@@ -74,8 +74,8 @@ async function main() {
       assert.equal(app.services.homeworkStudyService.details(record.id).total_seconds, 125);
       await page.reload({ waitUntil: 'networkidle' });
       assert.equal(app.services.homeworkService.list(child.id).length, 1);
-      await page.getByRole('button', { name: '🔁 周期作业', exact: true }).click();
-      panel = page.getByRole('dialog', { name: '周期作业', exact: true });
+      await page.getByRole('link', { name: '管理周期规则', exact: true }).click();
+      panel = page.locator('[data-recurring-panel]');
       await panel.getByRole('button', { name: '修改模板', exact: true }).click();
       form = page.getByRole('dialog', { name: '修改周期作业', exact: true });
       assert.equal(await form.getByLabel('周期结束日期（可不填）', { exact: true }).inputValue(), shiftDate(today, 60), 'editing preserves the period end date');
@@ -96,7 +96,7 @@ async function main() {
       assert.equal(app.services.homeworkService.get(record.id).content, '练习第12页');
       assert.equal(db.prepare('SELECT COUNT(*) n FROM recurring_homework_templates WHERE id = ?').get(rule.id).n, 0);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await panel.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.getByRole('link', { name: '查看作业本 →', exact: true }).click();
       const childToken = app.jwt.sign({ role: 'child', child_id: child.id, epoch: app.sessionEpoch() });
       const childContext = await browser.newContext({ viewport: { width, height: 1180 }, colorScheme: theme });
       try {
@@ -107,7 +107,7 @@ async function main() {
         const childPage = await childContext.newPage();
         childPage.on('pageerror', error => errors.push(error.message));
         await childPage.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'networkidle' });
-        assert.equal(await childPage.getByRole('button', { name: '🔁 周期作业', exact: true }).count(), 0);
+        assert.equal(await childPage.getByRole('link', { name: '管理周期规则', exact: true }).count(), 0);
         await childPage.getByText('练习第12页', { exact: true }).waitFor();
       } finally { await childContext.close(); }
       console.log(`PASS ${engine.name()} ${width}/${theme}: weekly creation, date bounds, content updates, timer preservation, skip/delete and child isolation`);

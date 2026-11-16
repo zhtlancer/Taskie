@@ -12,7 +12,7 @@
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="loading" class="text-slate-500 dark:text-slate-400">正在加载…</p>
       <template v-else>
-        <p v-if="!tasks.length" class="bg-white dark:bg-slate-900 rounded-2xl p-5 text-sm text-slate-500 dark:text-slate-400">当天没有需要完成的任务。长期任务请到「假期与长期任务」补记进度。</p>
+        <p v-if="!tasks.length" class="bg-white dark:bg-slate-900 rounded-2xl p-5 text-sm text-slate-500 dark:text-slate-400">当天没有需要完成的任务。长期任务请到「学习安排 → 长期任务」补记进度。</p>
         <article v-for="task in tasks" :key="task.id" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3">
             <div>

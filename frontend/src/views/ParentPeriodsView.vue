@@ -8,19 +8,17 @@
         <div>
           <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
             <span>🏖️</span>
-            <span>假期与长期任务</span>
+            <span>{{ mode === 'goals' ? '长期任务' : '假期与调休' }}</span>
           </h2>
           <p class="text-xs font-bold text-slate-400 mt-0.5">
-            为每个孩子添加需要多天完成的长期任务（如读完一本书），设置节假日和寒暑假及假期中继续的日常任务
+            {{ mode === 'goals' ? '安排跨多天完成的目标和假期任务，保留每天的进度记录。' : '设置学校假期、调休上学日，以及假期中继续的日常任务。' }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <router-link to="/parent/tasks" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800">
-            📝 日常任务模板
-          </router-link>
           <button
             type="button"
             :disabled="!selectedChild"
+            v-if="mode === 'goals'"
             @click="openTaskModal(null)"
             class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all disabled:opacity-50"
           >
@@ -30,6 +28,7 @@
           <button
             type="button"
             :disabled="!selectedChild"
+            v-if="mode === 'calendar'"
             @click="openPeriodModal()"
             class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all disabled:opacity-50"
           >
@@ -39,19 +38,8 @@
         </div>
       </div>
 
-      <!-- Child Selector -->
-      <div class="flex flex-wrap gap-2 mb-5">
-        <button
-          v-for="child in children"
-          :key="child.id"
-          type="button"
-          @click="selectChild(child)"
-          class="px-4 py-2 rounded-xl text-sm font-bold border transition-all font-chinese"
-          :class="selectedChild?.id === child.id ? 'bg-brand-500 border-brand-500 text-white shadow-button' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'"
-        >
-          {{ child.avatar_emoji }} {{ child.name }}
-        </button>
-      </div>
+      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="Boolean(periodModal || taskModal || backfill) || saving" @change="changeChild" />
+      <ParentSectionNav :section="mode === 'goals' ? 'learning' : 'calendar'" :child-id="selectedChild?.id" />
 
       <p v-if="error" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
 
@@ -59,7 +47,7 @@
         <span class="animate-spin mr-2">⏳</span> 正在加载...
       </div>
 
-      <section v-if="!loading" class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card mb-5">
+      <section v-if="!loading && mode === 'goals'" class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card mb-5">
         <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 mb-3">📚 长期任务</h3>
         <p v-if="!standaloneGoals.length" class="text-xs font-bold text-slate-400 py-2">还没有长期任务。例如“读完《西游记》共 200 页，每天记录读到第几页”。</p>
         <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -75,12 +63,13 @@
         </div>
       </section>
 
-      <h3 v-if="!loading" class="text-lg font-black text-slate-800 dark:text-slate-100 mb-3">🏖️ 假期</h3>
+      <h3 v-if="!loading" class="text-lg font-black text-slate-800 dark:text-slate-100 mb-3">{{ mode === 'goals' ? '🏖️ 假期任务' : '🏖️ 假期' }}</h3>
       <div v-if="loading"></div>
       <div v-else-if="!periods.length" class="text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
         <div class="text-5xl mb-3">🏖️</div>
         <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">还没有假期安排</h3>
-        <p class="text-xs text-slate-400">点击“新增假期”，例如寒假 1/20 – 2/25</p>
+        <p class="text-xs text-slate-400">{{ mode === 'calendar' ? '点击“新增假期”，例如寒假 1/20 – 2/25。' : '先在课程日历设置假期，再为假期添加学习目标。' }}</p>
+        <router-link v-if="mode === 'goals'" :to="{ path: '/parent/calendar', query: { child: selectedChild?.id } }" class="inline-flex items-center min-h-11 px-3 text-sm font-bold text-brand-600 dark:text-brand-300">设置假期</router-link>
       </div>
 
       <div v-else class="space-y-5">
@@ -99,13 +88,13 @@
               <p class="text-xs font-bold text-slate-400 mt-0.5">{{ period.start_date }} 至 {{ period.end_date }} · 共 {{ period.days_total }} 天</p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-              <button type="button" @click="openTaskModal(period)" class="px-3.5 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold text-xs">➕ 假期任务</button>
-              <button type="button" @click="openPeriodModal(period)" class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs">✏️ 编辑</button>
-              <button type="button" @click="removePeriod(period)" class="px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs">删除</button>
+              <button v-if="mode === 'goals'" type="button" @click="openTaskModal(period)" class="px-3.5 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold text-xs">➕ 假期任务</button>
+              <button v-if="mode === 'calendar'" type="button" @click="openPeriodModal(period)" class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs">✏️ 编辑</button>
+              <button v-if="mode === 'calendar'" type="button" @click="removePeriod(period)" class="px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs">删除</button>
             </div>
           </div>
 
-          <div class="mb-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+          <div v-if="mode === 'calendar'" class="mb-3 text-xs font-bold text-slate-500 dark:text-slate-400">
             <span class="text-slate-400">假期中暂停的日常任务：</span>
             <span v-if="!period.paused_template_ids.length" class="text-emerald-600 dark:text-emerald-300">无，日常任务照常进行</span>
             <span v-for="id in period.paused_template_ids" :key="id" class="inline-block mr-1.5 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-chinese">
@@ -113,6 +102,8 @@
             </span>
           </div>
 
+          <router-link v-if="mode === 'calendar'" :to="{ path: '/parent/goals', query: { child: selectedChild?.id } }" class="inline-flex items-center min-h-11 text-sm font-bold text-brand-600 dark:text-brand-300">管理假期任务（{{ period.tasks.length }} 项） →</router-link>
+          <template v-else>
           <p v-if="!period.tasks.length" class="text-xs font-bold text-slate-400 py-2">还没有假期任务，可添加“寒假作业 共 40 页”或“读完一本书”。</p>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <GoalAdminCard
@@ -125,11 +116,12 @@
               @remove-log="removeLog"
             />
           </div>
+          </template>
         </section>
       </div>
 
       <!-- Make-up school days (调休上学日): school on a weekend or holiday, following another weekday -->
-      <section v-if="!loading && selectedChild" class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card mt-5">
+      <section v-if="!loading && selectedChild && mode === 'calendar'" class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card mt-5">
         <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 mb-1">🔁 调休上学日</h3>
         <p class="text-xs font-bold text-slate-400 mb-3">比如国庆调休的周六要上学：这天按所选星期几生成日常任务、显示课程表，假期里暂停的任务这天也照常；“放假前可以补完”的任务也按它来算假期从哪天结束。只能设置今天及以后的日期，过去的不能删除</p>
         <form class="flex flex-wrap items-end gap-2 mb-3" @submit.prevent="addMakeupDay">
@@ -319,14 +311,19 @@ import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentChildPicker from '../components/ParentChildPicker.vue';
+import ParentSectionNav from '../components/ParentSectionNav.vue';
+import { useParentChildSelection } from '../composables/useParentChildSelection';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
 import TimingFields from '../components/TimingFields.vue';
 import PriorityFields from '../components/PriorityFields.vue';
+defineProps({ mode: { type: String, default: 'calendar' } });
 const calendar = useCalendarStore();
 
 const children = ref([]);
 const templates = ref([]);
 const selectedChild = ref(null);
+const { initialChild, changeChild } = useParentChildSelection(children, selectedChild, selectChild);
 const periods = ref([]);
 const goals = ref([]);
 const loading = ref(true);
@@ -357,7 +354,7 @@ const localToday = () => calendar.today;
 onMounted(async () => {
   try {
     [children.value, templates.value] = await Promise.all([api.getChildren(), api.getTaskTemplates()]);
-    if (children.value.length) await selectChild(children.value[0]);
+    if (children.value.length) await selectChild(initialChild());
   } catch (err) {
     showError(err);
   } finally {
@@ -366,11 +363,12 @@ onMounted(async () => {
 });
 
 function showError(err) {
-  error.value = typeof err === 'string' ? err : '操作失败，请重试';
+  error.value = typeof err === 'string' ? err : err.message || '操作失败，请重试';
 }
 
 async function selectChild(child) {
   selectedChild.value = child;
+  periods.value = []; goals.value = []; makeupDays.value = [];
   await loadPeriods();
 }
 
