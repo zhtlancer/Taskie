@@ -99,7 +99,7 @@ async function main() {
       } else await cancel(form);
       for (const goal of goals) {
         await goalCard(goal).getByRole('button', { name: '补记进度', exact: true }).click();
-        form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
+        form = page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form');
         await checkSizes(page, form, 'input', 2, true);
         if (save) {
           await form.getByLabel('日期', { exact: true }).fill(shiftDate(today, -1));

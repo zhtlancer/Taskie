@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-2xl border p-3" :class="task.status === 'ended' ? 'border-slate-200 dark:border-slate-700 opacity-70' : 'border-slate-200 dark:border-slate-700'">
+  <div :data-goal-id="task.id" class="rounded-2xl border p-3" :class="task.status === 'ended' ? 'border-slate-200 dark:border-slate-700 opacity-70' : 'border-slate-200 dark:border-slate-700'">
     <div class="flex items-center justify-between gap-2 mb-1">
       <span class="text-sm font-bold text-slate-800 dark:text-slate-100 font-chinese truncate">{{ task.title }}</span>
       <span class="text-xs font-black text-amber-500 dark:text-amber-400 shrink-0">
@@ -28,13 +28,13 @@
     <div v-if="task.logs.length" class="flex flex-wrap gap-1 mb-2">
       <span v-for="entry in visibleLogs" :key="entry.id" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400">
         {{ entry.date.slice(5) }} {{ task.mode === 'check' ? '✓' : entry.position ? `第${entry.position}${task.unit}` : `+${entry.amount}` }}
-        <button type="button" :disabled="!entry.can_undo" class="text-slate-300 hover:text-rose-500 dark:hover:text-rose-400 disabled:cursor-not-allowed disabled:hover:text-slate-300" :title="entry.can_undo ? '删除这条记录' : '请先撤销后续进度'" @click="emit('remove-log', entry)">✕</button>
+        <button type="button" :disabled="disabled || !entry.can_undo" class="min-h-11 min-w-11 text-slate-300 hover:text-rose-500 dark:hover:text-rose-400 disabled:cursor-not-allowed disabled:hover:text-slate-300" :title="entry.can_undo ? '删除这条记录' : '请先撤销后续进度'" @click="emit('remove-log', entry)">✕</button>
       </span>
     </div>
-    <div class="flex items-center gap-2">
-      <button v-if="!task.is_completed && task.status !== 'upcoming'" type="button" @click="emit('backfill', task)" class="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-600 dark:text-slate-300 font-bold text-xs">补记进度</button>
-      <button type="button" @click="emit('edit', task)" class="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 text-slate-600 dark:text-slate-300 font-bold text-xs">编辑</button>
-      <button type="button" @click="emit('remove', task)" class="ml-auto px-2 py-1 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs">删除</button>
+    <div class="flex flex-wrap items-center gap-2 border-t border-slate-100 dark:border-slate-700 pt-3 mt-3">
+      <button v-if="!task.is_completed && task.status !== 'upcoming'" type="button" :disabled="disabled" @click="emit('backfill', task)" class="min-h-11 min-w-11 px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-600 dark:text-slate-300 font-bold text-xs">补记进度</button>
+      <button type="button" :disabled="disabled" @click="emit('edit', task)" class="min-h-11 min-w-11 px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 text-slate-600 dark:text-slate-300 font-bold text-xs">编辑</button>
+      <button type="button" :disabled="disabled" @click="emit('remove', task)" class="min-h-11 min-w-11 ml-auto px-2 py-1 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs">删除</button>
     </div>
   </div>
 </template>
@@ -42,7 +42,7 @@
 <script setup>
 import PriorityBadge from './PriorityBadge.vue';
 import { computed } from 'vue';
-const props = defineProps({ task: { type: Object, required: true } });
+const props = defineProps({ task: { type: Object, required: true }, disabled: Boolean });
 // Keep the entry that must be undone first visible even when it was backfilled far in the past.
 const visibleLogs = computed(() => [...props.task.logs].sort((a, b) => Number(b.can_undo) - Number(a.can_undo)).slice(0, 6));
 const emit = defineEmits(['backfill', 'edit', 'remove', 'remove-log']);

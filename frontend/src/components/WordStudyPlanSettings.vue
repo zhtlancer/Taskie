@@ -1,10 +1,12 @@
 <template>
   <div class="space-y-4">
-    <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }} <button type="button" class="min-h-11 px-3 underline" :disabled="busy" @click="load">重新读取</button></p>
+    <ParentPageState v-if="loading" kind="loading" title="正在读取字词计划…" />
+    <ParentPageState v-if="loadError" kind="error" title="字词计划未能读取" :description="loadError" :busy="loading" @retry="load" />
+    <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
     <p v-if="notice" role="status" class="text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
-    <p v-if="loading" role="status">正在读取字词计划…</p>
-      <section v-if="!loading" class="space-y-4">
+      <section v-if="!loading && forms.length" class="space-y-4">
         <p class="text-xs text-slate-500 dark:text-slate-400">自动从字词本选词，新加入的字词进入后续清单。每个字词条算一项；认读、书写分别安排。设置变更作用于下一份清单，今天已经生成的清单保持不变。</p>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <form v-for="form in forms" :key="form.skill" class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 space-y-3" @submit.prevent="save(form)">
           <fieldset :disabled="busy" class="space-y-3 min-w-0">
           <h2 class="font-black text-slate-800 dark:text-slate-100">{{ skillName(form.skill) }}计划</h2>
@@ -30,6 +32,7 @@
           <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50">保存{{ skillName(form.skill) }}计划</button>
           </fieldset>
         </form>
+        </div>
         <p class="text-xs text-slate-500 dark:text-slate-400">独立答对后逐步采用 1、3、7、14、30 天的复习间隔；需要提示或答错时安排次日复习。具体间隔是可迭代的初始规则，并非适合所有孩子的固定最佳周期。不自动修改字词本的“已掌握”或分类标记。</p>
       </section>
 
@@ -38,10 +41,11 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
+import ParentPageState from './ParentPageState.vue';
 import { CATEGORIES } from '../utils/wordBook';
 const props = defineProps({ childId: { type: String, required: true } });
 const emit = defineEmits(['busy']);
-const forms = ref([]), date = ref(''), loading = ref(true), busy = ref(false), error = ref(''), notice = ref('');
+const forms = ref([]), date = ref(''), loading = ref(true), busy = ref(false), loadError = ref(''), error = ref(''), notice = ref('');
 const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const skillName = skill => skill === 'write' ? '书写' : '认读';
 let alive = true;
@@ -50,13 +54,13 @@ async function load() {
   try {
     const overview = await api.getWordStudy(props.childId);
     if (!alive) return;
-    date.value = overview.date;
+    loadError.value = ''; date.value = overview.date;
     forms.value = ['recognize', 'write'].map(skill => {
       const existing = overview.plans.find(plan => plan.skill === skill);
       return { skill, enabled: false, required: true, include_mastered: false, start_date: overview.date, new_target: 3, review_target: 10,
         points: 10, extra_points: 0, extra_reward_limit: 0, days_of_week: [1, 2, 3, 4, 5], categories: [], ...existing, existing: Boolean(existing) };
     });
-  } catch (err) { if (alive) error.value = err.message || String(err); }
+  } catch (err) { if (alive) loadError.value = err.message || String(err); }
   finally { if (alive) loading.value = false; }
 }
 async function save(form) {

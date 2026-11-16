@@ -29,7 +29,7 @@ function onKey(event) {
   if (dialogs.at(-1) !== dialog) return;
   if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); requestClose(); }
   if (event.key !== 'Tab') return;
-  const elements = [...panel.value.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex="0"]')].filter(el => el.getClientRects().length);
+  const elements = [...panel.value.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex="0"]')].filter(el => el.getClientRects().length && !el.matches(':disabled'));
   const first = elements[0], last = elements.at(-1);
   if (!first) { event.preventDefault(); panel.value.focus(); }
   else if (event.shiftKey && (document.activeElement === first || !panel.value.contains(document.activeElement))) { event.preventDefault(); last.focus(); }

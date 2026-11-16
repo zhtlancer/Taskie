@@ -54,7 +54,7 @@ async function main() {
       await page.goto(`${base}/parent/periods`, { waitUntil: 'networkidle' });
       await page.getByRole('button', { name: '➕ 新增假期', exact: true }).click();
       const name = `日期布局-${width}-${theme}`;
-      let form = page.locator('form').filter({ has: page.getByRole('heading', { name: `➕ 为${child.name}新增假期`, exact: true }) });
+      let form = page.getByRole('dialog', { name: `➕ 为${child.name}新增假期`, exact: true }).locator('form');
       await form.getByPlaceholder('例如：寒假', { exact: true }).fill(name);
       await form.getByLabel('开始日期', { exact: true }).fill(start);
       await form.getByLabel('结束日期', { exact: true }).fill(end);
@@ -70,7 +70,7 @@ async function main() {
       await form.waitFor({ state: 'detached' });
       const card = page.locator('section').filter({ has: page.getByRole('heading', { name: new RegExp(name) }) });
       await card.getByRole('button', { name: '✏️ 编辑', exact: true }).click();
-      form = page.locator('form').filter({ has: page.getByRole('heading', { name: '✏️ 编辑假期', exact: true }) });
+      form = page.getByRole('dialog', { name: '✏️ 编辑假期', exact: true }).locator('form');
       assert.equal(await form.getByLabel('开始日期', { exact: true }).inputValue(), start);
       assert.equal(await form.getByLabel('结束日期', { exact: true }).inputValue(), end);
       await form.getByLabel('结束日期', { exact: true }).fill(editedEnd);

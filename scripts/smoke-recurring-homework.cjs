@@ -35,7 +35,7 @@ async function main() {
       await page.goto(`${base}/child/${child.id}/homework`, { waitUntil: 'networkidle' });
       await page.getByRole('link', { name: '管理周期规则', exact: true }).click();
       let panel = page.locator('[data-recurring-panel]');
-      await panel.getByRole('button', { name: '新增周期作业', exact: true }).click();
+      await page.getByRole('button', { name: '新增周期作业', exact: true }).click();
       let form = page.getByRole('dialog', { name: '新增周期作业', exact: true });
       await form.getByLabel('课程名称', { exact: true }).fill('书法托管');
       assert.equal(await form.getByLabel('生效日期', { exact: true }).inputValue(), today);

@@ -479,7 +479,7 @@ async function main() {
     await page.getByRole('button', { name: new RegExp(child.name) }).click();
     await page.getByText(/还剩 3 天，今天建议/).waitFor();
     await page.getByRole('button', { name: '补记进度', exact: true }).click();
-    const form = page.locator('form').filter({ has: page.getByRole('heading', { name: '补记「跨夜阅读」' }) });
+    const form = page.getByRole('dialog', { name: '补记「跨夜阅读」', exact: true }).locator('form');
     await form.waitFor();
     await form.locator('input[type=number]').fill('17');
     await form.locator('input[type=date]').fill('2026-10-21');

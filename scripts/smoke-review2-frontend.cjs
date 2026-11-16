@@ -274,7 +274,7 @@ async function main() {
       await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
       const card = page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) });
       await card.getByRole('button', { name: '补记进度', exact: true }).click();
-      const form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
+      const form = page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form');
       await form.locator('input[type=number]').fill('3');
       await form.locator('input[type=date]').fill(shiftDate(today, -2));
       await form.getByRole('button', { name: '补记', exact: true }).click();
@@ -401,7 +401,7 @@ async function main() {
       submit = form.getByRole('button', { name: '完成', exact: true });
     } else {
       await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
-      form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
+      form = page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form');
       submit = form.getByRole('button', { name: '补记', exact: true });
     }
     await submit.click();
@@ -456,7 +456,7 @@ async function main() {
       if (kind === 'progress') await page.locator(`[data-timer-id="${goal.id}"]`).getByRole('button', { name: '记录今天的进度' }).click();
       else if (kind === 'backfill') {
         await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
-        await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
+        await page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form').getByRole('button', { name: '补记', exact: true }).click();
       } else {
         const card = page.locator('div.rounded-2xl.border.p-4').filter({ has: page.getByText(item.title, { exact: true }) });
         await card.getByRole('button', { name: '兑换', exact: true }).click();
@@ -582,7 +582,7 @@ async function main() {
     });
     await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
-    await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
+    await page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form').getByRole('button', { name: '补记', exact: true }).click();
     await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
     const first = (await pending(page))[0];
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 0);
@@ -793,7 +793,7 @@ async function main() {
     await page.goto(`${base}/parent/goals`, { waitUntil: 'networkidle' });
     const card = page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) });
     await card.getByRole('button', { name: '补记进度', exact: true }).click();
-    const form = page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) });
+    const form = page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form');
     await form.getByRole('button', { name: '补记', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: '数据已恢复，这次操作没有执行，请核对后重新操作' }).first().waitFor();
     await form.waitFor({ state: 'detached' });
@@ -820,10 +820,10 @@ async function main() {
       else await route.continue();
     });
     await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
-    await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '补记', exact: true }).click();
+    await page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form').getByRole('button', { name: '补记', exact: true }).click();
     await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
     const [first] = await pending(page);
-    await page.locator('form').filter({ has: page.getByRole('heading', { name: `补记「${goal.title}」`, exact: true }) }).getByRole('button', { name: '取消', exact: true }).click();
+    await page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form').getByRole('button', { name: '取消', exact: true }).click();
     assert.equal(first.data_generation, firstHeader);
     assert.equal(typeof firstHeader, 'string');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM period_task_logs WHERE period_task_id=?').get(goal.id).n, 1);

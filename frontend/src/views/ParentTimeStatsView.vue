@@ -4,15 +4,11 @@
 
     <main class="time-stats-main max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
       <div class="time-stats-screen">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2"><span>⏱</span><span>用时统计</span></h2>
-          <p class="text-xs font-bold text-slate-500 dark:text-slate-400 mt-0.5">按家庭时区统计；平均值只用已记录用时，缺失用时在样本充足时单独估算</p>
-        </div>
-        <router-link to="/parent/dashboard" class="px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">← 数据总览</router-link>
-      </div>
+      <ParentPageHeader icon="⏱" title="用时统计" description="按家庭时区统计；平均值使用已记录用时，缺失用时在样本充足时单独估算。">
+        <template #actions><router-link to="/parent/dashboard" class="ui-button-secondary inline-flex items-center">← 数据总览</router-link></template>
+      </ParentPageHeader>
 
-      <ParentChildPicker :children="children" :model-value="selectedChild" @change="changeChild" />
+      <ParentChildPicker :children="children" :model-value="selectedChild" :loading="loading" :failed="Boolean(error)" @change="changeChild" />
       <div class="flex flex-wrap items-center gap-2 mb-5">
         <button
           v-for="range in ranges"
@@ -227,6 +223,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentChildPicker from '../components/ParentChildPicker.vue';
 import { useParentChildSelection } from '../composables/useParentChildSelection';
 import TimeDailyChart from '../components/TimeDailyChart.vue';

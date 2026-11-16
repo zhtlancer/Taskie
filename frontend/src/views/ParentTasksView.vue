@@ -3,59 +3,35 @@
     <ParentNavBar />
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
-      <!-- Title & Actions Bar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-6 [&>*:last-child]:whitespace-nowrap">
-        <div>
-          <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            <span>📝</span>
-            <span>日常任务</span>
-          </h2>
-          <p class="text-xs font-bold text-slate-400 mt-0.5">
-            配置固定星期重复或每周频次目标任务，系统自动生成每日任务实例
-          </p>
-        </div>
+      <ParentPageHeader icon="📝" title="日常任务" description="配置固定星期重复或每周频次目标任务，系统自动生成每日任务实例。">
+        <template #actions><button type="button" :disabled="loading || Boolean(loadError) || submitting || mutationBusy" class="min-h-11 min-w-11 ui-button-primary" @click="openAddModal">➕ 新增任务模板</button></template>
+      </ParentPageHeader>
 
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            @click="openAddModal"
-            class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all"
-          >
-            <span>➕</span>
-            <span>新增任务模板</span>
-          </button>
-        </div>
-      </div>
-
-      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="showModal" @change="changeChild" />
+      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="showModal || mutationBusy" :loading="loading" :failed="Boolean(loadError)" @change="changeChild" />
       <ParentSectionNav section="learning" :child-id="selectedChild?.id" />
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
         <p>共享模板的修改会影响所有适用孩子。</p>
         <label class="inline-flex min-h-11 items-center gap-2"><input v-model="showAllTemplates" type="checkbox" />显示全部孩子的模板</label>
       </div>
-      <p v-if="loadError" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ loadError }} <button type="button" class="min-h-11 px-3 underline" @click="loadTemplates">重新读取</button></p>
-      <!-- Loading State -->
-      <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
-        <span class="animate-spin mr-2">⏳</span> 正在加载任务模板...
-      </div>
-
-      <!-- Empty State -->
-      <div v-else-if="visibleTemplates.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
-        <div class="text-5xl mb-3">📝</div>
-        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">{{ templates.length && !showAllTemplates && selectedChild ? `${selectedChild.name} 暂无日常任务模板` : '暂无任务模板' }}</h3>
-        <p class="text-xs text-slate-400 mb-6">{{ templates.length && !showAllTemplates && selectedChild ? '可勾选“显示全部孩子的模板”查看其他孩子的模板，或点击右上角“新增任务模板”添加。' : '点击右上角“新增任务模板”为孩子们配置日常作业吧' }}</p>
-      </div>
+      <ParentPageState v-if="loading" kind="loading" title="正在加载任务模板…" />
+      <ParentPageState v-if="loadError" kind="error" title="任务模板未能读取" :description="loadError" :busy="loading" @retry="loadTemplates" />
+      <p v-if="pageError" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ pageError }}</p>
+      <ParentPageState v-if="!loading && !loadError && visibleTemplates.length === 0" :title="templates.length && !showAllTemplates && selectedChild ? `${selectedChild.name} 暂无日常任务模板` : '暂无任务模板'"
+        :description="templates.length && !showAllTemplates && selectedChild ? '可勾选“显示全部孩子的模板”查看其他孩子的模板，或新增该孩子的任务。' : '新增任务模板，安排固定星期或每周完成次数。'">
+        <template #actions><button type="button" class="min-h-11 min-w-11 ui-button-secondary" @click="openAddModal">添加日常任务</button></template>
+      </ParentPageState>
 
       <!-- Templates Grid -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div v-if="!loading && visibleTemplates.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div
           v-for="tmpl in visibleTemplates"
           :key="tmpl.id"
+          :data-template-id="tmpl.id"
           class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card flex flex-col justify-between hover:shadow-card-hover transition-all"
         >
           <div>
             <!-- Top Subject & Points -->
-            <div class="flex items-center justify-between mb-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
               <span
                 class="px-2.5 py-1 rounded-xl text-xs font-black font-chinese"
                 :class="subjectClass(tmpl.subject)"
@@ -84,7 +60,7 @@
               <!-- Weekly Target Frequency Task -->
               <div v-if="tmpl.schedule_type === 'weekly_times'">
                 <span class="text-xs font-bold text-slate-400 block mb-1.5">任务频次：</span>
-                <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-xs font-black">
+                <div class="inline-flex flex-wrap max-w-full items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 text-xs font-black">
                   <span>🎯</span>
                   <span>每周完成特定次数：每周 {{ tmpl.weekly_target_times || 3 }} 次</span>
                   <span v-if="tmpl.allow_extra" class="block text-violet-600 dark:text-violet-300 text-xs">可额外完成 · {{ tmpl.extra_points && tmpl.extra_reward_limit ? `额外每次 +${tmpl.extra_points} 分，每周奖励最多 ${tmpl.extra_reward_limit} 次` : '额外不加分' }}</span>
@@ -129,16 +105,16 @@
           <div class="pt-3 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
             <button
               type="button"
-              @click="openEditModal(tmpl)"
-              class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors"
+              :disabled="mutationBusy || Boolean(loadError)" @click="openEditModal(tmpl)"
+              class="min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors"
             >
               ✏️ 编辑模板
             </button>
 
             <button
               type="button"
-              @click="handleDelete(tmpl.id)"
-              class="px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs transition-colors"
+              :disabled="mutationBusy || Boolean(loadError)" @click="handleDelete(tmpl.id)"
+              class="min-h-11 min-w-11 px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs transition-colors"
             >
               删除
             </button>
@@ -147,32 +123,16 @@
       </div>
     </main>
 
-    <!-- Add/Edit Template Modal -->
-    <div
-      v-if="showModal"
-      class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
-      @click.self="showModal = false"
-    >
-      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border-2 border-brand-100 dark:border-brand-800">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span>{{ isEditing ? '✏️ 编辑任务模板' : '➕ 新增任务模板' }}</span>
-          </h3>
-          <button
-            type="button"
-            @click="showModal = false"
-            class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold text-lg"
-          >
-            ✕
-          </button>
-        </div>
-
-        <form @submit.prevent="submitTemplateForm" class="space-y-4">
+    <UiDialog v-if="showModal" :title="isEditing ? '✏️ 编辑任务模板' : '➕ 新增任务模板'" :busy="submitting" @close="closeTemplate">
+        <form @submit.prevent="submitTemplateForm">
+          <fieldset :disabled="submitting" class="space-y-4 min-w-0">
+          <p v-if="formError" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ formError }}</p>
           <!-- Title Input -->
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">任务名称</label>
             <input
               v-model="form.title"
+              aria-label="任务名称" autofocus
               type="text"
               required
               placeholder="例如：课外阅读20页、跳绳300个、数学计算练习"
@@ -189,7 +149,7 @@
                 :key="sub"
                 type="button"
                 @click="form.subject = sub"
-                class="py-2 rounded-xl text-xs font-bold border transition-all font-chinese"
+                class="min-h-11 min-w-11 py-2 rounded-xl text-xs font-bold border transition-all font-chinese"
                 :class="[
                   form.subject === sub
                     ? 'bg-brand-500 border-brand-500 text-white shadow-button'
@@ -210,7 +170,7 @@
               <button
                 type="button"
                 @click="form.child_ids = null"
-                class="px-3 py-2 rounded-xl text-xs font-bold border transition-all"
+                class="min-h-11 min-w-11 px-3 py-2 rounded-xl text-xs font-bold border transition-all"
                 :class="[
                   form.child_ids === null
                     ? 'bg-brand-500 border-brand-500 text-white shadow-button'
@@ -224,7 +184,7 @@
                 :key="child.id"
                 type="button"
                 @click="toggleChild(child.id)"
-                class="px-3 py-2 rounded-xl text-xs font-bold border transition-all font-chinese"
+                class="min-h-11 min-w-11 px-3 py-2 rounded-xl text-xs font-bold border transition-all font-chinese"
                 :class="[
                   form.child_ids?.includes(child.id)
                     ? 'bg-brand-500 border-brand-500 text-white shadow-button'
@@ -245,7 +205,7 @@
               <button
                 type="button"
                 @click="form.schedule_type = 'fixed_days'"
-                class="py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                class="min-h-11 min-w-11 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                 :class="[
                   form.schedule_type === 'fixed_days'
                     ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-sm font-black'
@@ -257,7 +217,7 @@
               <button
                 type="button"
                 @click="selectWeeklyTimes"
-                class="py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                class="min-h-11 min-w-11 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                 :class="[
                   form.schedule_type === 'weekly_times'
                     ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 shadow-sm font-black'
@@ -282,7 +242,7 @@
                 type="button"
                 :disabled="times > form.days_of_week.length"
                 @click="form.weekly_target_times = times"
-                class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40"
+                class="min-h-11 min-w-11 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-40"
                 :class="[
                   form.weekly_target_times === times
                     ? 'bg-indigo-600 border-indigo-600 text-white font-black shadow-sm'
@@ -298,7 +258,7 @@
                   type="number"
                   min="1"
                   max="7"
-                  class="w-14 px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-center focus:border-indigo-500 outline-none bg-white dark:bg-slate-900"
+                  class="min-h-11 w-14 px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-center focus:border-indigo-500 outline-none bg-white dark:bg-slate-900"
                 />
               </div>
             </div>
@@ -328,7 +288,7 @@
                 <button
                   type="button"
                   @click="setWeekPreset('workdays')"
-                  class="text-xs text-brand-600 dark:text-brand-300 font-bold hover:underline"
+                  class="min-h-11 min-w-11 text-xs text-brand-600 dark:text-brand-300 font-bold hover:underline"
                 >
                   工作日
                 </button>
@@ -336,7 +296,7 @@
                 <button
                   type="button"
                   @click="setWeekPreset('weekend')"
-                  class="text-xs text-brand-600 dark:text-brand-300 font-bold hover:underline"
+                  class="min-h-11 min-w-11 text-xs text-brand-600 dark:text-brand-300 font-bold hover:underline"
                 >
                   周末
                 </button>
@@ -344,20 +304,20 @@
                 <button
                   type="button"
                   @click="setWeekPreset('everyday')"
-                  class="text-xs text-brand-600 dark:text-brand-300 font-bold hover:underline"
+                  class="min-h-11 min-w-11 text-xs text-brand-600 dark:text-brand-300 font-bold hover:underline"
                 >
                   每天
                 </button>
               </div>
             </div>
 
-            <div class="grid grid-cols-7 gap-1.5 bg-slate-50 dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-700">
+            <div class="grid grid-cols-4 sm:grid-cols-7 gap-1.5 bg-slate-50 dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-700">
               <button
                 v-for="(day, idx) in [1, 2, 3, 4, 5, 6, 0]"
                 :key="day"
                 type="button"
                 @click="toggleDay(day)"
-                class="h-10 rounded-xl text-xs font-bold flex flex-col items-center justify-center transition-all"
+                class="min-h-11 min-w-11 h-10 rounded-xl text-xs font-bold flex flex-col items-center justify-center transition-all"
                 :class="[
                   form.days_of_week.includes(day)
                     ? 'bg-brand-500 text-white shadow-button scale-105'
@@ -372,13 +332,13 @@
           <!-- Points Input -->
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">单次完成奖励积分</label>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
               <button
                 v-for="pts in [5, 10, 15, 20]"
                 :key="pts"
                 type="button"
                 @click="form.points = pts"
-                class="px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all"
+                class="min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl text-xs font-bold border transition-all"
                 :class="[
                   form.points === pts
                     ? 'bg-amber-400 border-amber-400 text-amber-950 font-black shadow-sm'
@@ -391,7 +351,7 @@
                 v-model.number="form.points"
                 type="number"
                 min="1"
-                class="w-20 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-center focus:border-brand-500 outline-none"
+                class="min-h-11 w-20 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-center focus:border-brand-500 outline-none"
               />
             </div>
           </div>
@@ -417,22 +377,22 @@
           <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
             <button
               type="button"
-              @click="showModal = false"
-              class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              @click="closeTemplate"
+              class="min-h-11 min-w-11 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
               :disabled="submitting || !form.title.trim() || form.child_ids?.length === 0 || form.days_of_week.length === 0 || (form.schedule_type === 'weekly_times' && form.weekly_target_times > form.days_of_week.length)"
-              class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
+              class="min-h-11 min-w-11 px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
             >
               {{ submitting ? '保存中...' : '确认保存' }}
             </button>
           </div>
+          </fieldset>
         </form>
-      </div>
-    </div>
+    </UiDialog>
   </div>
 </template>
 
@@ -445,9 +405,14 @@ const scheduleLabel = days => {
   return [1,2,3,4,5,6,0].filter(day => list.includes(day)).map(day => ['周日','周一','周二','周三','周四','周五','周六'][day]).join('、');
 };
 import { confirmAction } from '../utils/confirmation';
-import { computed, ref, onMounted } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
+import ParentPageState from '../components/ParentPageState.vue';
+import UiDialog from '../components/UiDialog.vue';
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
+import { hasSession } from '../utils/session.js';
 import ParentChildPicker from '../components/ParentChildPicker.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 import { useParentChildSelection } from '../composables/useParentChildSelection';
@@ -465,7 +430,14 @@ const visibleTemplates = computed(() => showAllTemplates.value || !children.valu
 const showModal = ref(false);
 const isEditing = ref(false);
 const editingId = ref(null);
-const submitting = ref(false);
+const submitting = ref(false), mutationBusy = ref(false), formError = ref(''), pageError = ref('');
+let alive = true, loadSerial = 0;
+const closeTemplate = () => { if (!submitting.value) showModal.value = false; };
+onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || (!submitting.value && !mutationBusy.value));
+onBeforeRouteUpdate(() => { if (submitting.value || mutationBusy.value) return false; closeTemplate(); });
+const restored = () => { showModal.value = false; formError.value = ''; loadTemplates(); };
+onMounted(() => window.addEventListener('taskie:data-restored', restored));
+onBeforeUnmount(() => { alive = false; loadSerial++; window.removeEventListener('taskie:data-restored', restored); });
 
 const dayNames = {
   1: '周一',
@@ -499,15 +471,17 @@ onMounted(async () => {
 });
 
 async function loadTemplates() {
+  const serial = ++loadSerial;
   loading.value = true;
   try {
-    [templates.value, children.value] = await Promise.all([api.getTaskTemplates(), api.getChildren()]);
-    selectedChild.value = initialChild();
-    loadError.value = '';
+    const [rows, kids] = await Promise.all([api.getTaskTemplates(), api.getChildren()]);
+    if (!alive || serial !== loadSerial) return;
+    templates.value = rows; children.value = kids;
+    selectedChild.value = initialChild(); loadError.value = '';
   } catch (err) {
-    loadError.value = err.message || String(err);
+    if (alive && serial === loadSerial) loadError.value = err.message || String(err);
   } finally {
-    loading.value = false;
+    if (alive && serial === loadSerial) loading.value = false;
   }
 }
 
@@ -560,6 +534,8 @@ function setWeekPreset(type) {
 }
 
 function openAddModal() {
+  if (submitting.value || mutationBusy.value) return;
+  formError.value = '';
   isEditing.value = false;
   editingId.value = null;
   form.value = {
@@ -582,6 +558,8 @@ function openAddModal() {
 }
 
 function openEditModal(tmpl) {
+  if (submitting.value || mutationBusy.value) return;
+  formError.value = '';
   isEditing.value = true;
   editingId.value = tmpl.id;
   form.value = {
@@ -605,8 +583,8 @@ function openEditModal(tmpl) {
 }
 
 async function submitTemplateForm() {
-  if (!form.value.title.trim()) return;
-  submitting.value = true;
+  if (submitting.value || !form.value.title.trim()) return;
+  submitting.value = true; formError.value = '';
   try {
     const payload = {
       title: form.value.title.trim(),
@@ -633,19 +611,22 @@ async function submitTemplateForm() {
     showModal.value = false;
     await loadTemplates();
   } catch (err) {
-    console.error('Failed to save template:', err);
+    formError.value = err.message || String(err);
   } finally {
     submitting.value = false;
   }
 }
 
 async function handleDelete(id) {
+  if (mutationBusy.value) return;
   if (!await confirmAction('确定要删除该任务模板吗？已生成的历史任务不受影响。')) return;
+  if (mutationBusy.value) return;
+  mutationBusy.value = true; pageError.value = '';
   try {
     await api.deleteTaskTemplate(id);
     await loadTemplates();
   } catch (err) {
-    console.error('Failed to delete template:', err);
-  }
+    pageError.value = err.message || String(err);
+  } finally { mutationBusy.value = false; }
 }
 </script>

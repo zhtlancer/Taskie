@@ -3,17 +3,9 @@
     <ParentNavBar />
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            <span>📅</span>
-            <span>课程表</span>
-          </h2>
-          <p class="text-xs font-bold text-slate-400 mt-0.5">每个孩子按学期设置学校课程表；课外班可以几个孩子共用，单独给某个孩子请假或调课</p>
-        </div>
-      </div>
+      <ParentPageHeader icon="📅" title="学校与课外班" description="按孩子和学期设置学校课表；课外班可由多个孩子共用，请假与调课分别记录。" />
 
-      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="Boolean(classModal || exceptionModal || timetableModal)" @change="changeChild" />
+      <ParentChildPicker :children="children" :model-value="selectedChild" :loading="loading" :failed="Boolean(error)" :disabled="Boolean(classModal || exceptionModal || timetableModal)" @change="changeChild" />
       <ParentSectionNav section="calendar" :child-id="selectedChild?.id" />
 
       <p v-if="error" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
@@ -153,6 +145,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentChildPicker from '../components/ParentChildPicker.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 import { useParentChildSelection } from '../composables/useParentChildSelection';

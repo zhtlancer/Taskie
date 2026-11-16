@@ -3,58 +3,32 @@
     <ParentNavBar />
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
-      <!-- Title & Actions Bar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4 [&>*:last-child]:whitespace-nowrap">
-        <div>
-          <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            <span>🏖️</span>
-            <span>{{ mode === 'goals' ? '长期任务' : '假期与调休' }}</span>
-          </h2>
-          <p class="text-xs font-bold text-slate-400 mt-0.5">
-            {{ mode === 'goals' ? '安排跨多天完成的目标和假期任务，保留每天的进度记录。' : '设置学校假期、调休上学日，以及假期中继续的日常任务。' }}
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            :disabled="!selectedChild"
-            v-if="mode === 'goals'"
-            @click="openTaskModal(null)"
-            class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all disabled:opacity-50"
-          >
-            <span>📚</span>
-            <span>新增长期任务</span>
-          </button>
-          <button
-            type="button"
-            :disabled="!selectedChild"
-            v-if="mode === 'calendar'"
-            @click="openPeriodModal()"
-            class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all disabled:opacity-50"
-          >
-            <span>➕</span>
-            <span>新增假期</span>
-          </button>
-        </div>
-      </div>
+      <ParentPageHeader :icon="mode === 'goals' ? '📚' : '🏖️'" :title="mode === 'goals' ? '长期任务' : '假期与调休'"
+        :description="mode === 'goals' ? '安排跨多天完成的目标和假期任务，保留每天的进度记录。' : '设置学校假期、调休上学日，以及假期中继续的日常任务。'">
+        <template #actions>
+          <button v-if="mode === 'goals'" type="button" :disabled="!selectedChild || loading || saving || Boolean(loadError)" class="min-h-11 min-w-11 ui-button-primary" @click="openTaskModal(null)">📚 新增长期任务</button>
+          <button v-else type="button" :disabled="!selectedChild || loading || saving || Boolean(loadError)" class="min-h-11 min-w-11 ui-button-primary" @click="openPeriodModal()">➕ 新增假期</button>
+        </template>
+      </ParentPageHeader>
 
-      <ParentChildPicker :children="children" :model-value="selectedChild" :disabled="Boolean(periodModal || taskModal || backfill) || saving" @change="changeChild" />
+      <ParentChildPicker :children="children" :model-value="selectedChild" :loading="loading" :failed="Boolean(loadError)" :disabled="Boolean(periodModal || taskModal || backfill) || saving" @change="changeChild" />
       <ParentSectionNav :section="mode === 'goals' ? 'learning' : 'calendar'" :child-id="selectedChild?.id" />
 
-      <p v-if="error" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
+      <ParentPageState v-if="loading" kind="loading" title="正在加载…" />
+      <ParentPageState v-if="loadError" kind="error" :title="mode === 'goals' ? '学习安排未能读取' : '假期日历未能读取'" :description="loadError" :busy="loading" @retry="retryLoad" />
+      <p v-if="error && !periodModal && !taskModal && !backfill" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
 
-      <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
-        <span class="animate-spin mr-2">⏳</span> 正在加载...
-      </div>
-
+      <template v-if="!loading && dataLoaded && selectedChild">
       <section v-if="!loading && mode === 'goals'" class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card mb-5">
         <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 mb-3">📚 长期任务</h3>
-        <p v-if="!standaloneGoals.length" class="text-xs font-bold text-slate-400 py-2">还没有长期任务。例如“读完《西游记》共 200 页，每天记录读到第几页”。</p>
+        <ParentPageState v-if="!standaloneGoals.length" :title="`${selectedChild.name} 还没有长期任务`" description="例如：读完一本书，每天记录读到第几页。">
+          <template #actions><button type="button" :disabled="saving || Boolean(loadError)" class="min-h-11 min-w-11 ui-button-secondary" @click="openTaskModal(null)">添加长期任务</button></template>
+        </ParentPageState>
         <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <GoalAdminCard
             v-for="task in standaloneGoals"
             :key="task.id"
-            :task="task"
+            :task="task" :disabled="saving || Boolean(loadError)"
             @backfill="openBackfill"
             @edit="openTaskModal(null, $event)"
             @remove="removeTask"
@@ -64,13 +38,12 @@
       </section>
 
       <h3 v-if="!loading" class="text-lg font-black text-slate-800 dark:text-slate-100 mb-3">{{ mode === 'goals' ? '🏖️ 假期任务' : '🏖️ 假期' }}</h3>
-      <div v-if="loading"></div>
-      <div v-else-if="!periods.length" class="text-center py-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
-        <div class="text-5xl mb-3">🏖️</div>
-        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">还没有假期安排</h3>
-        <p class="text-xs text-slate-400">{{ mode === 'calendar' ? '点击“新增假期”，例如寒假 1/20 – 2/25。' : '先在课程日历设置假期，再为假期添加学习目标。' }}</p>
-        <router-link v-if="mode === 'goals'" :to="{ path: '/parent/calendar', query: { child: selectedChild?.id } }" class="inline-flex items-center min-h-11 px-3 text-sm font-bold text-brand-600 dark:text-brand-300">设置假期</router-link>
-      </div>
+      <ParentPageState v-if="!periods.length" title="还没有假期安排" :description="mode === 'calendar' ? '添加假期，设置这段时间继续或暂停的日常任务。' : '先在课程日历设置假期，再为假期添加学习目标。'">
+        <template #actions>
+          <button v-if="mode === 'calendar'" type="button" :disabled="saving || Boolean(loadError)" class="min-h-11 min-w-11 ui-button-secondary" @click="openPeriodModal()">添加假期</button>
+          <router-link v-else :to="{ path: '/parent/calendar', query: { child: selectedChild.id } }" class="ui-button-secondary inline-flex items-center">设置假期</router-link>
+        </template>
+      </ParentPageState>
 
       <div v-else class="space-y-5">
         <section
@@ -88,9 +61,9 @@
               <p class="text-xs font-bold text-slate-400 mt-0.5">{{ period.start_date }} 至 {{ period.end_date }} · 共 {{ period.days_total }} 天</p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-              <button v-if="mode === 'goals'" type="button" @click="openTaskModal(period)" class="px-3.5 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold text-xs">➕ 假期任务</button>
-              <button v-if="mode === 'calendar'" type="button" @click="openPeriodModal(period)" class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs">✏️ 编辑</button>
-              <button v-if="mode === 'calendar'" type="button" @click="removePeriod(period)" class="px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs">删除</button>
+              <button :disabled="saving || Boolean(loadError)" v-if="mode === 'goals'" type="button" @click="openTaskModal(period)" class="min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-bold text-xs">➕ 假期任务</button>
+              <button :disabled="saving || Boolean(loadError)" v-if="mode === 'calendar'" type="button" @click="openPeriodModal(period)" class="min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs">✏️ 编辑</button>
+              <button :disabled="saving || Boolean(loadError)" v-if="mode === 'calendar'" type="button" @click="removePeriod(period)" class="min-h-11 min-w-11 px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs">删除</button>
             </div>
           </div>
 
@@ -109,7 +82,7 @@
             <GoalAdminCard
               v-for="task in period.tasks"
               :key="task.id"
-              :task="task"
+              :task="task" :disabled="saving || Boolean(loadError)"
               @backfill="openBackfill"
               @edit="openTaskModal(period, $event)"
               @remove="removeTask"
@@ -125,6 +98,7 @@
         <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 mb-1">🔁 调休上学日</h3>
         <p class="text-xs font-bold text-slate-400 mb-3">比如国庆调休的周六要上学：这天按所选星期几生成日常任务、显示课程表，假期里暂停的任务这天也照常；“放假前可以补完”的任务也按它来算假期从哪天结束。只能设置今天及以后的日期，过去的不能删除</p>
         <form class="flex flex-wrap items-end gap-2 mb-3" @submit.prevent="addMakeupDay">
+          <fieldset :disabled="saving || Boolean(loadError)" class="contents">
           <div>
             <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">日期</label>
             <input v-model="makeupForm.date" type="date" required :min="localToday()" class="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-brand-500" />
@@ -142,28 +116,31 @@
           <label v-if="children.length > 1" class="flex items-center gap-1.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-300">
             <input v-model="makeupForm.allChildren" type="checkbox" class="w-4 h-4 accent-brand-500" /> 所有孩子都加
           </label>
-          <button type="submit" :disabled="saving || !makeupForm.date" class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold disabled:opacity-50">➕ 添加</button>
+          <button type="submit" :disabled="saving || !makeupForm.date" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold disabled:opacity-50">➕ 添加</button>
+          </fieldset>
         </form>
         <p v-if="!makeupDays.length" class="text-xs font-bold text-slate-400">还没有调休上学日</p>
         <ul v-else class="flex flex-wrap gap-2">
           <li v-for="item in makeupDays" :key="item.id" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 font-chinese">
             <span>{{ item.date }}（{{ weekdayName(item.date) }}）按{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][item.acts_as] }}上课</span>
             <span v-if="item.note" class="text-slate-400">{{ item.note }}</span>
-            <button v-if="item.date >= localToday()" type="button" class="text-slate-300 hover:text-rose-500 dark:hover:text-rose-400" title="删除" @click="removeMakeupDay(item)">✕</button>
+            <button :disabled="saving || Boolean(loadError)" v-if="item.date >= localToday()" type="button" class="min-h-11 min-w-11 text-slate-300 hover:text-rose-500 dark:hover:text-rose-400" title="删除" @click="removeMakeupDay(item)">✕</button>
           </li>
         </ul>
       </section>
+      </template>
     </main>
 
     <!-- Period Modal -->
-    <div v-if="periodModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="periodModal = null">
-      <form class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-4" @submit.prevent="savePeriod">
-        <h3 class="text-xl font-black text-slate-800 dark:text-slate-100">{{ periodModal.id ? '✏️ 编辑假期' : `➕ 为${selectedChild.name}新增假期` }}</h3>
+    <UiDialog v-if="periodModal" :title="periodModal.id ? '✏️ 编辑假期' : `➕ 为${selectedChild.name}新增假期`" :busy="saving" @close="closeModal('period')">
+      <form @submit.prevent="savePeriod">
+        <fieldset :disabled="saving" class="space-y-4 min-w-0">
+          <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
         <div>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">假期名称</label>
-          <input v-model="periodModal.name" type="text" maxlength="30" required placeholder="例如：寒假" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 outline-none font-chinese" />
-          <div class="flex gap-1.5 mt-2">
-            <button v-for="name in ['国庆假期', '寒假', '春节', '五一假期', '暑假']" :key="name" type="button" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-brand-50 dark:hover:bg-brand-900/40" @click="periodModal.name = name">{{ name }}</button>
+          <input v-model="periodModal.name" aria-label="假期名称" autofocus type="text" maxlength="30" required placeholder="例如：寒假" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 outline-none font-chinese" />
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <button v-for="name in ['国庆假期', '寒假', '春节', '五一假期', '暑假']" :key="name" type="button" class="min-h-11 min-w-11 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-brand-50 dark:hover:bg-brand-900/40" @click="periodModal.name = name">{{ name }}</button>
           </div>
         </div>
         <div class="period-dates grid grid-cols-2 gap-3">
@@ -189,33 +166,33 @@
           <p class="text-xs text-slate-400 mt-1.5">不勾选的任务在假期中暂停，不生成、不计入完成度，也不影响连续打卡。</p>
         </div>
         <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-          <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="periodModal = null">取消</button>
-          <button type="submit" :disabled="saving" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ saving ? '保存中...' : '确认保存' }}</button>
+          <button type="button" class="min-h-11 min-w-11 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="closeModal('period')">取消</button>
+          <button type="submit" :disabled="saving" class="min-h-11 min-w-11 px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ saving ? '保存中...' : '确认保存' }}</button>
         </div>
+        </fieldset>
       </form>
-    </div>
+    </UiDialog>
 
     <!-- Period Task Modal -->
-    <div v-if="taskModal" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="taskModal = null">
-      <form class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-4" @submit.prevent="saveTask">
-        <h3 class="text-xl font-black text-slate-800 dark:text-slate-100">
-          {{ taskModal.id ? '✏️ 编辑' : '➕ 添加' }}{{ taskModal.periodId ? '假期任务' : '长期任务' }}
-        </h3>
+    <UiDialog v-if="taskModal" :title="`${taskModal.id ? '✏️ 编辑' : '➕ 添加'}${taskModal.periodId ? '假期任务' : '长期任务'}`" :busy="saving" @close="closeModal('task')">
+      <form @submit.prevent="saveTask">
+        <fieldset :disabled="saving" class="space-y-4 min-w-0">
+          <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
         <div>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">任务名称</label>
-          <input v-model="taskModal.title" type="text" maxlength="50" required placeholder="例如：寒假作业、读完《西游记》" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 outline-none font-chinese" />
+          <input v-model="taskModal.title" aria-label="任务名称" autofocus type="text" maxlength="50" required placeholder="例如：寒假作业、读完《西游记》" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 outline-none font-chinese" />
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">所属学科</label>
           <div class="grid grid-cols-4 gap-2">
-            <button v-for="sub in ['语文', '数学', '英语', '其他']" :key="sub" type="button" @click="taskModal.subject = sub" class="py-2 rounded-xl text-xs font-bold border font-chinese" :class="taskModal.subject === sub ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'">{{ sub }}</button>
+            <button v-for="sub in ['语文', '数学', '英语', '其他']" :key="sub" type="button" @click="taskModal.subject = sub" class="min-h-11 min-w-11 py-2 rounded-xl text-xs font-bold border font-chinese" :class="taskModal.subject === sub ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'">{{ sub }}</button>
           </div>
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">完成方式</label>
           <div class="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
-            <button type="button" :disabled="taskModal.locked" @click="taskModal.mode = 'progress'" class="py-2 rounded-xl text-xs font-bold disabled:cursor-not-allowed" :class="taskModal.mode === 'progress' ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">📊 按总量记录进度</button>
-            <button type="button" :disabled="taskModal.locked" @click="taskModal.mode = 'check'" class="py-2 rounded-xl text-xs font-bold disabled:cursor-not-allowed" :class="taskModal.mode === 'check' ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">✅ 完成后打勾</button>
+            <button type="button" :disabled="taskModal.locked" @click="taskModal.mode = 'progress'" class="min-h-11 min-w-11 py-2 rounded-xl text-xs font-bold disabled:cursor-not-allowed" :class="taskModal.mode === 'progress' ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">📊 按总量记录进度</button>
+            <button type="button" :disabled="taskModal.locked" @click="taskModal.mode = 'check'" class="min-h-11 min-w-11 py-2 rounded-xl text-xs font-bold disabled:cursor-not-allowed" :class="taskModal.mode === 'check' ? 'bg-white dark:bg-slate-900 text-sky-700 dark:text-sky-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">✅ 完成后打勾</button>
           </div>
           <p v-if="taskModal.locked" class="text-xs text-slate-400 mt-1">已有进度记录，不能更改完成方式。</p>
         </div>
@@ -227,16 +204,16 @@
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">单位</label>
             <input v-model="taskModal.unit" type="text" maxlength="10" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold outline-none focus:border-brand-500" />
-            <div class="flex gap-1 mt-1.5">
-              <button v-for="unit in ['页', '篇', '次', '本', '课']" :key="unit" type="button" class="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="taskModal.unit = unit">{{ unit }}</button>
+            <div class="flex flex-wrap gap-1 mt-1.5">
+              <button v-for="unit in ['页', '篇', '次', '本', '课']" :key="unit" type="button" class="min-h-11 min-w-11 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300" @click="taskModal.unit = unit">{{ unit }}</button>
             </div>
           </div>
         </div>
         <div v-if="taskModal.mode === 'progress'">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">孩子怎么记录</label>
           <div class="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
-            <button type="button" @click="taskModal.input_mode = 'position'" class="py-2 rounded-xl text-xs font-bold" :class="taskModal.input_mode === 'position' ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">📖 读到第几{{ taskModal.unit || '页' }}</button>
-            <button type="button" @click="taskModal.input_mode = 'increment'" class="py-2 rounded-xl text-xs font-bold" :class="taskModal.input_mode === 'increment' ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">➕ 今天完成了多少</button>
+            <button type="button" @click="taskModal.input_mode = 'position'" class="min-h-11 min-w-11 py-2 rounded-xl text-xs font-bold" :class="taskModal.input_mode === 'position' ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">📖 读到第几{{ taskModal.unit || '页' }}</button>
+            <button type="button" @click="taskModal.input_mode = 'increment'" class="min-h-11 min-w-11 py-2 rounded-xl text-xs font-bold" :class="taskModal.input_mode === 'increment' ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm font-black' : 'text-slate-500 dark:text-slate-400'">➕ 今天完成了多少</button>
           </div>
         </div>
         <div v-if="!taskModal.periodId" class="grid grid-cols-2 gap-3">
@@ -272,16 +249,18 @@
         <PriorityFields v-model="taskModal.priority" />
         <TimingFields v-model:track-time="taskModal.track_time" v-model:expected-minutes="taskModal.expected_minutes" />
         <div class="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-          <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="taskModal = null">取消</button>
-          <button type="submit" :disabled="saving" class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ saving ? '保存中...' : '确认保存' }}</button>
+          <button type="button" class="min-h-11 min-w-11 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="closeModal('task')">取消</button>
+          <button type="submit" :disabled="saving" class="min-h-11 min-w-11 px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50">{{ saving ? '保存中...' : '确认保存' }}</button>
         </div>
+        </fieldset>
       </form>
-    </div>
+    </UiDialog>
 
     <!-- Backfill Modal -->
-    <div v-if="backfill" class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in" @click.self="backfill = null">
-      <form class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800 space-y-4" @submit.prevent="saveBackfill">
-        <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 font-chinese">补记「{{ backfill.task.title }}」</h3>
+    <UiDialog v-if="backfill" :title="`补记「${backfill.task.title}」`" :busy="saving" @close="closeModal('backfill')">
+      <form @submit.prevent="saveBackfill">
+        <fieldset :disabled="saving" class="space-y-4 min-w-0">
+          <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
         <div class="grid grid-cols-2 gap-3">
           <div v-if="backfill.task.mode === 'progress' && backfill.task.input_mode === 'position'" class="min-w-0">
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">读到第几{{ backfill.task.unit }}</label>
@@ -297,11 +276,12 @@
           </div>
         </div>
         <div class="flex justify-end gap-3">
-          <button type="button" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="backfill = null">取消</button>
-          <button type="submit" :disabled="saving" class="px-6 py-2.5 rounded-xl bg-brand-500 text-white text-xs font-bold disabled:opacity-50">补记</button>
+          <button type="button" class="min-h-11 min-w-11 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="closeModal('backfill')">取消</button>
+          <button type="submit" :disabled="saving" class="min-h-11 min-w-11 px-6 py-2.5 rounded-xl bg-brand-500 text-white text-xs font-bold disabled:opacity-50">补记</button>
         </div>
+        </fieldset>
       </form>
-    </div>
+    </UiDialog>
   </div>
 </template>
 
@@ -311,13 +291,18 @@ import { confirmAction } from '../utils/confirmation';
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
+import ParentPageState from '../components/ParentPageState.vue';
+import UiDialog from '../components/UiDialog.vue';
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
+import { hasSession } from '../utils/session.js';
 import ParentChildPicker from '../components/ParentChildPicker.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 import { useParentChildSelection } from '../composables/useParentChildSelection';
 import GoalAdminCard from '../components/GoalAdminCard.vue';
 import TimingFields from '../components/TimingFields.vue';
 import PriorityFields from '../components/PriorityFields.vue';
-defineProps({ mode: { type: String, default: 'calendar' } });
+const props = defineProps({ mode: { type: String, default: 'calendar' } });
 const calendar = useCalendarStore();
 
 const children = ref([]);
@@ -328,7 +313,13 @@ const periods = ref([]);
 const goals = ref([]);
 const loading = ref(true);
 const saving = ref(false);
-const error = ref('');
+const error = ref(''), loadError = ref(''), dataLoaded = ref(false);
+let alive = true;
+onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || !saving.value);
+onBeforeRouteUpdate(() => {
+  if (saving.value) return false;
+  periodModal.value = null; taskModal.value = null; backfill.value = null;
+});
 const periodModal = ref(null);
 const makeupDays = ref([]);
 const makeupForm = ref({ date: '', acts_as: 1, note: '', allChildren: true });
@@ -351,16 +342,29 @@ const childTemplates = computed(() => templates.value.filter(t => t.child_ids ==
 
 const localToday = () => calendar.today;
 
-onMounted(async () => {
+async function loadInitial() {
+  const serial = ++periodsSerial;
+  loading.value = true; loadError.value = '';
   try {
-    [children.value, templates.value] = await Promise.all([api.getChildren(), api.getTaskTemplates()]);
-    if (children.value.length) await selectChild(initialChild());
+    const [kids, rows] = await Promise.all([api.getChildren(), api.getTaskTemplates()]);
+    if (!alive || serial !== periodsSerial) return;
+    children.value = kids; templates.value = rows;
+    const child = initialChild();
+    if (child) await selectChild(child);
+    else { selectedChild.value = null; dataLoaded.value = true; loading.value = false; }
   } catch (err) {
-    showError(err);
-  } finally {
-    loading.value = false;
+    if (alive && serial === periodsSerial) { loadError.value = err.message || String(err); loading.value = false; }
   }
-});
+}
+onMounted(loadInitial);
+function retryLoad() { return loadInitial(); }
+function closeModal(which) {
+  if (saving.value) return;
+  if (which === 'period') periodModal.value = null;
+  else if (which === 'task') taskModal.value = null;
+  else backfill.value = null;
+}
+watch(() => props.mode, () => { if (!saving.value) { periodModal.value = null; taskModal.value = null; backfill.value = null; error.value = ''; } });
 
 function showError(err) {
   error.value = typeof err === 'string' ? err : err.message || '操作失败，请重试';
@@ -368,6 +372,7 @@ function showError(err) {
 
 async function selectChild(child) {
   selectedChild.value = child;
+  dataLoaded.value = false; loading.value = true; loadError.value = '';
   periods.value = []; goals.value = []; makeupDays.value = [];
   await loadPeriods();
 }
@@ -377,19 +382,20 @@ async function loadPeriods() {
   const childId = selectedChild.value?.id;
   if (!childId || !calendar.ready) return;
   const date = calendar.today, timeZone = calendar.timeZone, serial = ++periodsSerial;
-  const current = () => serial === periodsSerial && selectedChild.value?.id === childId &&
+  if (!dataLoaded.value) loading.value = true;
+  const current = () => alive && serial === periodsSerial && selectedChild.value?.id === childId &&
     calendar.ready && date === calendar.today && timeZone === calendar.timeZone;
   try {
     const result = await Promise.all([api.getChildPeriods(childId), api.getChildGoals(childId), api.getMakeupDays(childId)]);
     if (!current()) return;
     [periods.value, goals.value, makeupDays.value] = result;
-    error.value = '';
+    dataLoaded.value = true; loadError.value = '';
   } catch (err) {
-    if (current()) showError(err);
-  }
+    if (current()) loadError.value = err.message || String(err);
+  } finally { if (current()) loading.value = false; }
 }
 watch(() => [calendar.today, calendar.ready], loadPeriods);
-onBeforeUnmount(() => { periodsSerial++; });
+onBeforeUnmount(() => { alive = false; periodsSerial++; });
 
 // Make-up days are per child; siblings at the same school usually share them, so they can be
 // added for everyone at once (a child who already has that day keeps it).
@@ -416,6 +422,7 @@ function templateTitle(id) {
 }
 
 async function run(action) {
+  if (saving.value) return false;
   saving.value = true;
   error.value = '';
   try {
@@ -431,6 +438,8 @@ async function run(action) {
 }
 
 function openPeriodModal(period = null) {
+  if (saving.value || loadError.value) return;
+  error.value = '';
   periodModal.value = period
     ? { id: period.id, name: period.name, start_date: period.start_date, end_date: period.end_date, paused: [...period.paused_template_ids] }
     : { id: null, name: '', start_date: localToday(), end_date: localToday(), paused: [] };
@@ -454,6 +463,8 @@ async function removePeriod(period) {
 
 // period is null for a standalone long-term task (own dates); holiday tasks follow their period.
 function openTaskModal(period, task = null) {
+  if (saving.value || loadError.value) return;
+  error.value = '';
   const periodId = period?.id ?? task?.period_id ?? null;
   taskModal.value = task
     ? { id: task.id, periodId, title: task.title, subject: task.subject, mode: task.mode, input_mode: task.input_mode, total_amount: task.total_amount,
@@ -483,12 +494,14 @@ async function removeTask(task) {
 }
 
 function openBackfill(task) {
+  if (saving.value || loadError.value) return;
+  error.value = '';
   const today = localToday();
   const maxDate = task.end_date && task.end_date < today ? task.end_date : today;
   backfill.value = { task, attempt: {}, amount: 1, position: task.done_amount + 1, date: maxDate };
 }
 
-const closeRestoredForm = () => { backfill.value = null; };
+const closeRestoredForm = () => { periodModal.value = null; taskModal.value = null; backfill.value = null; error.value = ''; dataLoaded.value = false; loadInitial(); };
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 onMounted(() => window.addEventListener('taskie:write-confirmed', loadPeriods));

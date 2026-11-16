@@ -35,6 +35,7 @@
     "test:browser:dialogs": "node scripts/smoke-dialogs.cjs",
     "test:browser:board-class-actions": "node scripts/smoke-board-class-actions.cjs",
     "test:browser:class-stats": "node scripts/smoke-class-stats.cjs",
+    "test:browser:parent-forms": "node scripts/smoke-parent-forms.cjs",
     "test:browser:parent-navigation": "node scripts/smoke-parent-navigation.cjs",
     "test:browser:recurring-homework": "node scripts/smoke-recurring-homework.cjs",
     "test:browser:class-homework": "node scripts/smoke-class-homework.cjs",

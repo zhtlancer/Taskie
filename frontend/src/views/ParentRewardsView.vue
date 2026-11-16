@@ -3,27 +3,9 @@
     <ParentNavBar />
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
-      <!-- Title & Actions Bar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-6 [&>*:last-child]:whitespace-nowrap">
-        <div>
-          <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            <span>🎁</span>
-            <span>奖励兑换</span>
-          </h2>
-          <p class="text-xs font-bold text-slate-400 mt-0.5">
-            设置孩子可以用积分兑换的奖励；孩子申请后积分先冻结，确认兑换后扣除，拒绝则退回
-          </p>
-        </div>
-
-        <button
-          type="button"
-          @click="openAddModal"
-          class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all"
-        >
-          <span>➕</span>
-          <span>新增奖励</span>
-        </button>
-      </div>
+      <ParentPageHeader icon="🎁" title="奖励配置" description="设置所有孩子可兑换的奖励，处理兑换申请和退款。">
+        <template #actions><button type="button" class="ui-button-primary" @click="openAddModal">➕ 新增奖励</button></template>
+      </ParentPageHeader>
 
       <ParentSectionNav section="management" />
 
@@ -251,6 +233,7 @@ import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import { getPendingRedemptions } from '../api/redemptions';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 import RefundRedemptionDialog from '../components/RefundRedemptionDialog.vue';
 import { useCalendarStore } from '../stores/calendar';

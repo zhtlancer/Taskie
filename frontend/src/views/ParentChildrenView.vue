@@ -3,29 +3,10 @@
     <ParentNavBar />
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
-      <!-- Title & Actions Bar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-6 [&>*:last-child]:whitespace-nowrap">
-        <div>
-          <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-            <span>👶</span>
-            <span>孩子账号管理</span>
-          </h2>
-          <p class="text-xs font-bold text-slate-400 mt-0.5">
-            配置孩子基本信息、专属可爱 Emoji 头像以及独立 PIN 码
-          </p>
-        </div>
+      <ParentPageHeader icon="👶" title="孩子档案" description="配置孩子基本信息、头像和独立 PIN 码。">
+        <template #actions><button type="button" class="ui-button-primary" @click="openAddModal">➕ 添加新孩子账号</button></template>
+      </ParentPageHeader>
 
-        <button
-          type="button"
-          @click="openAddModal"
-          class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs shadow-button active:scale-95 transition-all"
-        >
-          <span>➕</span>
-          <span>添加新孩子账号</span>
-        </button>
-      </div>
-
-      <!-- Loading State -->
       <ParentSectionNav section="management" />
 
       <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
@@ -196,6 +177,7 @@ import { confirmAction } from '../utils/confirmation';
 import { ref, onMounted } from 'vue';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 
 const children = ref([]);

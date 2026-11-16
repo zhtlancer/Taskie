@@ -2,7 +2,7 @@
   <div class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950">
     <ParentNavBar />
     <main class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
-      <h2 class="text-2xl font-bold">数据备份与账号设置</h2>
+      <ParentPageHeader title="备份与设置" description="管理学习记录备份、设备授权和家长账号。" />
       <ParentSectionNav section="management" />
       <p v-if="message" :role="failed ? 'alert' : 'status'" class="p-4 rounded-xl" :class="failed ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200' : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200'">{{ message }}</p>
       <section class="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4">
@@ -140,6 +140,7 @@ import { useRouter } from 'vue-router';
 import api from '../api/client';
 import { clearTokens, endSession } from '../utils/session.js';
 import ParentNavBar from '../components/ParentNavBar.vue';
+import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 import { describeEvent, describeOrigin, isWarning } from '../utils/deviceEvents.js';
 import { businessDate } from '../utils/businessDate.js';
