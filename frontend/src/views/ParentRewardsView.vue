@@ -301,7 +301,7 @@ async function loadHistory(page) {
   if (actionsDisabled.value || !alive) return;
   const serial = ++historySerial;
   historyRetryPage.value = page;
-  historyLoading.value = true;
+  historyLoading.value = true; historyError.value = '';
   try {
     const rows = await fetchHistory(page);
     if (alive && serial === historySerial) { setHistory(rows, page); historyError.value = ''; }
@@ -315,7 +315,7 @@ async function loadHistory(page) {
 async function load() {
   const serial = ++loadSerial, page = historyPage.value;
   historySerial++; historyLoading.value = false;
-  loading.value = true;
+  loading.value = true; loadError.value = '';
   try {
     const [nextItems, nextPending, rows] = await Promise.all([
       api.getRewardItems(),

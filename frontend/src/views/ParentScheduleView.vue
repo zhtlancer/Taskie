@@ -233,7 +233,7 @@ async function loadTimetables() {
   const request = childRequest(), serial = ++timetableSerial;
   if (!request.id) return;
   const current = () => request.current() && serial === timetableSerial;
-  timetablesRefreshing.value = true;
+  timetablesRefreshing.value = true; timetablesError.value = '';
   try {
     const rows = await api.getTimetables(request.id);
     if (current()) { timetables.value = rows; timetablesReady.value = true; timetablesError.value = ''; }
@@ -245,7 +245,7 @@ async function loadSchedule() {
   const request = childRequest(), serial = ++scheduleSerial;
   if (!request.id) return;
   const current = () => request.current() && serial === scheduleSerial;
-  scheduleRefreshing.value = true;
+  scheduleRefreshing.value = true; scheduleError.value = '';
   try {
     const rows = await api.getChildSchedule(request.id, request.date, addDays(request.date, 27));
     if (current()) { upcoming.value = rows; scheduleReady.value = true; scheduleError.value = ''; }
@@ -256,7 +256,7 @@ async function loadSchedule() {
 async function loadClasses() {
   const serial = ++classSerial;
   const current = () => alive && serial === classSerial;
-  classesRefreshing.value = true;
+  classesRefreshing.value = true; classesError.value = '';
   try {
     const rows = await api.getOutsideClasses();
     if (current()) { classes.value = rows; classesReady.value = true; classesError.value = ''; }
@@ -268,7 +268,7 @@ async function refreshClassStats() {
   const request = childRequest(), serial = ++statsSerial;
   if (!request.id) return;
   const current = () => request.current() && serial === statsSerial;
-  statsRefreshing.value = true;
+  statsRefreshing.value = true; statsError.value = false;
   try {
     const rows = await api.getOutsideClassStats(request.id);
     if (current()) { classStats.value = rows; statsError.value = false; }
@@ -406,7 +406,7 @@ async function removeClass(cls) {
 
 async function loadInitial() {
   const serial = ++initialSerial;
-  loading.value = true;
+  loading.value = true; childrenError.value = '';
   try {
     const rows = await api.getChildren();
     if (!alive || serial !== initialSerial) return;

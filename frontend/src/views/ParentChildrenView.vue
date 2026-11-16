@@ -199,7 +199,7 @@ onMounted(async () => {
 
 async function loadChildren() {
   const serial = ++loadSerial;
-  loading.value = true;
+  loading.value = true; loadError.value = '';
   try {
     const rows = await api.getChildren();
     if (alive && serial === loadSerial) { children.value = rows; loadError.value = ''; }

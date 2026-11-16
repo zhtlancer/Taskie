@@ -214,7 +214,7 @@
           <!-- When all completed -->
           <div
             v-if="allDone"
-            class="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white flex flex-wrap items-center justify-between gap-3 shadow-lg shadow-emerald-200 animate-pop-in"
+            class="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white flex flex-wrap items-center justify-between gap-3 shadow-lg shadow-emerald-200"
           >
             <div class="flex items-center gap-3">
               <span class="text-2xl animate-bounce">🎉</span>

@@ -50,7 +50,7 @@ const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 const skillName = skill => skill === 'write' ? '书写' : '认读';
 let alive = true;
 async function load() {
-  loading.value = true; error.value = '';
+  loading.value = true; loadError.value = ''; error.value = '';
   try {
     const overview = await api.getWordStudy(props.childId);
     if (!alive) return;

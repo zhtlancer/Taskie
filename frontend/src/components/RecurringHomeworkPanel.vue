@@ -40,7 +40,7 @@ function openCreate() { if (!loading.value && !busy.value && !loadError.value) f
 defineExpose({ openCreate, loading, loadError });
 let alive = true;
 async function load() {
-  loading.value = true;
+  loading.value = true; loadError.value = '';
   try { const rows = await api.getRecurringHomework(props.childId); if (alive) { templates.value = rows; loadError.value = ''; } }
   catch (err) { if (alive) { loadError.value = err.message || String(err); } }
   finally { if (alive) loading.value = false; }

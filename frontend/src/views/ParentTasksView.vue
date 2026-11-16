@@ -472,7 +472,7 @@ onMounted(async () => {
 
 async function loadTemplates() {
   const serial = ++loadSerial;
-  loading.value = true;
+  loading.value = true; loadError.value = '';
   try {
     const [rows, kids] = await Promise.all([api.getTaskTemplates(), api.getChildren()]);
     if (!alive || serial !== loadSerial) return;
