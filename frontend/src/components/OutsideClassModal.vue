@@ -1,12 +1,13 @@
 <template>
   <UiDialog :title="cls ? '编辑课外班' : '新增课外班'" :busy="saving" wide @close="$emit('close')">
-    <form class="space-y-4" @submit.prevent="save">
-      <p v-if="error" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
+    <form @submit.prevent="save">
+      <fieldset :disabled="saving" class="space-y-4 min-w-0">
+      <p v-if="error" role="alert" class="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }}</p>
 
       <div class="grid grid-cols-2 gap-3">
         <div class="col-span-2 sm:col-span-1">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">课程名称</label>
-          <input v-model="form.title" aria-label="课程名称" type="text" maxlength="20" required placeholder="例如：钢琴课" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500 font-chinese" />
+          <input v-model="form.title" aria-label="课程名称" autofocus type="text" maxlength="20" required placeholder="例如：钢琴课" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm outline-none focus:border-violet-500 font-chinese" />
         </div>
         <div class="col-span-2 sm:col-span-1">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">机构（可不填）</label>
@@ -130,13 +131,14 @@
         <button type="button" :disabled="saving" class="min-h-[44px] min-w-[44px] px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" @click="$emit('close')">取消</button>
         <button type="submit" :disabled="saving || !form.days_of_week.length || form.child_ids?.length === 0 || (scheduleMode === 'count' && !preview.length)" class="min-h-[44px] min-w-[44px] px-6 py-2.5 rounded-xl bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold disabled:opacity-50">{{ saving ? '保存中...' : '保存' }}</button>
       </div>
+      </fieldset>
     </form>
   </UiDialog>
 </template>
 
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
 import api from '../api/client';
 import { WEEKDAY_NAMES, WEEK_ORDER, lessonDates } from '../utils/schedule.js';
@@ -147,7 +149,7 @@ const props = defineProps({
   cls: { type: Object, default: null },
   children: { type: Array, required: true }
 });
-const emit = defineEmits(['close', 'saved']);
+const emit = defineEmits(['close', 'saved', 'busy']);
 const scheduleMode = ref(props.cls && !props.cls.total_lessons ? 'date' : 'count');
 
 const fields = ['title', 'institution', 'location', 'teacher', 'start_time', 'end_time', 'start_date', 'end_date', 'bring', 'note', 'create_task', 'points', 'auto_homework'];
@@ -157,6 +159,7 @@ const form = ref(props.cls
       create_task: false, auto_homework: false, points: 5, days_of_week: [], child_ids: null, total_lessons: 20 });
 const preview = computed(() => lessonDates(form.value.start_date, form.value.days_of_week, form.value.total_lessons));
 const saving = ref(false);
+watch(saving, value => emit('busy', value), { flush: 'sync' });
 const error = ref('');
 
 function toggleDay(day) {
@@ -170,6 +173,7 @@ function toggleChild(id) {
 }
 
 async function save() {
+  if (saving.value) return;
   saving.value = true;
   error.value = '';
   const payload = { ...form.value, total_lessons: scheduleMode.value === 'count' ? form.value.total_lessons : null,
@@ -177,7 +181,7 @@ async function save() {
   try {
     emit('saved', props.cls ? await api.updateOutsideClass(props.cls.id, payload) : await api.createOutsideClass(payload));
   } catch (err) {
-    error.value = typeof err === 'string' ? err : '保存失败，请重试';
+    error.value = typeof err === 'string' ? err : err.message || '保存失败，请重试';
   } finally {
     saving.value = false;
   }

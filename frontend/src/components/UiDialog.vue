@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div class="fixed inset-0 flex items-end sm:items-center justify-center bg-slate-950/50 p-0 sm:p-4" :class="confirmation ? 'z-[90]' : 'z-[80]'" @click.self="requestClose">
       <section ref="panel" role="dialog" aria-modal="true" :aria-labelledby="titleId" tabindex="-1"
-        class="ui-dialog bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 w-full rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col overflow-hidden max-h-[92dvh]" :class="workspace ? 'max-w-5xl h-[760px]' : wide ? 'max-w-2xl' : 'max-w-md'">
+        class="ui-dialog bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 w-full rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col overflow-hidden max-h-[92dvh]" :class="workspace ? 'max-w-5xl h-[760px]' : large ? 'max-w-5xl' : wide ? 'max-w-2xl' : 'max-w-md'">
         <header class="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-100 dark:border-slate-700 shrink-0">
           <div class="min-w-0"><h2 :id="titleId" class="text-base font-bold"><slot name="title">{{ title }}</slot></h2><div v-if="$slots.subtitle" class="mt-1 text-xs text-slate-500 dark:text-slate-400"><slot name="subtitle" /></div></div>
           <button type="button" :disabled="busy" class="w-11 h-11 shrink-0 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40" :aria-label="closeLabel" @click="requestClose">✕</button>
@@ -19,7 +19,7 @@ let originalOverflow;
 </script>
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick, useId } from 'vue';
-const props = defineProps({ title: { type: String, required: true }, busy: Boolean, wide: Boolean, workspace: Boolean, confirmation: Boolean, closeLabel: { type: String, default: '关闭' } });
+const props = defineProps({ title: { type: String, required: true }, busy: Boolean, wide: Boolean, large: Boolean, workspace: Boolean, confirmation: Boolean, closeLabel: { type: String, default: '关闭' } });
 const emit = defineEmits(['close']);
 const panel = ref(null), titleId = useId();
 const dialog = { id: titleId, confirmation: props.confirmation, panel };

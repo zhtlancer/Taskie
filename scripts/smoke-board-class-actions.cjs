@@ -354,7 +354,7 @@ async function regressions(base, token, api) {
     await form.waitFor({ state: 'detached' }); await card.waitFor();
     for (const query of [`child=${child.id}&class=missing&date=${source}`, `child=${child.id}&class=${cls.id}&date=2026-02-30`, `child=missing&class=${cls.id}&date=${source}`]) {
       await page.goto(`${base}/parent/schedule?${query}`, { waitUntil: 'networkidle' });
-      await page.locator('h2').getByText('课程表', { exact: true }).waitFor();
+      await page.getByRole('heading', { name: '学校与课外班', exact: true }).waitFor();
       assert.equal(await page.getByRole('dialog').count(), 0, 'invalid targets leave the normal list usable');
     }
   });
@@ -489,8 +489,8 @@ async function main() {
   };
   browser = await chromium.launch(launchOptions());
   if (process.env.SMOKE_SCREENSHOT_DIR) fs.mkdirSync(process.env.SMOKE_SCREENSHOT_DIR, { recursive: true });
-  if (process.env.BOARD_CLASS_AFTERNOON) {
-    // The rerun opens D3 in a cold browser; load the app once so startup does not use D3's 5 s budget.
+  if (process.env.BOARD_CLASS_AFTERNOON || process.env.BOARD_CLASS_CASE) {
+    // Warm targeted runs so cold application startup does not consume a scenario's 5 s budget.
     const warm = await browser.newPage(); await warm.goto(base, { waitUntil: 'networkidle', timeout: 30000 }); await warm.close();
   }
   await regressions(base, token, api);

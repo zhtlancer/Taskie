@@ -118,11 +118,11 @@ async function main() {
 
       await goto(`/parent/schedule?child=${child.id}`);
       await page.getByRole('button', { name: '➕ 新建课程表', exact: true }).click();
-      form = page.locator('form').filter({ has: page.getByRole('heading', { name: '🏫 新建课程表', exact: true }) });
+      form = page.getByRole('dialog', { name: '🏫 新建课程表', exact: true }).locator('form');
       await checkSizes(page, form, 'input[type=date]', 2, width >= 640); await cancel(form);
       const timetableCard = page.locator('div.p-4.rounded-2xl').filter({ has: page.getByText(timetable.name, { exact: true }) });
       await timetableCard.getByRole('button', { name: '✏️ 编辑', exact: true }).click();
-      form = page.locator('form').filter({ has: page.getByRole('heading', { name: '🏫 编辑课程表', exact: true }) });
+      form = page.getByRole('dialog', { name: '🏫 编辑课程表', exact: true }).locator('form');
       await checkSizes(page, form, 'input[type=date]', 2, width >= 640);
       if (save) {
         await form.getByLabel('结束日期', { exact: true }).fill(changedEnd);

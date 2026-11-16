@@ -379,8 +379,8 @@ async function main() {
     for (const name of ['周一', '周日', child.name]) await assertSize(dialog.getByRole('button', { name: new RegExp(name) }));
     await dialog.getByRole('button', { name: '取消', exact: true }).click();
     await page.getByRole('button', { name: '✏️ 编辑', exact: true }).click();
-    await page.locator('form').filter({ has: page.getByRole('heading', { name: '🏫 编辑课程表', exact: true }) }).locator('td button').first().click();
-    const chooser = page.locator('form').filter({ has: page.getByRole('heading', { name: /周.*（/ }) });
+    await page.getByRole('dialog', { name: '🏫 编辑课程表', exact: true }).locator('td button').first().click();
+    const chooser = page.getByRole('dialog', { name: /周.*（/ }).locator('form');
     await assertSize(chooser.getByRole('button', { name: '美术', exact: true }));
     await assertSize(chooser.getByRole('button', { name: '体育', exact: true }));
   });

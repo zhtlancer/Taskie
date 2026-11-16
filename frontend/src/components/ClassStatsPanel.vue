@@ -1,10 +1,10 @@
 <template>
   <div data-class-stats class="mt-3 pt-3 border-t border-violet-100 dark:border-violet-800 text-xs font-bold">
     <p v-if="!summary.enrolled" class="mb-2 text-slate-500 dark:text-slate-400">历史课程（当前未分配给这个孩子）</p>
-    <div class="flex items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
+    <div class="flex flex-wrap items-center justify-between gap-2 text-slate-700 dark:text-slate-200">
       <span>已上 <b class="text-violet-600 dark:text-violet-300">{{ summary.attended }}</b><template v-if="summary.total_lessons"> / {{ summary.total_lessons }}</template> 次</span>
       <span>待确认 {{ summary.pending }} 次</span>
-      <button type="button" class="min-h-[44px] px-3 rounded-xl bg-white dark:bg-slate-900 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800" @click="open">出勤与学费</button>
+      <button type="button" :disabled="disabled" class="min-h-[44px] px-3 rounded-xl bg-white dark:bg-slate-900 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800" @click="open">出勤与学费</button>
     </div>
     <div v-if="summary.total_lessons" role="progressbar" aria-label="上课进度" :aria-valuenow="Math.min(summary.attended, summary.total_lessons)" :aria-valuemax="summary.total_lessons" aria-valuemin="0" class="h-2 mt-1 rounded-full bg-violet-100 dark:bg-violet-950 overflow-hidden">
       <div class="h-full rounded-full bg-violet-500" :style="{ width: `${Math.min(100, summary.attended * 100 / summary.total_lessons)}%` }"></div>
@@ -88,23 +88,25 @@
 </template>
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
-import { ref, onBeforeUnmount } from 'vue';
+import { ref, watch, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
 import ClassHomeworkNotice from './ClassHomeworkNotice.vue';
 import api from '../api/client';
 import { addDays } from '../utils/schedule.js';
 import { attendanceLabels, changeText, feeText, parseFee } from '../utils/classStats.js';
 const calendar = useCalendarStore();
-const props = defineProps({ summary: { type: Object, required: true }, child: { type: Object, required: true } });
-const emit = defineEmits(['changed']);
+const props = defineProps({ summary: { type: Object, required: true }, child: { type: Object, required: true }, disabled: Boolean });
+const emit = defineEmits(['changed', 'busy', 'opened']);
 const opened = ref(false), details = ref(null), draft = ref(null), fee = ref(''), error = ref(''), busy = ref(false), fetching = ref(false);
+watch(busy, value => emit('busy', value), { flush: 'sync' });
+watch(opened, value => emit('opened', value), { flush: 'sync' });
 const feeVersion = ref(null), feeConflict = ref(false);
 let serial = 0, opening = 0;
 function close() {
   if (busy.value) return;
   opening++; serial++; opened.value = false; fetching.value = false;
 }
-onBeforeUnmount(() => { opening++; serial++; });
+onBeforeUnmount(() => { opening++; serial++; emit('busy', false); emit('opened', false); });
 const showError = err => { error.value = typeof err === 'string' ? err : err.message || '操作失败，请重试'; };
 async function load(from, to) {
   const request = ++serial;
@@ -119,7 +121,7 @@ const feeInput = cents => (cents === null ? '' : (cents / 100).toFixed(2));
 // The fee form appears with the details, so it starts from their fresh fee rather than the card's,
 // which another device may have changed since; later range changes keep what the parent typed.
 async function open() {
-  if (busy.value || opened.value) return;
+  if (props.disabled || busy.value || opened.value) return;
   const batch = ++opening;
   opened.value = true; details.value = null; draft.value = null; error.value = ''; feeConflict.value = false;
   try {
