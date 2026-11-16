@@ -16,10 +16,10 @@
         </template>
         <button type="button" :disabled="busy || infoState.loading" @click="createBackup" class="ui-button-primary">{{ activeOperation === 'backup' ? '正在创建备份…' : '立即创建备份' }}</button>
         <ParentPageState v-if="info && !infoState.loading && !infoState.error && !info.backups.length" title="暂无备份" description="创建一份学习记录备份，保存后可下载。" />
-        <ul class="divide-y">
+        <ul class="divide-y divide-slate-200 dark:divide-slate-700">
           <li v-for="item in info?.backups || []" :key="item.name" class="py-3 flex flex-wrap items-center justify-between gap-3">
             <span class="min-w-0 break-words">{{ formatTime(item.created_at) }} · {{ backupSize(item.size) }}<span class="block text-xs text-slate-500 dark:text-slate-400 break-all">{{ item.name }}</span></span>
-            <button type="button" :disabled="busy || infoState.loading || Boolean(infoState.error)" @click="download(item)" class="min-h-11 min-w-11 px-3 text-brand-600 dark:text-brand-300 font-bold">下载备份</button>
+            <button type="button" :disabled="busy || infoState.loading || Boolean(infoState.error)" @click="download(item)" class="min-h-11 min-w-11 px-3 text-brand-600 dark:text-brand-300 font-bold disabled:opacity-50">下载备份</button>
           </li>
         </ul>
       </section>
@@ -103,7 +103,7 @@
           </fieldset>
         </form>
         <ParentPageState v-if="devicesState.ready && !devicesState.error && !devicesState.loading && !devices.length" title="暂无授权设备" />
-        <ul class="divide-y">
+        <ul class="divide-y divide-slate-200 dark:divide-slate-700">
           <li v-for="device in devices" :key="device.id" class="py-3 flex items-center justify-between gap-3">
             <span class="min-w-0">
               <span class="font-bold break-words">{{ device.label }}</span>
@@ -112,7 +112,7 @@
                 授权于 {{ formatTime(device.created_at) }} · 最近使用 {{ device.last_seen_at ? formatTime(device.last_seen_at) : '暂无' }}
               </span>
             </span>
-            <button type="button" :disabled="busy || devicesState.loading || Boolean(devicesState.error)" @click="revokeDevice(device)" class="min-h-11 min-w-11 px-3 shrink-0 text-rose-600 dark:text-rose-300 font-bold">撤销</button>
+            <button type="button" :disabled="busy || devicesState.loading || Boolean(devicesState.error)" @click="revokeDevice(device)" class="min-h-11 min-w-11 px-3 shrink-0 text-rose-600 dark:text-rose-300 font-bold disabled:opacity-50">撤销</button>
           </li>
         </ul>
         <div class="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
@@ -129,7 +129,7 @@
               </span>
             </li>
           </ul>
-          <button v-if="deviceEvents.length > shownEvents.length" type="button" :disabled="busy" @click="showAllEvents = true" class="mt-2 min-h-11 min-w-11 text-sm font-bold text-brand-600 dark:text-brand-300">
+          <button v-if="deviceEvents.length > shownEvents.length" type="button" :disabled="busy" @click="showAllEvents = true" class="mt-2 min-h-11 min-w-11 text-sm font-bold text-brand-600 dark:text-brand-300 disabled:opacity-50">
             显示全部 {{ deviceEvents.length }} 条
           </button>
         </div>
@@ -256,12 +256,18 @@ async function run(section, operation, action, refresh) {
   if (saved && current()) refresh?.();
   return saved;
 }
-function createBackup() { return run('backups', 'backup', async () => { await api.createBackup(); return '备份已保存，可以下载到另一台设备。'; }, loadInfo); }
-function download(item) { return run('backups', 'download', async () => {
-  const blob = await api.downloadBackup(item.name), url = URL.createObjectURL(blob);
-  const link = document.createElement('a'); link.href = url; link.download = item.name; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}); }
+function createBackup() {
+  if (infoState.loading) return false;
+  return run('backups', 'backup', async () => { await api.createBackup(); return '备份已保存，可以下载到另一台设备。'; }, loadInfo);
+}
+function download(item) {
+  if (infoState.loading || infoState.error) return false;
+  return run('backups', 'download', async () => {
+    const blob = await api.downloadBackup(item.name), url = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = url; link.download = item.name; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  });
+}
 // Native downloads do not report completion to the page. Only server responses update the status.
 function downloadPhotos(scope) { return run('photos', 'export', async () => {
   const { url, included_count, skipped = [] } = await api.photoPackageTicket(scope);
