@@ -18,7 +18,7 @@
   </UiDialog>
 </template>
 <script setup>
-import { reactive, ref } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import api from '../api/client';
 import { getDataGeneration } from '../utils/session';
 import { useFormDraft } from '../composables/useFormDraft';
@@ -26,8 +26,9 @@ import { restoreFormFields } from '../utils/formDrafts';
 import UiDialog from './UiDialog.vue';
 import FormDraftNotice from './FormDraftNotice.vue';
 const props = defineProps({ redemption: { type: Object, required: true } });
-const emit = defineEmits(['close', 'saved']);
+const emit = defineEmits(['close', 'saved', 'busy']);
 const form = reactive({ reason: '' }), saving = ref(false), error = ref('');
+watch(saving, value => emit('busy', value), { flush: 'sync' });
 const generation = getDataGeneration();
 const draft = useFormDraft({ kind: 'refund', child_id: props.redemption.child_id, record_id: props.redemption.id }, {
   read: () => ({ form: { ...form } }), hasContent: data => Boolean(data.form.reason.trim()),

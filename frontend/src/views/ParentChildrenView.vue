@@ -4,27 +4,24 @@
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
       <ParentPageHeader icon="👶" title="孩子档案" description="配置孩子基本信息、头像和独立 PIN 码。">
-        <template #actions><button type="button" class="ui-button-primary" @click="openAddModal">➕ 添加新孩子账号</button></template>
+        <template #actions><button type="button" :disabled="actionsDisabled" class="ui-button-primary" @click="openAddModal">➕ 添加新孩子账号</button></template>
       </ParentPageHeader>
 
       <ParentSectionNav section="management" />
 
-      <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold">
-        <span class="animate-spin mr-2">⏳</span> 正在加载孩子账号...
-      </div>
-
-      <!-- Empty State -->
-      <div v-else-if="children.length === 0" class="text-center py-16 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700">
-        <div class="text-5xl mb-3">👶</div>
-        <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">暂无孩子账号</h3>
-        <p class="text-xs text-slate-400 mb-6">点击右上角“添加新孩子账号”开始使用</p>
-      </div>
+      <ParentPageState v-if="loading" kind="loading" title="正在读取孩子档案…" />
+      <ParentPageState v-if="loadError" kind="error" title="孩子档案未能读取" :description="loadError" :busy="loading || busy" @retry="loadChildren" />
+      <p v-if="pageError" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ pageError }}</p>
+      <ParentPageState v-if="!loading && !loadError && !children.length" title="暂无孩子账号" description="添加孩子档案，设置昵称、头像和登录方式。">
+        <template #actions><button type="button" :disabled="actionsDisabled" class="ui-button-secondary" @click="openAddModal">添加孩子</button></template>
+      </ParentPageState>
 
       <!-- Children List Cards -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div v-if="!loading && children.length" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div
           v-for="child in children"
           :key="child.id"
+          :data-child-id="child.id"
           class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card flex flex-col justify-between"
         >
           <div>
@@ -41,7 +38,7 @@
               </span>
             </div>
 
-            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">
+            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1 break-words">
               {{ child.name }}
             </h3>
             <p class="text-xs text-slate-400">
@@ -49,29 +46,29 @@
             </p>
           </div>
 
-          <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
-            <div class="flex items-center gap-2">
+          <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                :disabled="actionsDisabled"
                 @click="openEditModal(child)"
-                class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors"
+                class="min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors"
               >
                 ✏️ 编辑资料
               </button>
               <!-- Opens with the parent session, which may also take categories away -->
               <router-link
                 :to="`/child/${child.id}/characters`"
-                class="px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors"
+                class="inline-flex items-center min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 dark:hover:bg-brand-900/40 hover:text-brand-600 dark:hover:text-brand-300 text-slate-600 dark:text-slate-300 font-bold text-xs transition-colors"
               >
                 📖 字词本
               </router-link>
-              <router-link :to="{ path: '/parent/word-plans', query: { child: child.id } }" class="px-3.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-bold text-xs">📚 学习计划</router-link>
-            </div>
+              <router-link :to="{ path: '/parent/word-plans', query: { child: child.id } }" class="inline-flex items-center min-h-11 min-w-11 px-3.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-bold text-xs">📚 学习计划</router-link>
 
             <button
               type="button"
+              :disabled="actionsDisabled"
               @click="handleDelete(child.id)"
-              class="px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs transition-colors"
+              class="ml-auto min-h-11 min-w-11 px-3 py-1.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-300 font-bold text-xs transition-colors"
             >
               删除
             </button>
@@ -81,31 +78,16 @@
     </main>
 
     <!-- Add/Edit Modal -->
-    <div
-      v-if="showModal"
-      class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
-      @click.self="showModal = false"
-    >
-      <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-brand-100 dark:border-brand-800">
-        <div class="flex items-center justify-between mb-5">
-          <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span>{{ isEditing ? '✏️ 编辑孩子账号' : '➕ 添加新孩子账号' }}</span>
-          </h3>
-          <button
-            type="button"
-            @click="showModal = false"
-            class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold text-lg"
-          >
-            ✕
-          </button>
-        </div>
-
-        <form @submit.prevent="submitChildForm" class="space-y-4">
+    <UiDialog v-if="showModal" :title="isEditing ? '✏️ 编辑孩子账号' : '➕ 添加新孩子账号'" :busy="submitting" @close="closeForm">
+        <form @submit.prevent="submitChildForm">
+          <fieldset :disabled="submitting" class="space-y-4 min-w-0">
+          <p v-if="formError" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ formError }}</p>
           <!-- Name Input -->
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">孩子昵称</label>
             <input
               v-model="form.name"
+              aria-label="孩子昵称" autofocus
               type="text"
               required
               placeholder="例如：小明、琪琪"
@@ -116,13 +98,14 @@
           <!-- Emoji Avatar Picker -->
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">选择专属 Emoji 头像</label>
-            <div class="grid grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700">
+            <div class="grid grid-cols-4 sm:grid-cols-6 gap-2 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700">
               <button
                 v-for="emoji in availableEmojis"
                 :key="emoji"
                 type="button"
                 @click="form.avatar_emoji = emoji"
-                class="w-10 h-10 rounded-xl flex items-center justify-center text-2xl transition-all"
+                :aria-pressed="form.avatar_emoji === emoji"
+                class="min-w-11 min-h-11 rounded-xl flex items-center justify-center text-2xl transition-all"
                 :class="[
                   form.avatar_emoji === emoji
                     ? 'bg-brand-500 text-white shadow-button scale-110'
@@ -138,13 +121,14 @@
           <div>
             <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">
               4 位独立 PIN 密码
-              <span class="text-slate-400 font-normal">(可选，留空则免密码进入)</span>
+              <span class="text-slate-400 font-normal">{{ isEditing ? '(可选，留空保留原登录方式)' : '(可选，留空则免密码进入)' }}</span>
             </label>
             <input
               v-model="form.pin"
+              aria-label="4 位独立 PIN 密码" inputmode="numeric" pattern="[0-9]{4}" autocomplete="new-password"
               type="password"
               maxlength="4"
-              placeholder="如 1234，留空则免密"
+              :placeholder="isEditing ? '留空保留原登录方式' : '如 1234，留空则免密'"
               class="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-800 outline-none"
             />
           </div>
@@ -153,31 +137,35 @@
           <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-700">
             <button
               type="button"
-              @click="showModal = false"
-              class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              @click="closeForm"
+              class="min-h-11 min-w-11 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               取消
             </button>
             <button
               type="submit"
               :disabled="submitting || !form.name.trim()"
-              class="px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
+              class="min-h-11 min-w-11 px-6 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold shadow-button disabled:opacity-50 transition-all"
             >
               {{ submitting ? '保存中...' : '确认保存' }}
             </button>
           </div>
+          </fieldset>
         </form>
-      </div>
-    </div>
+    </UiDialog>
   </div>
 </template>
 
 <script setup>
 import { confirmAction } from '../utils/confirmation';
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
+import { hasSession } from '../utils/session';
 import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import ParentPageHeader from '../components/ParentPageHeader.vue';
+import ParentPageState from '../components/ParentPageState.vue';
+import UiDialog from '../components/UiDialog.vue';
 import ParentSectionNav from '../components/ParentSectionNav.vue';
 
 const children = ref([]);
@@ -187,6 +175,15 @@ const showModal = ref(false);
 const isEditing = ref(false);
 const editingId = ref(null);
 const submitting = ref(false);
+const mutationBusy = ref(false), loadError = ref(''), formError = ref(''), pageError = ref('');
+const busy = computed(() => submitting.value || mutationBusy.value);
+const actionsDisabled = computed(() => busy.value || loading.value || Boolean(loadError.value));
+let alive = true, loadSerial = 0;
+const closeForm = () => { if (!submitting.value) showModal.value = false; };
+onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || !busy.value);
+const restored = () => { showModal.value = false; formError.value = ''; pageError.value = ''; loadChildren(); };
+onMounted(() => window.addEventListener('taskie:data-restored', restored));
+onBeforeUnmount(() => { alive = false; loadSerial++; window.removeEventListener('taskie:data-restored', restored); });
 
 const availableEmojis = ['🐱', '🦁', '🐼', '🐰', '🦊', '🐨', '🦄', '🐯', '🐶', '🐻', '🐵', '🐸'];
 
@@ -201,17 +198,21 @@ onMounted(async () => {
 });
 
 async function loadChildren() {
+  const serial = ++loadSerial;
   loading.value = true;
   try {
-    children.value = await api.getChildren();
+    const rows = await api.getChildren();
+    if (alive && serial === loadSerial) { children.value = rows; loadError.value = ''; }
   } catch (err) {
-    console.error('Failed to load children:', err);
+    if (alive && serial === loadSerial) loadError.value = err.message || String(err);
   } finally {
-    loading.value = false;
+    if (alive && serial === loadSerial) loading.value = false;
   }
 }
 
 function openAddModal() {
+  if (actionsDisabled.value) return;
+  formError.value = '';
   isEditing.value = false;
   editingId.value = null;
   form.value = {
@@ -223,6 +224,8 @@ function openAddModal() {
 }
 
 function openEditModal(child) {
+  if (actionsDisabled.value) return;
+  formError.value = '';
   isEditing.value = true;
   editingId.value = child.id;
   form.value = {
@@ -234,8 +237,8 @@ function openEditModal(child) {
 }
 
 async function submitChildForm() {
-  if (!form.value.name.trim()) return;
-  submitting.value = true;
+  if (busy.value || !form.value.name.trim()) return;
+  submitting.value = true; formError.value = '';
   try {
     if (isEditing.value) {
       await api.updateChild(editingId.value, {
@@ -253,19 +256,22 @@ async function submitChildForm() {
     showModal.value = false;
     await loadChildren();
   } catch (err) {
-    console.error('Failed to save child:', err);
+    formError.value = err.message || String(err);
   } finally {
     submitting.value = false;
   }
 }
 
 async function handleDelete(id) {
+  if (actionsDisabled.value) return;
   if (!await confirmAction('确定要删除该孩子账号吗？删除后相关日常任务和记录将被清除。')) return;
+  if (actionsDisabled.value || !alive) return;
+  mutationBusy.value = true; pageError.value = '';
   try {
     await api.deleteChild(id);
     await loadChildren();
   } catch (err) {
-    console.error('Failed to delete child:', err);
-  }
+    pageError.value = err.message || String(err);
+  } finally { mutationBusy.value = false; }
 }
 </script>

@@ -32,11 +32,11 @@ async function main() {
       page.on('pageerror', e => errors.push(e.message));
       const go = route => page.goto(`${base}${route}`, { waitUntil: 'networkidle' });
       const dismissToast = async () => { const close = page.getByRole('button', { name: '关闭错误提示', exact: true }); if (await close.count()) await close.click(); };
-      const hold = async url => {
+      const hold = async (url, method = 'POST') => {
         let release, received, writes = 0;
         const held = new Promise(resolve => { release = resolve; }), started = new Promise(resolve => { received = resolve; });
         await page.route(url, async route => {
-          if (route.request().method() !== 'POST') return route.continue();
+          if (route.request().method() !== method) return route.continue();
           writes++; const response = await route.fetch(); received(); await held; await route.fulfill({ response });
         });
         return { started, release, writes: () => writes };
@@ -135,7 +135,157 @@ async function main() {
         fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
         await page.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, `parent-calendar-${width}-${theme}.png`), fullPage: true });
       }
+      // Child administration uses the same failure states and pending-write protection.
+      await page.route('**/api/children', route => route.request().method() === 'GET'
+        ? route.fulfill({ status: 503, json: { error: '孩子档案读取暂时失败' } }) : route.continue());
+      await go('/parent/children');
+      await page.getByRole('heading', { name: '孩子档案未能读取', exact: true }).waitFor();
+      assert.equal(await page.locator('[data-page-state=empty]').count(), 0);
+      await dismissToast(); await page.unroute('**/api/children');
+      await page.locator('[data-page-state=error]').getByRole('button', { name: '重新读取', exact: true }).click();
+      const addChild = page.getByRole('button', { name: '➕ 添加新孩子账号', exact: true });
+      await addChild.click(); dialog = page.getByRole('dialog', { name: '➕ 添加新孩子账号', exact: true });
+      await dialog.getByLabel('孩子昵称', { exact: true }).waitFor();
+      assert.ok(await dialog.getByLabel('孩子昵称', { exact: true }).evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
+      assert.ok(await addChild.evaluate(el => el === document.activeElement));
+      await addChild.click();
+      const childName = `新档案${width}${theme}`;
+      await dialog.getByLabel('孩子昵称', { exact: true }).fill(childName);
+      await dialog.getByLabel('4 位独立 PIN 密码', { exact: true }).fill('2468');
+      await dialog.getByRole('button', { name: '🐼', exact: true }).click();
+      assert.ok(await dialog.getByRole('button').evaluateAll(buttons => buttons.every(b => b.getBoundingClientRect().height >= 43.9 && b.getBoundingClientRect().width >= 43.9)));
+      const childWrite = await hold('**/api/children');
+      await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await childWrite.started;
+      await pendingProtected(dialog); assert.equal(childWrite.writes(), 1); childWrite.release(); await dialog.waitFor({ state: 'detached' });
+      await page.unroute('**/api/children');
+      const createdChild = (await api('GET', '/children')).find(c => c.name === childName); assert.ok(createdChild?.has_pin);
+      let childCard = page.locator(`[data-child-id="${createdChild.id}"]`);
+      await childCard.getByRole('button', { name: '✏️ 编辑资料', exact: true }).click();
+      dialog = page.getByRole('dialog', { name: '✏️ 编辑孩子账号', exact: true });
+      await dialog.getByLabel('孩子昵称', { exact: true }).fill(`${childName}修改`);
+      await page.route(`**/api/children/${createdChild.id}`, route => route.fulfill({ status: 400, json: { error: '孩子资料未能保存' } }));
+      await dialog.getByRole('button', { name: '确认保存', exact: true }).click();
+      await dialog.getByRole('alert').getByText('孩子资料未能保存', { exact: true }).waitFor(); await dismissToast();
+      assert.equal(await dialog.getByLabel('孩子昵称', { exact: true }).inputValue(), `${childName}修改`);
+      assert.ok(await dialog.getByRole('button', { name: '🐼', exact: true }).getAttribute('aria-pressed') === 'true');
+      await page.unroute(`**/api/children/${createdChild.id}`);
+      await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await dialog.waitFor({ state: 'detached' });
+      assert.ok((await api('GET', '/children')).find(c => c.id === createdChild.id).has_pin, 'an empty edit PIN retains protection');
+      await childCard.getByRole('button', { name: '删除', exact: true }).click();
+      await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认', exact: true }).click();
+      await childCard.waitFor({ state: 'detached' });
+      // A successful write followed by a failed refresh closes the form and retries only reads.
+      await page.route('**/api/reward-items', route => route.request().method() === 'GET'
+        ? route.fulfill({ status: 503, json: { error: '奖励数据读取暂时失败' } }) : route.continue());
+      await go('/parent/rewards');
+      await page.getByRole('heading', { name: '奖励数据未能读取', exact: true }).waitFor();
+      assert.equal(await page.locator('[data-page-state=empty]').count(), 0);
+      await dismissToast(); await page.unroute('**/api/reward-items');
+      await page.locator('[data-page-state=error]').getByRole('button', { name: '重新读取', exact: true }).click();
+      const addReward = page.getByRole('button', { name: '➕ 新增奖励', exact: true });
+      await addReward.click(); dialog = page.getByRole('dialog', { name: '➕ 新增奖励', exact: true });
+      await dialog.getByLabel('奖励名称', { exact: true }).waitFor();
+      assert.ok(await dialog.getByLabel('奖励名称', { exact: true }).evaluate(el => el === document.activeElement));
+      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
+      assert.ok(await addReward.evaluate(el => el === document.activeElement)); await addReward.click();
+      const rewardName = `管理奖励${width}${theme}`;
+      await dialog.getByLabel('奖励名称', { exact: true }).fill(rewardName);
+      await dialog.getByLabel('所需积分', { exact: true }).fill('10');
+      const rewardWrite = await hold('**/api/reward-items');
+      await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await rewardWrite.started;
+      await pendingProtected(dialog); assert.equal(rewardWrite.writes(), 1);
+      // Route the refresh after the POST was already accepted.
+      await page.route('**/api/redemptions?**', route => route.fulfill({ status: 503, json: { error: '兑换记录读取暂时失败' } }));
+      rewardWrite.release(); await dialog.waitFor({ state: 'detached' });
+      await page.getByRole('heading', { name: '奖励数据未能读取', exact: true }).waitFor();
+      assert.equal(await page.locator('[data-page-state=empty]').count(), 0);
+      await dismissToast(); await page.unroute('**/api/redemptions?**');
+      await page.locator('[data-page-state=error]').getByRole('button', { name: '重新读取', exact: true }).click();
+      const item = (await api('GET', '/reward-items')).find(r => r.title === rewardName); assert.ok(item);
+      const rewardCard = page.locator(`[data-reward-id="${item.id}"]`);
+      await rewardCard.getByRole('button', { name: '✏️ 编辑', exact: true }).click();
+      dialog = page.getByRole('dialog', { name: '✏️ 编辑奖励', exact: true });
+      await dialog.getByLabel('奖励名称', { exact: true }).fill(`${rewardName}修改`);
+      await dialog.getByLabel('所需积分', { exact: true }).fill('20');
+      await dialog.getByRole('button', { name: '🎨', exact: true }).click();
+      await page.route(`**/api/reward-items/${item.id}`, route => route.fulfill({ status: 400, json: { error: '奖励未能保存' } }));
+      await dialog.getByRole('button', { name: '确认保存', exact: true }).click();
+      await dialog.getByRole('alert').getByText('奖励未能保存', { exact: true }).waitFor(); await dismissToast();
+      assert.equal(await dialog.getByLabel('奖励名称', { exact: true }).inputValue(), `${rewardName}修改`);
+      assert.equal(await dialog.getByLabel('所需积分', { exact: true }).inputValue(), '20');
+      assert.equal(await dialog.getByRole('button', { name: '🎨', exact: true }).getAttribute('aria-pressed'), 'true');
+      assert.ok(await dialog.getByRole('button').evaluateAll(buttons => buttons.every(b => b.getBoundingClientRect().height >= 43.9 && b.getBoundingClientRect().width >= 43.9)));
+      await page.unroute(`**/api/reward-items/${item.id}`);
+      await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await dialog.waitFor({ state: 'detached' });
+      assert.equal(rewardWrite.writes(), 1, 'refresh retries never create another reward'); await page.unroute('**/api/reward-items');
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      assert.equal(await page.evaluate(() => document.body.style.overflow), '');
       if (width === 390 && theme === 'light') {
+        const { tasksService, redemptionsService } = app.services;
+        const earned = tasksService.createAdhocTask(child.id, { title: '管理回归积分', subject: '数学', points: 1000 });
+        tasksService.completeDailyTask(earned.id);
+        for (let i = 0; i < 16; i++) {
+          const record = redemptionsService.requestRedemption(child.id, item.id);
+          redemptionsService.resolveRedemption(record.id, 'approved');
+        }
+        const request = redemptionsService.requestRedemption(child.id, item.id);
+        const rejected = redemptionsService.requestRedemption(child.id, item.id);
+        await go('/parent/rewards');
+        const approval = await hold(`**/api/redemptions/${request.id}/approve`);
+        const pendingRow = page.locator(`[data-pending-id="${request.id}"]`);
+        await pendingRow.getByRole('button', { name: '✓ 确认兑换', exact: true }).click(); await approval.started;
+        assert.ok(await pendingRow.getByRole('button', { name: '拒绝并退回积分', exact: true }).isDisabled());
+        const before = page.url();
+        await page.getByRole('navigation', { name: '家长导航' }).getByRole('link', { name: '课程日历', exact: true }).evaluate(el => el.click());
+        await page.waitForTimeout(50); assert.equal(page.url(), before); assert.equal(approval.writes(), 1);
+        approval.release(); await pendingRow.waitFor({ state: 'detached' });
+        await page.unroute(`**/api/redemptions/${request.id}/approve`);
+        const rejectRow = page.locator(`[data-pending-id="${rejected.id}"]`);
+        await page.route(`**/api/redemptions/${rejected.id}/reject`, route => route.fulfill({ status: 400, json: { error: '兑换处理失败，请重试' } }));
+        await rejectRow.getByRole('button', { name: '拒绝并退回积分', exact: true }).click();
+        await page.locator('main > p[role=alert]').filter({ hasText: '兑换处理失败，请重试' }).waitFor(); await dismissToast();
+        await page.unroute(`**/api/redemptions/${rejected.id}/reject`);
+        await rejectRow.getByRole('button', { name: '拒绝并退回积分', exact: true }).click(); await rejectRow.waitFor({ state: 'detached' });
+        // A rejected page read retains the previous page and retries the requested page.
+        await page.getByRole('button', { name: '下一页', exact: true }).waitFor();
+        const historyRows = page.locator('[data-redemption-record]');
+        const firstIds = await historyRows.evaluateAll(rows => rows.map(r => r.dataset.redemptionId));
+        assert.equal(firstIds.length, 15);
+        await page.route('**/api/redemptions?**', route => {
+          const query = new URL(route.request().url()).searchParams;
+          return query.get('status') === 'history' && query.get('offset') === '15'
+            ? route.fulfill({ status: 503, json: { error: '下一页读取暂时失败' } }) : route.continue();
+        });
+        await page.getByRole('button', { name: '下一页', exact: true }).click();
+        await page.getByRole('heading', { name: '兑换记录未能读取', exact: true }).waitFor(); await dismissToast();
+        assert.deepEqual(await historyRows.evaluateAll(rows => rows.map(r => r.dataset.redemptionId)), firstIds);
+        await page.getByText('第 1 页', { exact: true }).waitFor();
+        assert.equal(await page.getByRole('heading', { name: '还没有兑换记录', exact: true }).count(), 0);
+        await page.unroute('**/api/redemptions?**');
+        await page.locator('[data-page-state=error]').getByRole('button', { name: '重新读取', exact: true }).click();
+        await page.getByText('第 2 页', { exact: true }).waitFor(); assert.equal(await historyRows.count(), 3);
+        await page.getByRole('button', { name: '上一页', exact: true }).click(); await page.getByText('第 1 页', { exact: true }).waitFor();
+        const approvedRow = page.locator(`[data-redemption-id="${request.id}"]`);
+        await approvedRow.getByRole('button', { name: '撤销兑换并退分', exact: true }).click();
+        dialog = page.getByRole('dialog', { name: '撤销兑换并退分', exact: true });
+        await dialog.getByLabel('撤销原因', { exact: true }).fill('管理回归撤销');
+        const refundWrite = await hold(`**/api/redemptions/${request.id}/refund`);
+        await dialog.getByRole('button', { name: '确认撤销并退分', exact: true }).click(); await refundWrite.started;
+        await pendingProtected(dialog); assert.equal(refundWrite.writes(), 1); refundWrite.release();
+        await dialog.waitFor({ state: 'detached' }); await page.unroute(`**/api/redemptions/${request.id}/refund`);
+        await approvedRow.getByText('已撤销退分', { exact: true }).waitFor();
+        for (const [path, edit, title, url] of [
+          ['/parent/children', `[data-child-id="${child.id}"]`, '✏️ 编辑孩子账号', `**/api/children/${child.id}`],
+          ['/parent/rewards', `[data-reward-id="${item.id}"]`, '✏️ 编辑奖励', `**/api/reward-items/${item.id}`]
+        ]) {
+          await go(path); await page.locator(edit).getByRole('button', { name: /✏️ 编辑/ }).click();
+          dialog = page.getByRole('dialog', { name: title, exact: true });
+          await page.route(url, route => route.fulfill({ status: 401, json: { error: '请重新登录' } }));
+          await dialog.getByRole('button', { name: '确认保存', exact: true }).click(); await page.waitForURL('**/parent/login');
+          await dialog.waitFor({ state: 'detached' }); assert.equal(await page.evaluate(() => document.body.style.overflow), '');
+          await page.unroute(url);
+        }
         // Expired credentials must still reach login while the form's request is pending.
         await go(`/parent/tasks?child=${child.id}`);
         await page.locator(`[data-template-id="${template.id}"]`).getByRole('button', { name: '✏️ 编辑模板', exact: true }).click();
@@ -153,7 +303,7 @@ async function main() {
         await dialog.waitFor({ state: 'detached' }); assert.equal(await page.evaluate(() => document.body.style.overflow), '');
         assert.ok(!(await api('GET', `/children/${child.id}/goals`)).some(t => t.title === '拒绝后的任务'));
       }
-      console.log(`PASS ${width}/${theme}: read recovery, dialog focus/scroll, pending save protection, retained input, goal/backfill/holiday writes and date bounds`);
+      console.log(`PASS ${width}/${theme}: task/goal/holiday/child/reward forms, read recovery, focus/scroll, pending save protection, retained input, PIN preservation and date bounds`);
     } finally { await context.close(); }
   }
   assert.deepEqual(errors, [], 'no browser rendering errors');
