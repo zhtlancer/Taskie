@@ -108,7 +108,7 @@ export const api = {
     return result;
   },
   getAuthSetup: () => get('/auth/setup'),
-  getChildren: () => get('/children'),
+  getChildren: (signal, options) => get('/children', undefined, signal, options),
   createChild: data => post('/children', data),
   updateChild: (id, data) => put(`/children/${id}`, data),
   deleteChild: id => remove(`/children/${id}`),
@@ -248,7 +248,7 @@ export const api = {
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
   getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
   getTimeStats: (id, from, to, signal, options) => get(`/children/${id}/time-stats`, { from, to }, signal, options),
-  getTimetables: (childId, signal) => get(`/children/${childId}/timetables`, undefined, signal),
+  getTimetables: (childId, signal, options) => get(`/children/${childId}/timetables`, undefined, signal, options),
   createTimetable: (childId, data) => post(`/children/${childId}/timetables`, data),
   updateTimetable: (id, data) => put(`/timetables/${id}`, data),
   deleteTimetable: id => remove(`/timetables/${id}`),

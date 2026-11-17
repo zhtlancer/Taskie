@@ -8,46 +8,70 @@
         <template #actions><router-link to="/parent/dashboard" class="ui-button-secondary inline-flex items-center">← 数据总览</router-link></template>
       </ParentPageHeader>
 
-      <ParentChildPicker :children="children" :model-value="selectedChild" :loading="loading" :failed="Boolean(error)" @change="changeChild" />
-      <div class="flex flex-wrap items-center gap-2 mb-5">
+      <ParentPageState v-if="childrenLoading" kind="loading" title="正在读取孩子档案…" />
+      <ParentPageState v-if="childrenError" kind="error" title="孩子档案未能读取" :description="childrenError" :busy="childrenLoading" @retry="loadChildren" />
+      <ParentPageState v-if="!childrenLoading && !childrenError && !children.length" title="暂无孩子档案" description="添加孩子后，可按孩子查看学习用时。">
+        <template #actions><router-link to="/parent/children" class="ui-button-primary inline-flex items-center">添加孩子</router-link></template>
+      </ParentPageState>
+
+      <section v-if="children.length" aria-label="统计筛选与导出" class="min-w-0 mb-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
+      <ParentChildPicker :children="children" :model-value="selectedChild" @change="changeChild" />
+      <div>
+      <h2 class="text-sm font-bold mb-2">统计日期</h2>
+      <div class="flex flex-wrap items-center gap-2">
         <button
-          v-for="range in ranges"
-          :key="range.key"
+          v-for="preset in visibleRanges"
+          :key="preset.key"
           type="button"
-          class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border font-chinese"
-          :aria-pressed="rangeKey === range.key"
-          :class="rangeKey === range.key ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
-          @click="selectRange(range.key)"
+          class="min-h-11 min-w-0 max-w-full break-words px-3 py-2 rounded-xl text-sm font-bold border disabled:opacity-50"
+          :disabled="!selectedChild || (preset.key === 'term' && !termReady)"
+          :aria-pressed="rangeKey === preset.key"
+          :class="rangeKey === preset.key ? 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-700 dark:text-brand-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+          @click="selectRange(preset.key)"
         >
-          {{ range.label }}
+          {{ preset.label }}
         </button>
-        <button type="button" class="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border" :aria-pressed="rangeKey === 'custom'"
-          :class="rangeKey === 'custom' ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+        <button type="button" :disabled="!selectedChild" class="min-h-11 px-3 py-2 rounded-xl text-sm font-bold border disabled:opacity-50" :aria-pressed="rangeKey === 'custom'"
+          :class="rangeKey === 'custom' ? 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-700 dark:text-brand-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
           @click="selectCustomRange">自定义日期</button>
       </div>
+      </div>
+      <ParentPageState v-if="timetableLoading" kind="loading" title="正在读取学期信息…" description="近 7 天、近 30 天和自定义日期统计可独立使用。" />
+      <ParentPageState v-if="timetableError" kind="error" title="学期信息未能读取" :description="`${timetableError}；仍可选择近 7 天、近 30 天或自定义日期。`" :busy="timetableLoading" @retry="loadTimetables" />
+      <p v-if="timetableReady && !timetableLoading && !timetableError && !hasTerm" class="text-xs text-slate-500 dark:text-slate-400">当前孩子没有生效中的学期，可在课程日历中设置课表的学期日期。</p>
 
-      <form v-if="rangeKey === 'custom'" class="mb-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4" novalidate @submit.prevent="applyCustomRange">
+      <form v-if="rangeKey === 'custom'" novalidate @submit.prevent="applyCustomRange">
         <div class="stats-custom-range gap-3 items-end">
           <label class="min-w-0 text-sm font-bold">开始日期<input v-model="customDraft.from" type="date" required class="stats-date-input ui-input block w-full mt-1" /></label>
           <label class="min-w-0 text-sm font-bold">结束日期<input v-model="customDraft.to" type="date" required class="stats-date-input ui-input block w-full mt-1" /></label>
-          <button type="submit" :disabled="!selectedChild" class="ui-button-primary">更新统计</button>
+          <button type="submit" :disabled="!selectedChild || (loading && !customDirty)" class="ui-button-primary">更新统计</button>
         </div>
         <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">含首尾日期，最多 366 天。修改后点击“更新统计”应用。</p>
         <p v-if="rangeError" role="alert" class="mt-2 text-sm text-rose-600 dark:text-rose-300">{{ rangeError }}</p>
       </form>
 
-      <div class="flex flex-wrap items-center gap-2 mb-4">
+      <div v-if="selectedChild" class="min-w-0 text-sm text-slate-600 dark:text-slate-300 space-y-1" aria-live="polite">
+        <p class="font-bold break-words">{{ selectedChild.name }}</p>
+        <p v-if="termBlocked">本学期区间尚未确认，请重新读取学期信息，或选择其他日期区间。</p>
+        <p v-else data-stats-applied-range>已应用：{{ range.from }} 至 {{ range.to }}</p>
+        <p v-if="customDirty" class="text-amber-700 dark:text-amber-300" data-stats-draft-range>待应用：{{ customDraft.from || '未填写' }} 至 {{ customDraft.to || '未填写' }}，请先更新统计。</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">家庭时区：{{ calendar.timeZone }}</p>
+      </div>
+      <div class="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-2">
+      <h2 class="text-sm font-bold">导出与打印</h2>
+      <div class="stats-export-actions flex flex-wrap gap-2">
         <button type="button" :disabled="!canExport" class="ui-button-secondary" @click="downloadCsv('daily')">按日导出 CSV</button>
         <button type="button" :disabled="!canExport" class="ui-button-secondary" @click="downloadCsv('tasks')">按任务导出 CSV</button>
         <button type="button" :disabled="!canExport" class="ui-button-secondary" @click="printReport">打印报告</button>
-        <p v-if="customDirty" class="text-xs text-slate-500 dark:text-slate-400">日期尚未应用，请先更新统计。</p>
       </div>
       <p v-if="downloadError" role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-300">{{ downloadError }}</p>
-      <p v-if="error" role="alert" class="mb-4 px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ error }} <button v-if="selectedChild" type="button" class="min-h-[44px] px-3 underline" @click="load">重新读取</button></p>
-      <div v-if="loading" class="text-center py-20 text-brand-500 dark:text-brand-400 font-bold"><span class="animate-spin mr-2">⏳</span> 正在统计...</div>
+      </div>
+      </section>
+      <ParentPageState v-if="loading" kind="loading" title="正在统计..." />
+      <ParentPageState v-if="error" kind="error" title="用时统计未能读取" :description="error" :busy="loading" @retry="load" />
 
-      <template v-else-if="stats">
-        <p class="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2" data-stats-range>{{ selectedChild.name }} · {{ stats.from }} 至 {{ stats.to }} · {{ calendar.timeZone }}</p>
+      <template v-if="!loading && !error && currentStats">
+        <p class="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2 break-words" data-stats-range>{{ selectedChild.name }} · {{ stats.from }} 至 {{ stats.to }} · {{ calendar.timeZone }}</p>
         <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">{{ TIME_STATS_NOTE }}</p>
         <!-- Headline numbers -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
@@ -79,9 +103,9 @@
           </div>
         </div>
 
-        <p v-if="!stats.summary.sessions" class="mb-5 px-4 py-3 rounded-2xl bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 text-xs font-bold">
-          这段时间还没有用时记录。在“任务模板”或长期任务里打开“⏱ 记录用时”，孩子完成时计时或填写用了多久，这里就会有数据。<router-link to="/parent/tasks" class="block min-h-[44px] py-3 underline">去配置计时任务 →</router-link>
-        </p>
+        <ParentPageState v-if="!stats.summary.sessions" title="这段时间还没有用时记录" description="在任务或长期任务中打开“记录用时”，学习时计时或补记用时后即可查看。">
+          <template #actions><router-link :to="{ path: '/parent/tasks', query: { child: selectedChild.id } }" class="ui-button-secondary inline-flex items-center">去配置计时任务 →</router-link></template>
+        </ParentPageState>
 
         <!-- ① Each day -->
         <section class="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200/80 dark:border-slate-700/80 shadow-card mb-5">
@@ -96,7 +120,7 @@
             <p v-if="!stats.subjects.length" class="text-xs font-bold text-slate-400">没有数据</p>
             <ul v-else class="space-y-3">
               <li v-for="subject in subjectRows" :key="subject.subject">
-                <div class="flex items-baseline justify-between text-xs font-bold mb-1">
+                <div class="flex flex-wrap gap-x-2 items-baseline justify-between text-xs font-bold mb-1">
                   <span class="flex items-center gap-1.5 text-slate-700 dark:text-slate-200"><span class="w-2.5 h-2.5 rounded-sm" :style="{ background: SUBJECT_COLORS[subject.subject] }"></span>{{ subject.subject }}</span>
                   <span class="text-slate-500 dark:text-slate-400">
                     {{ formatMinutes(subject.recorded_seconds) }}
@@ -127,7 +151,7 @@
           <div v-else>
             <div class="space-y-3 lg:hidden">
               <article v-for="task in stats.tasks" :key="task.key" class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
-                <h4 class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ task.title }}</h4>
+                <h4 class="text-sm font-bold text-slate-800 dark:text-slate-100 break-words">{{ task.title }}</h4>
                 <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400"><span>平均 {{ formatMinutes(task.average_seconds) ?? '—' }}</span><span>已记录 {{ task.recorded }} / {{ task.sessions }} 次</span></div>
                 <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400"><span>预计 {{ task.expected_minutes ? `${task.expected_minutes} 分` : '未设置' }}</span><span :class="trendClass(task)">{{ trendText(task) }}</span></div>
                 <p v-if="task.over_expected" class="text-xs text-amber-700 dark:text-amber-300">{{ task.judged }} 次里 {{ task.over_expected }} 次超时</p>
@@ -225,6 +249,7 @@ import api from '../api/client';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentChildPicker from '../components/ParentChildPicker.vue';
+import ParentPageState from '../components/ParentPageState.vue';
 import { useParentChildSelection } from '../composables/useParentChildSelection';
 import TimeDailyChart from '../components/TimeDailyChart.vue';
 import FinishTimeChart from '../components/FinishTimeChart.vue';
@@ -233,6 +258,7 @@ import TimeStatsReport from '../components/TimeStatsReport.vue';
 import { SUBJECT_COLORS, formatMinutes, formatPerUnit, minutesDelta, rangePresets, subjectOf } from '../utils/timeStats.js';
 import { validateStatsRange, estimateSeconds, unestimatedCount, timeStatsCsv, timeStatsFilename, TIME_STATS_NOTE } from '../utils/timeStatsReport.js';
 import { shortDate } from '../utils/schedule.js';
+import { getToken } from '../utils/session.js';
 const calendar = useCalendarStore();
 
 const route = useRoute();
@@ -247,20 +273,29 @@ const rangeError = ref('');
 const downloadError = ref('');
 const stats = ref(null);
 const statsChildId = ref(null);
-const loading = ref(true);
+const childrenLoading = ref(true), childrenError = ref('');
+const timetableLoading = ref(false), timetableError = ref(''), timetableReady = ref(false);
+const loading = ref(false);
 const error = ref('');
 let statsRequest = 0;
 let childRequest = 0;
+let childrenRequest = 0;
 let disposed = false;
+let childrenController;
 let statsController;
 let timetableController;
 const downloads = new Map();
 
 const ranges = computed(() => rangePresets(timetables.value, calendar.today));
+const hasTerm = computed(() => ranges.value.some(item => item.key === 'term'));
+const termReady = computed(() => timetableReady.value && !timetableLoading.value && !timetableError.value && hasTerm.value);
+const termBlocked = computed(() => rangeKey.value === 'term' && !termReady.value);
+const visibleRanges = computed(() => rangeKey.value === 'term' && !hasTerm.value ? [...ranges.value, { key: 'term', label: '本学期' }] : ranges.value);
 const range = computed(() => rangeKey.value === 'custom' && appliedCustom.value ? appliedCustom.value : ranges.value.find(r => r.key === rangeKey.value) || ranges.value[0]);
 const customDirty = computed(() => rangeKey.value === 'custom' && (customDraft.value.from !== range.value.from || customDraft.value.to !== range.value.to));
-const canExport = computed(() => Boolean(stats.value && !loading.value && !error.value && !rangeError.value && !customDirty.value &&
+const currentStats = computed(() => Boolean(stats.value && !termBlocked.value && !childrenError.value &&
   statsChildId.value === selectedChild.value?.id && stats.value.from === range.value.from && stats.value.to === range.value.to));
+const canExport = computed(() => currentStats.value && !loading.value && !error.value && !rangeError.value && !customDirty.value);
 const workDays = computed(() => stats.value ? stats.value.days.filter(day => day.sessions).length : 0);
 const compareText = computed(() => {
   const delta = minutesDelta(stats.value.summary.recorded_seconds, stats.value.previous.recorded_seconds);
@@ -280,57 +315,80 @@ function trendText(task) {
 }
 const trendClass = task => trendText(task).startsWith('↓') ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400';
 
-async function load() {
-  if (!selectedChild.value || disposed) return;
-  const request = ++statsRequest;
+function clearStats() {
+  ++statsRequest;
   statsController?.abort();
+  stats.value = null;
+  statsChildId.value = null;
+  loading.value = false;
+  error.value = '';
+  downloadError.value = '';
+}
+
+async function load() {
+  if (disposed) return;
+  clearStats();
+  if (!selectedChild.value || termBlocked.value || childrenError.value) return;
+  const request = statsRequest, owner = getToken('parent');
   const controller = new AbortController();
   statsController = controller;
   const childId = selectedChild.value.id;
+  const current = () => !disposed && request === statsRequest && childId === selectedChild.value?.id && getToken('parent') === owner;
   const { from, to } = range.value;
   loading.value = true;
-  error.value = '';
-  downloadError.value = '';
-  stats.value = null;
-  statsChildId.value = null;
   try {
     const result = await api.getTimeStats(childId, from, to, controller.signal, { silentError: true });
-    if (request === statsRequest) { stats.value = result; statsChildId.value = childId; }
+    if (current()) { stats.value = result; statsChildId.value = childId; }
   } catch (err) {
-    if (request === statsRequest) error.value = typeof err === 'string' ? err : '加载失败，请重试';
+    if (current()) error.value = typeof err === 'string' ? err : '加载失败，请重试';
   } finally {
-    if (request === statsRequest) loading.value = false;
+    if (current()) loading.value = false;
   }
 }
 
-async function selectChild(child) {
-  const request = ++childRequest;
-  // Invalidate the old child's stats before waiting for the new child's timetable.
-  ++statsRequest;
-  statsController?.abort();
+async function loadTimetables() {
+  if (!selectedChild.value || disposed) return;
+  const request = ++childRequest, childId = selectedChild.value.id, owner = getToken('parent');
   timetableController?.abort();
   const controller = new AbortController();
   timetableController = controller;
-  selectedChild.value = child;
-  timetables.value = [];
-  stats.value = null;
-  loading.value = true;
-  error.value = '';
-  let result;
+  const current = () => !disposed && request === childRequest && childId === selectedChild.value?.id && getToken('parent') === owner;
+  timetableLoading.value = true;
+  timetableError.value = '';
+  if (rangeKey.value === 'term') clearStats();
+  let saved = false;
   try {
-    result = await api.getTimetables(child.id, controller.signal);
-  } catch {
-    result = [];
+    const result = await api.getTimetables(childId, controller.signal, { silentError: true });
+    if (current()) { timetables.value = result; timetableReady.value = true; saved = true; }
+  } catch (err) {
+    if (current()) timetableError.value = typeof err === 'string' ? err : '学期信息加载失败，请重试';
+  } finally {
+    if (current()) timetableLoading.value = false;
   }
-  if (request !== childRequest) return;
-  timetables.value = result;
-  if (rangeKey.value !== 'custom' && !ranges.value.some(r => r.key === rangeKey.value)) rangeKey.value = '7';
-  await load();
+  // Only a successful read can establish whether this child has an active term.
+  if (saved && current() && rangeKey.value === 'term') {
+    if (!hasTerm.value) rangeKey.value = '7';
+    load();
+  }
 }
 
-watch(() => calendar.today, () => { if (selectedChild.value) load(); });
+function selectChild(child) {
+  if (disposed) return;
+  clearStats();
+  selectedChild.value = child;
+  timetables.value = [];
+  timetableReady.value = false;
+  return Promise.allSettled([loadTimetables(), load()]);
+}
+
+watch(() => calendar.today, () => {
+  if (!selectedChild.value) return;
+  if (rangeKey.value === 'term' && timetableReady.value && !timetableLoading.value && !timetableError.value && !hasTerm.value) rangeKey.value = '7';
+  load();
+});
 
 function selectRange(key) {
+  if (!selectedChild.value || (key === 'term' && !termReady.value)) return;
   calendar.refreshToday();
   rangeError.value = '';
   rangeKey.value = key;
@@ -344,9 +402,11 @@ function selectCustomRange() {
   customDraft.value = { from, to };
   rangeError.value = '';
   rangeKey.value = 'custom';
+  if (!stats.value && !loading.value) load();
 }
 
 function applyCustomRange() {
+  if (!selectedChild.value || (loading.value && !customDirty.value)) return;
   rangeError.value = validateStatsRange(customDraft.value.from, customDraft.value.to);
   if (rangeError.value) return;
   appliedCustom.value = { ...customDraft.value };
@@ -374,25 +434,37 @@ function downloadCsv(kind) {
 
 function printReport() { if (canExport.value) window.print(); }
 
-onMounted(async () => {
+async function loadChildren() {
+  if (disposed) return;
+  const request = ++childrenRequest, owner = getToken('parent');
+  childrenController?.abort();
+  const controller = new AbortController();
+  childrenController = controller;
+  const current = () => !disposed && request === childrenRequest && getToken('parent') === owner;
+  childrenLoading.value = true;
+  childrenError.value = '';
   try {
-    const result = await api.getChildren();
-    if (disposed) return;
+    const result = await api.getChildren(controller.signal, { silentError: true });
+    if (!current()) return;
     children.value = result;
     const wanted = initialChild();
-    if (wanted) await selectChild(wanted);
-    else loading.value = false;
+    if (wanted) selectChild(wanted);
+    else { selectedChild.value = null; clearStats(); }
   } catch (err) {
-    if (disposed) return;
-    error.value = typeof err === 'string' ? err : '加载失败，请重试';
-    loading.value = false;
+    if (current()) childrenError.value = typeof err === 'string' ? err : '孩子档案加载失败，请重试';
+  } finally {
+    if (current()) childrenLoading.value = false;
   }
-});
+}
+
+onMounted(loadChildren);
 
 onUnmounted(() => {
   disposed = true;
   ++statsRequest;
   ++childRequest;
+  ++childrenRequest;
+  childrenController?.abort();
   statsController?.abort();
   timetableController?.abort();
   for (const [url, timer] of downloads) { clearTimeout(timer); URL.revokeObjectURL(url); }
@@ -405,6 +477,7 @@ onUnmounted(() => {
 .stats-date-input { min-width: 0; max-width: 100%; appearance: none; }
 .stats-date-input::-webkit-date-and-time-value { text-align: left; }
 .stats-date-input::-webkit-datetime-edit { min-width: 0; padding: 0; }
+.stats-export-actions > button { flex: 1 1 9rem; }
 .time-stats-print-unavailable { display: none; }
 @media print {
   .time-stats-page > :deep(header) { display: none !important; }

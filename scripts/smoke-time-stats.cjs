@@ -104,12 +104,70 @@ async function main() {
     await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   };
   await prepare(page);
-  await page.goto(`${base}/parent/time-stats?child=${child.id}`, { waitUntil: 'domcontentloaded' });
   const card = page.locator('div.bg-white.rounded-2xl.p-4').filter({ has: page.getByText('已记录用时', { exact: true }) });
   const expectTime = value => card.getByText(value, { exact: true }).waitFor();
   const chooseRange = name => page.getByRole('button', { name, exact: true }).click();
   const chooseChild = name => page.getByRole('button', { name: new RegExp(name) }).click();
   const daily = page.locator('section').filter({ has: page.getByRole('heading', { name: '📅 每天的作业用时', exact: true }) });
+  const openStats = () => page.goto(`${base}/parent/time-stats?child=${child.id}`, { waitUntil: 'domcontentloaded' });
+  const state = title => page.locator('[data-page-state=error]').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+  await page.route('**/api/children', route => route.fulfill({ status: 503, json: { error: '孩子档案暂时不可用' } }));
+  await openStats(); await state('孩子档案未能读取').waitFor();
+  assert.equal(await page.getByRole('heading', { name: '暂无孩子档案', exact: true }).count(), 0);
+  await page.unroute('**/api/children');
+  const childrenRetry = await holdResponse(page, '**/api/children');
+  try {
+    await state('孩子档案未能读取').getByRole('button', { name: '重新读取', exact: true }).click();
+    await childrenRetry.arrived();
+    assert.equal(await state('孩子档案未能读取').count(), 0, 'retry clears stale child-list errors immediately');
+    await childrenRetry.release(); await expectTime('30 分');
+  } finally { await childrenRetry.dispose(); }
+  pass('initial child-list failure has a working retry without a false empty state');
+
+  await page.route('**/api/children', route => route.fulfill({ json: [] }));
+  await openStats(); await page.getByRole('heading', { name: '暂无孩子档案', exact: true }).waitFor();
+  assert.equal(await page.getByRole('region', { name: '统计筛选与导出' }).count(), 0);
+  assert.equal(await page.locator('.time-stats-report').count(), 0);
+  await page.unroute('**/api/children');
+  pass('a genuinely empty child list provides an add-child entry without report controls');
+
+  const slowTerm = await holdResponse(page, `**/api/children/${child.id}/timetables`);
+  try {
+    await openStats(); await slowTerm.arrived(); await expectTime('30 分');
+    assert.equal(await page.getByRole('button', { name: '按日导出 CSV', exact: true }).isDisabled(), false);
+    await chooseRange('近 30 天'); await expectTime('1 小时 20 分');
+    await slowTerm.release(); await expectTime('1 小时 20 分');
+    assert.equal(await page.getByRole('button', { name: '近 30 天', exact: true }).getAttribute('aria-pressed'), 'true');
+  } finally { await slowTerm.dispose(); }
+  pass('slow term reads do not block or overwrite independently selected date statistics');
+
+  await page.route(`**/api/children/${child.id}/timetables`, route => route.fulfill({ status: 503, json: { error: '课表暂时不可用' } }));
+  await openStats(); await state('学期信息未能读取').waitFor(); await expectTime('30 分');
+  assert.equal(await page.getByRole('button', { name: '按日导出 CSV', exact: true }).isDisabled(), false);
+  assert.equal(await page.getByText(/当前孩子没有生效中的学期/).count(), 0, 'a failed term read is not treated as an empty timetable');
+  await chooseRange('自定义日期');
+  await page.getByLabel('开始日期', { exact: true }).fill(shiftDate(today, -2));
+  await page.getByRole('button', { name: '更新统计', exact: true }).click();
+  await page.waitForFunction(() => ![...document.querySelectorAll('button')].find(b => b.textContent === '按日导出 CSV').disabled);
+  assert.ok((await page.locator('[data-stats-range]').innerText()).includes(`${shiftDate(today, -2)} 至 ${today}`));
+  await chooseRange('近 7 天'); await expectTime('30 分');
+  await page.unroute(`**/api/children/${child.id}/timetables`);
+  await state('学期信息未能读取').getByRole('button', { name: '重新读取', exact: true }).click();
+  await page.getByRole('button', { name: '本学期（验收学期）', exact: true }).waitFor();
+  await chooseRange('本学期（验收学期）'); await expectTime('1 小时 20 分');
+  await page.route(`**/api/children/${sister.id}/timetables`, route => route.fulfill({ status: 503, json: { error: '新孩子课表暂时不可用' } }));
+  await chooseChild(sister.name); await state('学期信息未能读取').waitFor();
+  assert.equal(await page.getByRole('button', { name: '本学期', exact: true }).getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.getByRole('button', { name: '按日导出 CSV', exact: true }).isDisabled(), true);
+  assert.equal(await card.count(), 0, 'an unknown term never displays a fallback seven-day report');
+  assert.equal(await page.locator('.time-stats-report').count(), 0);
+  await page.unroute(`**/api/children/${sister.id}/timetables`);
+  await state('学期信息未能读取').getByRole('button', { name: '重新读取', exact: true }).click();
+  await expectTime('1 小时');
+  assert.equal(await page.getByRole('button', { name: '近 7 天', exact: true }).getAttribute('aria-pressed'), 'true');
+  await chooseChild(child.name); await expectTime('30 分');
+  pass('term failures remain explicit; selected terms block exports until a successful read establishes the range');
+
   await expectTime('30 分');
   await page.locator('.time-stats-screen').getByText('每页 2 分钟', { exact: true }).waitFor();
   await daily.getByRole('button', { name: '📋 看表格', exact: true }).click();
@@ -150,7 +208,7 @@ async function main() {
       await held.release();
       await expectTime('30 分');
       assert.equal(await page.getByText('旧请求失败', { exact: true }).count(), 0);
-      assert.match(await page.getByRole('button', { name: '近 7 天', exact: true }).getAttribute('class'), /bg-slate-800/);
+      assert.equal(await page.getByRole('button', { name: '近 7 天', exact: true }).getAttribute('aria-pressed'), 'true');
     } finally {
       await held.dispose();
     }
@@ -178,17 +236,21 @@ async function main() {
   pass('late responses cannot clear the latest request loading state');
 
   // Old-child results must not restore its term or replace the selected child's totals.
-  const oldTimetable = await holdResponse(page, `**/api/children/${child.id}/timetables`);
-  try {
-    await chooseChild('用时验收小明');
-    await oldTimetable.arrived();
-    await chooseChild('用时验收小红');
-    await expectTime('1 小时');
-    await oldTimetable.release();
-    await expectTime('1 小时');
-    assert.equal(await page.getByRole('button', { name: '本学期（验收学期）', exact: true }).count(), 0);
-  } finally {
-    await oldTimetable.dispose();
+  await chooseChild(sister.name); await expectTime('1 小时');
+  for (const failure of [false, true]) {
+    const oldTimetable = await holdResponse(page, `**/api/children/${child.id}/timetables`, failure);
+    try {
+      await chooseChild('用时验收小明');
+      await oldTimetable.arrived();
+      await chooseChild('用时验收小红');
+      await expectTime('1 小时');
+      await oldTimetable.release();
+      await expectTime('1 小时');
+      assert.equal(await page.getByRole('button', { name: '本学期（验收学期）', exact: true }).count(), 0);
+      assert.equal(await state('学期信息未能读取').count(), 0, 'old child failures cannot replace the current term state');
+    } finally {
+      await oldTimetable.dispose();
+    }
   }
   const oldStats = await holdResponse(page, `**/api/children/${child.id}/time-stats?*`);
   try {
