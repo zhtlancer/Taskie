@@ -60,6 +60,8 @@ async function main() {
       const goto = route => page.goto(`${base}${route}`, { waitUntil: 'networkidle' });
       const card = title => page.locator('[data-task-card]').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
       await goto(`/child/${child.id}/today`);
+      // The lazy board can mount after networkidle; wait for its fixture data before taking the baseline.
+      await page.getByText('完成 2 / 5', { exact: true }).waitFor();
       const progress = await page.getByText('今日完成进度', { exact: true }).locator('..').innerText();
       // A read failure stays inside the dialog and can be retried without losing the board.
       let rejectRead = width === 390 && theme === 'light', rejectedReads = 0;
@@ -134,12 +136,13 @@ async function main() {
       await summary.getByText('今天到期', { exact: true }).locator('..').getByText(/^2 项待办$/).waitFor();
       await summary.getByText('高优先级', { exact: true }).locator('..').getByText(/^2 项待办$/).waitFor();
       if (width === 390 && theme === 'light') {
-        await page.route(`**/api/daily-tasks?child_id=${child.id}`, route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"摘要读取失败"}' }));
+        await page.route(`**/api/daily-tasks?child_id=${child.id}&*`, route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"摘要读取失败"}' }));
         await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
-        await summary.getByText('待办摘要暂不可用', { exact: true }).waitFor();
+        const unavailable = page.locator(`[data-child-summary="${child.id}"] [data-partial-error]`);
+        await unavailable.getByText('待办摘要暂不可用', { exact: true }).waitFor();
         assert.equal(await summary.getByText(/^0 项待办$/).count(), 0);
-        await page.unroute(`**/api/daily-tasks?child_id=${child.id}`);
-        await summary.getByRole('button', { name: '重新读取摘要', exact: true }).click();
+        await page.unroute(`**/api/daily-tasks?child_id=${child.id}&*`);
+        await unavailable.getByRole('button', { name: '重新读取摘要', exact: true }).click();
         await summary.getByText('高优先级', { exact: true }).locator('..').getByText(/^2 项待办$/).waitFor();
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

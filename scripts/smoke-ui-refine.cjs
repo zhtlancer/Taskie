@@ -157,7 +157,7 @@ async function main() {
   await page.getByText('暂时无法加载孩子的进展，请重新加载。', { exact: true }).waitFor();
   assert.equal(await page.getByText('还没有添加小朋友账号哦', { exact: true }).count(), 0);
   await page.unroute(failedChildren);
-  await page.getByRole('button', { name: '重新加载', exact: true }).click();
+  await page.getByRole('button', { name: '重新读取', exact: true }).click();
   await page.getByRole('heading', { name: child.name, exact: true }).waitFor();
   pass('dashboard distinguishes a load failure from no children and retries successfully');
 

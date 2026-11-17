@@ -510,11 +510,11 @@ async function main() {
     const page = await open();
     await page.route('**/api/children', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
     await page.goto(`${base}/parent/dashboard`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: '重新加载', exact: true }).waitFor();
+    await page.getByRole('button', { name: '重新读取', exact: true }).waitFor();
     assert.equal(await page.locator('[aria-label="今日摘要"]').count(), 0);
     await shot(page, 'children-failure');
     await page.unroute('**/api/children');
-    await page.getByRole('button', { name: '重新加载', exact: true }).click();
+    await page.getByRole('button', { name: '重新读取', exact: true }).click();
     await page.locator('[aria-label="今日摘要"]').waitFor();
     await page.getByRole('heading', { name: child.name, exact: true }).waitFor();
   });
@@ -526,7 +526,7 @@ async function main() {
     const previous = await summary.textContent();
     await page.route('**/api/children', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
     await midnight(page);
-    await page.getByRole('button', { name: '重新加载', exact: true }).waitFor();
+    await page.getByRole('button', { name: '重新读取', exact: true }).waitFor();
     assert.equal(await summary.textContent(), previous);
   });
   for (const scheme of ['light', 'dark']) await check(`L5 ${scheme}: calendar banner alone, text unobstructed; retry recovers`, async () => {
@@ -549,13 +549,13 @@ async function main() {
     await page.locator('[aria-label="今日摘要"]').waitFor();
     await noErrors(page);
   });
-  await check('L5 other API failures still show global toast', async () => {
+  await check('L5 dashboard read failures offer inline retry without duplicate global toast', async () => {
     const page = await open();
     await page.route('**/api/children', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
     await page.goto(`${base}/parent/dashboard`, { waitUntil: 'networkidle' });
-    await page.getByRole('button', { name: '重新加载', exact: true }).waitFor();
-    await page.getByRole('button', { name: '关闭错误提示', exact: true }).waitFor();
-    await page.getByRole('alert').filter({ hasText: '操作失败，请重试' }).waitFor();
+    await page.getByRole('button', { name: '重新读取', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '关闭错误提示', exact: true }).count(), 0);
+    await page.getByRole('alert').filter({ hasText: '暂时无法加载孩子的进展' }).waitFor();
   });
   assert.deepEqual(errors, []);
   assert.equal(failures, 0, `${failures} midnight leftovers regressions failed`);
