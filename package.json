@@ -40,6 +40,7 @@
     "test:browser:parent-schedule": "node scripts/smoke-parent-schedule.cjs",
     "test:browser:child-schedule": "node scripts/smoke-child-schedule.cjs",
     "test:browser:child-rewards": "node scripts/smoke-child-rewards.cjs",
+    "test:browser:child-history": "node scripts/smoke-child-history.cjs",
     "test:browser:parent-settings": "node scripts/smoke-parent-settings.cjs",
     "test:browser:parent-backfill": "node scripts/smoke-parent-backfill.cjs",
     "test:browser:parent-dashboard": "node scripts/smoke-parent-dashboard.cjs",

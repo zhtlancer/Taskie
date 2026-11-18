@@ -438,6 +438,12 @@ npm run test:browser:child-schedule
 npm run test:browser:child-rewards
 ```
 
+孩子端学习历史页回归覆盖未知家庭时区门禁、历史/周汇总/长期任务/学习用时四路独立读取与重试、同范围刷新保留已知数据、切换孩子/离开返回/恢复数据/会话变化/家庭跨日与跨周时的乱序响应隔离、休息日/未打卡/每周额外完成/家长补记与仅展示真实记录用时语义，以及手机和平板横竖屏浅暗色布局和 44px 触控尺寸（使用临时数据库与真实接口）：
+
+```bash
+npm run test:browser:child-history
+```
+
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
 
 ```bash

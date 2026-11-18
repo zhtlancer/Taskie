@@ -153,7 +153,7 @@ export const api = {
   getChildStats: (id, signal, options) => get(`/children/${id}/stats`, undefined, signal, options),
   getChildBadges: (id, signal, options) => get(`/children/${id}/badges`, undefined, signal, options),
   getBadgeDefinitions: (signal, options) => get('/badge-definitions', undefined, signal, options),
-  getHistory: (id, days = 30) => get(`/children/${id}/history`, { days }),
+  getHistory: (id, days = 30, signal, options) => get(`/children/${id}/history`, { days }, signal, options),
   getWeeklySummary: (id, signal, options) => get(`/children/${id}/weekly-summary`, undefined, signal, options),
   getPointLogs: (id, signal, options) => get(`/children/${id}/point-logs`, undefined, signal, options),
   getMistakes: (id, subject) => get('/mistakes', { child_id: id, subject: subject === '全部' ? undefined : subject }),
