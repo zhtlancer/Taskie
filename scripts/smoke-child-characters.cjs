@@ -405,7 +405,41 @@ async function main() {
           assert.equal(await freshModal.getByRole('textbox').isDisabled(), false);
           await pageKeyboardClose(page, freshModal);
         } finally { oldFailure.release(); await page.unroute('**/api/characters', oldFailure.handler); }
-        console.log('PASS confirmed writes survive stale reads; old adds cannot leak success/error or unlock a newer modal submission');
+
+        // I) Old detail mastery failure cannot unlock a newer child's detail save or surface stale error messages.
+        const rainEntry = (await api('GET', `/characters?child_id=${child.id}`)).find(row => row.char === '雨');
+        const otherEntry = (await api('GET', `/characters?child_id=${other.id}`)).find(row => row.char === '独立字');
+        await visibleChar('雨').click();
+        const oldDetailModal = page.getByRole('dialog', { name: '生字笔顺与临摹', exact: true });
+        await oldDetailModal.waitFor();
+        const oldMasterFail = await hold(`**/api/characters/${rainEntry.id}/master`, true, 503, { error: '旧详情保存失败' });
+        const newMasterHold = await hold(`**/api/characters/${otherEntry.id}/master`, false);
+        try {
+          await oldDetailModal.getByRole('button', { name: /标记为已掌握/ }).click();
+          await oldMasterFail.started();
+          await push(`/child/${other.id}/characters`);
+          await visibleChar('独立字').click();
+          const newDetailModal = page.getByRole('dialog', { name: '生词笔顺与临摹', exact: true });
+          await newDetailModal.waitFor();
+          assert.equal(await newDetailModal.getByRole('button', { name: '关闭', exact: true }).isDisabled(), false, 'old detail busy does not lock new child modal');
+          await newDetailModal.getByRole('button', { name: /标记为已掌握/ }).click();
+          await newMasterHold.started();
+          oldMasterFail.release(); await oldMasterFail.done;
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+          assert.equal(await newDetailModal.getByRole('button', { name: '关闭', exact: true }).isDisabled(), true, 'old detail finally cannot unlock newer submission');
+          assert.equal(await newDetailModal.getByText('旧详情保存失败', { exact: true }).count(), 0);
+          assert.equal(await page.locator('[data-characters-action-error]').count(), 0);
+          newMasterHold.release(); await newMasterHold.done;
+          await newDetailModal.getByRole('button', { name: /已掌握/ }).waitFor();
+          await pageKeyboardClose(page, newDetailModal);
+        } finally {
+          oldMasterFail.release(); newMasterHold.release();
+          if (!page.isClosed()) {
+            await page.unroute(`**/api/characters/${rainEntry.id}/master`, oldMasterFail.handler);
+            await page.unroute(`**/api/characters/${otherEntry.id}/master`, newMasterHold.handler);
+          }
+        }
+        console.log('PASS confirmed writes survive stale reads; old adds/detail saves cannot leak errors or unlock newer submissions');
       }
       console.log(`PASS ${width}px ${theme}: loading, error/retry, refresh retain, filters, empty/layout, modals & stale isolation`);
     } finally {

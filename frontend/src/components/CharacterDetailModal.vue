@@ -148,7 +148,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import HanziGrid from './HanziGrid.vue';
 import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../utils/hanzi';
 import { playClick } from '../utils/sound';
-import { currentRole } from '../utils/session.js';
+import { currentRole, getToken } from '../utils/session.js';
 import { CATEGORIES, categoryInfo, entryChars, toggleCategory } from '../utils/wordBook';
 import { useCharacterStore } from '../stores/character';
 import { loadLearningFont } from '../utils/learningFont';
@@ -175,9 +175,25 @@ const categoryMessage = ref('');
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 390);
 const gridSize = computed(() => (viewportWidth.value < 380 ? 256 : 280));
 const syncWidth = () => { viewportWidth.value = window.innerWidth; };
+let alive = true, categorySerial = 0;
+
+function invalidateCategorySave() {
+  categorySerial++;
+  savingCategories.value = false;
+  categoryMessage.value = '';
+}
+
 onMounted(() => window.addEventListener('resize', syncWidth));
-onBeforeUnmount(() => window.removeEventListener('resize', syncWidth));
-watch(() => props.character.id, () => { selectedIndex.value = 0; dynamicStrokes.value = null; categoryMessage.value = ''; });
+onBeforeUnmount(() => {
+  alive = false;
+  invalidateCategorySave();
+  window.removeEventListener('resize', syncWidth);
+});
+watch(() => props.character.id, () => {
+  selectedIndex.value = 0;
+  dynamicStrokes.value = null;
+  invalidateCategorySave();
+}, { flush: 'sync' });
 const busy = computed(() => props.busy || savingCategories.value || characterStore.isBusy(props.character.id));
 
 const chars = computed(() => entryChars(props.character.char));
@@ -199,15 +215,17 @@ async function onToggleCategory(key) {
     categoryMessage.value = `去掉「${categoryInfo(key).label}」需要家长操作`;
     return;
   }
-  const targetId = props.character.id;
+  const request = ++categorySerial, targetId = props.character.id, token = getToken(), generation = characterStore.scopeGeneration;
+  const matches = () => alive && request === categorySerial && props.character.id === targetId &&
+    token === getToken() && generation === characterStore.scopeGeneration;
   savingCategories.value = true;
   try {
     const updated = await characterStore.setCategories(targetId, categories);
-    if (props.character.id === targetId) emit('updated', updated);
+    if (matches()) emit('updated', updated);
   } catch (err) {
-    if (props.character.id === targetId) categoryMessage.value = typeof err === 'string' ? err : err.message || '保存分类失败';
+    if (matches()) categoryMessage.value = typeof err === 'string' ? err : err.message || '保存分类失败';
   } finally {
-    savingCategories.value = false;
+    if (matches()) savingCategories.value = false;
   }
 }
 
@@ -254,8 +272,10 @@ function onToggleMaster() {
 async function onDelete() {
   playClick();
   if (busy.value || !canDelete.value) return;
+  const targetId = props.character.id, token = getToken(), generation = characterStore.scopeGeneration;
   if (await confirmAction(`确定要将「${props.character.char}」从生字生词本移出吗？`)) {
-    emit('delete', props.character.id);
+    if (!alive || busy.value || !canDelete.value || props.character.id !== targetId || token !== getToken() || generation !== characterStore.scopeGeneration) return;
+    emit('delete', targetId);
   }
 }
 

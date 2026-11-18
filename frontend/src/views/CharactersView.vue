@@ -319,7 +319,12 @@ const detailBusy = ref(false);
 const detailError = ref('');
 const actionError = ref('');
 const failedToggleId = ref(null);
-let alive = true;
+let alive = true, actionSerial = 0;
+
+function invalidateActions() {
+  actionSerial++;
+  detailBusy.value = false;
+}
 
 const isLoaded = computed(() => characterStore.isLoadedFor(childId.value));
 const isBookEmpty = computed(() => characterStore.characters.length === 0);
@@ -345,6 +350,7 @@ function loadCharacters() {
 }
 
 function resetScope(closeModals = true) {
+  invalidateActions();
   if (closeModals) {
     selectedCharacter.value = null;
     isLookupModalOpen.value = false;
@@ -382,6 +388,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   alive = false;
+  invalidateActions();
   characterStore.abortFetch();
   document.removeEventListener('visibilitychange', onResume);
   window.removeEventListener('pageshow', onResume);
@@ -437,18 +444,20 @@ function clearActionError() {
 
 async function handleToggleMaster(id, source = 'card') {
   if (!id || detailBusy.value || characterStore.isBusy(id)) return;
-  const targetChild = childId.value;
+  const request = ++actionSerial, targetChild = childId.value, token = getToken(), generation = characterStore.scopeGeneration;
+  const matches = () => alive && request === actionSerial && childId.value === targetChild &&
+    token === getToken() && generation === characterStore.scopeGeneration;
   if (source === 'detail' || selectedCharacter.value?.id === id) detailError.value = '';
   actionError.value = '';
   failedToggleId.value = null;
   detailBusy.value = true;
   try {
     const updated = await characterStore.toggleMaster(id);
-    if (alive && childId.value === targetChild && updated && selectedCharacter.value?.id === id) {
+    if (matches() && updated && selectedCharacter.value?.id === id) {
       selectedCharacter.value = { ...updated };
     }
   } catch (err) {
-    if (!alive || childId.value !== targetChild) return;
+    if (!matches()) return;
     const msg = typeof err === 'string' ? err : err?.message || '保存失败，请重试';
     if (selectedCharacter.value?.id === id) {
       detailError.value = msg;
@@ -457,7 +466,7 @@ async function handleToggleMaster(id, source = 'card') {
       failedToggleId.value = id;
     }
   } finally {
-    detailBusy.value = false;
+    if (matches()) detailBusy.value = false;
   }
 }
 
@@ -468,20 +477,22 @@ async function retryFailedToggle() {
 
 async function handleDeleteCharacter(id) {
   if (!id || detailBusy.value || characterStore.isBusy(id)) return;
-  const targetChild = childId.value;
+  const request = ++actionSerial, targetChild = childId.value, token = getToken(), generation = characterStore.scopeGeneration;
+  const matches = () => alive && request === actionSerial && childId.value === targetChild &&
+    token === getToken() && generation === characterStore.scopeGeneration;
   detailBusy.value = true;
   detailError.value = '';
   try {
     await characterStore.removeCharacter(id);
-    if (alive && childId.value === targetChild && selectedCharacter.value?.id === id) {
+    if (matches() && selectedCharacter.value?.id === id) {
       closeDetailModal();
     }
   } catch (err) {
-    if (alive && childId.value === targetChild) {
+    if (matches()) {
       detailError.value = typeof err === 'string' ? err : err?.message || '移出失败，请重试';
     }
   } finally {
-    detailBusy.value = false;
+    if (matches()) detailBusy.value = false;
   }
 }
 
