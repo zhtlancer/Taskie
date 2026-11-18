@@ -248,7 +248,7 @@
           <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
             <div class="flex items-center justify-between mb-2">
               <span class="text-xs font-bold text-slate-500 dark:text-slate-400">📌 临时任务</span>
-              <button type="button" :disabled="!canMutate" class="min-h-11 min-w-11 px-3 py-1 rounded-lg bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 dark:hover:bg-orange-950/40 text-orange-700 dark:text-orange-300 font-bold text-xs" @click="openAdhoc(item.child)">
+              <button type="button" :disabled="!canMutate" class="min-h-11 min-w-11 px-3 py-1 rounded-lg bg-orange-50 dark:bg-orange-950/40 hover:bg-orange-100 dark:hover:bg-orange-950/40 text-orange-700 dark:text-orange-300 font-bold text-xs disabled:opacity-50" @click="openAdhoc(item.child)">
                 ➕ 添加
               </button>
             </div>
@@ -265,7 +265,7 @@
                 <span class="text-amber-500 dark:text-amber-400 font-black shrink-0">★{{ task.points }}</span>
                 </div>
                 <div class="flex items-center gap-2 ml-auto">
-                <button v-if="task.can_edit" type="button" :disabled="!canMutate" class="min-h-[44px] min-w-[44px] px-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold shrink-0" :aria-label="`修改 ${task.title}`" @click="openAdhoc(item.child, task)">修改</button>
+                <button v-if="task.can_edit" type="button" :disabled="!canMutate" class="min-h-[44px] min-w-[44px] px-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold shrink-0 disabled:opacity-50" :aria-label="`修改 ${task.title}`" @click="openAdhoc(item.child, task)">修改</button>
                 <button type="button" :disabled="!canMutate" class="w-11 h-11 shrink-0 disabled:opacity-50 flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40" :aria-label="`删除 ${task.title}`" title="删除" @click="removeAdhoc(item, task)">✕</button>
                 </div>
                 </div>
@@ -301,15 +301,15 @@ import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerT
 const calendar = useCalendarStore();
 const childrenStats = ref([]), skipRequests = ref([]), homeworkRequests = ref([]), completionRequests = ref([]);
 const loading = ref(true), refreshing = ref(false), dashboardError = ref('');
-const loadedDate = ref(null), dashboardLoaded = computed(() => loadedDate.value !== null);
+const loadedDate = ref(null), loadedZone = ref(null), dashboardLoaded = computed(() => loadedDate.value !== null);
 const adhocForm = ref(null), writeBusy = ref(false), confirming = ref(false);
 const actionError = ref(''), notice = ref('');
 const actionLocked = computed(() => writeBusy.value || confirming.value);
 const today = computed(() => calendar.today);
 const canMutate = computed(() => calendar.ready && dashboardLoaded.value && loadedDate.value === today.value
-  && loadedZone === calendar.timeZone && !loading.value && !refreshing.value && !dashboardError.value && !actionLocked.value && !adhocForm.value);
+  && loadedZone.value === calendar.timeZone && !loading.value && !refreshing.value && !dashboardError.value && !actionLocked.value && !adhocForm.value);
 const silent = { silentError: true, preserveError: true };
-let alive = true, epoch = 0, dashboardSerial = 0, pendingDate = null, loadedZone = null, reader;
+let alive = true, epoch = 0, dashboardSerial = 0, pendingDate = null, reader;
 const message = err => typeof err === 'string' ? err : err?.message || '操作失败，请在原处重试';
 const scope = () => ({ epoch, token: getToken('parent'), generation: getDataGeneration() });
 const currentScope = captured => alive && captured.epoch === epoch && captured.token === getToken('parent');
@@ -442,7 +442,7 @@ async function loadDashboard({ afterWrite = false } = {}) {
       api.getHomeworkRequests(signal, silent), api.getHomeworkCompletionRequests(signal, silent)]);
     if (!current()) return;
     [childrenStats.value, skipRequests.value, homeworkRequests.value, completionRequests.value] = result;
-    loadedDate.value = date; loadedZone = timeZone;
+    loadedDate.value = date; loadedZone.value = timeZone;
   } catch (err) {
     if (!current() || signal.aborted) return;
     dashboardError.value = dashboardLoaded.value ? '刷新失败，当前显示上次读取的数据，请重试。' : '暂时无法加载孩子的进展，请重新加载。';
@@ -456,12 +456,12 @@ async function reloadLive() {
 }
 function onResume() { if (!document.hidden) { calendar.refreshToday(); reloadLive(); } }
 function reloadDashboardDay() {
-  if (calendar.ready && (today.value !== loadedDate.value || loadedZone !== calendar.timeZone) && today.value !== pendingDate) loadDashboard();
+  if (calendar.ready && (today.value !== loadedDate.value || loadedZone.value !== calendar.timeZone) && today.value !== pendingDate) loadDashboard();
 }
 function restored() {
   epoch++; dashboardSerial++; reader?.abort(); pendingDate = null;
   childrenStats.value = []; skipRequests.value = []; homeworkRequests.value = []; completionRequests.value = [];
-  loadedDate.value = null; loadedZone = null; dashboardError.value = ''; actionError.value = ''; notice.value = ''; adhocForm.value = null;
+  loadedDate.value = null; loadedZone.value = null; dashboardError.value = ''; actionError.value = ''; notice.value = ''; adhocForm.value = null;
   refreshing.value = false;
   loadDashboard();
 }
