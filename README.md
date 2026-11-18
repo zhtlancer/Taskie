@@ -426,6 +426,12 @@ npm run test:browser:homework
 npm run test:browser:homework-refine
 ```
 
+孩子端课程表回归覆盖读取失败重试、快速切周的乱序响应、切换孩子和离开页面、恢复数据、家庭时区跨午夜与保留浏览周，并检查手机及平板浅暗色、长课程信息换行和触控尺寸。使用临时数据库与真实接口：
+
+```bash
+npm run test:browser:child-schedule
+```
+
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
 
 ```bash

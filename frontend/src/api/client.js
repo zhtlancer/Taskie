@@ -246,7 +246,7 @@ export const api = {
   deletePeriodTask: id => remove(`/period-tasks/${id}`),
   logPeriodProgress: (taskId, data, { childId, childName, title, backfill = false, attempt }) => pendingWrite({ kind: backfill ? 'backfill' : 'progress', child_id: childId, child_name: childName, task_id: taskId, title, payload: data }, attempt),
   deletePeriodLog: id => remove(`/period-task-logs/${id}`),
-  getChildSchedule: (id, from, to = from) => get(`/children/${id}/schedule`, { from, to }),
+  getChildSchedule: (id, from, to = from, signal, options) => get(`/children/${id}/schedule`, { from, to }, signal, options),
   getTimeStats: (id, from, to, signal, options) => get(`/children/${id}/time-stats`, { from, to }, signal, options),
   getTimetables: (childId, signal, options) => get(`/children/${childId}/timetables`, undefined, signal, options),
   createTimetable: (childId, data) => post(`/children/${childId}/timetables`, data),
