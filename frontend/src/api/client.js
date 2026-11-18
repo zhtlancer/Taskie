@@ -70,28 +70,28 @@ async function idempotentPost(url, data, options = {}) {
 const put = (url, data, options) => request('put', url, data, undefined, undefined, options);
 const remove = (url, options) => request('delete', url, undefined, undefined, undefined, options);
 
-async function sendPendingWrite(entry) {
+async function sendPendingWrite(entry, options = {}) {
   requireFamilyDate();
   if (activeWrites.has(entry.request_id)) throw '请求正在确认，请稍候';
   activeWrites.add(entry.request_id);
   notifyPendingWrites();
   try {
     const url = entry.kind === 'redemption' ? `/children/${entry.child_id}/redemptions` : `/period-tasks/${entry.task_id}/logs`;
-    const result = await post(url, { ...entry.payload, request_id: entry.request_id }, { headers: generationHeaders(entry.data_generation), pendingRequestId: entry.request_id });
+    const result = await post(url, { ...entry.payload, request_id: entry.request_id }, { ...options, headers: generationHeaders(entry.data_generation), pendingRequestId: entry.request_id });
     pendingWriteStore.done(entry.request_id);
     return result;
   } finally { activeWrites.delete(entry.request_id); notifyPendingWrites(); }
 }
 
-async function pendingWrite(action, attempt) {
+async function pendingWrite(action, attempt, options) {
   requireFamilyDate();
   try {
     // Validate a suspended form before calibrating or sending anything. Its original
     // entry supplies the generation, including a legacy entry that has none.
     if (!attempt?.request_id) await ensureDataGeneration();
-    return await sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole(), data_generation: getDataGeneration() || undefined }, attempt));
+    return await sendPendingWrite(pendingWriteStore.prepare({ ...action, role: currentRole(), data_generation: getDataGeneration() || undefined }, attempt), options);
   }
-  catch (err) { return Promise.reject(typeof err === 'string' ? err : err.message || '无法保存待确认请求，请允许会话存储后重试'); }
+  catch (err) { return Promise.reject(options?.preserveError ? err : typeof err === 'string' ? err : err.message || '无法保存待确认请求，请允许会话存储后重试'); }
 }
 
 export const api = {
@@ -151,11 +151,11 @@ export const api = {
   rejectSkipRequest: (id, options) => post(`/skip-requests/${id}/reject`, undefined, options),
   cancelSkipRequest: id => post(`/skip-requests/${id}/cancel`),
   getChildStats: (id, signal, options) => get(`/children/${id}/stats`, undefined, signal, options),
-  getChildBadges: id => get(`/children/${id}/badges`),
-  getBadgeDefinitions: () => get('/badge-definitions'),
+  getChildBadges: (id, signal, options) => get(`/children/${id}/badges`, undefined, signal, options),
+  getBadgeDefinitions: (signal, options) => get('/badge-definitions', undefined, signal, options),
   getHistory: (id, days = 30) => get(`/children/${id}/history`, { days }),
   getWeeklySummary: (id, signal, options) => get(`/children/${id}/weekly-summary`, undefined, signal, options),
-  getPointLogs: id => get(`/children/${id}/point-logs`),
+  getPointLogs: (id, signal, options) => get(`/children/${id}/point-logs`, undefined, signal, options),
   getMistakes: (id, subject) => get('/mistakes', { child_id: id, subject: subject === '全部' ? undefined : subject }),
   getMistake: id => get(`/mistakes/${id}`),
   updateMistake: (id, data, generation) => put(`/mistakes/${id}`, data, formOptions(generation)),
@@ -191,17 +191,17 @@ export const api = {
     const response = await client.get(url.replace('/uploads/', '../uploads/'), { responseType: 'blob' });
     return URL.createObjectURL(response.data);
   },
-  getRewardItems: () => get('/reward-items'),
+  getRewardItems: (signal, options) => get('/reward-items', undefined, signal, options),
   createRewardItem: data => post('/reward-items', data),
   updateRewardItem: (id, data) => put(`/reward-items/${id}`, data),
   deleteRewardItem: id => remove(`/reward-items/${id}`),
-  getChildRedemptions: (id, params = {}) => get(`/children/${id}/redemptions`, params),
-  requestRedemption: (id, rewardId, title, childName) => pendingWrite({ kind: 'redemption', child_id: id, child_name: childName, task_id: rewardId, title, payload: { reward_id: rewardId } }),
+  getChildRedemptions: (id, params = {}, signal, options) => get(`/children/${id}/redemptions`, params, signal, options),
+  requestRedemption: (id, rewardId, title, childName, attempt, options) => pendingWrite({ kind: 'redemption', child_id: id, child_name: childName, task_id: rewardId, title, payload: { reward_id: rewardId } }, attempt, options),
   retryPendingWrite: entry => sendPendingWrite(entry),
   getRedemptions: (status, params = {}) => get('/redemptions', { ...params, status }),
   approveRedemption: id => post(`/redemptions/${id}/approve`),
   rejectRedemption: id => post(`/redemptions/${id}/reject`),
-  cancelRedemption: id => post(`/redemptions/${id}/cancel`),
+  cancelRedemption: (id, options) => post(`/redemptions/${id}/cancel`, undefined, options),
   refundRedemption: (id, data, generation) => post(`/redemptions/${id}/refund`, data, formOptions(generation)),
   getAdhocTasks: (id, signal, options) => get(`/children/${id}/adhoc-tasks`, undefined, signal, options),
   getAdhocTask: id => get(`/adhoc-tasks/${id}`),

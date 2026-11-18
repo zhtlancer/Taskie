@@ -432,6 +432,12 @@ npm run test:browser:homework-refine
 npm run test:browser:child-schedule
 ```
 
+孩子端积分页回归覆盖余额、奖励、兑换记录、徽章和积分明细独立读取及失败重试；使用真实接口核对兑换扣分、撤回释放积分、响应丢失后按原申请重试、刷新失败与保存成功分开提示，并检查切换孩子、跨日、徽章键盘操作和手机平板浅暗色布局：
+
+```bash
+npm run test:browser:child-rewards
+```
+
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
 
 ```bash

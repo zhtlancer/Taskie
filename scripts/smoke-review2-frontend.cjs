@@ -280,9 +280,9 @@ async function main() {
       await form.getByRole('button', { name: '补记', exact: true }).click();
     } else {
       await page.goto(`${base}/child/${child.id}/rewards`, { waitUntil: 'networkidle' });
-      const card = page.locator('div.rounded-2xl.border.p-4').filter({ has: page.getByText(item.title, { exact: true }) });
+      const card = page.locator(`[data-reward-item="${item.id}"]`);
       await card.getByRole('button', { name: '兑换', exact: true }).click();
-      await card.getByRole('button', { name: '确定兑换？', exact: true }).click();
+      await page.getByRole('dialog', { name: '兑换奖励', exact: true }).getByRole('button', { name: '确定兑换？', exact: true }).click();
     }
     await page.getByRole('alert').filter({ hasText: '无法连接服务器' }).first().waitFor();
     const before = await pending(page);
@@ -458,9 +458,9 @@ async function main() {
         await page.locator('div.rounded-2xl.border.p-3').filter({ has: page.getByText(goal.title, { exact: true }) }).getByRole('button', { name: '补记进度', exact: true }).click();
         await page.getByRole('dialog', { name: `补记「${goal.title}」`, exact: true }).locator('form').getByRole('button', { name: '补记', exact: true }).click();
       } else {
-        const card = page.locator('div.rounded-2xl.border.p-4').filter({ has: page.getByText(item.title, { exact: true }) });
+        const card = page.locator(`[data-reward-item="${item.id}"]`);
         await card.getByRole('button', { name: '兑换', exact: true }).click();
-        await card.getByRole('button', { name: '确定兑换？', exact: true }).click();
+        await page.getByRole('dialog', { name: '兑换奖励', exact: true }).getByRole('button', { name: '确定兑换？', exact: true }).click();
       }
     };
     await perform(); await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
@@ -554,11 +554,12 @@ async function main() {
       await route.fetch(); await route.abort();
     });
     await page.goto(`${base}/child/${child.id}/rewards`, { waitUntil: 'networkidle' });
-    const card = page.locator('div.rounded-2xl.border.p-4').filter({ has: page.getByText(item.title, { exact: true }) });
+    const card = page.locator(`[data-reward-item="${item.id}"]`);
     await card.getByRole('button', { name: '兑换', exact: true }).click();
-    await card.getByRole('button', { name: '确定兑换？', exact: true }).click();
+    await page.getByRole('dialog', { name: '兑换奖励', exact: true }).getByRole('button', { name: '确定兑换？', exact: true }).click();
     await page.getByRole('complementary', { name: '待确认请求' }).waitFor();
     const first = (await pending(page))[0];
+    await page.getByRole('dialog', { name: '兑换奖励', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
     await page.unroute(`**/api/children/${child.id}/redemptions`);
     // Receipt has expired/been evicted in a copied or suspended tab, but its pending
     // operation remains. The server must still see the original id and exact body.

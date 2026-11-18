@@ -1,315 +1,304 @@
 <template>
-  <div class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 flex flex-col justify-between p-3 pb-24 sm:p-6 lg:pb-6 select-none">
+  <div data-rewards-page class="min-h-screen bg-[#F4F6FB] dark:bg-slate-950 p-3 pb-24 sm:p-6 lg:pb-6 select-none">
     <div class="max-w-5xl w-full mx-auto">
-      <!-- Header -->
       <header class="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
-        <div class="flex items-center gap-3">
-          <router-link
-            :to="`/child/${childId}/today`"
-            @click="playClick"
-            class="hidden lg:flex w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 items-center justify-center text-xl text-slate-600 dark:text-slate-300 hover:border-brand-300 dark:hover:border-brand-700 shadow-sm active:scale-95 transition-all"
-          >
-            ←
-          </router-link>
-          <div>
-            <h1 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex items-center gap-2">
-              <span>🏆</span>
-              <span>积分与荣耀徽章</span>
-            </h1>
-            <p class="text-xs font-bold text-slate-400">
-              每一次坚持都在闪闪发光
-            </p>
-          </div>
+        <div class="min-w-0 flex-1 basis-52">
+          <h1 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100">🏆 积分与荣耀徽章</h1>
+          <p class="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">每一次坚持都在闪闪发光</p>
         </div>
-
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-2">
           <SoundToggle />
-          <router-link
-            :to="`/child/${childId}/characters`"
-            @click="playClick"
-            class="hidden lg:flex px-3.5 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 font-bold text-xs shadow-xs hover:bg-brand-100 dark:hover:bg-brand-900/40 active:scale-95 transition-all items-center gap-1.5"
-          >
-            <span>📖</span>
-            <span>生字生词本</span>
-          </router-link>
-          <router-link
-            :to="`/child/${childId}/today`"
-            @click="playClick"
-            class="hidden lg:inline-flex px-4 py-2 rounded-xl bg-brand-500 text-white font-bold text-xs shadow-button hover:bg-brand-600 active:scale-95 transition-all"
-          >
-            返回今日看板
-          </router-link>
+          <router-link :to="`/child/${childId}/today`" @click="playClick" class="hidden lg:inline-flex min-h-11 items-center px-4 py-2 rounded-xl bg-brand-500 text-white font-bold text-xs shadow-button hover:bg-brand-600">返回今日看板</router-link>
         </div>
       </header>
 
-      <!-- Top Summary Stats Cards -->
-      <div class="grid grid-cols-3 gap-3 sm:gap-4 mb-6">
-        <!-- Points Card -->
-        <div class="bg-gradient-to-tr from-amber-400 to-amber-300 dark:from-amber-400 dark:to-amber-300 rounded-2xl p-3 sm:p-5 text-amber-950 shadow-md shadow-amber-200/50 flex items-center justify-between min-w-0">
-          <div>
-            <span class="text-xs font-black uppercase tracking-wider text-amber-900/70">当前积分余额</span>
-            <div class="text-xl sm:text-3xl font-black mt-1">
-              {{ totalPoints }} <span class="text-xs sm:text-base font-bold">分</span>
-            </div>
+      <PageState v-if="!calendar.ready" kind="loading" title="等待确认家庭日期…" description="请先通过页面顶部的提示重新读取家庭时区，再查看积分与兑换奖励。" />
+      <template v-else>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4" aria-label="积分概览">
+          <div data-rewards-balance class="col-span-2 sm:col-span-1 rounded-2xl p-4 sm:p-5 bg-amber-300 text-amber-950 min-w-0">
+            <p class="text-xs font-bold">当前积分余额</p>
+            <p class="text-3xl font-black mt-1 break-words">{{ totalPoints ?? '—' }} <span class="text-sm">分</span></p>
+            <p class="text-xs mt-1">{{ stats.state.loading ? '正在更新余额…' : stats.state.error ? '余额待更新' : '已扣除待确认和已兑换的积分' }}</p>
           </div>
-          <span class="hidden sm:block text-4xl">💰</span>
-        </div>
-
-        <!-- Streak Card -->
-        <div class="bg-gradient-to-tr from-rose-400 to-amber-400 rounded-2xl p-3 sm:p-5 text-white shadow-md shadow-rose-200/50 flex items-center justify-between min-w-0">
-          <div>
-            <span class="text-xs font-black uppercase tracking-wider text-rose-100">连续坚持</span>
-            <div class="text-xl sm:text-3xl font-black mt-1">
-              {{ streakDays }} <span class="text-xs sm:text-base font-bold">天</span>
-            </div>
+          <div class="rounded-2xl p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 min-w-0">
+            <p class="text-xs font-bold text-slate-500 dark:text-slate-400">连续坚持</p>
+            <p class="text-2xl font-black text-slate-800 dark:text-slate-100 mt-1">{{ stats.fresh.value ? stats.state.data.current_streak : '—' }} <span class="text-sm">天</span></p>
           </div>
-          <span class="hidden sm:block text-4xl animate-bounce">🔥</span>
-        </div>
-
-        <!-- Badges Count Card -->
-        <div class="bg-gradient-to-tr from-brand-500 to-indigo-400 rounded-2xl p-3 sm:p-5 text-white shadow-md shadow-brand-200/50 flex items-center justify-between min-w-0">
-          <div>
-            <span class="text-xs font-black uppercase tracking-wider text-brand-100">已解锁成就</span>
-            <div class="text-xl sm:text-3xl font-black mt-1">
-              {{ unlockedCount }} / {{ allBadges.length }} <span class="text-xs sm:text-base font-bold">个</span>
-            </div>
-          </div>
-          <span class="hidden sm:block text-4xl">🏅</span>
-        </div>
-      </div>
-
-      <!-- Rewards Shop -->
-      <section class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card mb-6">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <span>🎁</span>
-            <span>积分兑换商城</span>
-          </h2>
-          <span class="text-xs text-slate-400 font-bold">兑换后等爸爸妈妈确认哦</span>
-        </div>
-
-        <p v-if="shopError" class="mb-3 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 text-xs font-bold">{{ shopError }}</p>
-
-        <div v-if="rewardItems.length === 0" class="text-center py-6 text-sm font-bold text-slate-400">
-          爸爸妈妈还没有上架奖励，快去提醒他们吧～
-        </div>
-        <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          <div
-            v-for="item in rewardItems"
-            :key="item.id"
-            class="rounded-2xl border p-4 flex flex-col items-center text-center transition-all"
-            :class="totalPoints >= item.cost ? 'border-amber-200 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/40' : 'border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60'"
-          >
-            <span class="text-4xl mb-2">{{ item.icon_emoji }}</span>
-            <span class="text-sm font-bold text-slate-800 dark:text-slate-100 font-chinese mb-1">{{ item.title }}</span>
-            <span class="text-sm font-black text-amber-500 dark:text-amber-400 mb-3">★ {{ item.cost }} 分</span>
-            <button
-              v-if="totalPoints < item.cost"
-              type="button"
-              disabled
-              class="w-full min-h-[48px] rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 text-xs font-bold"
-            >
-              还差 {{ item.cost - totalPoints }} 分
-            </button>
-            <button
-              v-else-if="confirmingId === item.id"
-              type="button"
-              :disabled="redeeming"
-              @click="redeem(item)"
-              class="w-full min-h-[48px] rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-black shadow-button active:scale-95 transition-all disabled:opacity-50"
-            >
-              {{ redeeming ? '兑换中...' : '确定兑换？' }}
-            </button>
-            <button
-              v-else
-              type="button"
-              @click="playClick(); confirmingId = item.id"
-              class="w-full min-h-[48px] rounded-xl bg-amber-400 hover:bg-amber-500 text-amber-950 dark:text-amber-200 text-xs font-black shadow-sm active:scale-95 transition-all"
-            >
-              兑换
-            </button>
+          <div class="rounded-2xl p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 min-w-0">
+            <p class="text-xs font-bold text-slate-500 dark:text-slate-400">已解锁成就</p>
+            <p class="text-2xl font-black text-brand-700 dark:text-brand-300 mt-1">{{ badges.fresh.value ? `${unlockedCount} / ${badges.state.data.length}` : '—' }}</p>
           </div>
         </div>
+        <PageState v-if="stats.state.loading" kind="loading" title="正在读取积分概览…" />
+        <PageState v-if="stats.state.error" kind="error" title="积分概览未能读取" :description="stats.state.error" :busy="busy" @retry="stats.load()" />
+        <p v-if="notice" role="status" class="mb-4 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm font-bold text-emerald-800 dark:text-emerald-200">{{ notice }}</p>
 
-        <!-- My Redemptions -->
-        <div v-if="redemptions.length" class="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700">
-          <h3 class="text-sm font-bold text-slate-600 dark:text-slate-300 mb-2">我的兑换记录</h3>
-          <ul class="space-y-2">
-            <li
-              v-for="r in redemptions"
-              :key="r.id"
-              class="flex flex-wrap items-center justify-between gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800"
-            >
-              <span class="text-sm font-bold text-slate-700 dark:text-slate-200 font-chinese flex items-center gap-2 min-w-0">
-                <span>{{ r.icon_emoji }}</span>
-                <span class="truncate">{{ r.title }}</span>
-                <span class="font-black shrink-0" :class="r.status === 'refunded' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-500 dark:text-amber-400'">{{ r.status === 'refunded' ? '+' : '-' }}{{ r.cost }}</span>
-              </span>
-              <p v-if="r.status === 'refunded'" class="w-full text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-words">已退回原扣积分 · {{ r.refund_reason }}</p>
-              <span class="flex items-center gap-2 shrink-0">
-                <span class="px-2 py-0.5 rounded-lg text-xs font-black" :class="statusInfo[r.status].class">
-                  {{ statusInfo[r.status].label }}
-                </span>
-                <button
-                  v-if="r.status === 'pending'"
-                  type="button"
-                  @click="cancel(r)"
-                  class="min-h-[36px] px-2 text-xs font-bold text-slate-400 hover:text-rose-500 dark:hover:text-rose-400"
-                >
-                  撤回
-                </button>
-              </span>
+        <section aria-labelledby="shop-title" class="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 mb-4">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+            <h2 id="shop-title" class="text-lg font-black text-slate-800 dark:text-slate-100">🎁 积分兑换商城</h2>
+            <p class="text-xs font-bold text-slate-500 dark:text-slate-400">兑换后等爸爸妈妈确认哦</p>
+          </div>
+          <p v-if="pendingEntries.length" role="status" class="mb-3 text-sm font-bold text-amber-800 dark:text-amber-200">有兑换尚未确认，请先在页面下方的“待确认请求”核对原操作。</p>
+          <p v-else-if="!canRedeem && !busy" class="mb-3 text-xs text-slate-500 dark:text-slate-400">积分余额、奖励和兑换记录读取成功后即可兑换。</p>
+          <PageState v-if="items.state.loading" kind="loading" title="正在读取奖励…" />
+          <PageState v-if="items.state.error" kind="error" title="奖励未能读取" :description="items.state.error" :busy="busy" @retry="items.load()" />
+          <PageState v-if="items.fresh.value && !items.state.data.length" title="还没有上架的奖励" description="请爸爸妈妈在家长后台添加奖励。" />
+          <div v-if="items.state.data?.length" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+            <article v-for="item in items.state.data" :key="item.id" :data-reward-item="item.id" class="min-w-0 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 sm:p-4 flex flex-col items-center text-center">
+              <span class="text-3xl mb-2" aria-hidden="true">{{ item.icon_emoji }}</span>
+              <h3 class="w-full text-sm font-bold text-slate-800 dark:text-slate-100 break-words [overflow-wrap:anywhere]">{{ item.title }}</h3>
+              <p class="mt-2 mb-3 text-sm font-black text-amber-700 dark:text-amber-300">★ {{ item.cost }} 分</p>
+              <button type="button" :disabled="!canRedeem || totalPoints < item.cost" @click="openRedeem(item)" class="mt-auto w-full min-h-11 px-2 py-2 rounded-xl bg-amber-300 text-amber-950 font-black text-sm hover:bg-amber-400 disabled:bg-slate-200 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-400 disabled:opacity-60">
+                {{ totalPoints !== null && totalPoints < item.cost ? `还差 ${item.cost - totalPoints} 分` : '兑换' }}
+              </button>
+            </article>
+          </div>
+        </section>
+
+        <section aria-labelledby="redemptions-title" class="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700 mb-4">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+            <h2 id="redemptions-title" class="text-lg font-black text-slate-800 dark:text-slate-100">我的兑换记录</h2>
+            <p class="text-xs font-bold text-slate-500 dark:text-slate-400">全部待确认申请与最近 8 条历史记录</p>
+          </div>
+          <PageState v-if="redemptions.state.loading" kind="loading" title="正在读取兑换记录…" />
+          <PageState v-if="redemptions.state.error" kind="error" title="兑换记录未能读取" :description="redemptions.state.error" :busy="busy" @retry="redemptions.load()" />
+          <PageState v-if="redemptions.fresh.value && !redemptions.state.data.length" title="还没有兑换记录" description="攒够积分后，可以选择喜欢的奖励。" />
+          <ul v-if="redemptions.state.data?.length" class="space-y-3">
+            <li v-for="record in redemptions.state.data" :key="record.id" :data-redemption-record="record.id" class="rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 p-3">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <h3 class="min-w-0 flex-1 basis-40 text-sm font-bold text-slate-800 dark:text-slate-100 break-words [overflow-wrap:anywhere]">{{ record.icon_emoji }} {{ record.title }}</h3>
+                <span class="shrink-0 px-2 py-1 rounded-lg text-xs font-black" :class="statusInfo[record.status].class">{{ statusInfo[record.status].label }}</span>
+              </div>
+              <p class="mt-2 text-xs font-bold text-slate-500 dark:text-slate-400">{{ pointsDescription(record) }}</p>
+              <p v-if="record.status === 'refunded'" class="mt-2 text-xs text-slate-500 dark:text-slate-400 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">撤销原因：{{ record.refund_reason }}</p>
+              <div v-if="record.status === 'pending'" class="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+                <button type="button" :disabled="!canCancel" @click="openCancel(record)" class="min-h-11 min-w-11 px-3 py-2 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50">撤回</button>
+              </div>
             </li>
           </ul>
-        </div>
-      </section>
+        </section>
 
-      <!-- Main Section: Badge Wall & Points Log Tabs or 2-column layout -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Left 2 Cols: Badge Wall -->
-        <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>🎖️</span>
-              <span>徽章荣誉墙</span>
-            </h2>
-            <span class="text-xs text-slate-400 font-bold">
-              已点亮 {{ unlockedCount }} 个
-            </span>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <section aria-labelledby="badges-title" class="xl:col-span-2 min-w-0 bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
+            <h2 id="badges-title" class="text-lg font-black text-slate-800 dark:text-slate-100 mb-4">🎖️ 徽章荣誉墙</h2>
+            <PageState v-if="badges.state.loading" kind="loading" title="正在读取徽章…" />
+            <PageState v-if="badges.state.error" kind="error" title="徽章未能读取" :description="badges.state.error" :busy="busy" @retry="badges.load()" />
+            <PageState v-if="badges.fresh.value && !badges.state.data.length" title="暂时没有徽章" />
+            <BadgeWall v-if="badges.state.data?.length" :key="identityKey" :badges="badges.state.data" />
+          </section>
+          <div class="min-w-0">
+            <PageState v-if="logs.state.loading" kind="loading" title="正在读取积分明细…" />
+            <PageState v-if="logs.state.error" kind="error" title="积分明细未能读取" :description="logs.state.error" :busy="busy" @retry="logs.load()" />
+            <PointsLog v-if="logs.state.data !== null" :logs="logs.state.data" />
           </div>
-
-          <BadgeWall :badges="allBadges" />
         </div>
-
-        <!-- Right 1 Col: Points History Stream -->
-        <div class="lg:col-span-1">
-          <PointsLog :logs="pointLogs" />
-        </div>
-      </div>
+      </template>
     </div>
+
+    <UiDialog v-if="target" :title="target.kind === 'redeem' ? '兑换奖励' : '撤回兑换申请'" :busy="busy" @close="closeDialog">
+      <p class="text-base font-bold break-words [overflow-wrap:anywhere]">{{ target.item.icon_emoji }} {{ target.item.title }}</p>
+      <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">{{ target.kind === 'redeem' ? `本次需要 ${target.item.cost} 分，提交后等待家长确认。` : `撤回后释放这次申请占用的 ${target.item.cost} 分。` }}</p>
+      <p v-if="target.kind === 'redeem' && target.attempt.request_id" class="mt-3 text-sm text-amber-800 dark:text-amber-200">重试会核对原兑换申请，不会再次扣分；也可以关闭后到“待确认请求”继续确认。</p>
+      <p v-if="dialogError" role="alert" class="mt-3 text-sm font-bold text-rose-700 dark:text-rose-300">{{ dialogError }}</p>
+      <template #footer>
+        <button type="button" :disabled="busy" class="ui-button-secondary" @click="closeDialog">取消</button>
+        <button type="button" :disabled="!canSubmit" class="ui-button-primary" @click="submit">{{ busy ? '正在确认…' : target.kind === 'cancel' ? '确认撤回' : target.attempt.request_id ? '按原申请重试' : '确定兑换？' }}</button>
+      </template>
+    </UiDialog>
     <ChildTabBar :child-id="childId" />
   </div>
 </template>
 
 <script setup>
-import ChildTabBar from '../components/ChildTabBar.vue';
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, reactive, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { useRoute, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import api from '../api/client';
-import { useChildStore } from '../stores/child';
+import { getPendingRedemptions } from '../api/redemptions';
 import { useCalendarStore } from '../stores/calendar';
+import { useChildStore } from '../stores/child';
+import { currentRole, getToken, getDataGeneration, hasSession } from '../utils/session.js';
+import { activeWrites, pendingWriteStore } from '../utils/requestId.js';
+import { playClick, playBadgeUnlocked } from '../utils/sound';
+import ChildTabBar from '../components/ChildTabBar.vue';
 import BadgeWall from '../components/BadgeWall.vue';
 import PointsLog from '../components/PointsLog.vue';
 import SoundToggle from '../components/SoundToggle.vue';
-import { playClick, playBadgeUnlocked } from '../utils/sound';
-import { getPendingRedemptions } from '../api/redemptions';
+import PageState from '../components/ParentPageState.vue';
+import UiDialog from '../components/UiDialog.vue';
+const route = useRoute(), calendar = useCalendarStore(), childStore = useChildStore();
+const childId = computed(() => route.params.id);
+const scopeKey = computed(() => `${childId.value}|${calendar.today}|${calendar.timeZone}`);
+const identityKey = ref(0), busy = ref(false), target = ref(null), dialogError = ref(''), notice = ref(''), revision = ref(0);
+let alive = true, epoch = 0, refreshQueued = false;
+const silent = { silentError: true, preserveError: true, networkErrorMessage: '无法连接服务器，请检查网络后重新读取。' };
+const message = error => typeof error === 'string' ? error : error?.message || '操作失败，请重试。';
+const capture = () => ({ child: childId.value, key: scopeKey.value, token: getToken(), epoch, generation: getDataGeneration() });
+const current = scope => alive && scope.child === childId.value && scope.token === getToken() && scope.epoch === epoch;
 
-const route = useRoute();
-const childStore = useChildStore();
-const calendar = useCalendarStore();
-watch(() => [calendar.today, calendar.ready], () => {
-  if (calendar.ready) childStore.fetchStats();
-});
-
-const childId = computed(() => route.params.id || childStore.childId);
-// Spendable balance: points held by pending or approved redemptions are excluded.
-const totalPoints = computed(() => childStore.stats.available_points ?? 0);
-const streakDays = computed(() => childStore.stats.current_streak ?? 0);
-
-const allBadges = ref([]);
-const pointLogs = ref([]);
-const rewardItems = ref([]);
-const redemptions = ref([]);
-const confirmingId = ref(null);
-const redeeming = ref(false);
-const shopError = ref('');
-
-const statusInfo = {
-  pending: { label: '等待确认', class: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' },
-  approved: { label: '已兑换', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' },
-  rejected: { label: '未通过', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300' },
-  cancelled: { label: '已撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400' },
-  refunded: { label: '已撤销退分', class: 'bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300' }
-};
-
-const unlockedCount = computed(() => allBadges.value.filter(b => b.is_unlocked).length);
-
-onMounted(async () => {
-  await loadData();
-});
-
-async function loadData() {
-  try {
-    await childStore.fetchStats();
-
-    const [definitions, childBadges, logs] = await Promise.all([
-      api.getBadgeDefinitions(),
-      api.getChildBadges(childId.value),
-      api.getPointLogs(childId.value)
-    ]);
-
-    const unlockedMap = new Map();
-    for (const b of childBadges) {
-      unlockedMap.set(b.badge_id || b.key, b);
-    }
-
-    allBadges.value = definitions.map(def => {
-      const unlockedInfo = unlockedMap.get(def.id) || unlockedMap.get(def.key);
-      return {
-        ...def,
-        is_unlocked: Boolean(unlockedInfo),
-        unlocked_at: unlockedInfo ? unlockedInfo.unlocked_at : null
-      };
-    });
-
-    pointLogs.value = logs || [];
-    await loadShop();
-  } catch (err) {
-    console.error('Failed to load rewards data:', err);
+// Each section owns its response, error and cancellation. One failed section cannot hide the rest.
+function reader(fetch) {
+  const state = reactive({ data: null, loading: false, error: '', key: '' });
+  let serial = 0, controller;
+  const fresh = computed(() => calendar.ready && state.data !== null && state.key === scopeKey.value && !state.loading && !state.error);
+  function stop(clear = false) {
+    serial++; controller?.abort(); controller = undefined;
+    state.loading = false; state.key = '';
+    if (clear) { state.data = null; state.error = ''; }
   }
+  async function load({ afterWrite = false } = {}) {
+    if (busy.value && !afterWrite) { refreshQueued = true; return; }
+    stop();
+    if (!alive || !calendar.ready || !getToken()) return;
+    const scope = capture(), request = serial, abort = new AbortController(); controller = abort;
+    const matches = () => current(scope) && scope.key === scopeKey.value && calendar.ready && request === serial;
+    state.loading = true; state.error = '';
+    try {
+      const result = await fetch(scope.child, abort.signal);
+      if (matches()) { state.data = result; state.key = scope.key; }
+    } catch (error) { if (matches() && !abort.signal.aborted) state.error = message(error); }
+    finally { if (request === serial) { state.loading = false; controller = undefined; } }
+  }
+  return { state, fresh, load, stop };
 }
-
-async function loadShop() {
-  const [items, pending, history] = await Promise.all([
-    api.getRewardItems(),
-    getPendingRedemptions(params => api.getChildRedemptions(childId.value, params)),
-    api.getChildRedemptions(childId.value, { status: 'history', limit: 8 })
+const stats = reader((id, signal) => api.getChildStats(id, signal, silent));
+const items = reader(async (_id, signal) => (await api.getRewardItems(signal, silent)).filter(item => item.is_active));
+const redemptions = reader(async (id, signal) => {
+  const [pending, history] = await Promise.all([
+    getPendingRedemptions(params => api.getChildRedemptions(id, params, signal, silent)),
+    api.getChildRedemptions(id, { status: 'history', limit: 8 }, signal, silent)
   ]);
-  rewardItems.value = items;
-  redemptions.value = [...pending, ...history];
+  return [...pending, ...history];
+});
+const badges = reader(async (id, signal) => {
+  const [definitions, owned] = await Promise.all([api.getBadgeDefinitions(signal, silent), api.getChildBadges(id, signal, silent)]);
+  const unlocked = new Map(owned.map(badge => [badge.badge_id || badge.key, badge]));
+  return definitions.map(definition => {
+    const found = unlocked.get(definition.id) || unlocked.get(definition.key);
+    return { ...definition, is_unlocked: Boolean(found), unlocked_at: found?.unlocked_at || null };
+  });
+});
+const logs = reader((id, signal) => api.getPointLogs(id, signal, silent));
+const readers = [stats, items, redemptions, badges, logs];
+const totalPoints = computed(() => stats.fresh.value ? stats.state.data.available_points : null);
+const unlockedCount = computed(() => badges.state.data?.filter(badge => badge.is_unlocked).length || 0);
+const pendingEntries = computed(() => {
+  revision.value;
+  try { return pendingWriteStore.list().filter(entry => entry.kind === 'redemption' && entry.role === currentRole() && entry.child_id === childId.value); }
+  catch { return []; } // The write helper refuses to send if storage cannot preserve the original request.
+});
+const anotherWrite = computed(() => pendingEntries.value.some(entry => activeWrites.has(entry.request_id)));
+const canRedeem = computed(() => !busy.value && stats.fresh.value && items.fresh.value && redemptions.fresh.value && !pendingEntries.value.length);
+const canCancel = computed(() => !busy.value && !anotherWrite.value && redemptions.fresh.value);
+const canSubmit = computed(() => {
+  if (!target.value || busy.value || !calendar.ready || !getToken() || anotherWrite.value) return false;
+  if (target.value.kind === 'cancel') return canCancel.value && redemptions.state.data.some(record => record.id === target.value.item.id && record.status === 'pending');
+  // A lost response may already have reduced the balance. Replay the same id even when it is now too low for a new exchange.
+  if (target.value.attempt.request_id) return pendingEntries.value.some(entry => entry.request_id === target.value.attempt.request_id);
+  const item = items.state.data?.find(item => item.id === target.value.item.id);
+  return canRedeem.value && item && item.cost === target.value.item.cost && item.title === target.value.item.title && totalPoints.value >= item.cost;
+});
+const statusInfo = {
+  pending: { label: '等待确认', class: 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200' },
+  approved: { label: '已兑换', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200' },
+  rejected: { label: '未通过', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' },
+  cancelled: { label: '已撤回', class: 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300' },
+  refunded: { label: '已撤销退分', class: 'bg-sky-100 dark:bg-sky-950/40 text-sky-800 dark:text-sky-200' }
+};
+function pointsDescription(record) {
+  if (record.status === 'pending') return `占用 ${record.cost} 分 · 家长确认前可以撤回`;
+  if (record.status === 'approved') return `已使用 ${record.cost} 分`;
+  return `已释放 ${record.cost} 分${record.status === 'refunded' ? ' · 退回原扣积分' : ''}`;
 }
-
-const refreshConfirmed = () => refreshAfterShopChange().catch(err => { shopError.value = String(err); });
-onMounted(() => window.addEventListener('taskie:write-confirmed', refreshConfirmed));
-onBeforeUnmount(() => window.removeEventListener('taskie:write-confirmed', refreshConfirmed));
-async function refreshAfterShopChange() {
-  confirmingId.value = null;
-  await Promise.all([childStore.fetchStats(), loadShop()]);
+function openRedeem(item) {
+  if (!canRedeem.value || totalPoints.value < item.cost || target.value) return;
+  playClick(); notice.value = ''; dialogError.value = '';
+  target.value = { kind: 'redeem', item: { ...item }, attempt: {} };
 }
-
-async function redeem(item) {
-  redeeming.value = true;
-  shopError.value = '';
-  try {
-    await api.requestRedemption(childId.value, item.id, item.title, childStore.childName);
-    playBadgeUnlocked();
-  } catch (err) {
-    shopError.value = typeof err === 'string' ? err : '兑换失败，请重试';
-  } finally {
-    redeeming.value = false;
-    await refreshAfterShopChange();
+function openCancel(record) {
+  if (!canCancel.value || target.value) return;
+  playClick(); notice.value = ''; dialogError.value = '';
+  target.value = { kind: 'cancel', item: { ...record }, attempt: {} };
+}
+function closeDialog() { if (!busy.value) { target.value = null; dialogError.value = ''; } }
+function reconcileDialog() {
+  if (!target.value || busy.value) return;
+  if (target.value.kind === 'cancel' && redemptions.fresh.value) {
+    const record = redemptions.state.data.find(record => record.id === target.value.item.id);
+    if (record?.status === 'pending') return;
+    notice.value = record?.status === 'cancelled' ? '兑换申请已撤回，原占用积分已释放。' : '这条兑换申请已处理，请查看最新兑换记录。';
+    closeDialog();
+  } else if (target.value.kind === 'redeem') {
+    if (target.value.attempt.request_id) {
+      if (!pendingEntries.value.some(entry => entry.request_id === target.value.attempt.request_id)) { notice.value = '原兑换操作已确认，请查看兑换记录。'; closeDialog(); }
+    } else if (items.fresh.value) {
+      const item = items.state.data.find(item => item.id === target.value.item.id);
+      if (!item || item.title !== target.value.item.title || item.cost !== target.value.item.cost) dialogError.value = '奖励信息已更新，请关闭后重新选择奖励。';
+    }
   }
 }
-
-async function cancel(redemption) {
-  playClick();
-  shopError.value = '';
+async function refresh({ afterWrite = false } = {}) {
+  if (busy.value && !afterWrite) { refreshQueued = true; return; }
+  await Promise.all(readers.map(resource => resource.load({ afterWrite })));
+  reconcileDialog();
+}
+async function submit() {
+  if (!canSubmit.value) return;
+  const scope = capture(), dialog = target.value;
+  busy.value = true; dialogError.value = ''; notice.value = '';
+  readers.forEach(resource => resource.stop());
   try {
-    await api.cancelRedemption(redemption.id);
-  } catch (err) {
-    shopError.value = typeof err === 'string' ? err : '撤回失败，请重试';
-  } finally {
-    await refreshAfterShopChange();
+    const result = dialog.kind === 'redeem'
+      ? await api.requestRedemption(scope.child, dialog.item.id, dialog.item.title, childStore.childId === scope.child ? childStore.childName : '小朋友', dialog.attempt, { silentError: true, preserveError: true, preserveNetworkError: true })
+      : await api.cancelRedemption(dialog.item.id, { ...silent, networkErrorMessage: '撤回结果尚未确认，请重新读取兑换记录核对后重试。', headers: scope.generation ? { 'X-Taskie-Data-Generation': scope.generation } : {} });
+    if (!current(scope)) return;
+    const list = redemptions.state.data || [];
+    redemptions.state.data = [result, ...list.filter(record => record.id !== result.id)];
+    target.value = null;
+    notice.value = dialog.kind === 'cancel' ? '兑换申请已撤回，原占用积分已释放。'
+      : result.status === 'pending' ? `兑换申请已提交，已占用 ${result.cost} 分，等待家长确认。` : `原兑换申请${statusInfo[result.status].label}，没有再次扣分。`;
+    if (dialog.kind === 'redeem' && result.status === 'pending') playBadgeUnlocked();
+  } catch (error) {
+    if (current(scope)) {
+      dialogError.value = message(error);
+      // These business rejections confirm that this id did not create an exchange.
+      // Keep network/server failures recoverable, but do not freeze the shop behind a rejected request.
+      if (dialog.kind === 'redeem' && [400, 404, 409].includes(error?.status) && error?.code !== 'DATA_RESTORED' && dialog.attempt.request_id) {
+        try { pendingWriteStore.discard(dialog.attempt.request_id); dialog.attempt = {}; }
+        catch { /* Keep the original request when session storage cannot be updated. */ }
+      }
+    }
+  }
+  finally {
+    try { if (alive) await refresh({ afterWrite: true }); }
+    finally {
+      busy.value = false; revision.value++; reconcileDialog();
+      if (alive && (refreshQueued || !current(scope))) { refreshQueued = false; refresh(); }
+    }
   }
 }
+function resetScope() {
+  epoch++; identityKey.value++; readers.forEach(resource => resource.stop(true));
+  target.value = null; dialogError.value = ''; notice.value = ''; revision.value++;
+  refresh();
+}
+function resume() { if (!document.hidden) refresh(); }
+function pendingChanged() { revision.value++; }
+function confirmed() { revision.value++; refresh(); }
+const authDestination = to => (!hasSession('parent') && !hasSession('child', childId.value)) || ['/parent/login', '/parent/setup-pin'].includes(to.path);
+onBeforeRouteLeave(to => authDestination(to) || !busy.value);
+onBeforeRouteUpdate(to => to.params.id === childId.value || authDestination(to) || !busy.value);
+watch(childId, resetScope, { flush: 'sync' });
+watch(() => [calendar.today, calendar.ready, calendar.timeZone], () => refresh());
+onMounted(() => {
+  refresh();
+  document.addEventListener('visibilitychange', resume); window.addEventListener('pageshow', resume);
+  window.addEventListener('taskie:data-restored', resetScope); window.addEventListener('taskie:session-changed', resetScope);
+  window.addEventListener('taskie:write-confirmed', confirmed); window.addEventListener('taskie:pending-writes', pendingChanged);
+});
+onBeforeUnmount(() => {
+  alive = false; epoch++; readers.forEach(resource => resource.stop());
+  document.removeEventListener('visibilitychange', resume); window.removeEventListener('pageshow', resume);
+  window.removeEventListener('taskie:data-restored', resetScope); window.removeEventListener('taskie:session-changed', resetScope);
+  window.removeEventListener('taskie:write-confirmed', confirmed); window.removeEventListener('taskie:pending-writes', pendingChanged);
+});
 </script>

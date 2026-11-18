@@ -1,7 +1,7 @@
 <template>
-  <div class="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-card">
-    <div class="flex items-center justify-between mb-4">
-      <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+  <div class="min-w-0 bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
+    <div class="flex flex-wrap items-baseline justify-between gap-2 mb-4">
+      <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
         <span>💰</span>
         <span>积分获取记录</span>
       </h3>
@@ -19,14 +19,14 @@
       <div
         v-for="log in logs"
         :key="log.id"
-        class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 hover:bg-brand-50/50 dark:hover:bg-brand-900/40 transition-colors"
+        class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700"
       >
-        <div class="flex items-center gap-3">
+        <div class="min-w-0 flex-1 basis-32 flex items-start gap-2">
           <div class="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center text-xl shrink-0">
             🪙
           </div>
-          <div>
-            <div class="text-sm font-bold text-slate-800 dark:text-slate-100">
+          <div class="min-w-0">
+            <div class="text-sm font-bold text-slate-800 dark:text-slate-100 break-words [overflow-wrap:anywhere]">
               {{ log.title || '完成日常作业打卡' }}
             </div>
             <div class="text-xs text-slate-400">
@@ -35,7 +35,7 @@
           </div>
         </div>
 
-        <div class="text-base font-black text-amber-600 dark:text-amber-300 flex items-center gap-1">
+        <div class="shrink-0 text-base font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
           <span>+{{ log.points }}</span>
           <span class="text-xs font-bold text-amber-500 dark:text-amber-400">积分</span>
         </div>
