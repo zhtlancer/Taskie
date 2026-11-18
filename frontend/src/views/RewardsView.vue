@@ -142,8 +142,8 @@ function reader(fetch) {
   const fresh = computed(() => calendar.ready && state.data !== null && state.key === scopeKey.value && !state.loading && !state.error);
   function stop(clear = false) {
     serial++; controller?.abort(); controller = undefined;
-    state.loading = false; state.key = '';
-    if (clear) { state.data = null; state.error = ''; }
+    state.loading = false;
+    if (clear) { state.data = null; state.error = ''; state.key = ''; }
   }
   async function load({ afterWrite = false } = {}) {
     if (busy.value && !afterWrite) { refreshQueued = true; return; }

@@ -500,7 +500,7 @@ async function main() {
     now = before;
     await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '昨天未完成', subject: '数学' });
     await page.goto(`${base}/child/${child.id}/rewards`);
-    const card = page.locator('div.bg-gradient-to-tr').filter({ hasText: '连续坚持' });
+    const card = page.locator('[aria-label="积分概览"] > div').filter({ hasText: '连续坚持' });
     await card.getByText('1 天', { exact: false }).waitFor();
     await midnight(page);
     await card.getByText('0 天', { exact: false }).waitFor();
