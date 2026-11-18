@@ -21,6 +21,7 @@
     "test:browser:time-stats": "node scripts/smoke-time-stats.cjs",
     "test:browser:carry-over": "node scripts/smoke-carry-over.cjs",
     "test:browser:homework": "node scripts/smoke-homework.cjs",
+    "test:browser:homework-refine": "node scripts/smoke-homework-refine.cjs",
     "test:browser:homework-dates": "node scripts/smoke-homework-dates.cjs",
     "test:browser:board-workflow": "node scripts/smoke-board-workflow.cjs",
     "test:browser:record-editing": "node scripts/smoke-record-editing.cjs",

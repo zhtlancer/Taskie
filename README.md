@@ -420,6 +420,12 @@ npm run test:browser:carry-over
 npm run test:browser:homework
 ```
 
+作业本界面回归覆盖列表与课程信息独立读取、失败重试与清除筛选、课程统计失败和乱序响应、默认积分逐课保存的输入保留及重复提交保护。使用临时数据实际删除记录，分别核对保留任务时的分次学习记录和一起删除时的积分回退，同时检查家长/孩子权限、切换孩子、手机和平板浅暗色及触控尺寸：
+
+```bash
+npm run test:browser:homework-refine
+```
+
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
 
 ```bash
