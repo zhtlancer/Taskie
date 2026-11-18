@@ -151,6 +151,12 @@ export const useCharacterStore = defineStore('character', {
       }
     },
 
+    refreshAfterMutation(childId) {
+      // A pending read may contain the list from before this confirmed write,
+      // even if that read started after the write was submitted.
+      if (this.loading || !this.isLoadedFor(childId)) this.fetchCharacters(childId);
+    },
+
     async addCharacter({ child_id, char, pinyin, strokes, radical, categories = [] }) {
       const targetChildId = child_id || this.currentChildId;
       if (!targetChildId) throw new Error('缺少孩子账号信息');
@@ -171,7 +177,6 @@ export const useCharacterStore = defineStore('character', {
       }
 
       const startGen = this.scopeGeneration;
-      const wasFetching = this.loading;
       this.addingKeys = { ...this.addingKeys, [addKey]: true };
 
       try {
@@ -188,9 +193,7 @@ export const useCharacterStore = defineStore('character', {
           if (!this.characters.some((c) => c.id === created.id)) {
             this.characters.unshift(created);
           }
-          if (wasFetching && this.loading) {
-            this.fetchCharacters(targetChildId);
-          }
+          this.refreshAfterMutation(targetChildId);
         }
 
         playStarAdded();
@@ -201,9 +204,11 @@ export const useCharacterStore = defineStore('character', {
         }
         throw new Error(errMsg(err, '加入生字生词本失败'));
       } finally {
-        const next = { ...this.addingKeys };
-        delete next[addKey];
-        this.addingKeys = next;
+        if (this.scopeGeneration === startGen) {
+          const next = { ...this.addingKeys };
+          delete next[addKey];
+          this.addingKeys = next;
+        }
       }
     },
 
@@ -232,6 +237,7 @@ export const useCharacterStore = defineStore('character', {
             is_mastered: nextMastered,
             mastered_at: nextMastered ? updated.mastered_at || new Date().toISOString() : null,
           };
+          this.refreshAfterMutation(startChildId);
           return this.characters[currentIdx];
         }
         return null;
@@ -239,9 +245,11 @@ export const useCharacterStore = defineStore('character', {
         console.error('[CharacterStore] toggleMaster error:', err);
         throw err;
       } finally {
-        const next = { ...this.busyIds };
-        delete next[id];
-        this.busyIds = next;
+        if (this.scopeGeneration === startGen) {
+          const next = { ...this.busyIds };
+          delete next[id];
+          this.busyIds = next;
+        }
       }
     },
 
@@ -263,11 +271,14 @@ export const useCharacterStore = defineStore('character', {
         if (index !== -1) {
           this.characters[index] = { ...this.characters[index], ...updated };
         }
+        this.refreshAfterMutation(startChildId);
         return updated;
       } finally {
-        const next = { ...this.busyIds };
-        delete next[id];
-        this.busyIds = next;
+        if (this.scopeGeneration === startGen) {
+          const next = { ...this.busyIds };
+          delete next[id];
+          this.busyIds = next;
+        }
       }
     },
 
@@ -285,13 +296,16 @@ export const useCharacterStore = defineStore('character', {
           return;
         }
         this.characters = this.characters.filter((c) => c.id !== id);
+        this.refreshAfterMutation(startChildId);
       } catch (err) {
         console.error('[CharacterStore] removeCharacter error:', err);
         throw err;
       } finally {
-        const next = { ...this.busyIds };
-        delete next[id];
-        this.busyIds = next;
+        if (this.scopeGeneration === startGen) {
+          const next = { ...this.busyIds };
+          delete next[id];
+          this.busyIds = next;
+        }
       }
     },
 

@@ -218,7 +218,7 @@ async function main() {
           assert.equal(await visibleChar('晴').count(), 1);
         } finally { preRestoreHold.release(); if (!page.isClosed()) await page.unroute(childCharsUrl, preRestoreHold.handler); }
 
-        // B) Delayed write isolation: start slow POST /characters from child's lookup modal, switch child before response arrives, ensure other child's list stays untouched.
+        // B) Delayed write isolation includes the reopened modal and a newer submission's busy state.
         await page.getByRole('button', { name: /查笔画 · 一键入本/ }).click();
         const modal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
         await modal.getByRole('textbox').fill('云');
@@ -226,12 +226,31 @@ async function main() {
         try {
           await modal.getByRole('button', { name: /加入生字生词本/ }).click();
           await slowAdd.started();
+          await page.unroute('**/api/characters', slowAdd.handler);
           await push(`/child/${other.id}/characters`);
           await page.getByText('共 1 项 · 已掌握 0 · 学习中 1 · 掌握率 0%').waitFor();
-          slowAdd.release(); await slowAdd.done;
-          await page.unroute('**/api/characters', slowAdd.handler);
-          assert.equal(await page.getByText('共 1 项').count(), 1);
-          assert.equal(await page.getByText('云', { exact: true }).count(), 0);
+          await page.getByRole('button', { name: /查笔画 · 一键入本/ }).click();
+          const otherModal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+          assert.equal(await otherModal.getByRole('textbox').isDisabled(), false, 'old child submission does not lock the new modal');
+          await otherModal.getByRole('textbox').fill('日');
+          const newerAdd = await hold('**/api/characters', false);
+          try {
+            await otherModal.getByRole('button', { name: /加入生字生词本/ }).click();
+            await newerAdd.started();
+            const oldResponse = page.waitForResponse(response => response.request().method() === 'POST' &&
+              response.url().endsWith('/api/characters') && response.request().postDataJSON()?.child_id === child.id);
+            slowAdd.release(); await slowAdd.done;
+            await (await oldResponse).finished();
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+            assert.equal(await otherModal.getByRole('textbox').isDisabled(), true, 'old finally cannot release the newer submission');
+            assert.equal(await otherModal.getByText('🌟 成功将「云」加入生字生词本！', { exact: true }).count(), 0);
+            assert.equal(await page.getByText('共 1 项').count(), 1);
+            newerAdd.release(); await newerAdd.done;
+            await otherModal.getByText('🌟 成功将「日」加入生字生词本！', { exact: true }).waitFor();
+            await page.getByText('共 2 项').waitFor();
+            assert.equal((await api('GET', `/characters?child_id=${other.id}`)).some(row => row.char === '云'), false);
+            await pageKeyboardClose(page, otherModal);
+          } finally { newerAdd.release(); await page.unroute('**/api/characters', newerAdd.handler); }
         } finally { slowAdd.release(); if (!page.isClosed()) await page.unroute('**/api/characters', slowAdd.handler); }
 
         // C) Shared StrokeLookupModal from TodayTasksView respects child scope (other vs child).
@@ -295,6 +314,98 @@ async function main() {
         await confirm.getByRole('button', { name: '确认', exact: true }).click();
         await detail.waitFor({ state: 'detached' });
         await page.getByText('共 4 项').waitFor();
+
+        // F) A pre-save list response must not revert confirmed mastery/category/delete writes.
+        await page.getByRole('button', { name: '切换为字卡', exact: true }).click();
+        const savingEntry = (await api('GET', `/characters?child_id=${child.id}`)).find(row => row.char === '山');
+        await page.getByRole('button', { name: '查看「山」的笔顺与详情', exact: true }).click();
+        const savingDetail = page.getByRole('dialog', { name: '生字笔顺与临摹', exact: true });
+        const raceRefreshWithSave = async (save, verify) => {
+          const oldRead = await hold(childCharsUrl, false);
+          try {
+            await resume(); await oldRead.started();
+            await page.unroute(childCharsUrl, oldRead.handler);
+            await save();
+            oldRead.release(); await oldRead.done;
+            await page.getByText('正在更新生字生词本，当前显示上次读取的数据。', { exact: true }).waitFor({ state: 'detached' });
+            await verify();
+          } finally { oldRead.release(); await page.unroute(childCharsUrl, oldRead.handler); }
+        };
+        const masteryAfterSave = savingEntry.is_mastered ? '⭐ 标记为已掌握' : '✅ 已掌握（点击改为学习中）';
+        await raceRefreshWithSave(async () => {
+          await savingDetail.getByRole('button', { name: /标记为已掌握|已掌握（点击改为学习中）/ }).click();
+          await savingDetail.getByRole('button', { name: masteryAfterSave, exact: true }).waitFor();
+        }, async () => {
+          assert.equal(await savingDetail.getByRole('button', { name: masteryAfterSave, exact: true }).count(), 1);
+          const saved = (await api('GET', `/characters?child_id=${child.id}`)).find(row => row.id === savingEntry.id);
+          assert.equal(Boolean(saved.is_mastered), !Boolean(savingEntry.is_mastered));
+        });
+        await raceRefreshWithSave(async () => {
+          await savingDetail.getByRole('button', { name: /笔画要改正/ }).click();
+          await savingDetail.locator('button[aria-pressed="true"]', { hasText: '笔画要改正' }).waitFor();
+        }, async () => {
+          assert.equal(await savingDetail.locator('button[aria-pressed="true"]', { hasText: '笔画要改正' }).count(), 1);
+        });
+        await raceRefreshWithSave(async () => {
+          await savingDetail.getByRole('button', { name: '移出', exact: true }).click();
+          await page.getByRole('dialog', { name: '确认操作', exact: true }).getByRole('button', { name: '确认', exact: true }).click();
+          await savingDetail.waitFor({ state: 'detached' });
+        }, async () => {
+          assert.equal(await page.getByRole('button', { name: '查看「山」的笔顺与详情', exact: true }).count(), 0);
+          assert.equal((await api('GET', `/characters?child_id=${child.id}`)).some(row => row.id === savingEntry.id), false);
+        });
+
+        // G) Start the POST first but hold it before the server; the later GET still has pre-write data.
+        await page.getByRole('button', { name: /查笔画 · 一键入本/ }).click();
+        const addingModal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+        await addingModal.getByRole('textbox').fill('雨');
+        let releaseWrite;
+        const writeGate = new Promise(resolve => { releaseWrite = resolve; });
+        const beforeSend = async route => { await writeGate; await route.continue(); };
+        await page.route('**/api/characters', beforeSend);
+        const oldAddRead = await hold(childCharsUrl, false);
+        try {
+          const submitted = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/api/characters'));
+          await addingModal.getByRole('button', { name: /加入生字生词本/ }).click();
+          await submitted;
+          await resume(); await oldAddRead.started();
+          await page.unroute(childCharsUrl, oldAddRead.handler);
+          releaseWrite();
+          await addingModal.getByText('🌟 成功将「雨」加入生字生词本！', { exact: true }).waitFor();
+          oldAddRead.release(); await oldAddRead.done;
+          await page.getByText('正在更新生字生词本，当前显示上次读取的数据。', { exact: true }).waitFor({ state: 'detached' });
+          assert.equal(await addingModal.getByText('已在生字生词本', { exact: true }).count(), 1);
+          assert.equal((await api('GET', `/characters?child_id=${child.id}`)).some(row => row.char === '雨'), true);
+        } finally {
+          releaseWrite(); oldAddRead.release();
+          await page.unroute('**/api/characters', beforeSend);
+          await page.unroute(childCharsUrl, oldAddRead.handler);
+        }
+        await pageKeyboardClose(page, addingModal);
+
+        // H) Old failure must not surface after returning to the same child in a new data generation.
+        await page.getByRole('button', { name: /查笔画 · 一键入本/ }).click();
+        const staleErrorModal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+        await staleErrorModal.getByRole('textbox').fill('霜');
+        const oldFailure = await hold('**/api/characters', true, 503, { error: '旧收录请求失败' });
+        try {
+          await staleErrorModal.getByRole('button', { name: /加入生字生词本/ }).click();
+          await oldFailure.started();
+          await page.unroute('**/api/characters', oldFailure.handler);
+          await page.evaluate(() => window.dispatchEvent(new Event('taskie:data-restored')));
+          await staleErrorModal.waitFor({ state: 'detached' });
+          await page.getByRole('button', { name: /查笔画 · 一键入本/ }).click();
+          const freshModal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+          await freshModal.getByRole('textbox').fill('星');
+          const response = page.waitForResponse(response => response.request().method() === 'POST' && response.url().endsWith('/api/characters'));
+          oldFailure.release(); await oldFailure.done;
+          await (await response).finished();
+          await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+          assert.equal(await freshModal.getByText('旧收录请求失败', { exact: true }).count(), 0);
+          assert.equal(await freshModal.getByRole('textbox').isDisabled(), false);
+          await pageKeyboardClose(page, freshModal);
+        } finally { oldFailure.release(); await page.unroute('**/api/characters', oldFailure.handler); }
+        console.log('PASS confirmed writes survive stale reads; old adds cannot leak success/error or unlock a newer modal submission');
       }
       console.log(`PASS ${width}px ${theme}: loading, error/retry, refresh retain, filters, empty/layout, modals & stale isolation`);
     } finally {

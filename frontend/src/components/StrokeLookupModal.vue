@@ -176,6 +176,7 @@ import { useCharacterStore } from '../stores/character';
 import { playClick } from '../utils/sound';
 import { CATEGORIES, cleanEntry, entryChars } from '../utils/wordBook';
 import { loadLearningFont } from '../utils/learningFont';
+import { getToken } from '../utils/session.js';
 
 const props = defineProps({
   modelValue: {
@@ -216,14 +217,22 @@ const toastError = ref(false);
 const newCategories = ref([]);
 
 let toastTimer = null;
+let alive = true, submitSerial = 0;
 function clearToast() {
   if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
   toastMessage.value = '';
   toastError.value = false;
 }
 
-function handleScopeChange() {
+function invalidateSubmission() {
+  submitSerial++;
+  isSubmitting.value = false;
   clearToast();
+}
+
+function handleScopeChange() {
+  invalidateSubmission();
+  newCategories.value = [];
   characterStore.clear(props.childId || null);
   if (isOpen.value && props.childId) characterStore.ensureChildLoaded(props.childId);
 }
@@ -234,17 +243,20 @@ onMounted(() => {
   window.addEventListener('taskie:session-changed', handleScopeChange);
 });
 onBeforeUnmount(() => {
-  if (toastTimer) clearTimeout(toastTimer);
+  alive = false;
+  invalidateSubmission();
   window.removeEventListener('resize', syncWidth);
   window.removeEventListener('taskie:data-restored', handleScopeChange);
   window.removeEventListener('taskie:session-changed', handleScopeChange);
 });
 
 watch([isOpen, () => props.childId], ([open, id], [, prevId]) => {
-  if (prevId && id !== prevId) {
+  if (id !== prevId) {
+    invalidateSubmission();
+    newCategories.value = [];
     characterStore.setChild(id);
-    clearToast();
   }
+  if (!open) invalidateSubmission();
   if (open) {
     loadLearningFont();
     clearToast();
@@ -253,7 +265,7 @@ watch([isOpen, () => props.childId], ([open, id], [, prevId]) => {
       if (charInputRef.value) charInputRef.value.focus();
     });
   }
-}, { immediate: true });
+}, { immediate: true, flush: 'sync' });
 
 const quickChars = ['学', '春', '写', '生', '书', '画', '笔', '语', '春天', '学习', '一心一意'];
 
@@ -341,10 +353,13 @@ async function onAddToBook() {
   isSubmitting.value = true;
   const single = chars.value.length === 1;
   const targetEntry = entry.value;
+  const request = ++submitSerial, targetChild = props.childId, token = getToken(), generation = characterStore.scopeGeneration;
+  const matches = () => alive && request === submitSerial && isOpen.value && props.childId === targetChild &&
+    token === getToken() && generation === characterStore.scopeGeneration;
 
   try {
     const res = await characterStore.addCharacter({
-      child_id: props.childId,
+      child_id: targetChild,
       char: targetEntry,
       pinyin: pinyinText.value,
       strokes: single && strokesCount.value !== '—' ? Number(strokesCount.value) : null,
@@ -352,21 +367,23 @@ async function onAddToBook() {
       categories: newCategories.value,
     });
 
+    if (!matches()) return;
     toastMessage.value = res.alreadyExists
       ? `✅ 「${targetEntry}」已在生字生词本`
       : `🌟 成功将「${targetEntry}」加入生字生词本！`;
     newCategories.value = [];
-    if (res.character) emit('added', res.character);
     toastTimer = setTimeout(() => {
       toastMessage.value = '';
       toastTimer = null;
     }, 2500);
+    if (res.character) emit('added', res.character);
   } catch (err) {
+    if (!matches()) return;
     console.error('Add to book error:', err);
     toastError.value = true;
     toastMessage.value = typeof err === 'string' ? err : err.message || '加入失败，请重试';
   } finally {
-    isSubmitting.value = false;
+    if (matches()) isSubmitting.value = false;
   }
 }
 
