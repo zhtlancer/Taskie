@@ -79,11 +79,9 @@
               <div class="text-xl sm:text-2xl font-black text-brand-600 dark:text-brand-300 mt-1">
                 {{ weeklyData ? formatRate(thisWeek?.completion_rate) : '—' }}
               </div>
-              <span class="text-xs font-bold text-slate-500 dark:text-slate-400 block">
-                <template v-if="weekly.state.loading">正在读取…</template>
-                <template v-else-if="weekly.state.error">{{ weeklyData ? '未能更新' : '未能读取' }}</template>
-                <template v-else>上周 {{ formatRate(lastWeek?.completion_rate) }}</template>
-              </span>
+              <span v-if="weekly.state.loading" class="text-xs font-bold text-slate-400 block mt-0.5">正在读取…</span>
+              <span v-else-if="weekly.state.error" class="text-xs font-bold text-rose-600 dark:text-rose-300 block mt-0.5">{{ weeklyData ? '未能更新' : '未能读取' }}</span>
+              <span v-else class="text-xs font-bold text-slate-500 dark:text-slate-400 block mt-0.5">上周 {{ formatRate(lastWeek?.completion_rate) }}</span>
             </div>
             <span class="text-xl sm:text-3xl shrink-0" aria-hidden="true">📈</span>
           </div>
@@ -247,7 +245,7 @@
                       </span>
                       <span
                         v-else-if="item.total_tasks === 0"
-                        class="inline-block text-xs font-black px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                        class="inline-block text-xs font-black px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300"
                       >
                         休息
                       </span>
