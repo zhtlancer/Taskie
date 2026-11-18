@@ -1,6 +1,6 @@
 <template>
   <div
-    class="relative bg-white dark:bg-slate-900 rounded-3xl p-4 border border-slate-200/90 dark:border-slate-700/90 shadow-card hover:shadow-card-hover transition-all duration-300 flex flex-col justify-between select-none cursor-pointer group active:scale-[0.98]"
+    class="relative min-w-0 bg-white dark:bg-slate-900 rounded-3xl p-3 sm:p-4 border border-slate-200/90 dark:border-slate-700/90 shadow-card hover:shadow-card-hover transition-all duration-300 flex flex-col justify-between select-none cursor-pointer group active:scale-[0.98]"
     @click="$emit('select', character)"
   >
     <!-- Top Row: Mastery Status & Quick Speech Button -->
@@ -8,8 +8,9 @@
       <!-- Mastery Status Tag (Clickable to switch state) -->
       <button
         type="button"
+        :disabled="busy"
         @click.stop="onToggleMaster"
-        class="min-h-[44px] px-2 py-1 rounded-full text-xs font-black transition-all flex items-center gap-1 active:scale-95"
+        class="min-h-[44px] px-2 py-1 rounded-full text-xs font-black transition-all flex items-center gap-1 active:scale-95 disabled:opacity-60 disabled:cursor-wait"
         :class="[
           character.is_mastered
             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-950/40'
@@ -17,7 +18,7 @@
         ]"
         :title="character.is_mastered ? '点击切换为学习中' : '点击标记为已掌握'"
       >
-        <span>{{ character.is_mastered ? '✅ 已掌握' : '🌱 学习中' }}</span>
+        <span>{{ busy ? '⏳ 保存中…' : (character.is_mastered ? '✅ 已掌握' : '🌱 学习中') }}</span>
       </button>
 
       <!-- Speak Audio Button -->
@@ -36,12 +37,12 @@
       <!-- Revealed Pinyin -->
       <button
         v-if="isRevealed" type="button"
-        class="min-h-[44px] flex items-center gap-1 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-black text-sm tracking-wide animate-pop-in"
+        class="min-h-[44px] max-w-full flex items-center justify-center gap-1 px-2.5 py-1 rounded-2xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-black text-sm tracking-wide motion-safe:animate-pop-in text-center break-words [overflow-wrap:anywhere]"
         @click="isRevealed = false"
         title="点击遮罩拼音"
       >
-        <span>{{ displayPinyin }}</span>
-        <span class="text-xs text-brand-400 opacity-60 ml-0.5">👁️</span>
+        <span class="min-w-0 break-words">{{ displayPinyin }}</span>
+        <span class="text-xs text-brand-400 opacity-60 shrink-0">👁️</span>
       </button>
 
       <!-- Masked Button (Default State) -->
@@ -115,6 +116,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  busy: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['select', 'toggle-master']);
@@ -123,13 +128,12 @@ const localRevealed = ref(false);
 
 const chars = computed(() => entryChars(props.character.char));
 const categories = computed(() => (props.character.categories || []).map(categoryInfo).filter(Boolean));
-// Box size by word length: one big box, two medium, then small boxes; from tablet width up the
-// row is capped at four boxes (an idiom on one line, eight characters on two).
+// Box size by word length: scales safely inside narrow 320px 2-col cards and widens on larger screens.
 const box = computed(() => {
   const n = chars.value.length;
-  if (n === 1) return { size: 'w-32 h-32', text: 'text-6xl', row: '' };
-  if (n === 2) return { size: 'w-16 h-16', text: 'text-4xl', row: '' };
-  return { size: 'w-12 h-12 sm:w-10 sm:h-10', text: 'text-2xl sm:text-xl', row: 'sm:max-w-[10.75rem]' };
+  if (n === 1) return { size: 'w-24 h-24 sm:w-32 sm:h-32', text: 'text-5xl sm:text-6xl', row: '' };
+  if (n === 2) return { size: 'w-12 h-12 sm:w-16 sm:h-16', text: 'text-3xl sm:text-4xl', row: '' };
+  return { size: 'w-10 h-10', text: 'text-xl', row: 'sm:max-w-[10.75rem]' };
 });
 
 const isRevealed = computed(() => {
@@ -151,6 +155,7 @@ function onSpeak() {
 }
 
 function onToggleMaster() {
+  if (props.busy) return;
   playClick();
   emit('toggle-master', props.character.id);
 }

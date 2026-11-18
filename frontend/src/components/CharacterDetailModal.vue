@@ -4,12 +4,12 @@
     <div class="flex flex-col items-center min-w-0">
         <p v-if="error" role="alert" class="mb-3 text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
         <!-- Top Info Strip: Pinyin & Sound -->
-        <div class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 mb-4 whitespace-nowrap">
+        <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 mb-4 max-w-full">
           <!-- Pinyin with Mask Toggle (Default Hidden) -->
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center justify-center gap-2 max-w-full">
             <div
               v-if="showPinyin"
-              class="px-4 py-1.5 rounded-2xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 font-black text-xl tracking-wider animate-pop-in"
+              class="max-w-full px-4 py-1.5 rounded-2xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-brand-700 dark:text-brand-300 font-black text-xl tracking-wider animate-pop-in break-words [overflow-wrap:anywhere] text-center"
             >
               {{ pinyinText }}
             </div>
@@ -57,11 +57,11 @@
           </button>
         </div>
 
-        <!-- Big Hanzi Grid with HanziWriter (Size 280 for iPad touch) -->
+        <!-- Big Hanzi Grid with HanziWriter -->
         <HanziGrid
-          :key="`${selectedIndex}-${currentChar}`"
+          :key="`${selectedIndex}-${currentChar}-${gridSize}`"
           :character="currentChar"
-          :size="280"
+          :size="gridSize"
           grid-type="mi"
           :auto-play="true"
           @ready="onGridReady"
@@ -98,7 +98,7 @@
               type="button"
               :disabled="busy"
               @click="onToggleCategory(category.key)"
-              class="min-h-[44px] rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1"
+              class="min-h-[44px] px-2 rounded-xl border text-xs font-black transition-all active:scale-95 flex items-center justify-center gap-1"
               :class="character.categories?.includes(category.key) ? category.chip : 'bg-white dark:bg-slate-900 text-slate-400 border-dashed border-slate-300 dark:border-slate-600'"
               :aria-pressed="character.categories?.includes(category.key) ? 'true' : 'false'"
             >
@@ -106,16 +106,16 @@
               <span>{{ category.label }}</span>
             </button>
           </div>
-          <p v-if="categoryMessage" role="alert" class="mt-2 text-xs font-bold text-rose-500 dark:text-rose-400">{{ categoryMessage }}</p>
+          <p v-if="categoryMessage" role="alert" class="mt-2 text-xs font-bold text-rose-600 dark:text-rose-300">{{ categoryMessage }}</p>
         </div>
 
         <!-- Mastery Action Button -->
-        <div class="flex items-center justify-between w-full max-w-md mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
+        <div class="flex items-center justify-between w-full max-w-md mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 gap-3">
           <button
             type="button"
             :disabled="busy"
             @click="onToggleMaster"
-            class="flex-1 h-12 rounded-2xl font-black text-sm transition-all shadow-sm active:scale-98 flex items-center justify-center gap-2 mr-3"
+            class="flex-1 min-h-12 py-2 px-3 rounded-2xl font-black text-sm transition-all shadow-sm active:scale-98 flex items-center justify-center gap-2 disabled:opacity-60"
             :class="[
               character.is_mastered
                 ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-950/40'
@@ -130,12 +130,13 @@
             type="button"
             @click="onDelete"
             :disabled="busy || !canDelete"
-            class="h-12 px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-950/40 font-bold text-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="min-h-12 min-w-14 px-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-950/40 font-bold text-xs transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             :title="canDelete ? '从生字生词本移出' : '有分类标记，需要家长移出'"
           >
             移出
           </button>
         </div>
+        <p v-if="busy" role="status" class="mt-2 text-xs font-bold text-brand-600 dark:text-brand-300">正在保存，请稍候…</p>
       </div>
   </UiDialog>
 </template>
@@ -143,7 +144,7 @@
 <script setup>
 import UiDialog from './UiDialog.vue';
 import { confirmAction } from '../utils/confirmation';
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import HanziGrid from './HanziGrid.vue';
 import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../utils/hanzi';
 import { playClick } from '../utils/sound';
@@ -165,17 +166,23 @@ loadLearningFont();
 const emit = defineEmits(['close', 'toggle-master', 'delete', 'updated']);
 
 const characterStore = useCharacterStore();
-const role = currentRole();
+const role = computed(() => currentRole());
 const showPinyin = ref(false); // Default hidden
 const dynamicStrokes = ref(null);
 const selectedIndex = ref(0);
 const savingCategories = ref(false);
 const categoryMessage = ref('');
-const busy = computed(() => props.busy || savingCategories.value);
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 390);
+const gridSize = computed(() => (viewportWidth.value < 380 ? 256 : 280));
+const syncWidth = () => { viewportWidth.value = window.innerWidth; };
+onMounted(() => window.addEventListener('resize', syncWidth));
+onBeforeUnmount(() => window.removeEventListener('resize', syncWidth));
+watch(() => props.character.id, () => { selectedIndex.value = 0; dynamicStrokes.value = null; categoryMessage.value = ''; });
+const busy = computed(() => props.busy || savingCategories.value || characterStore.isBusy(props.character.id));
 
 const chars = computed(() => entryChars(props.character.char));
 const currentChar = computed(() => chars.value[selectedIndex.value] || chars.value[0]);
-const canDelete = computed(() => role === 'parent' || !props.character.categories?.length);
+const canDelete = computed(() => role.value === 'parent' || !props.character.categories?.length);
 
 function selectChar(index) {
   playClick();
@@ -187,16 +194,18 @@ async function onToggleCategory(key) {
   if (busy.value) return;
   playClick();
   categoryMessage.value = '';
-  const { categories, blocked } = toggleCategory(props.character.categories || [], key, role);
+  const { categories, blocked } = toggleCategory(props.character.categories || [], key, role.value);
   if (blocked) {
     categoryMessage.value = `去掉「${categoryInfo(key).label}」需要家长操作`;
     return;
   }
+  const targetId = props.character.id;
   savingCategories.value = true;
   try {
-    emit('updated', await characterStore.setCategories(props.character.id, categories));
+    const updated = await characterStore.setCategories(targetId, categories);
+    if (props.character.id === targetId) emit('updated', updated);
   } catch (err) {
-    categoryMessage.value = typeof err === 'string' ? err : err.message || '保存分类失败';
+    if (props.character.id === targetId) categoryMessage.value = typeof err === 'string' ? err : err.message || '保存分类失败';
   } finally {
     savingCategories.value = false;
   }

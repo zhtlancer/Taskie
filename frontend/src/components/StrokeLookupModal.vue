@@ -30,8 +30,8 @@
             </button>
           </div>
 
-          <!-- Quick Suggestion Character Pills for iPad -->
-          <div class="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1 no-scrollbar">
+          <!-- Quick Suggestion Character Pills for phone and tablet -->
+          <div class="flex flex-wrap items-center gap-1.5 mt-2">
             <span class="text-xs font-bold text-slate-400 shrink-0">快捷试查:</span>
             <button
               v-for="s in quickChars"
@@ -62,15 +62,15 @@
         </div>
 
         <!-- 2. Character Metadata Strip (Pinyin with sound, Radical, Strokes) -->
-        <div class="flex flex-wrap items-center justify-center gap-3 w-full max-w-md mb-4 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700">
+        <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 w-full max-w-md mb-4 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700 min-w-0">
           <!-- Pinyin & Listen -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs font-bold text-slate-400">拼音:</span>
-            <span class="text-lg font-black text-brand-600 dark:text-brand-300 tracking-wider">{{ pinyinText }}</span>
+          <div class="flex flex-wrap items-center justify-center gap-2 max-w-full min-w-0">
+            <span class="text-xs font-bold text-slate-400 shrink-0">拼音:</span>
+            <span class="text-lg font-black text-brand-600 dark:text-brand-300 tracking-wider break-words [overflow-wrap:anywhere] text-center">{{ pinyinText }}</span>
             <button
               type="button"
               @click="onSpeak"
-              class="w-11 h-11 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs shadow-xs active:scale-90 transition-all ml-0.5"
+              class="w-11 h-11 shrink-0 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs shadow-xs active:scale-90 transition-all ml-0.5"
               title="听发音"
             >
               🔊
@@ -102,17 +102,17 @@
           </div>
         </div>
 
-        <!-- 3. Ultra-large Mi-Zi-Ge Hanzi Writer (Size 300px for iPad touch) -->
+        <!-- 3. Ultra-large Mi-Zi-Ge Hanzi Writer -->
         <HanziGrid
           v-if="currentChar"
-          :key="`${selectedIndex}-${currentChar}`"
+          :key="`${selectedIndex}-${currentChar}-${gridSize}`"
           :character="currentChar"
-          :size="300"
+          :size="gridSize"
           grid-type="mi"
           :auto-play="true"
           @ready="onGridReady"
         />
-        <div v-else class="w-[300px] max-w-full aspect-square rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm font-bold text-slate-400">
+        <div v-else class="w-[256px] sm:w-[300px] max-w-full aspect-square rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm font-bold text-slate-400">
           请输入汉字或词语
         </div>
 
@@ -142,11 +142,11 @@
             type="button"
             @click="onAddToBook"
             :disabled="isSubmitting || !entry"
-            class="w-full h-14 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-500 hover:to-orange-500 text-white font-black text-base shadow-yellow-button active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            class="w-full min-h-14 py-2 px-4 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-500 hover:to-orange-500 text-white font-black text-base shadow-yellow-button active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <span class="text-xl">⭐</span>
-            <span>加入生字生词本</span>
-            <span class="hidden sm:inline text-xs opacity-90">（入本后可随时复习打卡）</span>
+            <span class="text-xl">{{ isSubmitting ? '⏳' : '⭐' }}</span>
+            <span>{{ isSubmitting ? '正在加入…' : '加入生字生词本' }}</span>
+            <span v-if="!isSubmitting" class="hidden sm:inline text-xs opacity-90">（入本后可随时复习打卡）</span>
           </button>
 
           <!-- Already in Book Button -->
@@ -169,7 +169,7 @@
 
 <script setup>
 import UiDialog from './UiDialog.vue';
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import HanziGrid from './HanziGrid.vue';
 import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../utils/hanzi';
 import { useCharacterStore } from '../stores/character';
@@ -195,12 +195,14 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'added']);
 
 const characterStore = useCharacterStore();
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 390);
+const gridSize = computed(() => (viewportWidth.value < 380 ? 256 : 300));
+const syncWidth = () => { viewportWidth.value = window.innerWidth; };
 
 const isOpen = computed({
   get: () => props.modelValue,
   set: (val) => emit('update:modelValue', val),
 });
-watch(isOpen, open => { if (open) loadLearningFont(); }, { immediate: true });
 
 const charInputRef = ref(null);
 const inputRaw = ref(props.initialChar || '学');
@@ -212,6 +214,46 @@ const isSubmitting = ref(false);
 const toastMessage = ref('');
 const toastError = ref(false);
 const newCategories = ref([]);
+
+let toastTimer = null;
+function clearToast() {
+  if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  toastMessage.value = '';
+  toastError.value = false;
+}
+
+function handleScopeChange() {
+  clearToast();
+  characterStore.clear(props.childId || null);
+  if (isOpen.value && props.childId) characterStore.ensureChildLoaded(props.childId);
+}
+
+onMounted(() => {
+  window.addEventListener('resize', syncWidth);
+  window.addEventListener('taskie:data-restored', handleScopeChange);
+  window.addEventListener('taskie:session-changed', handleScopeChange);
+});
+onBeforeUnmount(() => {
+  if (toastTimer) clearTimeout(toastTimer);
+  window.removeEventListener('resize', syncWidth);
+  window.removeEventListener('taskie:data-restored', handleScopeChange);
+  window.removeEventListener('taskie:session-changed', handleScopeChange);
+});
+
+watch([isOpen, () => props.childId], ([open, id], [, prevId]) => {
+  if (prevId && id !== prevId) {
+    characterStore.setChild(id);
+    clearToast();
+  }
+  if (open) {
+    loadLearningFont();
+    clearToast();
+    if (id) characterStore.ensureChildLoaded(id);
+    nextTick(() => {
+      if (charInputRef.value) charInputRef.value.focus();
+    });
+  }
+}, { immediate: true });
 
 const quickChars = ['学', '春', '写', '生', '书', '画', '笔', '语', '春天', '学习', '一心一意'];
 
@@ -233,7 +275,7 @@ const strokesCount = computed(() => {
 });
 
 const isAlreadyInBook = computed(() => {
-  return characterStore.isCharInBook(entry.value);
+  return characterStore.isCharInBook(entry.value, props.childId);
 });
 
 // Typing shows the latest character's strokes, as before; the whole entry is what gets added.
@@ -242,7 +284,7 @@ function onInputChanged() {
   entry.value = clean;
   selectedIndex.value = Math.max(0, entryChars(clean).length - 1);
   dynamicStrokes.value = null;
-  toastMessage.value = ''; toastError.value = false;
+  clearToast();
 }
 
 function pickChar(index) {
@@ -295,30 +337,34 @@ async function onAddToBook() {
   playClick();
   if (!entry.value || isSubmitting.value) return;
 
+  clearToast();
   isSubmitting.value = true;
-  toastMessage.value = ''; toastError.value = false;
   const single = chars.value.length === 1;
+  const targetEntry = entry.value;
 
   try {
     const res = await characterStore.addCharacter({
       child_id: props.childId,
-      char: entry.value,
+      char: targetEntry,
       pinyin: pinyinText.value,
       strokes: single && strokesCount.value !== '—' ? Number(strokesCount.value) : null,
       radical: single ? radicalInfo.value.radical : null,
       categories: newCategories.value,
     });
 
-    toastMessage.value = `🌟 成功将「${entry.value}」加入生字生词本！`;
+    toastMessage.value = res.alreadyExists
+      ? `✅ 「${targetEntry}」已在生字生词本`
+      : `🌟 成功将「${targetEntry}」加入生字生词本！`;
     newCategories.value = [];
-    emit('added', res.character);
-    setTimeout(() => {
+    if (res.character) emit('added', res.character);
+    toastTimer = setTimeout(() => {
       toastMessage.value = '';
+      toastTimer = null;
     }, 2500);
   } catch (err) {
     console.error('Add to book error:', err);
     toastError.value = true;
-    toastMessage.value = typeof err === 'string' ? err : err.message || '加入失败';
+    toastMessage.value = typeof err === 'string' ? err : err.message || '加入失败，请重试';
   } finally {
     isSubmitting.value = false;
   }
@@ -329,17 +375,4 @@ function close() {
   playClick();
   isOpen.value = false;
 }
-
-watch(
-  () => props.modelValue,
-  (val) => {
-    if (val) {
-      nextTick(() => {
-        if (charInputRef.value) {
-          charInputRef.value.focus();
-        }
-      });
-    }
-  }
-);
 </script>

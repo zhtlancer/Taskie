@@ -181,11 +181,11 @@ export const api = {
     // The practice dialog provides recovery only for this specific date rejection.
     silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
   }),
-  getCharacters: (id, mastered = null) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }),
-  createCharacter: data => post('/characters', data),
-  markCharacterMastered: (id, mastered = null) => put(`/characters/${id}/master`, { is_mastered: mastered }),
-  deleteCharacter: id => remove(`/characters/${id}`),
-  setCharacterCategories: (id, categories) => put(`/characters/${id}/categories`, { categories }),
+  getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),
+  createCharacter: (data, options) => post('/characters', data, options),
+  markCharacterMastered: (id, mastered = null, options) => put(`/characters/${id}/master`, { is_mastered: mastered }, options),
+  deleteCharacter: (id, options) => remove(`/characters/${id}`, options),
+  setCharacterCategories: (id, categories, options) => put(`/characters/${id}/categories`, { categories }, options),
   async loadPhoto(url) {
     if (!url.startsWith('/uploads/')) return url;
     const response = await client.get(url.replace('/uploads/', '../uploads/'), { responseType: 'blob' });
