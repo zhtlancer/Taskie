@@ -1,6 +1,7 @@
 const { resolveSenses } = require('../utils/english-senses');
 const { generateId } = require('../utils/crypto');
 const { getTodayDate } = require('../utils/date');
+const { dictionaryFailure, dictionaryLookupIssue } = require('./dictionary/issues');
 const {
   ENGLISH_CATEGORIES,
   identityKey,
@@ -346,8 +347,9 @@ class EnglishWordsService {
     return this.getWord(id);
   }
 
-  async batchPreview(childId, rawText, { dictionaryService } = {}) {
+  async batchPreview(childId, rawText, { dictionaryService, useDictionary = true } = {}) {
     this.ensureChildExists(childId);
+    if (typeof useDictionary !== 'boolean') throw { status: 400, message: '查词设置无效' };
     if (typeof rawText !== 'string' || !rawText.trim()) {
       throw { status: 400, message: '请输入单词列表，每行可用制表符分隔英文和中文释义' };
     }
@@ -367,6 +369,8 @@ class EnglishWordsService {
 
     const seenInBatch = new Set();
     const items = [];
+    let unavailableIssue = !useDictionary ? { code: 'DICTIONARY_MANUAL', message: '已跳过词典查询，可手动填写释义后导入。' }
+      : !dictionaryService ? dictionaryLookupIssue({ available: false }) : null;
 
     for (const raw of tokens) {
       const columns = raw.split('\t');
@@ -398,16 +402,35 @@ class EnglishWordsService {
 
       let matched = null;
       let suggestions = [];
-      if (dictionaryService) {
-        const res = await dictionaryService.lookup(validWord);
-        if (res.exact_matches.length > 0) {
-          matched = res.exact_matches.find(m => m.identity_key === idKey) || res.exact_matches[0];
-        } else {
-          suggestions = res.suggestions || [];
+      let issue = unavailableIssue;
+      let meanings;
+      if (!issue) {
+        try {
+          const res = await dictionaryService.lookup(validWord);
+          if (!res || !Array.isArray(res.exact_matches)) throw new Error('Invalid dictionary response');
+          matched = res.exact_matches.find(m => m.identity_key === idKey) || res.exact_matches[0] || null;
+          issue = dictionaryLookupIssue(res, matched);
+          suggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
+          if (matched && !issue) {
+            try {
+              meanings = resolveSenses(matched.senses?.length ? {
+                senses: suppliedMeaning ? [{ id: 'manual', definition_zh: suppliedMeaning }, ...matched.senses.slice(0, 29)] : matched.senses
+              } : { pos: matched.pos, definition_zh: suppliedMeaning || matched.definition_zh, definition_en: matched.definition_en });
+            } catch { throw { code: 'DICTIONARY_ENTRY_INVALID' }; }
+          }
+        } catch (err) {
+          if ([401, 403].includes(err?.status || err?.statusCode)) throw err;
+          const failure = dictionaryFailure(err);
+          issue = { code: failure.code, message: failure.message };
+        }
+        // Avoid rebuilding the same broken/missing source for every remaining word.
+        // A word-specific lookup failure still lets other words be matched.
+        if (issue && !['DICTIONARY_NOT_FOUND', 'DICTIONARY_LOOKUP_FAILED', 'DICTIONARY_REQUEST_FAILED', 'DICTIONARY_ENTRY_INVALID'].includes(issue.code)) {
+          unavailableIssue = issue;
         }
       }
 
-      if (matched) {
+      if (matched && !issue) {
         items.push({
           raw,
           word: validWord,
@@ -419,9 +442,7 @@ class EnglishWordsService {
           pos: matched.pos || '',
           definition_zh: suppliedMeaning || matched.definition_zh || '',
           definition_en: matched.definition_en || '',
-          ...resolveSenses(matched.senses?.length ? {
-            senses: suppliedMeaning ? [{ id: 'manual', definition_zh: suppliedMeaning }, ...matched.senses.slice(0, 29)] : matched.senses
-          } : { pos: matched.pos, definition_zh: suppliedMeaning || matched.definition_zh, definition_en: matched.definition_en })
+          ...meanings
         });
       } else {
         items.push({
@@ -435,6 +456,7 @@ class EnglishWordsService {
           pos: '',
           definition_zh: suppliedMeaning || '',
           definition_en: '',
+          dictionary_notice: issue,
           suggestions
         });
       }
@@ -447,7 +469,13 @@ class EnglishWordsService {
         item.existing_case_variants = variantsFor(item.word, existingRows.map(row => row.word));
       }
     }
-    return { items };
+    const warnings = new Map();
+    for (const item of items) {
+      if (item.dictionary_notice && item.dictionary_notice.code !== 'DICTIONARY_NOT_FOUND') {
+        warnings.set(item.dictionary_notice.code, item.dictionary_notice);
+      }
+    }
+    return { items, dictionary_warnings: [...warnings.values()] };
   }
 
   batchImport(childId, { items, textbook, unit, categories } = {}, { role } = {}) {

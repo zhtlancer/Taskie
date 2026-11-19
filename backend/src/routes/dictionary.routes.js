@@ -1,10 +1,13 @@
+const { dictionaryFailure } = require('../services/dictionary/issues');
+
 async function dictionaryRoutes(fastify, options) {
   const { dictionaryService } = options;
   const handle = fn => async (request, reply) => {
     try {
       return await fn(request, reply);
     } catch (err) {
-      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || '词典服务处理失败，请稍后重试' });
+      const issue = dictionaryFailure(err);
+      return reply.code(issue.status).send({ error: issue.message, code: issue.code });
     }
   };
 

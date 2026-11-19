@@ -68,16 +68,21 @@
           type="button"
           :disabled="busy || !rawText.trim()"
           class="min-h-11 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-black disabled:opacity-50"
-          @click="runPreview"
+          @click="runPreview()"
         >
           {{ previewing ? '解析匹配中…' : '解析预览' }}
         </button>
+        <button type="button" :disabled="busy || !rawText.trim()" class="ui-button-secondary min-h-11" @click="runPreview(false)">不查词，手工预览</button>
         <span v-if="previewItems.length" class="text-xs font-bold text-slate-500 dark:text-slate-400">
           可导入 {{ selectedItems.length }} · 已存在跳过 {{ duplicateCount }} · 需手填释义 {{ manualCount }}
         </span>
       </div>
 
       <p v-if="error" role="alert" class="text-xs font-bold text-rose-600 dark:text-rose-300">{{ error }}</p>
+      <div v-if="dictionaryWarnings.length" data-dictionary-batch-warning role="status" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-1 text-xs text-amber-800 dark:text-amber-200">
+        <p v-for="notice in dictionaryWarnings" :key="notice.code">{{ notice.message }}</p>
+        <p>已填释义和已匹配结果会保留，可直接手工填写后导入；再次解析只更新词典候选，不覆盖更正。</p>
+      </div>
 
       <!-- Preview list -->
       <div v-if="previewItems.length" class="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -100,7 +105,7 @@
             </div>
 
             <span class="text-xs font-bold px-2 py-0.5 rounded-full" :class="badgeStyle(item.status)">
-              {{ statusLabel(item.status, item.error) }}
+              {{ statusLabel(item) }}
             </span>
           </div>
 
@@ -124,7 +129,7 @@
           </div>
           <details v-if="item.status === 'matched' || item.status === 'manual'">
             <summary class="min-h-11 flex items-center cursor-pointer text-xs font-bold text-brand-700 dark:text-brand-300">管理义项与例句</summary>
-            <EnglishSensesEditor v-model="previewItems[idx]" :disabled="busy" />
+            <EnglishSensesEditor v-model="previewItems[idx]" :candidates="item.dictionary_candidates || []" :disabled="busy" />
           </details>
           <template v-if="item.status === 'matched' || item.status === 'manual'">
             <label class="flex items-center gap-2 min-h-11 text-xs font-bold text-slate-700 dark:text-slate-200">
@@ -154,12 +159,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
-import { withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';
+import { mergeEnglishBatchPreview } from '../utils/englishBatchPreview';
 import UiDialog from './UiDialog.vue';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { useEnglishWordStore } from '../stores/englishWord';
-import { ENGLISH_CATEGORIES, englishCaseVariants } from '../utils/englishWord';
+import { ENGLISH_CATEGORIES, englishCaseVariants, hasEnglishDefinition } from '../utils/englishWord';
 import { currentRole } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
 
@@ -180,6 +185,7 @@ const previewItems = ref([]);
 const previewing = ref(false);
 const importing = ref(false);
 const error = ref('');
+const dictionaryWarnings = ref([]);
 let previewSerial = 0;
 const { capture } = useAsyncScope(() => [props.modelValue, props.childId, store.scopeGeneration], () => {
   isParent.value = currentRole() === 'parent';
@@ -188,6 +194,7 @@ const { capture } = useAsyncScope(() => [props.modelValue, props.childId, store.
   importing.value = false;
   previewItems.value = [];
   error.value = '';
+  dictionaryWarnings.value = [];
   rawText.value = '';
   textbook.value = '';
   unit.value = '';
@@ -199,12 +206,13 @@ watch(rawText, () => {
   previewing.value = false;
   previewItems.value = [];
   error.value = '';
+  dictionaryWarnings.value = [];
 }, { flush: 'sync' });
 
 const busy = computed(() => previewing.value || importing.value);
 const selectedItems = computed(() => previewItems.value.filter(i => i.include && (i.status === 'matched' || i.status === 'manual')));
 const duplicateCount = computed(() => previewItems.value.filter(i => i.status === 'duplicate').length);
-const manualCount = computed(() => previewItems.value.filter(i => i.status === 'manual').length);
+const manualCount = computed(() => selectedItems.value.filter(item => !hasEnglishDefinition(item)).length);
 const caseConfirmed = computed(() => selectedItems.value.every(item => caseVariantsForItem(item).every(word => item.confirmed_case_variants.includes(word))));
 
 function caseVariantsForItem(item) {
@@ -222,9 +230,11 @@ function toggleCat(key) {
     : [...categories.value, key];
 }
 
-function statusLabel(status, errMsg) {
+function statusLabel(item) {
+  const { status, error: errMsg, dictionary_notice: notice } = item;
   if (status === 'matched') return '词典已匹配';
-  if (status === 'manual') return '词典未收录（可手填）';
+  if (status === 'manual') return ({ DICTIONARY_UNCONFIGURED: '未配置词典（可手填）', DICTIONARY_NOT_READY: '词典未就绪（可手填）',
+    DICTIONARY_NOT_FOUND: '词典未收录（可手填）', DICTIONARY_MANUAL: '手工填写' }[notice?.code] || '查词不可用（可手填）');
   if (status === 'duplicate') return '已在单词本中（跳过）';
   return errMsg || '格式无效';
 }
@@ -243,22 +253,17 @@ function rowStyle(status) {
   return 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60';
 }
 
-async function runPreview() {
+async function runPreview(useDictionary = true) {
   if (busy.value || !rawText.value.trim()) return;
   previewing.value = true;
   error.value = '';
   const serial = ++previewSerial;
   const matchesScope = capture();
   try {
-    const res = await api.previewEnglishBatch(props.childId, rawText.value, { silentError: true, preserveError: true });
+    const res = await api.previewEnglishBatch(props.childId, rawText.value, { silentError: true, preserveError: true }, useDictionary);
     if (!matchesScope() || serial !== previewSerial) return;
-    previewItems.value = (res.items || []).map(item => ({
-      ...withEnglishSenses(item, sensesFromEntry(item), item.primary_sense_id),
-      strict_case: false,
-      confirmed_case_variants: [],
-      server_case_variants: [],
-      include: item.status === 'matched' || item.status === 'manual'
-    }));
+    previewItems.value = mergeEnglishBatchPreview(previewItems.value, res.items || []);
+    dictionaryWarnings.value = Array.isArray(res.dictionary_warnings) ? res.dictionary_warnings : [];
   } catch (err) {
     if (matchesScope() && serial === previewSerial) error.value = err?.message || '解析预览失败';
   } finally {

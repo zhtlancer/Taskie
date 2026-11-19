@@ -56,8 +56,9 @@
         </button>
       </div>
 
-      <div v-else-if="!visibleArticles.length" class="py-10 text-center text-sm font-bold text-slate-500 dark:text-slate-400">
-        {{ available ? `原词典中暂未找到“${currentWord}”的完整条目` : (unavailableReason || '当前环境未挂载离线原词典') }}
+      <div v-else-if="!visibleArticles.length" class="py-10 text-center text-sm font-bold text-slate-500 dark:text-slate-400 space-y-2">
+        <p>{{ unavailableReason || (available ? `原词典中暂未找到“${currentWord}”的完整条目` : '当前环境未挂载离线原词典') }}</p>
+        <button type="button" class="ui-button-secondary min-h-11" @click="loadWord(currentWord)">重试读取</button>
       </div>
 
       <div v-else class="space-y-4">

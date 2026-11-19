@@ -43,6 +43,14 @@
         </button>
       </div>
 
+      <div data-dictionary-detail-state class="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+        <p v-if="dictLoading" role="status">正在查询词典释义与发音…</p>
+        <p v-else-if="dictNotice" :role="dictNotice.failed ? 'alert' : 'status'">{{ dictNotice.message }} 已保存内容和编辑中的更正会保留，可继续手工编辑。</p>
+        <button type="button" :disabled="dictLoading || busy" class="ui-button-secondary min-h-11" @click="loadDictionaryAudioForWord(word.word)">
+          {{ dictLoading ? '查询中…' : '重新查询词典' }}
+        </button>
+      </div>
+
       <p v-if="audioError" role="alert" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200">
         {{ audioError }}
       </p>
@@ -208,6 +216,7 @@ import { useEnglishWordStore } from '../stores/englishWord';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
 import { ENGLISH_CATEGORIES, toggleEnglishCategory, identityKey, englishCaseVariants } from '../utils/englishWord';
 import { useAsyncScope } from '../composables/useAsyncScope';
+import { dictionaryLookupNotice, dictionaryErrorMessage, isDictionaryAbort } from '../utils/dictionaryState';
 
 const props = defineProps({
   word: { type: Object, required: true },
@@ -220,6 +229,8 @@ const store = useEnglishWordStore();
 const role = ref(currentRole());
 
 const dictMatch = ref(null);
+const dictLoading = ref(false);
+const dictNotice = ref(null);
 const dictAudio = computed(() => dictMatch.value?.audio || []);
 const audioError = ref('');
 const localError = ref('');
@@ -241,10 +252,14 @@ watch(() => editForm.value.word, () => {
 }, { flush: 'sync' });
 const busy = computed(() => props.busy || savingEdit.value || savingCategories.value || store.isBusy(props.word.id));
 let audioController = null;
+let dictionarySerial = 0;
 const { capture } = useAsyncScope(() => [props.word.id, props.word.word, props.word.child_id, store.scopeGeneration], () => {
   role.value = currentRole();
   stopDictionaryAudio();
   audioController?.abort();
+  dictionarySerial++;
+  dictLoading.value = false;
+  dictNotice.value = null;
   dictMatch.value = null;
   confirmDelete.value = false;
   articleOpen.value = false;
@@ -257,15 +272,28 @@ const { capture } = useAsyncScope(() => [props.word.id, props.word.word, props.w
 onBeforeUnmount(() => audioController?.abort());
 
 async function loadDictionaryAudioForWord(targetWord) {
+  stopDictionaryAudio();
   const matchesScope = capture();
+  const serial = ++dictionarySerial;
+  const isCurrent = () => matchesScope() && serial === dictionarySerial;
   audioController?.abort();
   audioController = new AbortController();
   dictMatch.value = null;
+  dictLoading.value = true;
+  dictNotice.value = null;
+  audioError.value = '';
   try {
-    const res = await api.lookupDictionary(targetWord, audioController.signal, { silentError: true });
+    const res = await api.lookupDictionary(targetWord, audioController.signal, { silentError: true, preserveError: true });
     const match = res?.exact_matches?.find(m => m.word === targetWord) || res?.exact_matches?.[0] || null;
-    if (matchesScope()) dictMatch.value = match;
-  } catch {}
+    if (isCurrent()) {
+      dictMatch.value = match;
+      dictNotice.value = dictionaryLookupNotice(res, match);
+    }
+  } catch (err) {
+    if (isCurrent() && !isDictionaryAbort(err)) dictNotice.value = { failed: true, message: dictionaryErrorMessage(err) };
+  } finally {
+    if (isCurrent()) dictLoading.value = false;
+  }
 }
 
 watch([() => props.word.id, () => props.word.word, () => props.word.child_id, () => store.scopeGeneration], () => {

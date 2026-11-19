@@ -39,9 +39,10 @@
       </div>
 
       <!-- Lookup error / audio error -->
-      <p v-if="lookupError" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200">
-        {{ lookupError }}
-      </p>
+      <div v-if="lookupError" role="alert" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 space-y-2">
+        <p>{{ lookupError }} 可在下方手工填写，已有更正会保留。</p>
+        <button type="button" :disabled="lookingUp || saving" class="ui-button-secondary min-h-11" @click="runLookup(query)">重试查询</button>
+      </div>
       <p v-if="audioError" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-xs font-bold text-amber-800 dark:text-amber-200">
         {{ audioError }}
       </p>
@@ -120,7 +121,7 @@
         </button>
       </div>
 
-      <div v-else-if="lookupDone && !dictAvailable" class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+      <div v-if="lookupDone && !lookupError && dictReason" role="status" class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300">
         {{ dictReason || '离线词典未启用，可在下方直接手动填写音标与释义收录。' }}
       </div>
 
@@ -272,6 +273,7 @@ import { useEnglishWordStore } from '../stores/englishWord';
 import { currentRole } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
+import { dictionaryLookupNotice, dictionaryErrorMessage, isDictionaryAbort } from '../utils/dictionaryState';
 import {
   ENGLISH_CATEGORIES,
   identityKey,
@@ -294,7 +296,6 @@ const query = ref('');
 const lookingUp = ref(false);
 const lookupDone = ref(false);
 const lookupError = ref('');
-const dictAvailable = ref(true);
 const dictReason = ref('');
 const matches = ref([]);
 const selectedMatchIndex = ref(0);
@@ -370,9 +371,9 @@ function close() {
   if (!saving.value) emit('update:modelValue', false);
 }
 
-function applyMatchToForm(match) {
+function applyMatchToForm(match, preserveEdits = false) {
   if (!match) return;
-  if (identityKey(form.value.word) === identityKey(match.word) && (form.value.phonetic_uk || form.value.phonetic_us
+  if ((preserveEdits || identityKey(form.value.word) === identityKey(match.word)) && (form.value.phonetic_uk || form.value.phonetic_us
     || form.value.senses.some(sense => sense.pos || sense.definition_zh || sense.definition_en || sense.example))) return;
   const senses = sensesFromEntry(match);
   form.value = withEnglishSenses({
@@ -397,6 +398,10 @@ function onQueryInput() {
   lookupSerial++;
   lookupController?.abort();
   lookingUp.value = false;
+  matches.value = [];
+  lookupDone.value = false;
+  lookupError.value = '';
+  dictReason.value = '';
   const serial = ++suggestSerial;
   suggestController?.abort();
   const matchesScope = capture();
@@ -418,6 +423,12 @@ function onQueryInput() {
   }, 180);
 }
 
+function prepareManualWord(word) {
+  if (identityKey(form.value.word) === identityKey(word)) return;
+  form.value = { ...emptyForm(), word,
+    textbook: form.value.textbook, unit: form.value.unit, categories: form.value.categories };
+}
+
 async function runLookup(raw) {
   const clean = normalizeWordDisplay(raw);
   if (!clean) return;
@@ -432,6 +443,10 @@ async function runLookup(raw) {
   lookupController?.abort();
   lookupController = new AbortController();
   lookingUp.value = true;
+  lookupDone.value = false;
+  matches.value = [];
+  dictSuggestions.value = [];
+  prepareManualWord(clean);
   lookupError.value = '';
   audioError.value = '';
   saveError.value = '';
@@ -440,29 +455,19 @@ async function runLookup(raw) {
     const res = await api.lookupDictionary(clean, lookupController.signal, { silentError: true, preserveError: true });
     if (!matchesScope() || serial !== lookupSerial) return;
     lookupDone.value = true;
-    dictAvailable.value = Boolean(res.available);
-    dictReason.value = res.reason || '';
     matches.value = Array.isArray(res.exact_matches) ? res.exact_matches : [];
+    dictReason.value = dictionaryLookupNotice(res, matches.value[0])?.message || '';
     dictSuggestions.value = Array.isArray(res.suggestions) ? res.suggestions : [];
     selectedMatchIndex.value = 0;
 
-    if (matches.value.length > 0) {
-      applyMatchToForm(matches.value[0]);
-    } else {
-      form.value = {
-        ...emptyForm(),
-        word: clean,
-        textbook: form.value.textbook,
-        unit: form.value.unit,
-        categories: form.value.categories
-      };
+    if (matches.value.length > 0 && identityKey(form.value.word) === identityKey(clean)) {
+      applyMatchToForm(matches.value[0], true);
     }
   } catch (err) {
-    if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
+    if (isDictionaryAbort(err)) return;
     if (!matchesScope() || serial !== lookupSerial) return;
     lookupDone.value = true;
-    lookupError.value = err?.message || '查词失败，仍可直接在下方手动录入';
-    form.value.word = clean;
+    lookupError.value = dictionaryErrorMessage(err);
   } finally {
     if (matchesScope() && serial === lookupSerial) lookingUp.value = false;
   }

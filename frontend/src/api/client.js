@@ -190,7 +190,7 @@ export const api = {
   getEnglishWords: (id, params = {}, signal, options) => get('/english-words', { child_id: id, ...params }, signal, options),
   getEnglishWordTaxonomy: (id, signal, options) => get('/english-words/taxonomy', { child_id: id }, signal, options),
   createEnglishWord: (data, options) => post('/english-words', data, options),
-  previewEnglishBatch: (childId, text, options) => post('/english-words/batch-preview', { child_id: childId, text }, options),
+  previewEnglishBatch: (childId, text, options, useDictionary = true) => post('/english-words/batch-preview', { child_id: childId, text, use_dictionary: useDictionary }, options),
   commitEnglishBatch: (data, options) => post('/english-words/batch', data, options),
   updateEnglishWord: (id, data, options) => put(`/english-words/${id}`, data, options),
   markEnglishWordMastered: (id, mastered = null, options) => put(`/english-words/${id}/master`, { is_mastered: mastered }, options),
