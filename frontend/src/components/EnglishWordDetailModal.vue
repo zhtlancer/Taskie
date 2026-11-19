@@ -121,6 +121,9 @@
         </div>
       </div>
 
+      <EnglishStudyProgress :word="word" :disabled="busy" />
+      <p class="text-xs text-slate-500 dark:text-slate-400">进度按 {{ word.study_date || '最近读取的数据' }} 的记忆周期展示，与手工掌握标记独立；练习入口前往对应技能的今日清单。</p>
+
       <!-- Categories -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
@@ -194,6 +197,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
+import EnglishStudyProgress from './EnglishStudyProgress.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
 import { withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';

@@ -1,7 +1,7 @@
 <template>
   <div data-english-wordbook>
     <p data-english-summary class="text-xs font-bold text-slate-500 dark:text-slate-400 mb-3">
-      共 {{ isLoaded ? store.totalCount : '—' }} 词 · 已掌握 {{ isLoaded ? store.masteredCount : '—' }} · 学习中 {{ isLoaded ? store.learningCount : '—' }} · 掌握率 {{ isLoaded ? `${store.masteryRate}%` : '—' }}
+      共 {{ isLoaded ? store.totalCount : '—' }} 词 · 手工标记已掌握 {{ isLoaded ? store.masteredCount : '—' }} · 未标记 {{ isLoaded ? store.learningCount : '—' }} · 标记掌握率 {{ isLoaded ? `${store.masteryRate}%` : '—' }}
     </p>
 
     <!-- Subheader: Status Filters, Self-check Meaning Toggle, Lookup & Batch Import -->
@@ -90,6 +90,26 @@
           <option value="">全部单元</option>
           <option v-for="u in store.units" :key="u" :value="u">{{ u }}</option>
         </select>
+      </div>
+
+      <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="text-xs font-bold text-slate-600 dark:text-slate-300">练习技能
+            <select v-model="progressSkill" aria-label="练习技能" class="ml-1 min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs text-slate-700 dark:text-slate-200">
+              <option value="any">任一技能</option><option value="recognize">认读</option><option value="write">默写</option>
+            </select>
+          </label>
+          <label class="text-xs font-bold text-slate-600 dark:text-slate-300">学习进度
+            <select v-model="progressStatus" aria-label="学习进度" class="ml-1 min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs text-slate-700 dark:text-slate-200">
+              <option value="all">全部进度</option><option value="due">今日待复习</option><option value="unlearned">尚未学习</option><option value="learning">复习中</option>
+            </select>
+          </label>
+        </div>
+        <p data-english-progress-summary class="text-xs text-slate-500 dark:text-slate-400">
+          当前范围 · 今日待复习 {{ isLoaded ? progressCount('due') : '—' }} 词 · 尚未学习 {{ isLoaded ? progressCount('unlearned') : '—' }} 词
+          <span v-if="progressDate"> · 进度截至 {{ progressDate }}</span>
+        </p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">认读、默写分别记录，与手工掌握标记独立。待复习包含逾期内容，今日实际学习仍按计划安排。</p>
       </div>
     </div>
 
@@ -194,13 +214,18 @@ import { useEnglishWordStore } from '../stores/englishWord';
 import { getToken } from '../utils/session';
 import { ENGLISH_CATEGORIES } from '../utils/englishWord';
 import { useAsyncScope } from '../composables/useAsyncScope';
+import { matchesEnglishProgress } from '../utils/englishProgress';
+import { useCalendarStore } from '../stores/calendar';
 
 const props = defineProps({
   childId: { type: String, required: true }
 });
 
 const store = useEnglishWordStore();
+const calendar = useCalendarStore();
 const currentFilter = ref('all');
+const progressSkill = ref('any');
+const progressStatus = ref('all');
 const currentCategory = ref(null);
 const selectedTextbook = ref('');
 const selectedUnit = ref('');
@@ -225,11 +250,11 @@ const isLoaded = computed(() => store.isLoadedFor(props.childId));
 
 const filterOptions = computed(() => [
   { key: 'all', label: '全部', icon: '📚', count: store.totalCount },
-  { key: 'learning', label: '学习中', icon: '🌱', count: store.learningCount },
-  { key: 'mastered', label: '已掌握', icon: '✅', count: store.masteredCount }
+  { key: 'learning', label: '未标记掌握', icon: '🌱', count: store.learningCount },
+  { key: 'mastered', label: '手工已掌握', icon: '✅', count: store.masteredCount }
 ]);
 
-const filteredWords = computed(() => {
+const scopedWords = computed(() => {
   if (!isLoaded.value) return [];
   let list = store.words;
   if (currentFilter.value === 'mastered') list = list.filter(w => Boolean(w.is_mastered));
@@ -249,6 +274,9 @@ const filteredWords = computed(() => {
   }
   return list;
 });
+const filteredWords = computed(() => scopedWords.value.filter(word => matchesEnglishProgress(word, progressSkill.value, progressStatus.value)));
+const progressCount = status => scopedWords.value.filter(word => matchesEnglishProgress(word, progressSkill.value, status)).length;
+const progressDate = computed(() => isLoaded.value ? store.words.map(word => word.study_date).filter(Boolean).sort()[0] || '' : '');
 
 function selectFilter(key) {
   currentFilter.value = key;
@@ -260,6 +288,8 @@ function resetFilters() {
   selectedTextbook.value = '';
   selectedUnit.value = '';
   searchQuery.value = '';
+  progressSkill.value = 'any';
+  progressStatus.value = 'all';
 }
 
 function openLookup(word = '') {
@@ -295,6 +325,16 @@ function resetScope() {
   loadWords();
 }
 
+function onResume() {
+  if (!document.hidden && alive) {
+    calendar.refreshToday();
+    loadWords();
+  }
+}
+
+// Invalidate an older list request at the family date/zone boundary as well.
+watch(() => [calendar.ready, calendar.today, calendar.timeZone], () => { if (calendar.ready) loadWords(); });
+
 watch(() => props.childId, () => resetScope(), { flush: 'sync' });
 watch(() => store.words, (list) => {
   if (!selectedWord.value) return;
@@ -307,6 +347,8 @@ onMounted(() => {
   loadWords();
   window.addEventListener('taskie:data-restored', resetScope);
   window.addEventListener('taskie:session-changed', resetScope);
+  window.addEventListener('pageshow', onResume);
+  document.addEventListener('visibilitychange', onResume);
 });
 
 onBeforeUnmount(() => {
@@ -314,6 +356,8 @@ onBeforeUnmount(() => {
   store.abortFetch();
   window.removeEventListener('taskie:data-restored', resetScope);
   window.removeEventListener('taskie:session-changed', resetScope);
+  window.removeEventListener('pageshow', onResume);
+  document.removeEventListener('visibilitychange', onResume);
 });
 
 async function handleToggleMaster(id) {

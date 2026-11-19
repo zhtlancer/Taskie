@@ -11,6 +11,7 @@ const buildApp = require('../backend/src/app');
 const checkEnglishModalRaces = require('./english-wordbook-races.cjs');
 const checkEnglishCaseRules = require('./english-case-browser.cjs');
 const checkEnglishSenses = require('./english-senses-browser.cjs');
+const checkEnglishProgress = require('./english-progress-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -511,6 +512,7 @@ async function main() {
 
     await checkEnglishCaseRules({ browser, base, api, parentToken, openContext, errors });
     await checkEnglishSenses({ browser, base, api, parentToken, openContext, errors });
+    await checkEnglishProgress({ browser, base, api, parentToken, openContext, errors, db });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

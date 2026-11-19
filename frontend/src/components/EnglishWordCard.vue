@@ -8,8 +8,8 @@
       ? 'border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/20 dark:bg-emerald-950/10'
       : 'border-slate-200/90 dark:border-slate-700/90 hover:border-brand-300 dark:hover:border-brand-700'"
     @click="$emit('select', word)"
-    @keydown.enter.prevent="$emit('select', word)"
-    @keydown.space.prevent="$emit('select', word)"
+    @keydown.enter.self.prevent="$emit('select', word)"
+    @keydown.space.self.prevent="$emit('select', word)"
   >
     <div class="space-y-1.5 min-w-0">
       <div class="flex items-start justify-between gap-2">
@@ -52,6 +52,8 @@
       </div>
     </div>
 
+    <EnglishStudyProgress :word="word" :disabled="busy" />
+
     <div class="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
       <div v-if="word.unit || word.categories?.length" class="flex flex-wrap items-center gap-1">
         <span
@@ -90,6 +92,7 @@ import { ref, computed, watch } from 'vue';
 import api from '../api/client';
 import { playDictionaryAudio } from '../utils/dictionaryAudio';
 import { englishCategoryInfo } from '../utils/englishWord';
+import EnglishStudyProgress from './EnglishStudyProgress.vue';
 
 const props = defineProps({
   word: { type: Object, required: true },

@@ -1,5 +1,6 @@
 const { resolveSenses } = require('../utils/english-senses');
 const { generateId } = require('../utils/crypto');
+const { getTodayDate } = require('../utils/date');
 const {
   ENGLISH_CATEGORIES,
   identityKey,
@@ -118,7 +119,36 @@ class EnglishWordsService {
       );
     }
 
-    return entries;
+    return this.withStudyProgress(entries, child_id);
+  }
+
+  // Reading the wordbook must not schedule tasks or advance memory states.
+  // Use one scoped read for the whole list instead of querying twice per word.
+  withStudyProgress(entries, childId) {
+    if (!entries.length) return entries;
+    const date = getTodayDate();
+    const states = this.db.prepare(`SELECT english_word_id, skill, stage, last_review_date, next_due_date
+      FROM word_study_states WHERE child_id = ? AND language = 'en'
+      ${entries.length === 1 ? 'AND english_word_id = ?' : ''}`)
+      .all(...(entries.length === 1 ? [childId, entries[0].id] : [childId]));
+    const byWord = new Map();
+    for (const state of states) {
+      if (!byWord.has(state.english_word_id)) byWord.set(state.english_word_id, {});
+      byWord.get(state.english_word_id)[state.skill] = state;
+    }
+    return entries.map(entry => {
+      const progress = {};
+      for (const skill of ['recognize', 'write']) {
+        const state = byWord.get(entry.id)?.[skill];
+        progress[skill] = {
+          status: !state ? 'unlearned' : state.next_due_date <= date && state.last_review_date !== date ? 'due' : 'learning',
+          stage: state?.stage ?? null,
+          last_review_date: state?.last_review_date ?? null,
+          next_due_date: state?.next_due_date ?? null
+        };
+      }
+      return { ...entry, study_date: date, study_progress: progress };
+    });
   }
 
   listTaxonomy(childId) {
@@ -140,7 +170,7 @@ class EnglishWordsService {
 
   getWord(id) {
     const row = this.db.prepare(`SELECT ${COLUMNS} FROM english_words WHERE id = ?`).get(id);
-    return row ? toEntry(row) : null;
+    return row ? this.withStudyProgress([toEntry(row)], row.child_id)[0] : null;
   }
 
   caseVariants(childId, word, excludeId = '') {

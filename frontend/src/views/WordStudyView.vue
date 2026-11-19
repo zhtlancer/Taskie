@@ -43,13 +43,17 @@
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="notice" role="status" class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
       <p v-if="loading" class="text-center py-12 text-brand-600 dark:text-brand-300">正在安排学习…</p>
+      <div v-if="selectedSkill" data-study-skill-filter class="rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/30 p-3 flex flex-wrap items-center justify-between gap-2 text-sm text-brand-700 dark:text-brand-300">
+        <span>当前查看：{{ skillName(selectedSkill) }}</span>
+        <button type="button" :disabled="busy || Boolean(active)" class="ui-button-secondary" @click="showAllSkills">查看全部技能</button>
+      </div>
 
       <template v-if="!loading">
-        <section v-if="!days.length" class="bg-white dark:bg-slate-900 border rounded-2xl p-6 text-sm text-slate-500 dark:text-slate-400">
-          今天没有基础学习清单：可能还未开启计划、今天不是学习日，或当前没有需要新学/复习的字词。
+        <section v-if="!visibleDays.length" class="bg-white dark:bg-slate-900 border rounded-2xl p-6 text-sm text-slate-500 dark:text-slate-400">
+          今天没有{{ selectedSkill ? skillName(selectedSkill) : '' }}基础学习清单：可能还未开启计划、今天不是学习日，或当前没有需要新学/复习的字词。
           <p v-if="!asParent" class="mt-2">可以请家长在“学习安排 → 字词计划”中开启自动学习。</p>
         </section>
-        <section v-for="day in days" :key="day.id" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
+        <section v-for="day in visibleDays" :key="day.id" :data-study-day-skill="day.skill" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3"><h2 class="font-black text-slate-800 dark:text-slate-100">{{ day.title }}</h2><span class="text-xs font-bold" :class="day.base_done ? 'text-emerald-600 dark:text-emerald-300' : 'text-brand-600 dark:text-brand-300'">{{ day.base_done ? '基础目标已完成 ✓' : `基础目标 ${day.base_completed}/${day.base_total}` }}</span></div>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ day.date }} · {{ skillName(day.skill) }}</p>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ day.required ? '每日必做' : '可选学习' }} · 新学 {{ baseCount(day, 'new') }} 项，复习 {{ baseCount(day, 'review') }} 项 · 基础完成 +{{ day.points }} 分</p>
@@ -71,9 +75,9 @@
             <span class="text-xs text-slate-400">额外奖励 {{ day.extra_rewarded }}/{{ day.extra_reward_limit }} 组 · 自愿完成，不改变全勤和连续打卡</span>
           </div>
         </section>
-        <details v-if="history.length" class="rounded-2xl bg-white dark:bg-slate-900 border p-4">
+        <details v-if="visibleHistory.length" class="rounded-2xl bg-white dark:bg-slate-900 border p-4">
           <summary class="font-bold text-slate-800 dark:text-slate-100 min-h-[44px] py-3 cursor-pointer">最近学习记录</summary>
-          <ul class="space-y-2 text-xs text-slate-500 dark:text-slate-400"><li v-for="entry in history" :key="entry.id">{{ entry.date }} · {{ skillName(entry.skill) }} · 基础 {{ entry.base_completed }}/{{ entry.base_total }} 项 · 额外 {{ entry.extra_completed }} 项 · {{ entry.needs_practice }} 项还需练习</li></ul>
+          <ul class="space-y-2 text-xs text-slate-500 dark:text-slate-400"><li v-for="entry in visibleHistory" :key="entry.id">{{ entry.date }} · {{ skillName(entry.skill) }} · 基础 {{ entry.base_completed }}/{{ entry.base_total }} 项 · 额外 {{ entry.extra_completed }} 项 · {{ entry.needs_practice }} 项还需练习</li></ul>
         </details>
       </template>
     </main>
@@ -246,6 +250,14 @@ const language = ref(route.query.language === 'en' ? 'en' : 'zh');
 const calendar = useCalendarStore();
 const asParent = currentRole() === 'parent';
 const days = ref([]), history = ref([]), date = ref(''), missingDefinitionCount = ref(0);
+const selectedSkill = computed(() => ['recognize', 'write'].includes(route.query.skill) ? route.query.skill : '');
+const visibleDays = computed(() => days.value.filter(day => !selectedSkill.value || day.skill === selectedSkill.value));
+const visibleHistory = computed(() => history.value.filter(entry => !selectedSkill.value || entry.skill === selectedSkill.value));
+function showAllSkills() {
+  const query = { ...route.query };
+  delete query.skill;
+  router.replace({ query });
+}
 const loading = ref(true), busy = ref(false), error = ref(''), notice = ref('');
 const active = ref(null), revealed = ref(false), charIndex = ref(0), feedbackResult = ref(null);
 const typedSpelling = ref(''), spellingCheck = ref(null), englishAudio = ref([]), englishAudioError = ref('');
