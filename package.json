@@ -43,6 +43,7 @@
     "test:browser:child-history": "node scripts/smoke-child-history.cjs",
     "test:browser:child-characters": "node scripts/smoke-child-characters.cjs",
     "test:browser:english-wordbook": "node scripts/smoke-english-wordbook.cjs",
+    "test:browser:dictionary-article": "node scripts/smoke-dictionary-article.cjs",
     "test:browser:real-dictionary": "node scripts/smoke-real-dictionary.cjs",
     "test:browser:parent-settings": "node scripts/smoke-parent-settings.cjs",
     "test:browser:parent-backfill": "node scripts/smoke-parent-backfill.cjs",

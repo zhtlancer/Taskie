@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const zlib = require('node:zlib');
+const { IMAGE_NAME } = require('./image-resource');
 
 const TONE_MAP = {
   red: 'accent',
@@ -466,6 +467,8 @@ function parseDslArticleToAst(rawBody, dictId) {
                   accent,
                   label: accent === 'us' ? '美音' : accent === 'uk' ? '英音' : '朗读'
                 });
+              } else if (IMAGE_NAME.test(file)) {
+                nodes.push({ type: 'image', file, dict_id: dictId, label: '原词典图片' });
               }
               i = close + 4;
               continue;

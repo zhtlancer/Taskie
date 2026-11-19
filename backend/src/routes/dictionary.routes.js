@@ -17,6 +17,15 @@ async function dictionaryRoutes(fastify, options) {
   fastify.get('/article', handle(async request => dictionaryService.getArticles(request.query?.word || '', request.query?.dict_id || 'all')));
   fastify.post('/rebuild-index', handle(async () => dictionaryService.rebuildIndex()));
 
+  fastify.get('/image/:dictId/:filename', handle(async (request, reply) => {
+    const { dictId, filename } = request.params;
+    const image = await dictionaryService.getImage(dictId, filename, request.query?.v);
+    return reply.type(image.contentType)
+      .header('Cache-Control', 'private, max-age=86400')
+      .header('X-Content-Type-Options', 'nosniff')
+      .send(image.buffer);
+  }));
+
   fastify.get('/audio/:dictId/:filename', handle(async (request, reply) => {
     const { dictId, filename } = request.params;
     const audio = await dictionaryService.getAudio(dictId, filename, { sha256: request.query?.sha256, version: request.query?.v });

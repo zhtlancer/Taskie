@@ -157,8 +157,39 @@ async function main() {
       await section.getByText('基础目标已完成 ✓', { exact: true }).waitFor();
     }
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM word_study_states WHERE english_word_id = ?').get(saved.id).n, 2);
+    for (const [width,theme] of [[390,'light'],[820,'dark']]) {
+      const imagesContext=await browser.newContext({viewport:{width,height:1024},colorScheme:theme,hasTouch:true,serviceWorkers:'block'});
+      try {
+        await imagesContext.addInitScript(({token,child,theme})=>{
+          sessionStorage.setItem('taskie_parent_token',token);sessionStorage.setItem('current_child',JSON.stringify(child));
+          localStorage.setItem('taskie_theme',theme);localStorage.setItem('app_sound_muted','true');
+        },{token,child,theme});
+        const imagesPage=await imagesContext.newPage();imagesPage.setDefaultTimeout(20000);
+        imagesPage.on('pageerror',error=>errors.push(error.message));
+        await imagesPage.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
+        await imagesPage.goto(`${base}/child/${child.id}/characters?lang=en`,{waitUntil:'domcontentloaded'});
+        await imagesPage.getByRole('button',{name:/查词 · 收录单词/}).click();
+        const lookup=imagesPage.getByRole('dialog',{name:'查词与收录单词',exact:true});
+        for (const [word,source] of [['abandon','牛津'],['aardvark','韦氏'],['abacus','韦氏']]) {
+          await lookup.getByPlaceholder(/输入英文单词或短语/).fill(word);
+          await lookup.getByRole('button',{name:/查词/,exact:true}).click();
+          await imagesPage.waitForFunction(({input,word})=>input.value===word,{input:await lookup.getByLabel('英文词条 *',{exact:true}).elementHandle(),word});
+          await lookup.getByRole('button',{name:/查看完整原词典/}).click();
+          const original=imagesPage.getByRole('dialog',{name:`原词典 · ${word}`,exact:true});
+          await original.getByRole('tab',{name:new RegExp(source)}).click();
+          const slot=original.locator('[data-dictionary-image]').first();
+          await slot.scrollIntoViewIfNeeded();const img=slot.locator('img');await img.waitFor({state:'visible'});
+          const dimensions=await img.evaluate(img=>({width:img.naturalWidth,height:img.naturalHeight,filter:getComputedStyle(img).filter,displayWidth:img.getBoundingClientRect().width}));
+          assert.ok(dimensions.width>0&&dimensions.height>0);assert.equal(dimensions.filter,'none');
+          assert.ok(dimensions.displayWidth<=width);assert.equal(await imagesPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+          console.log(`IMAGE ${width}/${theme} ${word}/${source}: ${dimensions.width}x${dimensions.height}`);
+          if(word==='abandon')await imagesPage.screenshot({path:`/tmp/taskie-real-article-${width}-${theme}.png`});
+          await original.getByRole('button',{name:'关闭',exact:true}).last().click();
+        }
+      } finally {await imagesContext.close();}
+    }
     assert.deepEqual(errors, []);
-    console.log('PASS real BGL/DSL meanings, Oxford MP3 + Webster PCM playback, lookup-to-collection-to-two-skill study');
+    console.log('PASS real BGL/DSL meanings, Oxford MP3 + Webster PCM playback, lookup-to-collection-to-two-skill study and original dictionary images');
   } finally {
     await browser?.close();
     await app.close();

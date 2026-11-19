@@ -96,9 +96,9 @@
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2 min-w-0">
-              <label v-if="item.status === 'matched' || item.status === 'manual'" class="inline-flex items-center gap-2 cursor-pointer">
-                <input v-model="item.include" type="checkbox" class="w-4 h-4 accent-brand-500" />
-                <span class="text-sm font-black text-slate-900 dark:text-slate-100">{{ item.word }}</span>
+              <label v-if="item.status === 'matched' || item.status === 'manual'" class="inline-flex items-center min-h-11 min-w-11 max-w-full gap-2 cursor-pointer [overflow-wrap:anywhere]">
+                <input v-model="item.include" type="checkbox" :disabled="busy" class="w-5 h-5 shrink-0 accent-brand-500" />
+                <span class="min-w-0 text-sm font-black text-slate-900 dark:text-slate-100">{{ item.word }}</span>
               </label>
               <span v-else class="text-sm font-black text-slate-700 dark:text-slate-200">{{ item.word }}</span>
 

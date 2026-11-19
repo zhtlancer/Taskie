@@ -31,6 +31,7 @@
           </button>
         </div>
 
+        <button type="button" :disabled="loading" class="ui-button-secondary min-h-11 min-w-11" @click="loadWord(currentWord)">重新读取原词典</button>
         <button
           v-if="allowPick && currentWord && currentWord !== initialWord"
           type="button"
@@ -65,11 +66,11 @@
         <section
           v-for="dict in visibleArticles"
           :key="dict.dict_id"
-          class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3"
+          class="min-w-0 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 p-3 sm:p-4 space-y-3"
         >
           <header class="flex items-center justify-between gap-2 pb-2 border-b border-slate-200/80 dark:border-slate-700">
-            <h3 class="text-sm font-black text-slate-800 dark:text-slate-100">{{ dict.name }}</h3>
-            <span class="text-xs font-bold text-slate-500 dark:text-slate-400">{{ dict.entries.length }} 条释义</span>
+            <h3 class="min-w-0 text-sm font-black text-slate-800 dark:text-slate-100 [overflow-wrap:anywhere]">{{ dict.name }}</h3>
+            <span class="shrink-0 text-xs font-bold text-slate-500 dark:text-slate-400">{{ dict.entries.length }} 条释义</span>
           </header>
 
           <!-- Babylon EN-ZH entries -->
@@ -77,7 +78,7 @@
             <div
               v-for="(entry, idx) in dict.entries"
               :key="idx"
-              class="rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 p-3 space-y-1.5 text-sm"
+              class="min-w-0 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 p-3 space-y-1.5 text-sm [overflow-wrap:anywhere]"
             >
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-black text-slate-800 dark:text-slate-100">{{ entry.headword }}</span>
@@ -98,19 +99,20 @@
             <div
               v-for="(entry, idx) in dict.entries"
               :key="idx"
-              class="rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 p-3.5 space-y-1.5 text-sm leading-relaxed"
+              class="min-w-0 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 p-2.5 sm:p-3.5 space-y-1.5 text-sm leading-relaxed"
             >
               <div
                 v-for="(block, bIdx) in entry.blocks"
                 :key="bIdx"
-                :style="{ paddingLeft: `${Math.min(block.indent, 4) * 0.9}rem` }"
-                class="break-words [overflow-wrap:anywhere]"
+                :style="{ '--dsl-indent': Math.min(block.indent, 4) }"
+                class="min-w-0 break-words [overflow-wrap:anywhere] [padding-left:calc(var(--dsl-indent)*0.45rem)] sm:[padding-left:calc(var(--dsl-indent)*0.9rem)]"
               >
                 <template v-for="(node, nIdx) in block.nodes" :key="nIdx">
+                  <DictionaryImage v-if="node.type === 'image'" :url="node.url" :alt="`${entry.headword} · 原词典图片`" />
                   <button
-                    v-if="node.type === 'audio'"
+                    v-else-if="node.type === 'audio'"
                     type="button"
-                    class="inline-flex items-center gap-1 mx-1 px-2.5 py-1 min-h-11 rounded-lg bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/70 align-middle"
+                    class="inline-flex items-center gap-1 mx-1 px-2.5 py-1 min-h-11 min-w-11 max-w-full rounded-lg bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/70 align-middle"
                     @click="playNodeAudio(node)"
                   >
                     <span>🔊</span>
@@ -119,7 +121,7 @@
                   <button
                     v-else-if="node.type === 'ref'"
                     type="button"
-                    class="inline font-bold text-indigo-600 dark:text-indigo-300 underline decoration-dotted underline-offset-2 hover:text-indigo-800 dark:hover:text-indigo-200 mx-0.5"
+                    class="inline-flex items-center min-h-11 min-w-11 max-w-full px-2 text-left font-bold text-indigo-600 dark:text-indigo-300 underline decoration-dotted underline-offset-2 hover:text-indigo-800 dark:hover:text-indigo-200 mx-0.5 align-middle [overflow-wrap:anywhere]"
                     @click="jumpToWord(node.target)"
                   >
                     {{ node.label }}
@@ -156,8 +158,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
+import DictionaryImage from './DictionaryImage.vue';
 import api from '../api/client';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
 
@@ -216,6 +219,7 @@ async function loadWord(word) {
   controller?.abort();
   controller = new AbortController();
   loading.value = true;
+  articles.value = [];
   error.value = '';
   audioError.value = '';
   activeTab.value = 'all';
@@ -267,7 +271,19 @@ watch(() => props.initialWord, (next) => {
   loadWord(next);
 }, { immediate: true });
 
+function resetScope() {
+  history.value = [];
+  currentWord.value = props.initialWord;
+  loadWord(currentWord.value);
+}
+onMounted(() => {
+  window.addEventListener('taskie:session-changed', resetScope);
+  window.addEventListener('taskie:data-restored', resetScope);
+});
+
 onBeforeUnmount(() => {
+  window.removeEventListener('taskie:session-changed', resetScope);
+  window.removeEventListener('taskie:data-restored', resetScope);
   loadSerial++;
   controller?.abort();
   stopDictionaryAudio();

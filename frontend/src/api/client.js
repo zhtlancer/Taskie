@@ -212,6 +212,12 @@ export const api = {
   suggestDictionary: (prefix, limit = 10, signal, options) => get('/dictionary/suggest', { prefix, limit }, signal, options),
   getDictionaryArticle: (word, dictId = 'all', signal, options) => get('/dictionary/article', { word, dict_id: dictId }, signal, options),
   rebuildDictionaryIndex: (options) => post('/dictionary/rebuild-index', undefined, options),
+  async fetchDictionaryImageBlob(url, signal) {
+    if (!/^\/api\/dictionary\/image\/(?:oald8|mw11)\/[a-z0-9._-]+\?v=[a-f0-9]{64}$/i.test(url)) throw new Error('词典图片地址无效');
+    const apiPath = url.slice(4);
+    const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true, preserveError: true, timeout: requestTimeout(apiPath) });
+    return response.data;
+  },
   async fetchDictionaryAudioBlob(url, signal) {
     const apiPath = url.startsWith('/api/') ? url.slice(4) : url;
     const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true, preserveError: true, timeout: requestTimeout(apiPath) });

@@ -4,6 +4,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { Worker } = require('node:worker_threads');
 const Database = require('better-sqlite3');
 const { dictionaryFailure } = require('./issues');
+const { MAX_IMAGE_BYTES, IMAGE_NAME, imageContentType } = require('./image-resource');
 const { audioUrl: referenceAudioUrl } = require('../../utils/english-audio');
 
 const { identityKey, canonicalKey } = require('../../utils/english-word');
@@ -580,8 +581,9 @@ class DictionaryService {
               headword: r.headword,
               blocks: parseDslArticleToAst(rawBody, dictId).map(block => ({
                 ...block,
-                nodes: block.nodes.map(node => node.type === 'audio'
-                  ? { ...node, url: audioUrl(dictId, node.file, sources[dictId]) }
+                nodes: block.nodes.map(node => node.type === 'audio' || node.type === 'image'
+                  ? { ...node, url: node.type === 'audio' ? audioUrl(dictId, node.file, sources[dictId])
+                    : `/api/dictionary/image/${dictId}/${encodeURIComponent(node.file)}?v=${sourceVersion(sources[dictId])}` }
                   : node)
               }))
             };
@@ -595,6 +597,25 @@ class DictionaryService {
       word: hwRows[0]?.headword_exact || wordExact,
       articles
     };
+  }
+
+  async getImage(dictId, filename, version) {
+    if (!['oald8', 'mw11'].includes(dictId) || typeof filename !== 'string' || !IMAGE_NAME.test(filename)) {
+      throw { status: 400, message: '词典图片来源或文件名无效' };
+    }
+    if (version !== undefined && (typeof version !== 'string' || !/^[a-f0-9]{64}$/.test(version))) throw { status: 400, message: '词典图片版本无效' };
+    const index = await this.ensureIndex();
+    if (!index) throw { status: 404, message: '词典图片资源不可用' };
+    const { db, sources } = index;
+    const source = sources[dictId];
+    if (!source?.zipPath) throw { status: 404, message: '词典图片资源不可用' };
+    if (version && version !== sourceVersion(source)) throw { status: 409, message: '词典资源已更新，请重新读取原词典' };
+    const meta = db.prepare('SELECT filename, method, comp_size, uncomp_size, local_offset FROM media_files WHERE dict_id = ? AND filename_ci = ?').get(dictId, filename.toLowerCase());
+    if (!meta) throw { status: 404, message: '词典图片不存在' };
+    const buffer = readZipEntry(source.zipPath, {
+      method: meta.method, compSize: meta.comp_size, uncompSize: meta.uncomp_size, localHeaderOffset: meta.local_offset
+    }, { maxBytes: MAX_IMAGE_BYTES });
+    return { buffer, contentType: await imageContentType(meta.filename, buffer) };
   }
 
   async getAudio(dictId, rawFilename, expected = {}) {

@@ -260,6 +260,8 @@ docker compose down
 
 v41 将生成清单时的选定发音、音标及音频内容标识一同冻结；切换学习释义、编辑或移出词条不会重写已有清单。卡片播放已保存的学习发音，练习页不再按拼写重新查词；旧清单保留“未保存历史发音”的状态，可显式查看“当前词典发音（非历史发音）”。重新建索引或重新打包后，同名资源的音频内容一致仍能播放；内容已变更时拒绝替换为新声音，并提示原发音不可用，仍可继续文字练习。业务备份仅保存引用与内容标识，不包含音频字节；需要长期保留旧版本发音时，应另行备份对应词典和发音包。
 
+“查看完整原词典”也支持原包中的词形表和插图。图片进入可见区域附近时，通过登录和设备授权校验后按需读取，保留原色并适应屏幕宽度；缺图或读取失败不影响正文，可单独重试。替换词典后如提示资源已更新，点击“重新读取原词典”获取新的引用。支持 JPEG、PNG、GIF、WebP，单张压缩与解压数据均限制为 8 MiB，并校验格式与像素上限；不执行 SVG、HTML 或词典附带脚本。图片仍保存在原始资源包中，不加入业务备份。
+
 两份 Compose 配置均把宿主机 `./dictionaries` 只读挂载到容器 `/app/dictionaries`，索引和音频缓存写入现有数据目录下的 `./data/dict-cache`。只读挂载的含义见 [Docker 官方说明](https://docs.docker.com/engine/storage/bind-mounts/#use-a-read-only-bind-mount)。先在 Compose 文件所在目录建立 `dictionaries`，保持词典正文与配套 ZIP 的目录和文件名：
 
 ```text
@@ -514,6 +516,12 @@ npm run test:browser:child-characters
 
 ```bash
 npm run test:browser:english-wordbook
+```
+
+原词典图片专项使用生成的图片与临时词库，覆盖鉴权读取、图片解码、缺失/失败重试、切换词条取消与对象地址释放，以及 320、390、820、1024px 浅暗色和触控布局。完整英语专项也包含此检查：
+
+```bash
+npm run test:browser:dictionary-article
 ```
 
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：

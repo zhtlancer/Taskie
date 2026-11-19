@@ -128,7 +128,11 @@ function scanZipCentralDirectory(zipPath, onEntry) {
 /**
  * Extract a single entry payload from a ZIP/ZIP64 file using its Central Directory metadata.
  */
-function readZipEntry(zipPath, meta) {
+function readZipEntry(zipPath, meta, { maxBytes } = {}) {
+  if (maxBytes !== undefined && (!Number.isSafeInteger(meta.compSize) || !Number.isSafeInteger(meta.uncompSize)
+    || meta.compSize < 0 || meta.uncompSize < 0 || meta.compSize > maxBytes || meta.uncompSize > maxBytes)) {
+    throw { status: 413, message: '词典图片过大，暂时无法显示' };
+  }
   const fd = fs.openSync(zipPath, 'r');
   try {
     const localHeader = readExact(fd, 30, meta.localHeaderOffset);
@@ -140,7 +144,13 @@ function readZipEntry(zipPath, meta) {
     const dataPos = meta.localHeaderOffset + 30 + nameLen + extraLen;
     const raw = readExact(fd, meta.compSize, dataPos);
     if (meta.method === 0) return raw;
-    if (meta.method === 8) return zlib.inflateRawSync(raw);
+    if (meta.method === 8) {
+      try { return zlib.inflateRawSync(raw, maxBytes === undefined ? {} : { maxOutputLength: maxBytes }); }
+      catch (err) {
+        if (maxBytes !== undefined && err.code === 'ERR_BUFFER_TOO_LARGE') throw { status: 413, message: '词典图片过大，暂时无法显示' };
+        throw err;
+      }
+    }
     throw new Error(`Unsupported ZIP compression method: ${meta.method}`);
   } finally {
     fs.closeSync(fd);
