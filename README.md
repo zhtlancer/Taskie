@@ -246,6 +246,8 @@ docker compose down
 
 英语单词本位于孩子端“字词本 → 英语单词”，家长在“学习安排 → 字词学习计划 → 英语单词计划”开启认读或默写。没有词典包时也能手工收录、编辑释义和学习已保存的单词。
 
+收录或编辑词条时可勾选“默写时严格区分大小写”，适用于 `May`、`USA` 等专名或缩写；普通词默认忽略大小写。批量预览中也可逐词设置。学习项在生成时固定规则，之后修改词条不会改变旧学习项的核对方式；旧数据升级后仍沿用宽松规则。新增、重命名或批量导入大小写相近词条时，需要确认分别保留；完全重复的词条继续拦截或跳过，保留原有释义。
+
 两份 Compose 配置均把宿主机 `./dictionaries` 只读挂载到容器 `/app/dictionaries`，索引和音频缓存写入现有数据目录下的 `./data/dict-cache`。只读挂载的含义见 [Docker 官方说明](https://docs.docker.com/engine/storage/bind-mounts/#use-a-read-only-bind-mount)。先在 Compose 文件所在目录建立 `dictionaries`，保持词典正文与配套 ZIP 的目录和文件名：
 
 ```text

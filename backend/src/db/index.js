@@ -112,7 +112,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -673,6 +673,18 @@ function initDb(db) {
         units = COALESCE((SELECT p.units FROM word_study_plans p WHERE p.id = word_study_days.plan_id), '[]')
         WHERE language = 'en'`);
       db.pragma('user_version = 37');
+    })();
+  }
+  // v38: keep the spelling rule on both the word and each generated study item.
+  // Existing items retain the previous case-insensitive behavior.
+  if (db.pragma('user_version', { simple: true }) < 38) {
+    db.transaction(() => {
+      for (const table of ['english_words', 'word_study_items']) {
+        if (!db.pragma(`table_info(${table})`).some(column => column.name === 'strict_case')) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN strict_case INTEGER NOT NULL DEFAULT 0 CHECK(strict_case IN (0, 1))`);
+        }
+      }
+      db.pragma('user_version = 38');
     })();
   }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.

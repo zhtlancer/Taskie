@@ -123,6 +123,7 @@
 
           <!-- English Spelling Input (write skill) -->
           <div v-if="active.skill === 'write' && !revealed" class="space-y-3">
+            <p v-if="active.item.strict_case" class="text-xs font-bold text-amber-700 dark:text-amber-300">本项严格区分大小写，请按标准形式拼写。</p>
             <form class="space-y-2.5" @submit.prevent="checkEnglishSpelling">
               <input
                 v-model="typedSpelling"
@@ -364,7 +365,7 @@ async function playEnglishClip(url) {
 
 function checkEnglishSpelling() {
   if (!active.value) return;
-  spellingCheck.value = compareSpellingAnswer(typedSpelling.value, active.value.item.text);
+  spellingCheck.value = compareSpellingAnswer(typedSpelling.value, active.value.item.text, active.value.item.strict_case);
   revealed.value = true;
 }
 

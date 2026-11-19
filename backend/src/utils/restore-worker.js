@@ -135,6 +135,14 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
     if (schemaVersion >= 37 && !['textbook', 'units'].every(column => hasColumn('word_study_days', column))) {
       throw fail('备份缺少学习清单范围快照，无法恢复');
     }
+    if (schemaVersion >= 38) {
+      for (const table of ['english_words', 'word_study_items']) {
+        if (!hasColumn(table, 'strict_case')) throw fail('备份缺少英语大小写规则或学习快照，无法恢复');
+        if (candidate.prepare(`SELECT 1 FROM ${table} WHERE strict_case IS NULL OR strict_case NOT IN (0, 1) LIMIT 1`).get()) {
+          throw fail('备份中的英语大小写规则无效，无法恢复');
+        }
+      }
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     // initDb also backfills missing attendance/fee revisions on current-schema backups,
     // before the candidate is serialized and copied into the live database.

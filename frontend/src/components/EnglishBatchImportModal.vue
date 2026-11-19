@@ -84,6 +84,7 @@
         <div
           v-for="(item, idx) in previewItems"
           :key="`${item.word}-${idx}`"
+          :data-english-import-word="item.word"
           class="rounded-2xl border p-3 space-y-2"
           :class="rowStyle(item.status)"
         >
@@ -117,6 +118,13 @@
               class="w-full min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold text-slate-800 dark:text-slate-100"
             />
           </div>
+          <template v-if="item.status === 'matched' || item.status === 'manual'">
+            <label class="flex items-center gap-2 min-h-11 text-xs font-bold text-slate-700 dark:text-slate-200">
+              <input v-model="item.strict_case" :disabled="busy" type="checkbox" class="w-5 h-5 accent-brand-500" />
+              默写时严格区分大小写
+            </label>
+            <EnglishCaseConfirmation v-model="item.confirmed_case_variants" :word="item.word" :variants="caseVariantsForItem(item)" :disabled="busy" />
+          </template>
         </div>
       </div>
     </div>
@@ -125,7 +133,7 @@
       <button type="button" :disabled="busy" class="ui-button-secondary" @click="close">取消</button>
       <button
         type="button"
-        :disabled="busy || selectedItems.length === 0"
+        :disabled="busy || selectedItems.length === 0 || !caseConfirmed"
         class="ui-button-primary"
         @click="commitImport"
       >
@@ -138,9 +146,10 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
+import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { useEnglishWordStore } from '../stores/englishWord';
-import { ENGLISH_CATEGORIES } from '../utils/englishWord';
+import { ENGLISH_CATEGORIES, englishCaseVariants } from '../utils/englishWord';
 import { currentRole } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
 
@@ -186,6 +195,12 @@ const busy = computed(() => previewing.value || importing.value);
 const selectedItems = computed(() => previewItems.value.filter(i => i.include && (i.status === 'matched' || i.status === 'manual')));
 const duplicateCount = computed(() => previewItems.value.filter(i => i.status === 'duplicate').length);
 const manualCount = computed(() => previewItems.value.filter(i => i.status === 'manual').length);
+const caseConfirmed = computed(() => selectedItems.value.every(item => caseVariantsForItem(item).every(word => item.confirmed_case_variants.includes(word))));
+
+function caseVariantsForItem(item) {
+  return englishCaseVariants(item.word, [...(item.existing_case_variants || []),
+    ...selectedItems.value.map(row => row.word), ...(item.server_case_variants || [])]);
+}
 
 function close() {
   if (!busy.value) emit('update:modelValue', false);
@@ -229,6 +244,9 @@ async function runPreview() {
     if (!matchesScope() || serial !== previewSerial) return;
     previewItems.value = (res.items || []).map(item => ({
       ...item,
+      strict_case: false,
+      confirmed_case_variants: [],
+      server_case_variants: [],
       include: item.status === 'matched' || item.status === 'manual'
     }));
   } catch (err) {
@@ -255,7 +273,8 @@ async function commitImport() {
         phonetic_us: i.phonetic_us,
         pos: i.pos,
         definition_zh: i.definition_zh,
-        definition_en: i.definition_en
+        definition_en: i.definition_en,
+        strict_case: i.strict_case, confirmed_case_variants: i.confirmed_case_variants
       }))
     });
     if (matchesScope() && res) {
@@ -263,6 +282,11 @@ async function commitImport() {
       emit('update:modelValue', false);
     }
   } catch (err) {
+    if (matchesScope() && err?.code === 'ENGLISH_CASE_CONFIRMATION_REQUIRED') {
+      for (const item of previewItems.value) {
+        item.server_case_variants = err.conflicts?.find(conflict => conflict.word === item.word)?.variants || [];
+      }
+    }
     if (matchesScope()) error.value = err?.message || '导入失败，请重试';
   } finally {
     if (matchesScope()) importing.value = false;

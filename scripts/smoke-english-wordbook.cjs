@@ -9,6 +9,7 @@ const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const checkEnglishModalRaces = require('./english-wordbook-races.cjs');
+const checkEnglishCaseRules = require('./english-case-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -506,6 +507,8 @@ async function main() {
           rotatedToken: app.jwt.sign({ role: 'parent', epoch: app.sessionEpoch(), rotation: 'scope-race' }, { expiresIn: '7d' }) });
       } finally { await context.close(); }
     }
+
+    await checkEnglishCaseRules({ browser, base, api, parentToken, openContext, errors });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

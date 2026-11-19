@@ -44,7 +44,10 @@ client.interceptors.response.use(response => response, error => {
   const silentError = typeof error.config?.silentError === 'function' ? error.config.silentError(error) : error.config?.silentError;
   if ((!silentError || (error.response?.status === 401 && !login)) && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('taskie:error', { detail: { message, status: error.response?.status, code, login } }));
   if (error.config?.preserveNetworkError && !error.response) return Promise.reject(Object.assign(new Error(message), { networkFailure: true }));
-  return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), { status: error.response?.status, code }) : message);
+  return Promise.reject(error.config?.preserveError ? Object.assign(new Error(message), {
+    status: error.response?.status, code,
+    ...(Array.isArray(error.response?.data?.conflicts) ? { conflicts: error.response.data.conflicts } : {})
+  }) : message);
 });
 const request = async (method, url, data, params, signal, options = {}) =>
   (await client.request({ ...options, method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;

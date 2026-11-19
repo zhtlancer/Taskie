@@ -252,6 +252,13 @@
           </div>
         </div>
 
+        <label class="flex items-center gap-2 min-h-11 text-xs font-bold text-slate-700 dark:text-slate-200">
+          <input v-model="form.strict_case" type="checkbox" :disabled="saving" class="w-5 h-5 accent-brand-500" />
+          默写时严格区分大小写
+        </label>
+        <p class="text-xs text-slate-500 dark:text-slate-400">适合专名、缩写；普通词可保持关闭。</p>
+        <EnglishCaseConfirmation v-model="form.confirmed_case_variants" :word="form.word" :variants="caseVariants" :disabled="saving" />
+
         <p v-if="saveError" role="alert" class="text-xs font-bold text-rose-600 dark:text-rose-300">
           {{ saveError }}
         </p>
@@ -262,7 +269,7 @@
       <button type="button" :disabled="saving" class="ui-button-secondary" @click="close">取消</button>
       <button
         type="button"
-        :disabled="saving || alreadyInBook || !isValidEnglishWord(form.word)"
+        :disabled="saving || alreadyInBook || !isValidEnglishWord(form.word) || !caseConfirmed"
         class="ui-button-primary"
         @click="saveWord"
       >
@@ -284,6 +291,7 @@
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
+import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { useEnglishWordStore } from '../stores/englishWord';
 import { currentRole } from '../utils/session';
@@ -292,6 +300,7 @@ import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAud
 import {
   ENGLISH_CATEGORIES,
   identityKey,
+  englishCaseVariants,
   isValidEnglishWord,
   normalizeWordDisplay
 } from '../utils/englishWord';
@@ -320,6 +329,7 @@ const audioError = ref('');
 const articleWord = ref('');
 const saving = ref(false);
 const saveError = ref('');
+const serverCaseVariants = ref([]);
 
 const emptyForm = () => ({
   word: '',
@@ -331,7 +341,8 @@ const emptyForm = () => ({
   textbook: '',
   unit: '',
   note: '',
-  categories: ['recognize', 'write']
+  categories: ['recognize', 'write'],
+  strict_case: false, confirmed_case_variants: []
 });
 const form = ref(emptyForm());
 
@@ -356,6 +367,7 @@ function reset() {
   lookupError.value = '';
   audioError.value = '';
   saveError.value = '';
+  serverCaseVariants.value = [];
   matches.value = [];
   dictSuggestions.value = [];
   suggestList.value = [];
@@ -369,6 +381,14 @@ const alreadyInBook = computed(() => {
   const key = identityKey(form.value.word);
   return Boolean(key && store.isWordInBook(key, props.childId));
 });
+const caseVariants = computed(() => englishCaseVariants(form.value.word, [
+  ...(store.isLoadedFor(props.childId) ? store.words.map(word => word.word) : []), ...serverCaseVariants.value
+]));
+const caseConfirmed = computed(() => caseVariants.value.every(word => form.value.confirmed_case_variants.includes(word)));
+watch(() => form.value.word, () => {
+  serverCaseVariants.value = [];
+  form.value.confirmed_case_variants = [];
+}, { flush: 'sync' });
 
 function close() {
   if (!saving.value) emit('update:modelValue', false);
@@ -503,6 +523,7 @@ async function saveWord() {
   saving.value = true;
   saveError.value = '';
   const matchesScope = capture();
+  const targetWord = identityKey(form.value.word);
   try {
     const created = await store.addWord({
       child_id: props.childId,
@@ -514,6 +535,9 @@ async function saveWord() {
       emit('update:modelValue', false);
     }
   } catch (err) {
+    if (matchesScope() && targetWord === identityKey(form.value.word) && err?.code === 'ENGLISH_CASE_CONFIRMATION_REQUIRED') {
+      serverCaseVariants.value = err.conflicts?.find(item => item.word === targetWord)?.variants || [];
+    }
     if (matchesScope()) saveError.value = typeof err === 'string' ? err : err?.message || '保存失败，请重试';
   } finally {
     if (matchesScope()) saving.value = false;

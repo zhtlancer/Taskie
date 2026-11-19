@@ -46,11 +46,11 @@ function validateEnglishWord(raw) {
   return word;
 }
 
-function compareSpellingAnswer(typed, expected) {
+function compareSpellingAnswer(typed, expected, strictCase = false) {
   const normalizedTyped = normalizeWordDisplay(typed);
   const normalizedExpected = normalizeWordDisplay(expected);
   const exactCase = Boolean(normalizedExpected) && normalizedTyped === normalizedExpected;
-  const isCorrect = Boolean(normalizedExpected) && normalizedTyped.toLowerCase() === normalizedExpected.toLowerCase();
+  const isCorrect = strictCase ? exactCase : Boolean(normalizedExpected) && normalizedTyped.toLowerCase() === normalizedExpected.toLowerCase();
   return {
     is_correct: isCorrect,
     exact_case: exactCase,

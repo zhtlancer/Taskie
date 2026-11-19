@@ -10,9 +10,35 @@ const {
 } = require('../utils/english-word');
 
 const COLUMNS = `id, child_id, word, identity_key, canonical_key, phonetic, phonetic_uk, phonetic_us,
-  pos, definition_zh, definition_en, textbook, unit, note, categories, is_mastered, created_at, mastered_at`;
+  pos, definition_zh, definition_en, textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case`;
 
 const MAX_BATCH_WORDS = 100;
+
+function strictCase(value, fallback = false) {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'boolean') throw { status: 400, message: '严格大小写设置无效' };
+  return value;
+}
+
+function variantsFor(word, words) {
+  const key = identityKey(word);
+  const canonical = canonicalKey(word);
+  return [...new Set(words.filter(other => identityKey(other) !== key && canonicalKey(other) === canonical))].sort();
+}
+
+function caseConflict(word, variants, confirmed = []) {
+  if (!Array.isArray(confirmed) || confirmed.some(value => typeof value !== 'string')) {
+    throw { status: 400, message: '大小写确认信息无效' };
+  }
+  return variants.some(value => !confirmed.includes(value)) ? { word, variants } : null;
+}
+
+function requireCaseConfirmation(conflicts) {
+  if (conflicts.length) throw {
+    status: 409, code: 'ENGLISH_CASE_CONFIRMATION_REQUIRED', conflicts,
+    message: '存在大小写相近的词条，请确认后分别保留'
+  };
+}
 
 function checkMetadataPermission(payload, role, existing = {}) {
   if (role === 'parent') return;
@@ -31,6 +57,7 @@ function toEntry(row) {
   return {
     ...row,
     is_mastered: Boolean(row.is_mastered),
+    strict_case: Boolean(row.strict_case),
     categories
   };
 }
@@ -113,6 +140,12 @@ class EnglishWordsService {
     return row ? toEntry(row) : null;
   }
 
+  caseVariants(childId, word, excludeId = '') {
+    const rows = this.db.prepare('SELECT word FROM english_words WHERE child_id = ? AND canonical_key = ? AND id != ?')
+      .all(childId, canonicalKey(word), excludeId);
+    return variantsFor(word, rows.map(row => row.word));
+  }
+
   createWord(payload = {}, { role } = {}) {
     const {
       child_id,
@@ -135,11 +168,14 @@ class EnglishWordsService {
     const idKey = identityKey(cleanWord);
     const canKey = canonicalKey(cleanWord);
     const initialCategories = normalizeEnglishCategories(categories);
+    const cleanStrictCase = strictCase(payload.strict_case);
 
     const dup = this.db.prepare('SELECT id FROM english_words WHERE child_id = ? AND identity_key = ?').get(child_id, idKey);
     if (dup) {
       throw { status: 409, message: '该单词已在英语单词本中，请勿重复添加' };
     }
+    const conflict = caseConflict(cleanWord, this.caseVariants(child_id, cleanWord), payload.confirmed_case_variants);
+    requireCaseConfirmation(conflict ? [conflict] : []);
 
     const id = generateId();
     const createdAt = new Date().toISOString();
@@ -152,9 +188,9 @@ class EnglishWordsService {
         INSERT INTO english_words (
           id, child_id, word, identity_key, canonical_key,
           phonetic, phonetic_uk, phonetic_us, pos, definition_zh, definition_en,
-          textbook, unit, note, categories, is_mastered, created_at, mastered_at
+          textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)
       `).run(
         id,
         child_id,
@@ -171,7 +207,8 @@ class EnglishWordsService {
         normalizeMetaText(unit),
         normalizeOptionalText(note, 300),
         JSON.stringify(initialCategories),
-        createdAt
+        createdAt,
+        +cleanStrictCase
       );
     } catch (err) {
       if (err.message && err.message.includes('UNIQUE constraint failed')) {
@@ -190,6 +227,7 @@ class EnglishWordsService {
     }
 
     checkMetadataPermission(payload, role, existing);
+    const cleanStrictCase = strictCase(payload.strict_case, existing.strict_case);
 
     let nextWord = existing.word;
     let nextIdKey = existing.identity_key;
@@ -202,6 +240,8 @@ class EnglishWordsService {
         const dup = this.db.prepare('SELECT id FROM english_words WHERE child_id = ? AND identity_key = ? AND id != ?')
           .get(existing.child_id, nextIdKey, id);
         if (dup) throw { status: 409, message: '该单词已在英语单词本中，无法重命名为重复词条' };
+        const conflict = caseConflict(nextWord, this.caseVariants(existing.child_id, nextWord, id), payload.confirmed_case_variants);
+        requireCaseConfirmation(conflict ? [conflict] : []);
       }
     }
 
@@ -224,7 +264,7 @@ class EnglishWordsService {
       SET word = ?, identity_key = ?, canonical_key = ?,
           phonetic = ?, phonetic_uk = ?, phonetic_us = ?,
           pos = ?, definition_zh = ?, definition_en = ?,
-          textbook = ?, unit = ?, note = ?, categories = ?
+          textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?
       WHERE id = ?
     `).run(
       nextWord,
@@ -240,6 +280,7 @@ class EnglishWordsService {
       payload.unit !== undefined ? normalizeMetaText(payload.unit) : existing.unit,
       payload.note !== undefined ? normalizeOptionalText(payload.note, 300) : existing.note,
       JSON.stringify(nextCategories),
+      +cleanStrictCase,
       id
     );
 
@@ -337,7 +378,7 @@ class EnglishWordsService {
       if (matched) {
         items.push({
           raw,
-          word: matched.word || validWord,
+          word: validWord,
           identity_key: idKey,
           status: 'matched',
           phonetic: matched.phonetic || '',
@@ -364,6 +405,13 @@ class EnglishWordsService {
       }
     }
 
+    const words = [...existingRows.map(row => row.word), ...items.filter(item => ['matched', 'manual'].includes(item.status)).map(item => item.word)];
+    for (const item of items) {
+      if (['matched', 'manual'].includes(item.status)) {
+        item.case_variants = variantsFor(item.word, words);
+        item.existing_case_variants = variantsFor(item.word, existingRows.map(row => row.word));
+      }
+    }
     return { items };
   }
 
@@ -378,7 +426,11 @@ class EnglishWordsService {
 
     // Validate the entire request before inserting, including per-word overrides.
     checkMetadataPermission({ textbook, unit }, role);
-    for (const item of items) checkMetadataPermission(item, role);
+    for (const item of items) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw { status: 400, message: '导入词条格式无效' };
+      checkMetadataPermission(item, role);
+    }
+    const prepared = items.map(item => ({ ...item, word: validateEnglishWord(item.word), strict_case: strictCase(item.strict_case) }));
 
     const defaultTextbook = normalizeMetaText(textbook);
     const defaultUnit = normalizeMetaText(unit);
@@ -389,16 +441,24 @@ class EnglishWordsService {
       INSERT INTO english_words (
         id, child_id, word, identity_key, canonical_key,
         phonetic, phonetic_uk, phonetic_us, pos, definition_zh, definition_en,
-        textbook, unit, note, categories, is_mastered, created_at, mastered_at
+        textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)
     `);
 
     const added = [];
     const skipped = [];
 
     const run = this.db.transaction(() => {
-      for (const item of items) {
+      const conflicts = [];
+      for (const item of prepared) {
+        if (existingStmt.get(childId, identityKey(item.word))) continue;
+        const variants = variantsFor(item.word, [...this.caseVariants(childId, item.word), ...prepared.map(row => row.word)]);
+        const conflict = caseConflict(item.word, variants, item.confirmed_case_variants);
+        if (conflict) conflicts.push(conflict);
+      }
+      requireCaseConfirmation(conflicts);
+      for (const item of prepared) {
         const cleanWord = validateEnglishWord(item.word);
         const idKey = identityKey(cleanWord);
         const canKey = canonicalKey(cleanWord);
@@ -429,7 +489,8 @@ class EnglishWordsService {
           normalizeMetaText(item.unit) ?? defaultUnit,
           normalizeOptionalText(item.note, 300),
           JSON.stringify(cats),
-          createdAt
+          createdAt,
+          +item.strict_case
         );
         added.push(this.getWord(id));
       }

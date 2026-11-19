@@ -27,16 +27,23 @@ export function canonicalKey(raw) {
   return normalizeWordDisplay(raw).toLowerCase();
 }
 
+export function englishCaseVariants(word, words) {
+  const key = identityKey(word), canonical = canonicalKey(word);
+  return [...new Set(words.filter(other => identityKey(other) !== key && canonicalKey(other) === canonical))].sort();
+}
+
 export function isValidEnglishWord(raw) {
   const clean = normalizeWordDisplay(raw);
   return Boolean(clean && clean.length <= MAX_ENGLISH_WORD_LENGTH && /[A-Za-z]/.test(clean) && VALID_WORD_RE.test(clean));
 }
 
-export function compareSpellingAnswer(typed, expected) {
+export function compareSpellingAnswer(typed, expected, strictCase = false) {
   const normalizedTyped = normalizeWordDisplay(typed);
   const normalizedExpected = normalizeWordDisplay(expected);
   return {
-    is_correct: Boolean(normalizedExpected) && normalizedTyped.toLowerCase() === normalizedExpected.toLowerCase(),
+    is_correct: Boolean(normalizedExpected) && (strictCase
+      ? normalizedTyped === normalizedExpected
+      : normalizedTyped.toLowerCase() === normalizedExpected.toLowerCase()),
     exact_case: Boolean(normalizedExpected) && normalizedTyped === normalizedExpected,
     normalized_typed: normalizedTyped,
     normalized_expected: normalizedExpected

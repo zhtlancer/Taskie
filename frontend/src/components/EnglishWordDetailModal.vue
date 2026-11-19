@@ -65,6 +65,7 @@
           <span v-if="word.textbook" class="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">教材：{{ word.textbook }}</span>
           <span v-if="word.unit" class="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">单元：{{ word.unit }}</span>
         </div>
+        <p v-if="word.strict_case" class="text-xs font-bold text-amber-700 dark:text-amber-300">默写规则：严格区分大小写</p>
         <div v-if="word.note">
           <span class="text-xs font-bold text-slate-500 dark:text-slate-400">记忆笔记：</span>
           <p class="mt-0.5 text-slate-700 dark:text-slate-200">{{ word.note }}</p>
@@ -134,9 +135,15 @@
           记忆笔记
           <input v-model="editForm.note" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
         </label>
+        <label class="flex items-center gap-2 min-h-11 text-xs font-bold text-slate-700 dark:text-slate-200">
+          <input v-model="editForm.strict_case" :disabled="busy" type="checkbox" class="w-5 h-5 accent-brand-500" />
+          默写时严格区分大小写
+        </label>
+        <p class="text-xs text-slate-500 dark:text-slate-400">修改规则仅影响后续生成的学习项，旧清单继续使用原规则。</p>
+        <EnglishCaseConfirmation v-model="editForm.confirmed_case_variants" :word="editForm.word || ''" :variants="caseVariants" :disabled="busy" />
         <div class="flex flex-wrap gap-2 justify-end">
           <button type="button" :disabled="savingEdit" class="ui-button-secondary" @click="editing = false">取消</button>
-          <button type="button" :disabled="savingEdit" class="ui-button-primary" @click="saveEdit">
+          <button type="button" :disabled="busy || !caseConfirmed" class="ui-button-primary" @click="saveEdit">
             {{ savingEdit ? '保存中…' : '保存修改' }}
           </button>
         </div>
@@ -216,11 +223,12 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
+import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { currentRole } from '../utils/session';
 import { useEnglishWordStore } from '../stores/englishWord';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
-import { ENGLISH_CATEGORIES, toggleEnglishCategory } from '../utils/englishWord';
+import { ENGLISH_CATEGORIES, toggleEnglishCategory, identityKey, englishCaseVariants } from '../utils/englishWord';
 import { useAsyncScope } from '../composables/useAsyncScope';
 
 const props = defineProps({
@@ -245,6 +253,14 @@ const savingCategories = ref(false);
 const confirmDictOverwrite = ref(false);
 
 const editForm = ref({});
+const serverCaseVariants = ref([]);
+const caseVariants = computed(() => identityKey(editForm.value.word) === identityKey(props.word.word) ? []
+  : englishCaseVariants(editForm.value.word, [...store.words.filter(word => word.id !== props.word.id).map(word => word.word), ...serverCaseVariants.value]));
+const caseConfirmed = computed(() => caseVariants.value.every(word => editForm.value.confirmed_case_variants?.includes(word)));
+watch(() => editForm.value.word, () => {
+  editForm.value.confirmed_case_variants = [];
+  serverCaseVariants.value = [];
+}, { flush: 'sync' });
 const busy = computed(() => props.busy || savingEdit.value || savingCategories.value || store.isBusy(props.word.id));
 let audioController = null;
 const { capture } = useAsyncScope(() => [props.word.id, props.word.word, props.word.child_id, store.scopeGeneration], () => {
@@ -290,7 +306,8 @@ function startEdit() {
     definition_en: props.word.definition_en || '',
     textbook: props.word.textbook || '',
     unit: props.word.unit || '',
-    note: props.word.note || ''
+    note: props.word.note || '',
+    strict_case: Boolean(props.word.strict_case), confirmed_case_variants: []
   };
   editing.value = true;
 }
@@ -317,6 +334,7 @@ async function saveEdit() {
   savingEdit.value = true;
   localError.value = '';
   const matchesScope = capture();
+  const targetWord = identityKey(editForm.value.word);
   try {
     const payload = {
       ...editForm.value,
@@ -332,6 +350,9 @@ async function saveEdit() {
       emit('updated', updated);
     }
   } catch (err) {
+    if (matchesScope() && targetWord === identityKey(editForm.value.word) && err?.code === 'ENGLISH_CASE_CONFIRMATION_REQUIRED') {
+      serverCaseVariants.value = err.conflicts?.find(item => item.word === targetWord)?.variants || [];
+    }
     if (matchesScope()) localError.value = typeof err === 'string' ? err : err?.message || '保存失败，请重试';
   } finally {
     if (matchesScope()) savingEdit.value = false;

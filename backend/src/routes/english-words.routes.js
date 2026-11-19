@@ -5,7 +5,11 @@ async function englishWordsRoutes(fastify, options) {
       const result = await fn(request);
       return reply.code(status).send(result);
     } catch (err) {
-      return reply.code(err.status || err.statusCode || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
+      return reply.code(err.status || err.statusCode || 500).send({
+        error: err.message || '服务器处理失败，请稍后重试',
+        ...(err.code ? { code: err.code } : {}),
+        ...(err.conflicts ? { conflicts: err.conflicts } : {})
+      });
     }
   };
 

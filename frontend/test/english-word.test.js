@@ -8,6 +8,7 @@ import {
   canonicalKey,
   isValidEnglishWord,
   compareSpellingAnswer,
+  englishCaseVariants,
   toggleEnglishCategory,
   hasEnglishDefinition
 } from '../src/utils/englishWord.js';
@@ -49,4 +50,18 @@ test('category permissions match backend: child can add, parent-only remove', ()
     categories: ['write'],
     blocked: false
   });
+});
+
+test('strict spelling respects case while retaining whitespace and smart-apostrophe normalization', () => {
+  for (const [typed, expected, strict, correct] of [
+    ['may', 'May', false, true], ['may', 'May', true, false], ['May', 'May', true, true],
+    ['usa', 'USA', true, false], [' USA ', 'USA', true, true],
+    ['don’t', "don't", true, true], [' look   after ', 'look after', true, true],
+    ['apples', 'apple', false, false], ['', '', true, false]
+  ]) {
+    assert.equal(compareSpellingAnswer(typed, expected, strict).is_correct, correct);
+    assert.deepEqual(compareSpellingAnswer(typed, expected, strict), backendUtil.compareSpellingAnswer(typed, expected, strict));
+  }
+  assert.deepEqual(englishCaseVariants('may', ['May', 'may', 'MAY', 'May', 'maybe']), ['MAY', 'May']);
+  assert.deepEqual(englishCaseVariants('don’t', ["don't", 'DON’T']), ['DON’T']);
 });

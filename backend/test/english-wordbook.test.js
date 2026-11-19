@@ -71,7 +71,7 @@ test('English wordbook CRUD, case variants, normalization and batch import previ
 
   const r2 = await ctx.app.inject({
     method: 'POST', url: '/api/english-words', headers: childHeaders,
-    payload: { child_id: child.id, word: 'may', definition_zh: '可以' }
+    payload: { child_id: child.id, word: 'may', definition_zh: '可以', confirmed_case_variants: ['May'] }
   });
   assert.equal(r2.statusCode, 201);
 

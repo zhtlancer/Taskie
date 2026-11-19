@@ -233,8 +233,8 @@ class WordStudyService {
     this.db.prepare('INSERT INTO word_study_batches (id, day_id, is_extra, created_at) VALUES (?, ?, ?, ?)').run(id, day.id, +isExtra, now);
     const insert = this.db.prepare(`
       INSERT INTO word_study_items
-        (id, batch_id, character_id, english_word_id, text, pinyin, phonetic, meaning_zh, meaning_en, kind, position, is_early)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, batch_id, character_id, english_word_id, text, pinyin, phonetic, meaning_zh, meaning_en, kind, position, is_early, strict_case)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     if (!candidates.length) this.db.prepare('UPDATE word_study_batches SET completed_at = ? WHERE id = ?').run(now, id);
     candidates.forEach((row, position) => {
@@ -242,9 +242,9 @@ class WordStudyService {
       const isEarly = +(Boolean(row.state_id) && row.next_due_date > day.date);
       if (lang === 'en') {
         const phonetic = row.phonetic || row.phonetic_uk || row.phonetic_us || null;
-        insert.run(generateId(), id, null, row.id, row.word, null, phonetic, row.definition_zh || null, row.definition_en || null, kind, position, isEarly);
+        insert.run(generateId(), id, null, row.id, row.word, null, phonetic, row.definition_zh || null, row.definition_en || null, kind, position, isEarly, +Boolean(row.strict_case));
       } else {
-        insert.run(generateId(), id, row.id, null, row.char, row.pinyin, null, null, null, kind, position, isEarly);
+        insert.run(generateId(), id, row.id, null, row.char, row.pinyin, null, null, null, kind, position, isEarly, 0);
       }
     });
   }
@@ -327,7 +327,7 @@ class WordStudyService {
       .map(batch => ({
         ...batch,
         is_extra: Boolean(batch.is_extra),
-        items: this.db.prepare(itemSql).all(day.skill, batch.id)
+        items: this.db.prepare(itemSql).all(day.skill, batch.id).map(item => ({ ...item, strict_case: Boolean(item.strict_case) }))
       }));
     const pool = this.pool(day, day.date, day.created_at);
     const used = new Set(batches.flatMap(batch => batch.items.map(item => item.english_word_id || item.character_id)));
