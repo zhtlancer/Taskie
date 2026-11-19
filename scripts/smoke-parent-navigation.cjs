@@ -76,20 +76,20 @@ async function main() {
       await picker().getByRole('button', { name: new RegExp(b.name) }).click(); await selected(b);
       await page.getByRole('navigation', { name: '学习安排分类' }).getByRole('link', { name: '字词计划', exact: true }).click();
       await selected(b);
-      const form = page.locator('form').filter({ has: page.getByRole('heading', { name: '认读计划', exact: true }) });
+      const form = page.locator('article').filter({ has: page.getByRole('heading', { name: '语文字词认读', exact: true }) });
       await form.getByLabel('每日新学目标', { exact: false }).fill('7');
-      await form.getByLabel('开启自动学习', { exact: true }).check();
+      await form.getByRole('checkbox', { name: /未开启|已开启/ }).check();
       let release, received;
       const held = new Promise(resolve => { release = resolve; }), started = new Promise(resolve => { received = resolve; });
       await page.route(`**/api/children/${b.id}/word-study/plans/recognize`, async route => {
         const response = await route.fetch(); received(); await held; await route.fulfill({ response });
       });
-      await form.getByRole('button', { name: '保存认读计划', exact: true }).click(); await started;
+      await form.getByRole('button', { name: '保存语文字词认读计划', exact: true }).click(); await started;
       assert.equal(await picker().getByRole('button', { name: new RegExp(a.name) }).isDisabled(), true);
-      release(); await page.getByRole('status').getByText(/设置已保存/).waitFor();
+      release(); await form.getByRole('status').filter({ hasText: '计划已保存，并按约定生效。' }).waitFor();
       assert.equal((await api('GET', `/children/${b.id}/word-study`)).plans.find(p => p.skill === 'recognize').new_target, 7);
       await picker().getByRole('button', { name: new RegExp(a.name) }).click(); await selected(a);
-      await page.waitForFunction(() => document.querySelector('form input[type=number]')?.value === '3');
+      await page.waitForFunction(() => document.querySelector('article input[type=number]')?.value === '3');
       assert.equal((await api('GET', `/children/${a.id}/word-study`)).plans.length, 0, 'saving B never configures A');
       await fits();
       if (process.env.SCREENSHOT_DIR) {

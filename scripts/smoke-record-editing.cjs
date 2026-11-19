@@ -89,7 +89,7 @@ async function main() {
       // Only this child's entries prove that the polled refresh has arrived.
       await page.locator('li').filter({ hasText: child.name }).filter({ hasText: '理由：另一设备的申请' }).waitFor();
       await page.locator('li').filter({ hasText: child.name }).filter({ hasText: '另一设备记下的作业' }).waitFor();
-      await page.locator('span').filter({ hasText: `${child.name} · ` }).filter({ hasText: '另一设备的超期完成' }).waitFor();
+      await page.locator('p').filter({ hasText: `${child.name} · ` }).filter({ hasText: '另一设备的超期完成' }).waitFor();
       assert.equal(await dialog.getByLabel('任务名称').inputValue(), '刷新期间保留的输入');
       const card = page.locator('div.grid > div').filter({ has: page.getByRole('heading', { name: child.name, exact: true }) }).first();
       assert.match(await card.innerText(), /今日积分\s*\+7/);
@@ -130,10 +130,13 @@ async function main() {
       assert.equal(seen, 1);
       assert.deepEqual([tasks.getAdhocTask(task.id).default_priority, tasks.getAdhocTask(task.id).priority_override], [0, null]);
       pass(`${width}/${theme}: stale edit is rejected with draft intact; saving locks fields and close`);
+      // Closing the dialog starts an asynchronous dashboard refresh. Resume from idle,
+      // otherwise pageshow is ignored while that earlier read is still pending.
+      await page.getByRole('button', { name: '刷新总览', exact: true }).waitFor();
       const resumeSkip = add({ title: '恢复页面后的申请' });
       app.services.skipsService.requestSkip(resumeSkip.id, '回到页面应当看到', { role: 'child' });
       await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
-      await page.getByText('理由：回到页面应当看到', { exact: true }).last().waitFor();
+      await page.locator('li').filter({ hasText: child.name }).getByText('理由：回到页面应当看到', { exact: true }).waitFor();
       await page.getByRole('button', { name: '刷新总览', exact: true }).click();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       pass(`${width}/${theme}: resume and manual refresh work without horizontal overflow`);
