@@ -428,6 +428,25 @@ class DictionaryService {
     const shortZh = summarizeBglEntries(bglRows);
     const shortEn = oaldFirst.short_en || mwFirst.short_en || '';
 
+    // Keep dictionary senses separate; definitions from different dictionaries are not translations.
+    const senses = [];
+    const addSense = (dictId, pos, zh, en) => {
+      if (senses.length >= 30) return;
+      senses.push({ id: `dict-${dictId}-${senses.length}`, pos: pos ? pos.slice(0, 60) : null,
+        definition_zh: zh ? zh.slice(0, 400) : null, definition_en: en ? en.slice(0, 400) : null,
+        example: null, source: { dict_id: dictId, name: DICT_LABELS[dictId], headword: headwordExact } });
+    };
+    for (const row of bglRows) {
+      for (const definition of String(row.definition || '').split('#').map(value => value.trim()).filter(Boolean)) {
+        addSense('bgl', row.pos, definition, null);
+      }
+    }
+    for (const dictId of ['oald8', 'mw11']) {
+      for (const summary of dslSummaries[dictId] || []) {
+        for (const definition of summary.definitions || []) addSense(dictId, summary.pos_list.join(' / '), null, definition);
+      }
+    }
+
     const dictionaries = [];
     if (dslSummaries.oald8?.length) dictionaries.push({ dict_id: 'oald8', name: DICT_LABELS.oald8, count: dslSummaries.oald8.length });
     if (dslSummaries.mw11?.length) dictionaries.push({ dict_id: 'mw11', name: DICT_LABELS.mw11, count: dslSummaries.mw11.length });
@@ -442,6 +461,7 @@ class DictionaryService {
       phonetic_us: phoneticUs,
       pos: posList.join(' / ') || null,
       pos_list: posList,
+      senses,
       definition_zh: shortZh,
       definition_en: shortEn,
       forms: forms.slice(0, 12),

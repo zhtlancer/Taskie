@@ -53,13 +53,12 @@
 
       <!-- Display Mode -->
       <div v-if="!editing" class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-2.5 text-sm">
-        <div>
-          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">中文释义：</span>
-          <p class="mt-0.5 font-bold text-slate-800 dark:text-slate-100">{{ word.definition_zh || '（未填写）' }}</p>
-        </div>
-        <div v-if="word.definition_en">
-          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">英文释义：</span>
-          <p class="mt-0.5 text-slate-700 dark:text-slate-200">{{ word.definition_en }}</p>
+        <div v-for="(sense, index) in word.senses" :key="sense.id" class="space-y-1 [overflow-wrap:anywhere]" :data-sense-detail="sense.id">
+          <p class="text-xs font-bold text-brand-700 dark:text-brand-300">义项 {{ index + 1 }}{{ sense.id === word.primary_sense_id ? ' · 学习释义' : '' }} <span v-if="sense.pos">{{ sense.pos }}</span></p>
+          <p class="font-bold text-slate-800 dark:text-slate-100">{{ sense.definition_zh || (sense.definition_en ? '' : '（未填写）') }}</p>
+          <p v-if="sense.definition_en" class="text-slate-700 dark:text-slate-200">{{ sense.definition_en }}</p>
+          <p v-if="sense.example" class="text-slate-700 dark:text-slate-200">例句：{{ sense.example }}</p>
+          <p v-if="sense.source" class="text-xs text-slate-500 dark:text-slate-400">来源：{{ sense.source.name || sense.source.dict_id }} · {{ sense.source.headword }}</p>
         </div>
         <div v-if="word.textbook || word.unit" class="flex flex-wrap gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
           <span v-if="word.textbook" class="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">教材：{{ word.textbook }}</span>
@@ -76,32 +75,12 @@
       <div v-else class="rounded-2xl border border-brand-200 dark:border-brand-800 bg-brand-50/30 dark:bg-brand-950/20 p-4 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-sm font-black text-slate-800 dark:text-slate-100">编辑词条内容</h3>
-          <button
-            v-if="dictMatch"
-            type="button"
-            class="min-h-11 px-3 py-1 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-brand-600 dark:text-brand-300"
-            @click="confirmOverwriteFromDict"
-          >
-            🔄 用原词典填充当前表单
-          </button>
         </div>
-
-        <p v-if="confirmDictOverwrite" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-2.5 text-xs font-bold text-amber-800 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2">
-          <span>将覆盖当前编辑框中的音标和释义，确认继续吗？</span>
-          <span class="flex gap-2">
-            <button type="button" class="min-h-11 px-3 rounded-lg bg-amber-600 text-white" @click="applyDictOverwrite">确认覆盖</button>
-            <button type="button" class="min-h-11 px-3 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600" @click="confirmDictOverwrite = false">取消</button>
-          </span>
-        </p>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
             英文词条
             <input v-model="editForm.word" type="text" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
-          </label>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-            词性
-            <input v-model="editForm.pos" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
           </label>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
             英式音标
@@ -112,14 +91,7 @@
             <input v-model="editForm.phonetic_us" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
           </label>
         </div>
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-          中文释义
-          <textarea v-model="editForm.definition_zh" rows="2" class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-sm font-bold" />
-        </label>
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-          英文释义
-          <input v-model="editForm.definition_en" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
-        </label>
+        <EnglishSensesEditor v-model="editForm" :candidates="dictionaryCandidates" :disabled="busy" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
             教材/分类
@@ -223,6 +195,8 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
+import EnglishSensesEditor from './EnglishSensesEditor.vue';
+import { withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { currentRole } from '../utils/session';
@@ -250,7 +224,7 @@ const confirmDelete = ref(false);
 const editing = ref(false);
 const savingEdit = ref(false);
 const savingCategories = ref(false);
-const confirmDictOverwrite = ref(false);
+const dictionaryCandidates = computed(() => identityKey(editForm.value.word) === identityKey(props.word.word) ? dictMatch.value?.senses || [] : []);
 
 const editForm = ref({});
 const serverCaseVariants = ref([]);
@@ -269,7 +243,6 @@ const { capture } = useAsyncScope(() => [props.word.id, props.word.word, props.w
   audioController?.abort();
   dictMatch.value = null;
   confirmDelete.value = false;
-  confirmDictOverwrite.value = false;
   articleOpen.value = false;
   editing.value = false;
   savingEdit.value = false;
@@ -297,7 +270,7 @@ watch([() => props.word.id, () => props.word.word, () => props.word.child_id, ()
 
 function startEdit() {
   if (busy.value) return;
-  editForm.value = {
+  editForm.value = withEnglishSenses({
     word: props.word.word,
     pos: props.word.pos || '',
     phonetic_uk: props.word.phonetic_uk || '',
@@ -308,25 +281,8 @@ function startEdit() {
     unit: props.word.unit || '',
     note: props.word.note || '',
     strict_case: Boolean(props.word.strict_case), confirmed_case_variants: []
-  };
+  }, sensesFromEntry(props.word), props.word.primary_sense_id);
   editing.value = true;
-}
-
-function confirmOverwriteFromDict() {
-  confirmDictOverwrite.value = true;
-}
-
-function applyDictOverwrite() {
-  if (!dictMatch.value) return;
-  editForm.value = {
-    ...editForm.value,
-    pos: dictMatch.value.pos || editForm.value.pos,
-    phonetic_uk: dictMatch.value.phonetic_uk || editForm.value.phonetic_uk,
-    phonetic_us: dictMatch.value.phonetic_us || dictMatch.value.phonetic || editForm.value.phonetic_us,
-    definition_zh: dictMatch.value.definition_zh || editForm.value.definition_zh,
-    definition_en: dictMatch.value.definition_en || editForm.value.definition_en
-  };
-  confirmDictOverwrite.value = false;
 }
 
 async function saveEdit() {

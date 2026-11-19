@@ -35,10 +35,15 @@ async function main() {
       const lookup = await api('GET', `/dictionary/lookup?word=${encodeURIComponent(word)}`);
       const match = lookup.exact_matches.find(m => m.word === word);
       assert.ok(match && /[\u3400-\u9fff]/u.test(match.definition_zh), `${word}: missing Chinese meaning`);
+      assert.ok(match.senses.length > 0 && match.senses.length <= 30, `${word}: missing structured senses`);
+      assert.ok(match.senses.every(sense => sense.source.headword === word && sense.source.dict_id && sense.source.name));
       lookups.set(word, match);
     }
     assert.match(lookups.get('bank').definition_zh, /银行/);
     assert.match(lookups.get('bank').definition_zh, /河岸/);
+    assert.ok(lookups.get('bank').senses.some(sense => /银行/.test(sense.definition_zh)));
+    assert.ok(lookups.get('bank').senses.some(sense => /河岸/.test(sense.definition_zh)));
+    assert.ok(lookups.get('bank').senses.some(sense => sense.source.dict_id === 'oald8' && sense.definition_en));
     assert.match(lookups.get('May').definition_zh, /五月/);
     assert.match(lookups.get('may').definition_en, /possible/);
     const inflection = await api('GET', '/dictionary/lookup?word=apples');

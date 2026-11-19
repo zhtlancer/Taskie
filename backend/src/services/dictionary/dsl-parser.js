@@ -334,7 +334,7 @@ function extractDslSummary(rawBody, dictId) {
     for (const m of raw.matchAll(/\{\{(?:d|ud)\}\}([\s\S]*?)\{\{\/(?:d|ud)\}\}/g)) {
       const clean = stripAllDslMarkup(m[1]);
       if (clean && !defs.includes(clean)) defs.push(clean);
-      if (defs.length >= 2) break;
+      if (defs.length >= 30) break;
     }
 
     return {
@@ -344,7 +344,8 @@ function extractDslSummary(rawBody, dictId) {
       pos_list: posList,
       forms,
       audio,
-      short_en: defs.join('; ').slice(0, 180)
+      definitions: defs,
+      short_en: defs.slice(0, 2).join('; ').slice(0, 180)
     };
   }
 
@@ -371,7 +372,7 @@ function extractDslSummary(rawBody, dictId) {
   for (const m of raw.matchAll(/\[trn\]([\s\S]*?)\[\/trn\]/g)) {
     const clean = stripAllDslMarkup(m[1]).replace(/^:\s*/, '').trim();
     if (clean && !mwDefs.includes(clean)) mwDefs.push(clean);
-    if (mwDefs.length >= 2) break;
+    if (mwDefs.length >= 30) break;
   }
 
   return {
@@ -381,7 +382,8 @@ function extractDslSummary(rawBody, dictId) {
     pos_list: posList,
     forms,
     audio,
-    short_en: mwDefs.join('; ').slice(0, 180)
+    definitions: mwDefs,
+    short_en: mwDefs.slice(0, 2).join('; ').slice(0, 180)
   };
 }
 

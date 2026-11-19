@@ -1,3 +1,4 @@
+const { resolveSenses } = require('../utils/english-senses');
 const { generateId } = require('../utils/crypto');
 const {
   ENGLISH_CATEGORIES,
@@ -10,7 +11,7 @@ const {
 } = require('../utils/english-word');
 
 const COLUMNS = `id, child_id, word, identity_key, canonical_key, phonetic, phonetic_uk, phonetic_us,
-  pos, definition_zh, definition_en, textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case`;
+  pos, definition_zh, definition_en, textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case, senses, primary_sense_id`;
 
 const MAX_BATCH_WORDS = 100;
 
@@ -58,7 +59,8 @@ function toEntry(row) {
     ...row,
     is_mastered: Boolean(row.is_mastered),
     strict_case: Boolean(row.strict_case),
-    categories
+    categories,
+    senses: JSON.parse(row.senses)
   };
 }
 
@@ -111,6 +113,7 @@ class EnglishWordsService {
         entry.word.toLowerCase().includes(q)
         || (entry.definition_zh && entry.definition_zh.toLowerCase().includes(q))
         || (entry.definition_en && entry.definition_en.toLowerCase().includes(q))
+        || entry.senses.some(sense => [sense.definition_zh, sense.definition_en, sense.example].some(value => value && value.toLowerCase().includes(q)))
         || (entry.unit && entry.unit.toLowerCase().includes(q))
       );
     }
@@ -153,9 +156,6 @@ class EnglishWordsService {
       phonetic,
       phonetic_uk,
       phonetic_us,
-      pos,
-      definition_zh,
-      definition_en,
       textbook,
       unit,
       note,
@@ -169,6 +169,7 @@ class EnglishWordsService {
     const canKey = canonicalKey(cleanWord);
     const initialCategories = normalizeEnglishCategories(categories);
     const cleanStrictCase = strictCase(payload.strict_case);
+    const meanings = resolveSenses(payload);
 
     const dup = this.db.prepare('SELECT id FROM english_words WHERE child_id = ? AND identity_key = ?').get(child_id, idKey);
     if (dup) {
@@ -188,9 +189,9 @@ class EnglishWordsService {
         INSERT INTO english_words (
           id, child_id, word, identity_key, canonical_key,
           phonetic, phonetic_uk, phonetic_us, pos, definition_zh, definition_en,
-          textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case
+          textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case, senses, primary_sense_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?, ?, ?)
       `).run(
         id,
         child_id,
@@ -200,15 +201,15 @@ class EnglishWordsService {
         cleanPhonetic,
         cleanUk,
         cleanUs,
-        normalizeOptionalText(pos, 60),
-        normalizeOptionalText(definition_zh, 400),
-        normalizeOptionalText(definition_en, 400),
+        meanings.pos,
+        meanings.definition_zh,
+        meanings.definition_en,
         normalizeMetaText(textbook),
         normalizeMetaText(unit),
         normalizeOptionalText(note, 300),
         JSON.stringify(initialCategories),
         createdAt,
-        +cleanStrictCase
+        +cleanStrictCase, JSON.stringify(meanings.senses), meanings.primary_sense_id
       );
     } catch (err) {
       if (err.message && err.message.includes('UNIQUE constraint failed')) {
@@ -228,6 +229,7 @@ class EnglishWordsService {
 
     checkMetadataPermission(payload, role, existing);
     const cleanStrictCase = strictCase(payload.strict_case, existing.strict_case);
+    const meanings = resolveSenses(payload, existing);
 
     let nextWord = existing.word;
     let nextIdKey = existing.identity_key;
@@ -264,7 +266,7 @@ class EnglishWordsService {
       SET word = ?, identity_key = ?, canonical_key = ?,
           phonetic = ?, phonetic_uk = ?, phonetic_us = ?,
           pos = ?, definition_zh = ?, definition_en = ?,
-          textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?
+          textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?, senses = ?, primary_sense_id = ?
       WHERE id = ?
     `).run(
       nextWord,
@@ -273,14 +275,14 @@ class EnglishWordsService {
       nextPhonetic,
       nextUk,
       nextUs,
-      payload.pos !== undefined ? normalizeOptionalText(payload.pos, 60) : existing.pos,
-      payload.definition_zh !== undefined ? normalizeOptionalText(payload.definition_zh, 400) : existing.definition_zh,
-      payload.definition_en !== undefined ? normalizeOptionalText(payload.definition_en, 400) : existing.definition_en,
+      meanings.pos,
+      meanings.definition_zh,
+      meanings.definition_en,
       payload.textbook !== undefined ? normalizeMetaText(payload.textbook) : existing.textbook,
       payload.unit !== undefined ? normalizeMetaText(payload.unit) : existing.unit,
       payload.note !== undefined ? normalizeOptionalText(payload.note, 300) : existing.note,
       JSON.stringify(nextCategories),
-      +cleanStrictCase,
+      +cleanStrictCase, JSON.stringify(meanings.senses), meanings.primary_sense_id,
       id
     );
 
@@ -386,7 +388,10 @@ class EnglishWordsService {
           phonetic_us: matched.phonetic_us || '',
           pos: matched.pos || '',
           definition_zh: suppliedMeaning || matched.definition_zh || '',
-          definition_en: matched.definition_en || ''
+          definition_en: matched.definition_en || '',
+          ...resolveSenses(matched.senses?.length ? {
+            senses: suppliedMeaning ? [{ id: 'manual', definition_zh: suppliedMeaning }, ...matched.senses.slice(0, 29)] : matched.senses
+          } : { pos: matched.pos, definition_zh: suppliedMeaning || matched.definition_zh, definition_en: matched.definition_en })
         });
       } else {
         items.push({
@@ -430,7 +435,7 @@ class EnglishWordsService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw { status: 400, message: '导入词条格式无效' };
       checkMetadataPermission(item, role);
     }
-    const prepared = items.map(item => ({ ...item, word: validateEnglishWord(item.word), strict_case: strictCase(item.strict_case) }));
+    const prepared = items.map(item => ({ ...item, word: validateEnglishWord(item.word), strict_case: strictCase(item.strict_case), ...resolveSenses(item) }));
 
     const defaultTextbook = normalizeMetaText(textbook);
     const defaultUnit = normalizeMetaText(unit);
@@ -441,9 +446,9 @@ class EnglishWordsService {
       INSERT INTO english_words (
         id, child_id, word, identity_key, canonical_key,
         phonetic, phonetic_uk, phonetic_us, pos, definition_zh, definition_en,
-        textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case
+        textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case, senses, primary_sense_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, ?, ?, ?)
     `);
 
     const added = [];
@@ -482,15 +487,15 @@ class EnglishWordsService {
           cleanPhonetic,
           cleanUk,
           cleanUs,
-          normalizeOptionalText(item.pos, 60),
-          normalizeOptionalText(item.definition_zh, 400),
-          normalizeOptionalText(item.definition_en, 400),
+          item.pos,
+          item.definition_zh,
+          item.definition_en,
           normalizeMetaText(item.textbook) ?? defaultTextbook,
           normalizeMetaText(item.unit) ?? defaultUnit,
           normalizeOptionalText(item.note, 300),
           JSON.stringify(cats),
           createdAt,
-          +item.strict_case
+          +item.strict_case, JSON.stringify(item.senses), item.primary_sense_id
         );
         added.push(this.getWord(id));
       }

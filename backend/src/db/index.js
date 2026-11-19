@@ -112,7 +112,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 38;
+const SCHEMA_VERSION = 39;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -685,6 +685,20 @@ function initDb(db) {
         }
       }
       db.pragma('user_version = 38');
+    })();
+  }
+  // v39: preserve legacy definitions as the first sense; old study items remain snapshots.
+  if (db.pragma('user_version', { simple: true }) < 39) {
+    db.transaction(() => {
+      const columns = new Set(db.pragma('table_info(english_words)').map(column => column.name));
+      if (!columns.has('senses')) db.exec("ALTER TABLE english_words ADD COLUMN senses TEXT NOT NULL DEFAULT '[]'");
+      if (!columns.has('primary_sense_id')) db.exec('ALTER TABLE english_words ADD COLUMN primary_sense_id TEXT');
+      const update = db.prepare('UPDATE english_words SET senses = ?, primary_sense_id = ? WHERE id = ?');
+      for (const word of db.prepare('SELECT id, pos, definition_zh, definition_en FROM english_words').all()) {
+        update.run(JSON.stringify([{ id: 'legacy', pos: word.pos, definition_zh: word.definition_zh,
+          definition_en: word.definition_en, example: null, source: null }]), 'legacy', word.id);
+      }
+      db.pragma('user_version = 39');
     })();
   }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.

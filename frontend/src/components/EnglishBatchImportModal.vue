@@ -107,17 +107,25 @@
           <div v-if="item.status === 'matched' || item.status === 'manual'" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
               v-model="item.definition_zh"
+              @input="syncPrimary(item, 'definition_zh', $event.target.value)"
               type="text"
               placeholder="中文释义（如：苹果；也可导入后补填）"
-              class="w-full min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold text-slate-800 dark:text-slate-100"
+              maxlength="400"
+              class="w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold text-slate-800 dark:text-slate-100"
             />
             <input
               v-model="item.definition_en"
+              @input="syncPrimary(item, 'definition_en', $event.target.value)"
               type="text"
               placeholder="英文释义（选填）"
-              class="w-full min-h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold text-slate-800 dark:text-slate-100"
+              maxlength="400"
+              class="w-full min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-xs font-bold text-slate-800 dark:text-slate-100"
             />
           </div>
+          <details v-if="item.status === 'matched' || item.status === 'manual'">
+            <summary class="min-h-11 flex items-center cursor-pointer text-xs font-bold text-brand-700 dark:text-brand-300">管理义项与例句</summary>
+            <EnglishSensesEditor v-model="previewItems[idx]" :disabled="busy" />
+          </details>
           <template v-if="item.status === 'matched' || item.status === 'manual'">
             <label class="flex items-center gap-2 min-h-11 text-xs font-bold text-slate-700 dark:text-slate-200">
               <input v-model="item.strict_case" :disabled="busy" type="checkbox" class="w-5 h-5 accent-brand-500" />
@@ -145,6 +153,8 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue';
+import EnglishSensesEditor from './EnglishSensesEditor.vue';
+import { withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';
 import UiDialog from './UiDialog.vue';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
@@ -243,7 +253,7 @@ async function runPreview() {
     const res = await api.previewEnglishBatch(props.childId, rawText.value, { silentError: true, preserveError: true });
     if (!matchesScope() || serial !== previewSerial) return;
     previewItems.value = (res.items || []).map(item => ({
-      ...item,
+      ...withEnglishSenses(item, sensesFromEntry(item), item.primary_sense_id),
       strict_case: false,
       confirmed_case_variants: [],
       server_case_variants: [],
@@ -254,6 +264,12 @@ async function runPreview() {
   } finally {
     if (matchesScope() && serial === previewSerial) previewing.value = false;
   }
+}
+
+function syncPrimary(item, key, value) {
+  item[key] = value;
+  item.senses = item.senses.map(sense => sense.id === item.primary_sense_id
+    ? { ...sense, definition_zh: item.definition_zh, definition_en: item.definition_en } : sense);
 }
 
 async function commitImport() {
@@ -274,6 +290,7 @@ async function commitImport() {
         pos: i.pos,
         definition_zh: i.definition_zh,
         definition_en: i.definition_en,
+        senses: i.senses, primary_sense_id: i.primary_sense_id,
         strict_case: i.strict_case, confirmed_case_variants: i.confirmed_case_variants
       }))
     });

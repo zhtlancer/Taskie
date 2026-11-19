@@ -1,3 +1,4 @@
+const { validateStoredSenses } = require('./english-senses');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -142,6 +143,14 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
           throw fail('备份中的英语大小写规则无效，无法恢复');
         }
       }
+    }
+    if (schemaVersion >= 39) {
+      if (!['senses', 'primary_sense_id'].every(column => hasColumn('english_words', column))) {
+        throw fail('备份缺少英语义项数据，无法恢复');
+      }
+      try {
+        for (const word of candidate.prepare('SELECT senses, primary_sense_id, pos, definition_zh, definition_en FROM english_words').iterate()) validateStoredSenses(word);
+      } catch { throw fail('备份中的英语义项数据无效，无法恢复'); }
     }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     // initDb also backfills missing attendance/fee revisions on current-schema backups,

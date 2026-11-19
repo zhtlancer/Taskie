@@ -243,6 +243,7 @@ const filteredWords = computed(() => {
       w.word.toLowerCase().includes(q)
       || (w.definition_zh && w.definition_zh.toLowerCase().includes(q))
       || (w.definition_en && w.definition_en.toLowerCase().includes(q))
+      || w.senses?.some(sense => [sense.definition_zh, sense.definition_en, sense.example].some(value => value && value.toLowerCase().includes(q)))
       || (w.unit && w.unit.toLowerCase().includes(q))
     );
   }

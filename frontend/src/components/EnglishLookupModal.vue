@@ -150,15 +150,6 @@
             />
           </label>
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-            词性
-            <input
-              v-model="form.pos"
-              type="text"
-              placeholder="如 n. / v. / adj."
-              class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-            />
-          </label>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
             英式音标 (BrE)
             <input
               v-model="form.phonetic_uk"
@@ -178,25 +169,7 @@
           </label>
         </div>
 
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-          中文释义（用于认读与默写卡片展示）
-          <textarea
-            v-model="form.definition_zh"
-            rows="2"
-            placeholder="例如：n. 苹果"
-            class="mt-1 w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-          />
-        </label>
-
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-          英文简明释义（选填）
-          <input
-            v-model="form.definition_en"
-            type="text"
-            placeholder="例如：a round fruit..."
-            class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-          />
-        </label>
+        <EnglishSensesEditor v-model="form" :candidates="dictionaryCandidates" :disabled="saving" />
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
@@ -291,6 +264,8 @@
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
+import EnglishSensesEditor from './EnglishSensesEditor.vue';
+import { newEnglishSense, withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { useEnglishWordStore } from '../stores/englishWord';
@@ -331,7 +306,7 @@ const saving = ref(false);
 const saveError = ref('');
 const serverCaseVariants = ref([]);
 
-const emptyForm = () => ({
+const emptyForm = () => withEnglishSenses({
   word: '',
   phonetic_uk: '',
   phonetic_us: '',
@@ -343,7 +318,7 @@ const emptyForm = () => ({
   note: '',
   categories: ['recognize', 'write'],
   strict_case: false, confirmed_case_variants: []
-});
+}, [newEnglishSense()]);
 const form = ref(emptyForm());
 
 let lookupController = null;
@@ -377,6 +352,7 @@ function reset() {
 }
 
 const activeMatch = computed(() => matches.value[selectedMatchIndex.value] || null);
+const dictionaryCandidates = computed(() => identityKey(form.value.word) === identityKey(activeMatch.value?.word) ? activeMatch.value?.senses || [] : []);
 const alreadyInBook = computed(() => {
   const key = identityKey(form.value.word);
   return Boolean(key && store.isWordInBook(key, props.childId));
@@ -396,15 +372,15 @@ function close() {
 
 function applyMatchToForm(match) {
   if (!match) return;
-  form.value = {
+  if (identityKey(form.value.word) === identityKey(match.word) && (form.value.phonetic_uk || form.value.phonetic_us
+    || form.value.senses.some(sense => sense.pos || sense.definition_zh || sense.definition_en || sense.example))) return;
+  const senses = sensesFromEntry(match);
+  form.value = withEnglishSenses({
     ...form.value,
     word: match.word || normalizeWordDisplay(query.value),
     phonetic_uk: match.phonetic_uk || '',
-    phonetic_us: match.phonetic_us || (!match.phonetic_uk && match.phonetic ? match.phonetic : ''),
-    pos: match.pos || '',
-    definition_zh: match.definition_zh || '',
-    definition_en: match.definition_en || ''
-  };
+    phonetic_us: match.phonetic_us || (!match.phonetic_uk && match.phonetic ? match.phonetic : '')
+  }, [senses[0]]);
 }
 
 function selectMatch(idx) {
