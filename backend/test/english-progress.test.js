@@ -18,9 +18,9 @@ test('English progress is read-only, independently scoped by skill, child and la
     VALUES (?, ?, ?, ?, ?, 2, ?, ?, 0)`);
   insert.run('reading', child.id, 'en', word.id, 'recognize', '2026-11-15', '2026-11-12');
   insert.run('writing', child.id, 'en', word.id, 'write', '2026-11-19', '2026-11-16');
-  // Invalid cross-owner/language rows must not leak into the visible progress.
+  // Read-side ownership isolation remains in place; source/language mismatches are rejected by SQLite.
   insert.run('wrong-child', other.id, 'en', blank.id, 'recognize', '2026-11-15', '2026-11-12');
-  insert.run('wrong-language', child.id, 'zh', blank.id, 'write', '2026-11-15', '2026-11-12');
+  assert.throws(() => insert.run('wrong-language', child.id, 'zh', blank.id, 'write', '2026-11-15', '2026-11-12'), /CHECK constraint/);
   const baseline = ctx.db.prepare('SELECT total_changes() AS n').get().n;
   const listed = book.listWords({ child_id: child.id });
   assert.equal(ctx.db.prepare('SELECT total_changes() AS n').get().n, baseline, 'reading must not create plans, tasks, states or rewards');

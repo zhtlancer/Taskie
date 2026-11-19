@@ -1,4 +1,5 @@
 const { validateStoredSenses } = require('./english-senses');
+const { validateWordStudyConstraints } = require('../db/word-study-constraints');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -153,9 +154,14 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
       } catch { throw fail('备份中的英语义项数据无效，无法恢复'); }
     }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
+    if (schemaVersion >= 40) {
+      try { validateWordStudyConstraints(candidate); }
+      catch { throw fail('备份中的学习来源约束无效，无法恢复'); }
+    }
     // initDb also backfills missing attendance/fee revisions on current-schema backups,
     // before the candidate is serialized and copied into the live database.
     initDb(candidate);
+    validateWordStudyConstraints(candidate);
     for (const [name, value] of Object.entries(data.photos || {})) {
       if (!safeName(name) || typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw fail('备份照片路径或内容无效');
     }

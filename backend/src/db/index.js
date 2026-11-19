@@ -5,6 +5,7 @@ const config = require('../config');
 const { hashPin, verifyPin } = require('../utils/crypto');
 const { formatDate } = require('../utils/date');
 const { backfillClassRevisions } = require('./class-revisions');
+const { STATE_SOURCE_CHECK, ITEM_SOURCE_CHECK } = require('./word-study-constraints');
 
 const defaultBadges = [
   {
@@ -112,7 +113,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 39;
+const SCHEMA_VERSION = 40;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -700,6 +701,68 @@ function initDb(db) {
       }
       db.pragma('user_version = 39');
     })();
+  }
+  // v40: states belong to exactly one live source; deleted entries retain only item snapshots.
+  if (db.pragma('user_version', { simple: true }) < 40) {
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE word_study_states_v40 (
+            id TEXT PRIMARY KEY,
+            child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+            language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh', 'en')),
+            character_id TEXT REFERENCES characters(id) ON DELETE CASCADE,
+            english_word_id TEXT REFERENCES english_words(id) ON DELETE CASCADE,
+            skill TEXT NOT NULL,
+            stage INTEGER NOT NULL DEFAULT 0,
+            next_due_date TEXT NOT NULL,
+            last_review_date TEXT NOT NULL,
+            failures INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(character_id, skill),
+            UNIQUE(english_word_id, skill),
+            ${STATE_SOURCE_CHECK}
+          );
+          INSERT INTO word_study_states_v40
+            SELECT id, child_id, language, character_id, english_word_id, skill,
+                   stage, next_due_date, last_review_date, failures
+            FROM word_study_states WHERE character_id IS NOT NULL OR english_word_id IS NOT NULL;
+          DROP TABLE word_study_states;
+          ALTER TABLE word_study_states_v40 RENAME TO word_study_states;
+          CREATE INDEX idx_word_study_due ON word_study_states(child_id, language, skill, next_due_date);
+
+          CREATE TABLE word_study_items_v40 (
+            id TEXT PRIMARY KEY,
+            batch_id TEXT NOT NULL REFERENCES word_study_batches(id) ON DELETE CASCADE,
+            character_id TEXT REFERENCES characters(id) ON DELETE SET NULL,
+            text TEXT NOT NULL,
+            pinyin TEXT,
+            kind TEXT NOT NULL CHECK(kind IN ('new', 'review')),
+            is_early INTEGER NOT NULL DEFAULT 0,
+            position INTEGER NOT NULL,
+            result TEXT CHECK(result IN ('good', 'hinted', 'again')),
+            completed_at TEXT,
+            english_word_id TEXT REFERENCES english_words(id) ON DELETE SET NULL,
+            phonetic TEXT,
+            meaning_zh TEXT,
+            meaning_en TEXT,
+            strict_case INTEGER NOT NULL DEFAULT 0 CHECK(strict_case IN (0, 1)),
+            ${ITEM_SOURCE_CHECK}
+          );
+          INSERT INTO word_study_items_v40
+            SELECT id, batch_id, character_id, text, pinyin, kind, is_early, position,
+                   result, completed_at, english_word_id, phonetic, meaning_zh, meaning_en, strict_case
+            FROM word_study_items;
+          DROP TABLE word_study_items;
+          ALTER TABLE word_study_items_v40 RENAME TO word_study_items;
+          CREATE INDEX idx_word_study_items_batch ON word_study_items(batch_id, position);
+        `);
+        if (db.pragma('foreign_key_check').length) throw new Error('Foreign key violation in v40 migration');
+        db.pragma('user_version = 40');
+      })();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
   }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);
