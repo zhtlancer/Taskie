@@ -113,7 +113,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 40;
+const SCHEMA_VERSION = 41;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -763,6 +763,15 @@ function initDb(db) {
     } finally {
       db.pragma('foreign_keys = ON');
     }
+  }
+  // v41: NULL distinguishes old lists with unknown audio from new lists with no saved audio ([]).
+  if (db.pragma('user_version', { simple: true }) < 41) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(word_study_items)').some(column => column.name === 'audio_refs')) {
+        db.exec('ALTER TABLE word_study_items ADD COLUMN audio_refs TEXT');
+      }
+      db.pragma('user_version = 41');
+    })();
   }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);

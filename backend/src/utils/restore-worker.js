@@ -1,4 +1,5 @@
 const { validateStoredSenses } = require('./english-senses');
+const { normalizeAudioRefs } = require('./english-audio');
 const { validateWordStudyConstraints } = require('../db/word-study-constraints');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -150,8 +151,19 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
         throw fail('备份缺少英语义项数据，无法恢复');
       }
       try {
-        for (const word of candidate.prepare('SELECT senses, primary_sense_id, pos, definition_zh, definition_en FROM english_words').iterate()) validateStoredSenses(word);
+        for (const word of candidate.prepare('SELECT word, senses, primary_sense_id, pos, definition_zh, definition_en FROM english_words').iterate()) validateStoredSenses(word);
       } catch { throw fail('备份中的英语义项数据无效，无法恢复'); }
+    }
+    if (schemaVersion >= 41) {
+      if (!hasColumn('word_study_items', 'audio_refs')) throw fail('备份缺少学习发音快照，无法恢复');
+      try {
+        for (const item of candidate.prepare(`SELECT i.text, i.audio_refs, d.language FROM word_study_items i
+          JOIN word_study_batches b ON b.id = i.batch_id JOIN word_study_days d ON d.id = b.day_id
+          WHERE i.audio_refs IS NOT NULL`).iterate()) {
+          const refs = normalizeAudioRefs(JSON.parse(item.audio_refs));
+          if ((refs.length && item.language !== 'en') || refs.some(ref => ref.headword !== item.text)) throw new Error('Mismatched audio snapshot');
+        }
+      } catch { throw fail('备份中的学习发音快照无效，无法恢复'); }
     }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     if (schemaVersion >= 40) {

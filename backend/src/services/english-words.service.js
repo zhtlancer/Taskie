@@ -1,4 +1,5 @@
 const { resolveSenses } = require('../utils/english-senses');
+const { keepWordAudio } = require('../utils/english-audio');
 const { generateId } = require('../utils/crypto');
 const { getTodayDate } = require('../utils/date');
 const { dictionaryFailure, dictionaryLookupIssue } = require('./dictionary/issues');
@@ -201,6 +202,7 @@ class EnglishWordsService {
     const initialCategories = normalizeEnglishCategories(categories);
     const cleanStrictCase = strictCase(payload.strict_case);
     const meanings = resolveSenses(payload);
+    keepWordAudio(meanings.senses, cleanWord);
 
     const dup = this.db.prepare('SELECT id FROM english_words WHERE child_id = ? AND identity_key = ?').get(child_id, idKey);
     if (dup) {
@@ -279,6 +281,7 @@ class EnglishWordsService {
     }
 
     let nextCategories = existing.categories;
+    keepWordAudio(meanings.senses, nextWord);
     if (payload.categories !== undefined) {
       nextCategories = normalizeEnglishCategories(payload.categories);
       if (role !== 'parent' && existing.categories.some(k => !nextCategories.includes(k))) {
@@ -436,6 +439,7 @@ class EnglishWordsService {
           word: validWord,
           identity_key: idKey,
           status: 'matched',
+          pronunciations: matched.pronunciations || [],
           phonetic: matched.phonetic || '',
           phonetic_uk: matched.phonetic_uk || '',
           phonetic_us: matched.phonetic_us || '',
@@ -493,7 +497,11 @@ class EnglishWordsService {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw { status: 400, message: '导入词条格式无效' };
       checkMetadataPermission(item, role);
     }
-    const prepared = items.map(item => ({ ...item, word: validateEnglishWord(item.word), strict_case: strictCase(item.strict_case), ...resolveSenses(item) }));
+    const prepared = items.map(item => {
+      const row = { ...item, word: validateEnglishWord(item.word), strict_case: strictCase(item.strict_case), ...resolveSenses(item) };
+      keepWordAudio(row.senses, row.word);
+      return row;
+    });
 
     const defaultTextbook = normalizeMetaText(textbook);
     const defaultUnit = normalizeMetaText(unit);

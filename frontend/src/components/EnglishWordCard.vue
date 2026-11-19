@@ -17,8 +17,8 @@
           <h3 class="text-lg font-black text-slate-900 dark:text-slate-100 leading-snug break-words [overflow-wrap:anywhere]">
             {{ word.word }}
           </h3>
-          <p v-if="word.phonetic_uk || word.phonetic" class="text-xs font-mono text-cyan-700 dark:text-cyan-300 truncate">
-            /{{ word.phonetic_uk || word.phonetic }}/
+          <p v-if="learningPhonetic(word) || word.phonetic_uk || word.phonetic" class="text-xs font-mono text-cyan-700 dark:text-cyan-300 truncate">
+            /{{ learningPhonetic(word) || word.phonetic_uk || word.phonetic }}/
           </p>
         </div>
 
@@ -88,9 +88,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
-import api from '../api/client';
-import { playDictionaryAudio } from '../utils/dictionaryAudio';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
+import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
+import { audioClips, learningPhonetic } from '../utils/englishAudio';
+import { useAsyncScope } from '../composables/useAsyncScope';
 import { englishCategoryInfo } from '../utils/englishWord';
 import EnglishStudyProgress from './EnglishStudyProgress.vue';
 
@@ -105,25 +106,27 @@ const emit = defineEmits(['select', 'toggle-master', 'audio-error']);
 const peek = ref(false);
 const speaking = ref(false);
 const showMeaning = computed(() => props.forceShowMeaning || peek.value);
+const { capture } = useAsyncScope(() => [props.word], () => { if (speaking.value) stopDictionaryAudio(); speaking.value = false; });
+onBeforeUnmount(() => { if (speaking.value) stopDictionaryAudio(); });
 
 watch(() => props.forceShowMeaning, () => { peek.value = false; });
 
 async function speakWord() {
   if (speaking.value) return;
   speaking.value = true;
+  const current = capture();
   try {
-    const res = await api.lookupDictionary(props.word.word, undefined, { silentError: true });
-    const match = res?.exact_matches?.find(m => m.word === props.word.word) || res?.exact_matches?.[0];
-    const clip = match?.audio?.[0];
+    const selected = props.word.senses?.find(sense => sense.id === props.word.primary_sense_id);
+    const clip = audioClips(selected?.audio_refs || [])[0];
     if (!clip?.url) {
-      emit('audio-error', `暂无“${props.word.word}”的离线发音`);
+      emit('audio-error', `“${props.word.word}”未保存学习发音，请打开词条选择对应的词典发音`);
       return;
     }
     await playDictionaryAudio(clip.url);
   } catch (err) {
-    emit('audio-error', err?.message || '发音播放失败');
+    if (current()) emit('audio-error', err?.message || '发音播放失败');
   } finally {
-    speaking.value = false;
+    if (current()) speaking.value = false;
   }
 }
 </script>

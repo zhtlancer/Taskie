@@ -316,16 +316,16 @@ function extractDslSummary(rawBody, dictId) {
 
     // Extract headword pronunciation wav files cleanly from header line before cross-refs/conjugation notes.
     const primaryHeaderPart = headerLine.split(/\[c darkcyan\]\[b\]\s*see also|\(\[c rosybrown\]|\[c darkgray\]\(/i)[0] || headerLine;
-    const soundSource = /\[s\][^[\]]+?\.wav\[\/s\]/i.test(primaryHeaderPart) ? primaryHeaderPart : headerLine;
+    const soundSource = primaryHeaderPart;
     const soundRe = /(?:(\[p\](BrE|NAmE|AmE)\[\/p\])[\s\S]{0,120}?)?\[s\]([^[\]]+?\.wav)\[\/s\]/gi;
     for (const m of soundSource.matchAll(soundRe)) {
       const file = m[3].trim();
       if (audioSeen.has(file)) continue;
       audioSeen.add(file);
       const ctxAccent = (m[2] || '').toLowerCase();
-      let accent = 'uk';
-      if (ctxAccent === 'name' || ctxAccent === 'ame' || /_us_\d+\.wav$/i.test(file)) accent = 'us';
-      else if (ctxAccent === 'bre' || /_gb_\d+\.wav$/i.test(file)) accent = 'uk';
+      let accent = 'other';
+      if (ctxAccent === 'name' || ctxAccent === 'ame' || /_us(?:_\d+)?\.wav$/i.test(file)) accent = 'us';
+      else if (ctxAccent === 'bre' || /_(?:gb|uk)(?:_\d+)?\.wav$/i.test(file)) accent = 'uk';
       audio.push({ file, dict_id: dictId, accent });
       if (audio.length >= 4) break;
     }
@@ -350,17 +350,18 @@ function extractDslSummary(rawBody, dictId) {
   }
 
   // MWCollegiate11 summary extraction
-  const phonMatch = raw.match(/\[com\]\\\\([^\\[]+?)\\\\/);
+  const primaryLine = raw.split(/\r?\n/)[0] || '';
+  const phonMatch = primaryLine.match(/\[com\]\\\\([^\\[]+?)\\\\/);
   if (phonMatch) phoneticAny = unescapeDslText(phonMatch[1]).split(',')[0].trim();
 
-  const posMatches = [...raw.matchAll(/\[i\]\[c\]\[com\]([^[\]]+?)\[\/com\]/g)];
+  const posMatches = [...primaryLine.matchAll(/\[i\]\[c\]\[com\]([^[\]]+?)\[\/com\]/g)];
   for (const m of posMatches) {
     const p = m[1].trim();
     if (p && !posList.includes(p)) posList.push(p);
     if (posList.length >= 4) break;
   }
 
-  for (const m of raw.matchAll(/\[s\]([^[\]]+?\.wav)\[\/s\]/gi)) {
+  for (const m of primaryLine.matchAll(/\[s\]([^[\]]+?\.wav)\[\/s\]/gi)) {
     const file = m[1].trim();
     if (audioSeen.has(file)) continue;
     audioSeen.add(file);
@@ -456,8 +457,8 @@ function parseDslArticleToAst(rawBody, dictId) {
               const file = trimmed.slice(end + 1, close).trim();
               if (/\.wav$/i.test(file)) {
                 let accent = lastAccent;
-                if (/_us_\d+\.wav$/i.test(file)) accent = 'us';
-                else if (/_gb_\d+\.wav$/i.test(file)) accent = 'uk';
+                if (/_us(?:_\d+)?\.wav$/i.test(file)) accent = 'us';
+                else if (/_(?:gb|uk)(?:_\d+)?\.wav$/i.test(file)) accent = 'uk';
                 nodes.push({
                   type: 'audio',
                   file,
@@ -535,11 +536,29 @@ function parseDslArticleToAst(rawBody, dictId) {
   return blocks;
 }
 
+// Split homographs and POS-specific headers, excluding inflected forms and examples.
+function extractDslSections(rawBody, dictId) {
+  const sections = [];
+  let lines = [];
+  for (const line of String(rawBody || '').split(/\r?\n/)) {
+    const prefix = line.split('[s]')[0];
+    const boundary = dictId === 'oald8'
+      ? /\[m0\]/.test(line) && (/\{\{id=/.test(line) ||
+        (/\[c orange\]/.test(line) && /\[s\]/.test(line) && !stripAllDslMarkup(prefix).includes('(')))
+      : /^\s*\[b\]\[c darkslategray\][IVX]+\./.test(line);
+    if (boundary && lines.length) { sections.push(lines.join('\n')); lines = []; }
+    lines.push(line);
+  }
+  if (lines.length) sections.push(lines.join('\n'));
+  return sections.map(raw => ({ raw, summary: extractDslSummary(raw, dictId) }));
+}
+
 module.exports = {
   parseDictzipHeader,
   readDslSlice,
   scanDslEntries,
   extractDslSummary,
+  extractDslSections,
   parseDslArticleToAst,
   normalizeDslHeadword,
   stripAllDslMarkup

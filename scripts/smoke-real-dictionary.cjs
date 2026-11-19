@@ -46,6 +46,20 @@ async function main() {
     assert.ok(lookups.get('bank').senses.some(sense => sense.source.dict_id === 'oald8' && sense.definition_en));
     assert.match(lookups.get('May').definition_zh, /五月/);
     assert.match(lookups.get('may').definition_en, /possible/);
+    for (const word of ['record', 'present', 'lead', 'read', 'wind', 'close']) {
+      const match = (await api('GET', `/dictionary/lookup?word=${word}`)).exact_matches.find(entry => entry.word === word);
+      const groups = match.pronunciations.filter(group => group.dict_id === 'oald8');
+      assert.ok(groups.length >= 2, `${word}: expected separate Oxford pronunciation groups`);
+      assert.ok(groups.every(group => group.audio_refs.every(ref => ref.headword === word && ref.entry_key === group.id && /^[a-f0-9]{64}$/.test(ref.sha256))));
+      for (const sense of match.senses.filter(sense => sense.source.dict_id === 'oald8' && sense.audio_refs.length)) {
+        assert.ok(groups.some(group => group.id === sense.audio_refs[0].entry_key), `${word}: meaning must keep its own pronunciation group`);
+      }
+      if (['record', 'present', 'lead', 'wind', 'close'].includes(word)) {
+        assert.ok(new Set(groups.map(group => group.phonetic).filter(Boolean)).size >= 2, `${word}: distinct pronunciation must not be flattened`);
+      }
+      assert.ok(groups.every(group => group.audio_refs.every(ref => !/z_(?:led|wound)__/i.test(ref.file))), `${word}: inflections are not the headword pronunciation`);
+      console.log(`HOMOGRAPH ${word}: ${groups.map(group => `${group.pos} /${group.phonetic}/`).join(' | ')}`);
+    }
     const inflection = await api('GET', '/dictionary/lookup?word=apples');
     assert.ok(inflection.suggestions.some(s => s.word === 'apple'));
     assert.equal((await api('GET', '/dictionary/lookup?word=taskiezzzznonword')).exact_matches.length, 0);
@@ -96,7 +110,8 @@ async function main() {
       assert.match(await dialog.getByPlaceholder('例如：n. 苹果').inputValue(), /[\u3400-\u9fff]/u);
       for (const label of ['英音', '美音', '朗读']) {
         const before = await page.evaluate(() => window.__playedDictionaryAudio.length);
-        await dialog.getByRole('button', { name: `🔊 ${label}`, exact: true }).click();
+        const group = dialog.locator('[data-english-pronunciations] > div').filter({ hasText: label === '朗读' ? '韦氏' : '牛津' }).first();
+        await group.getByRole('button', { name: `🔊 ${label}`, exact: true }).click();
         await page.waitForFunction(count => window.__playedDictionaryAudio.length > count, before);
         const played = await page.evaluate(() => window.__playedDictionaryAudio.at(-1));
         assert.ok(Number.isFinite(played.duration) && played.duration > 0);

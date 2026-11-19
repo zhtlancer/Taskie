@@ -23,9 +23,13 @@ client.interceptors.request.use(async config => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
-client.interceptors.response.use(response => response, error => {
+client.interceptors.response.use(response => response, async error => {
   if (error === FAMILY_DATE_REQUIRED) return Promise.reject(error);
   if (axios.isCancel(error)) return Promise.reject(error);
+  // Audio requests return Blob on success, but their failure body is still JSON.
+  if (error.config?.responseType === 'blob' && typeof Blob !== 'undefined' && error.response?.data instanceof Blob && error.response.data.size <= 65536) {
+    try { error.response.data = JSON.parse(await error.response.data.text()); } catch {}
+  }
   // This browser lost or never had device authorization: show the pairing page.
   if (error.response?.data?.code === 'DEVICE_NOT_AUTHORIZED' && typeof window !== 'undefined') {
     window.location.href = '/api/device/page';
@@ -210,7 +214,7 @@ export const api = {
   rebuildDictionaryIndex: (options) => post('/dictionary/rebuild-index', undefined, options),
   async fetchDictionaryAudioBlob(url, signal) {
     const apiPath = url.startsWith('/api/') ? url.slice(4) : url;
-    const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true, timeout: requestTimeout(apiPath) });
+    const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true, preserveError: true, timeout: requestTimeout(apiPath) });
     return response.data;
   },
   getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),

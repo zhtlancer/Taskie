@@ -5,25 +5,19 @@
         <span v-if="word.pos" class="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-bold">
           {{ word.pos }}
         </span>
-        <span v-if="word.phonetic_uk" class="font-mono text-cyan-700 dark:text-cyan-300">英 /{{ word.phonetic_uk }}/</span>
-        <span v-if="word.phonetic_us" class="font-mono text-cyan-700 dark:text-cyan-300">美 /{{ word.phonetic_us }}/</span>
-        <span v-else-if="word.phonetic" class="font-mono text-cyan-700 dark:text-cyan-300">/{{ word.phonetic }}/</span>
+        <span v-if="learningPhonetic(word)" class="font-mono text-cyan-700 dark:text-cyan-300">学习发音 /{{ learningPhonetic(word) }}/</span>
+        <template v-else>
+          <span v-if="word.phonetic_uk" class="font-mono text-cyan-700 dark:text-cyan-300">英 /{{ word.phonetic_uk }}/</span>
+          <span v-if="word.phonetic_us" class="font-mono text-cyan-700 dark:text-cyan-300">美 /{{ word.phonetic_us }}/</span>
+          <span v-else-if="word.phonetic" class="font-mono text-cyan-700 dark:text-cyan-300">/{{ word.phonetic }}/</span>
+        </template>
       </div>
     </template>
 
     <div class="space-y-4">
       <!-- Pronunciation & Original Dictionary Bar -->
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          v-for="clip in dictAudio.slice(0, 3)"
-          :key="clip.id"
-          type="button"
-          class="min-h-11 px-3 py-1.5 rounded-xl bg-brand-50 dark:bg-brand-900/40 border border-brand-200 dark:border-brand-800 text-xs font-bold text-brand-700 dark:text-brand-300 flex items-center gap-1"
-          @click="playClip(clip.url)"
-        >
-          <span>🔊</span>
-          <span>{{ clip.label }}</span>
-        </button>
+        <EnglishPronunciations :groups="dictMatch?.pronunciations || []" :fallback="dictAudio" @play="playClip" />
 
         <button
           type="button"
@@ -100,7 +94,7 @@
             <input v-model="editForm.phonetic_us" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
           </label>
         </div>
-        <EnglishSensesEditor v-model="editForm" :candidates="dictionaryCandidates" :disabled="busy" />
+        <EnglishSensesEditor v-model="editForm" :candidates="dictionaryCandidates" :pronunciations="dictMatch?.pronunciations || []" :disabled="busy" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
             教材/分类
@@ -206,6 +200,8 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
+import { learningPhonetic } from '../utils/englishAudio';
+import EnglishPronunciations from './EnglishPronunciations.vue';
 import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import EnglishStudyProgress from './EnglishStudyProgress.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';

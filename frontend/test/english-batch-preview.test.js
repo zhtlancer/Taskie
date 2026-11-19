@@ -6,6 +6,7 @@ import { dictionaryLookupNotice, dictionaryErrorMessage, isDictionaryAbort } fro
 test('requery preserves corrected meanings, primary choice, phonetics, strict rules and unchecked rows', () => {
   const first = mergeEnglishBatchPreview([], [{ word: 'book', status: 'manual', definition_zh: '书', phonetic: '' }]);
   first[0].senses[0].definition_zh = '用户更正';
+  first[0].senses[0].audio_refs = [{ dict_id: 'oald8', file: 'user.wav', sha256: 'saved-content', entry_key: 'selected-entry' }];
   first[0].strict_case = true;
   first[0].include = false;
   first[0].phonetic_uk = 'user phonetic';
@@ -14,6 +15,7 @@ test('requery preserves corrected meanings, primary choice, phonetics, strict ru
   const retried = mergeEnglishBatchPreview(first, [{ word: 'book', status: 'matched', phonetic_uk: 'dictionary phonetic', senses: [dictionary],
     primary_sense_id: 'dict-book', existing_case_variants: ['BOOK', 'Book'] }]);
   assert.equal(retried[0].definition_zh, '用户更正');
+  assert.deepEqual(retried[0].senses[0].audio_refs, first[0].senses[0].audio_refs);
   assert.equal(retried[0].primary_sense_id, first[0].primary_sense_id);
   assert.equal(retried[0].include, false);
   assert.equal(retried[0].strict_case, true);

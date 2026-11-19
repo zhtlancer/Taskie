@@ -14,6 +14,7 @@ const checkEnglishSenses = require('./english-senses-browser.cjs');
 const checkEnglishProgress = require('./english-progress-browser.cjs');
 const checkDictionaryFallback = require('./dictionary-fallback-browser.cjs');
 const checkDictionaryIndexNotice = require('./dictionary-index-browser.cjs');
+const checkEnglishAudio = require('./english-audio-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -262,10 +263,10 @@ async function main() {
         await modal.waitFor();
         await modal.getByPlaceholder(/输入英文单词或短语/).fill('apple');
         await modal.getByRole('button', { name: /查词/ }).click();
-        await modal.getByText('ˈæpl').waitFor();
+        await modal.getByText('英 /ˈæpl/', { exact: true }).waitFor();
 
         // Play audio & wait for real playback completion
-        await modal.getByRole('button', { name: /英音/ }).click();
+        await modal.getByRole('button', { name: '🔊 英音', exact: true }).click();
         await page.waitForFunction(() => (window.__playedAudio || []).length >= 1);
         assert.equal(audioStatus, 200);
         const played = await page.evaluate(() => window.__playedAudio[0]);
@@ -517,6 +518,7 @@ async function main() {
     await checkEnglishProgress({ browser, base, api, parentToken, openContext, errors, db });
     await checkDictionaryFallback({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService });
     await checkDictionaryIndexNotice({ browser, base, api, parentToken, openContext, errors });
+    await checkEnglishAudio({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService, db });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

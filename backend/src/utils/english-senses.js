@@ -1,5 +1,6 @@
 const { generateId } = require('./crypto');
 const { normalizeOptionalText } = require('./english-word');
+const { normalizeAudioRefs } = require('./english-audio');
 
 const LIMIT = 30;
 const fields = { pos: 60, definition_zh: 400, definition_en: 400, example: 600 };
@@ -19,6 +20,7 @@ function normalizeSenses(values) {
       sense[key] = normalizeOptionalText(value[key], max);
     }
     sense.source = null;
+    if (value.audio_refs !== undefined) sense.audio_refs = normalizeAudioRefs(value.audio_refs);
     if (value.source != null) {
       if (typeof value.source !== 'object' || Array.isArray(value.source)) invalid();
       sense.source = {};
@@ -58,6 +60,7 @@ function validateStoredSenses(row) {
   const parsed = JSON.parse(row.senses);
   const normalized = normalizeSenses(parsed);
   if (parsed.some((sense, i) => sense.id !== normalized[i].id)) invalid();
+  if (row.word && normalized.some(sense => sense.audio_refs?.some(ref => ref.headword !== row.word))) invalid();
   const selected = normalized.find(sense => sense.id === row.primary_sense_id);
   if (!selected || ['pos', 'definition_zh', 'definition_en'].some(key => selected[key] !== row[key])) invalid();
 }

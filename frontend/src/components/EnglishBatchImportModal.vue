@@ -130,7 +130,7 @@
           </div>
           <details v-if="item.status === 'matched' || item.status === 'manual'">
             <summary class="min-h-11 flex items-center cursor-pointer text-xs font-bold text-brand-700 dark:text-brand-300">管理义项与例句</summary>
-            <EnglishSensesEditor v-model="previewItems[idx]" :candidates="item.dictionary_candidates || []" :disabled="busy" />
+            <EnglishSensesEditor v-model="previewItems[idx]" :candidates="item.dictionary_candidates || []" :pronunciations="item.pronunciations || []" :disabled="busy" />
           </details>
           <template v-if="item.status === 'matched' || item.status === 'manual'">
             <label class="flex items-center gap-2 min-h-11 text-xs font-bold text-slate-700 dark:text-slate-200">

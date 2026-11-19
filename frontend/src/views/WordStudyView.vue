@@ -109,7 +109,7 @@
 
           <div v-if="englishAudio.length" class="flex flex-wrap justify-center gap-2">
             <button
-              v-for="clip in englishAudio.slice(0, 3)"
+              v-for="clip in englishAudio"
               :key="clip.id"
               type="button"
               class="min-h-[44px] px-4 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-sm font-bold border border-sky-200 dark:border-sky-800"
@@ -118,6 +118,9 @@
               🔊 {{ clip.label }}
             </button>
           </div>
+          <p v-if="!englishAudio.length" class="text-xs text-slate-500 dark:text-slate-400">{{ active.item.audio_refs == null ? '旧清单未保存发音，不自动替换为当前读音。' : '本项未保存学习发音，可以继续文字练习。' }}</p>
+          <button v-if="active.item.audio_refs == null" type="button" :disabled="currentAudioLoading" class="ui-button-secondary min-h-11" @click="loadCurrentEnglishAudio">{{ currentAudioLoading ? '查询中…' : '查看当前词典发音（非历史发音）' }}</button>
+          <EnglishPronunciations v-if="currentAudioMatch" :groups="currentAudioMatch.pronunciations || []" :fallback="currentAudioMatch.audio || []" @play="playEnglishClip" />
           <p v-if="englishAudioError" class="text-xs font-bold text-amber-700 dark:text-amber-300">{{ englishAudioError }}</p>
 
           <div v-if="active.skill === 'write' || revealed" class="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3.5 text-sm space-y-1">
@@ -233,10 +236,12 @@
 
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { audioClips } from '../utils/englishAudio';
+import EnglishPronunciations from '../components/EnglishPronunciations.vue';
 import { useRoute, useRouter } from 'vue-router';
 import api from '../api/client';
 import { compareSpellingAnswer } from '../utils/englishWord';
-import { playDictionaryAudio } from '../utils/dictionaryAudio';
+import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
 import { useCalendarStore } from '../stores/calendar';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import UiDialog from '../components/UiDialog.vue';
@@ -261,6 +266,8 @@ function showAllSkills() {
 const loading = ref(true), busy = ref(false), error = ref(''), notice = ref('');
 const active = ref(null), revealed = ref(false), charIndex = ref(0), feedbackResult = ref(null);
 const typedSpelling = ref(''), spellingCheck = ref(null), englishAudio = ref([]), englishAudioError = ref('');
+const currentAudioLoading = ref(false), currentAudioMatch = ref(null);
+let currentAudioController, currentAudioSerial = 0;
 const expiredPractice = ref(false);
 const nextDue = computed(() => {
   const day = days.value.find(day => day.id === active.value?.dayId);
@@ -293,10 +300,13 @@ function reloadStudyDay() {
 watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value], () => { stopRetry(); retryCount = 0; historySerial++; });
 watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, active.value, pendingAttempt.value, busy.value], reloadStudyDay);
 watch(() => [active.value, busy.value], () => { if (!canReload()) stopRetry(); });
-onBeforeUnmount(() => { studySerial++; historySerial++; stopRetry(); });
-const closeRestoredForm = () => { active.value = null; pendingAttempt.value = null; };
+onBeforeUnmount(() => { studySerial++; historySerial++; stopRetry(); resetEnglishAudio(); });
+const closeRestoredForm = () => { resetEnglishAudio(); active.value = null; pendingAttempt.value = null; };
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
+onMounted(() => window.addEventListener('taskie:session-changed', resetEnglishAudio));
+onBeforeUnmount(() => window.removeEventListener('taskie:session-changed', resetEnglishAudio));
+watch(childId, resetEnglishAudio);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const skillName = skill => {
   if (language.value === 'en') return skill === 'write' ? '英语默写' : '英语认读';
@@ -359,20 +369,38 @@ async function load({ recoverDate = false } = {}) {
   }
 }
 
-async function loadEnglishAudio(word) {
+function resetEnglishAudio() {
+  currentAudioSerial++;
+  currentAudioController?.abort();
+  stopDictionaryAudio();
   englishAudio.value = [];
   englishAudioError.value = '';
+  currentAudioMatch.value = null;
+  currentAudioLoading.value = false;
+}
+
+async function loadCurrentEnglishAudio() {
+  if (!active.value) return;
+  const itemId = active.value.item.id, word = active.value.item.text, serial = ++currentAudioSerial;
+  currentAudioController?.abort();
+  currentAudioController = new AbortController();
+  currentAudioLoading.value = true;
+  englishAudioError.value = '';
+  const current = () => active.value?.item.id === itemId && currentAudioSerial === serial;
   try {
-    const res = await api.lookupDictionary(word, undefined, { silentError: true });
-    const match = res?.exact_matches?.find(m => m.word === word) || res?.exact_matches?.[0];
-    if (active.value?.item?.text === word) englishAudio.value = match?.audio || [];
-  } catch {}
+    const res = await api.lookupDictionary(word, currentAudioController.signal, { silentError: true, preserveError: true });
+    if (!current()) return;
+    currentAudioMatch.value = res?.exact_matches?.find(m => m.word === word) || null;
+    if (!currentAudioMatch.value?.audio?.length) englishAudioError.value = '当前词典暂无对应发音，可以继续文字练习。';
+  } catch (err) { if (current() && err?.code !== 'ERR_CANCELED') englishAudioError.value = err?.message || '词典查询失败'; }
+  finally { if (current()) currentAudioLoading.value = false; }
 }
 
 async function playEnglishClip(url) {
+  const serial = currentAudioSerial;
   englishAudioError.value = '';
   try { await playDictionaryAudio(url); }
-  catch (err) { englishAudioError.value = err?.message || '发音播放失败'; }
+  catch (err) { if (serial === currentAudioSerial) englishAudioError.value = err?.message || '发音播放失败'; }
 }
 
 function checkEnglishSpelling() {
@@ -394,10 +422,11 @@ function openItem(day, batch, item) {
   active.value = { dayId: day.id, batchId: batch.id, skill: day.skill, language: lang, item };
   revealed.value = false; charIndex.value = 0; feedbackResult.value = null; typedSpelling.value = ''; spellingCheck.value = null;
   pendingAttempt.value = null; pendingItemId.value = null; attemptUnknown.value = false; confirmedAttempt.value = false; error.value = ''; expiredPractice.value = false;
-  if (lang === 'en') loadEnglishAudio(item.text);
+  resetEnglishAudio();
+  if (lang === 'en') englishAudio.value = audioClips(item.audio_refs || []);
 }
 function begin(day, batch) { const item = batch.items.find(item => !item.result); if (item) openItem(day, batch, item); }
-function closePractice() { if (!busy.value) { active.value = null; pendingAttempt.value = null; } }
+function closePractice() { if (!busy.value) { resetEnglishAudio(); active.value = null; pendingAttempt.value = null; } }
 function switchToToday() {
   if (busy.value) return;
   closePractice();

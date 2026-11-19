@@ -4,6 +4,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const { Worker } = require('node:worker_threads');
 const Database = require('better-sqlite3');
 const { dictionaryFailure } = require('./issues');
+const { audioUrl: referenceAudioUrl } = require('../../utils/english-audio');
 
 const { identityKey, canonicalKey } = require('../../utils/english-word');
 const { summarizeBglEntries } = require('./bgl-parser');
@@ -11,6 +12,7 @@ const {
   parseDictzipHeader,
   readDslSlice,
   extractDslSummary,
+  extractDslSections,
   parseDslArticleToAst
 } = require('./dsl-parser');
 const {
@@ -301,6 +303,7 @@ class DictionaryService {
     const dslSummaries = {};
     const audio = [];
     const audioKeys = new Set();
+    const pronunciations = [];
     const forms = [];
     const posList = [];
 
@@ -312,22 +315,34 @@ class DictionaryService {
       dslSummaries[dictId] = [];
       for (const r of rows) {
         const rawBody = readDslSlice(sources[dictId].filePath, r.body_offset, r.body_length, header);
-        const sum = extractDslSummary(rawBody, dictId);
-        dslSummaries[dictId].push(sum);
-        for (const p of sum.pos_list) if (!posList.includes(p)) posList.push(p);
-        for (const f of sum.forms) if (!forms.includes(f)) forms.push(f);
-        for (const a of sum.audio) {
-          const key = `${a.dict_id}:${a.file.toLowerCase()}`;
-          if (audioKeys.has(key)) continue;
-          audioKeys.add(key);
-          audio.push({
-            id: key,
-            dict_id: a.dict_id,
-            file: a.file,
-            accent: a.accent,
-            label: a.accent === 'uk' ? '英音' : a.accent === 'us' ? '美音' : '朗读',
-            url: audioUrl(a.dict_id, a.file, sources[a.dict_id])
-          });
+        const overall = extractDslSummary(rawBody, dictId);
+        for (const f of overall.forms) if (!forms.includes(f)) forms.push(f);
+        const sections = extractDslSections(rawBody, dictId);
+        const meanings = sections.filter(section => section.summary.definitions.length);
+        for (const section of meanings.length ? meanings : sections.filter(section => section.summary.audio.length).slice(0, 1)) {
+          const sum = section.summary;
+          const entryKey = createHash('sha256').update(`${dictId}:${headwordExact}:${section.raw}`).digest('hex');
+          const refs = [];
+          for (const a of sum.audio) {
+            try {
+              const decoded = this.readAudio(db, sources, dictId, a.file.toLowerCase());
+              refs.push({ dict_id: dictId, file: a.file, accent: a.accent, headword: headwordExact,
+                entry_key: entryKey, sha256: createHash('sha256').update(decoded.buffer).digest('hex'),
+                phonetic: (a.accent === 'us' ? sum.phonetic_us : sum.phonetic_uk || sum.phonetic)?.slice(0, 80) || null });
+            } catch { /* Missing or unsupported clips do not prevent reading the dictionary. */ }
+          }
+          sum.audio_refs = refs;
+          dslSummaries[dictId].push(sum);
+          for (const p of sum.pos_list) if (!posList.includes(p)) posList.push(p);
+          if (refs.length && pronunciations.length < 24) pronunciations.push({ id: entryKey, dict_id: dictId,
+            name: DICT_LABELS[dictId], pos: sum.pos_list.join(' / '), phonetic: sum.phonetic,
+            description: sum.short_en, audio_refs: refs });
+          for (const ref of refs) {
+            const key = `${ref.dict_id}:${ref.file.toLowerCase()}`;
+            if (audioKeys.has(key)) continue;
+            audioKeys.add(key);
+            audio.push({ ...ref, id: key, label: ref.accent === 'uk' ? '英音' : ref.accent === 'us' ? '美音' : ref.accent === 'mw' ? '韦氏朗读' : '朗读', url: referenceAudioUrl(ref) });
+          }
         }
       }
     }
@@ -343,8 +358,8 @@ class DictionaryService {
       }
     }
 
-    const oaldFirst = dslSummaries.oald8?.[0] || {};
-    const mwFirst = dslSummaries.mw11?.[0] || {};
+    const oaldFirst = dslSummaries.oald8?.find(s => s.audio_refs.length || s.definitions.length) || {};
+    const mwFirst = dslSummaries.mw11?.find(s => s.audio_refs.length || s.definitions.length) || {};
     const bglFirstPhonetic = bglRows.find(r => r.phonetic)?.phonetic || null;
 
     const phoneticUk = oaldFirst.phonetic_uk || null;
@@ -356,11 +371,15 @@ class DictionaryService {
 
     // Keep dictionary senses separate; definitions from different dictionaries are not translations.
     const senses = [];
-    const addSense = (dictId, pos, zh, en) => {
+    const preferred = pronunciations.filter(group => group.dict_id === 'oald8');
+    const fallback = preferred.length ? preferred : pronunciations.filter(group => group.dict_id === 'mw11');
+    const defaultSummaries = preferred.length ? dslSummaries.oald8 : dslSummaries.mw11;
+    const defaultRefs = fallback.length === 1 && defaultSummaries?.length === 1 ? fallback[0].audio_refs : [];
+    const addSense = (dictId, pos, zh, en, refs = defaultRefs) => {
       if (senses.length >= 30) return;
       senses.push({ id: `dict-${dictId}-${senses.length}`, pos: pos ? pos.slice(0, 60) : null,
         definition_zh: zh ? zh.slice(0, 400) : null, definition_en: en ? en.slice(0, 400) : null,
-        example: null, source: { dict_id: dictId, name: DICT_LABELS[dictId], headword: headwordExact } });
+        example: null, audio_refs: refs, source: { dict_id: dictId, name: DICT_LABELS[dictId], headword: headwordExact } });
     };
     for (const row of bglRows) {
       for (const definition of String(row.definition || '').split('#').map(value => value.trim()).filter(Boolean)) {
@@ -369,7 +388,7 @@ class DictionaryService {
     }
     for (const dictId of ['oald8', 'mw11']) {
       for (const summary of dslSummaries[dictId] || []) {
-        for (const definition of summary.definitions || []) addSense(dictId, summary.pos_list.join(' / '), null, definition);
+        for (const definition of summary.definitions || []) addSense(dictId, summary.pos_list.join(' / '), null, definition, summary.audio_refs);
       }
     }
 
@@ -392,6 +411,7 @@ class DictionaryService {
       definition_en: shortEn,
       forms: forms.slice(0, 12),
       audio,
+      pronunciations,
       dictionaries
     };
   }
@@ -577,7 +597,8 @@ class DictionaryService {
     };
   }
 
-  async getAudio(dictId, rawFilename) {
+  async getAudio(dictId, rawFilename, expected = {}) {
+    if (expected.sha256 !== undefined && (typeof expected.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(expected.sha256))) throw { status: 400, message: '发音内容标识无效' };
     if (dictId !== 'oald8' && dictId !== 'mw11') {
       throw { status: 400, message: '不支持的词典音频来源' };
     }
@@ -597,6 +618,17 @@ class DictionaryService {
     }
 
     const { db, sources } = index;
+    const src = sources[dictId];
+    if (!src?.zipPath) throw { status: 404, message: '词典发音包不可用' };
+    if (expected.version && expected.version !== sourceVersion(src)) throw { status: 409, message: '词典资源已更新，请重新查询当前词典发音' };
+    const result = this.readAudio(db, sources, dictId, cleanName);
+    if (expected.sha256 && createHash('sha256').update(result.buffer).digest('hex') !== expected.sha256) {
+      throw { status: 409, message: '原学习发音已不可用，当前资源与保存的发音不同；可以继续文字练习' };
+    }
+    return result;
+  }
+
+  readAudio(db, sources, dictId, cleanName) {
     const src = sources[dictId];
     if (!src?.zipPath) throw { status: 404, message: '词典发音包不可用' };
     const meta = db.prepare(`

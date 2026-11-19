@@ -13,7 +13,7 @@ export function withEnglishSenses(form, senses, primaryId = senses[0]?.id) {
 }
 
 export function sensesFromEntry(entry = {}) {
-  return entry.senses?.length ? entry.senses.map(sense => ({ ...sense, source: sense.source ? { ...sense.source } : null }))
+  return entry.senses?.length ? entry.senses.map(sense => ({ ...sense, ...(sense.audio_refs ? { audio_refs: sense.audio_refs.map(ref => ({ ...ref })) } : {}), source: sense.source ? { ...sense.source } : null }))
     : [newEnglishSense({ pos: entry.pos || '', definition_zh: entry.definition_zh || '', definition_en: entry.definition_en || '' })];
 }
 

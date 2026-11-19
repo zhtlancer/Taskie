@@ -5,6 +5,19 @@
       :disabled="disabled" class="min-w-0 rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 [overflow-wrap:anywhere]">
       <legend class="px-1 text-xs font-bold text-slate-700 dark:text-slate-200">义项 {{ index + 1 }}{{ isPrimary(sense) ? ' · 学习释义' : '' }}</legend>
       <p v-if="sense.source" class="text-xs text-slate-500 dark:text-slate-400">来源：{{ sense.source.name || sense.source.dict_id }} · {{ sense.source.headword }}</p>
+      <label v-if="pronunciations.length || sense.audio_refs?.length" class="block text-xs font-bold text-slate-600 dark:text-slate-300">
+        {{ isPrimary(sense) ? '学习发音' : `义项 ${index + 1} 学习发音` }}
+        <select :value="audioSelection(sense)" class="sense-input" @change="chooseAudio(sense.id, $event.target.value)">
+          <option value="">不保存学习发音</option>
+          <option v-if="audioSelection(sense) === 'saved'" value="saved">保留已保存的发音</option>
+          <option v-for="group in pronunciations" :key="group.id" :value="group.id">{{ pronunciationLabel(group) }}</option>
+        </select>
+      </label>
+      <p v-if="pronunciations.length > 1" class="text-xs text-slate-500 dark:text-slate-400">请按此义项的词性和含义选择发音，不同读音分别保留。</p>
+      <div v-if="sense.audio_refs?.length" class="flex flex-wrap gap-2">
+        <button v-for="clip in audioClips(sense.audio_refs)" :key="clip.id" type="button" class="ui-button-secondary min-h-11" @click="previewAudio(clip.url)">试听{{ clip.label }}</button>
+      </div>
+      <p v-if="audioError" role="alert" class="text-xs text-amber-700 dark:text-amber-300">{{ audioError }}</p>
       <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
         {{ isPrimary(sense) ? '词性' : `义项 ${index + 1} 词性` }}
         <input :value="sense.pos" maxlength="60" placeholder="如 n. / v. / adj." class="sense-input" @input="update(sense.id, 'pos', $event.target.value)" />
@@ -42,7 +55,20 @@
 
 <script setup>
 import { newEnglishSense, withEnglishSenses, sameEnglishSense } from '../utils/englishSenses';
-const props = defineProps({ modelValue: { type: Object, required: true }, candidates: { type: Array, default: () => [] }, disabled: Boolean });
+import { ref, onBeforeUnmount } from 'vue';
+import { audioClips, pronunciationLabel } from '../utils/englishAudio';
+import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
+const props = defineProps({ modelValue: { type: Object, required: true }, candidates: { type: Array, default: () => [] }, pronunciations: { type: Array, default: () => [] }, disabled: Boolean });
+const audioError = ref('');
+let alive = true;
+onBeforeUnmount(() => { alive = false; stopDictionaryAudio(); });
+async function previewAudio(url) { audioError.value = ''; try { await playDictionaryAudio(url); } catch (err) { if (alive) audioError.value = err?.message || '发音播放失败'; } }
+function audioSelection(sense) {
+  if (!sense.audio_refs?.length) return '';
+  return props.pronunciations.find(group => group.audio_refs.length === sense.audio_refs.length &&
+    group.audio_refs.every((ref, i) => ref.entry_key === sense.audio_refs[i].entry_key && ref.sha256 === sense.audio_refs[i].sha256 && ref.file === sense.audio_refs[i].file && ref.dict_id === sense.audio_refs[i].dict_id))?.id || 'saved';
+}
+function chooseAudio(id, key) { if (key === 'saved') return; stopDictionaryAudio(); update(id, 'audio_refs', props.pronunciations.find(group => group.id === key)?.audio_refs.map(ref => ({ ...ref })) || []); }
 const emit = defineEmits(['update:modelValue']);
 const isPrimary = sense => sense.id === props.modelValue.primary_sense_id;
 const hasCandidate = candidate => props.modelValue.senses.some(sense => sameEnglishSense(sense, candidate));

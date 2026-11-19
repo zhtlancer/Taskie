@@ -26,7 +26,7 @@ async function englishWordsRoutes(fastify, options) {
     englishWordsService.batchPreview(request.body?.child_id, request.body?.text, { dictionaryService, useDictionary: request.body?.use_dictionary })
   )));
   // Up to 100 words × 30 senses, including examples, can exceed Fastify's 1 MiB default.
-  fastify.post('/batch', { bodyLimit: 16 * 1024 * 1024 }, handle(request => (
+  fastify.post('/batch', { bodyLimit: 32 * 1024 * 1024 }, handle(request => (
     englishWordsService.batchImport(request.body?.child_id, request.body || {}, { role: request.user?.role })
   ), 201));
 

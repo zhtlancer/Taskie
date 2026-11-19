@@ -19,7 +19,7 @@ async function dictionaryRoutes(fastify, options) {
 
   fastify.get('/audio/:dictId/:filename', handle(async (request, reply) => {
     const { dictId, filename } = request.params;
-    const audio = await dictionaryService.getAudio(dictId, filename);
+    const audio = await dictionaryService.getAudio(dictId, filename, { sha256: request.query?.sha256, version: request.query?.v });
     return reply
       .type(audio.contentType)
       .header('Cache-Control', 'private, max-age=86400')

@@ -84,16 +84,7 @@
           </div>
 
           <div class="flex flex-wrap gap-2">
-            <button
-              v-for="clip in activeMatch.audio.slice(0, 3)"
-              :key="clip.id"
-              type="button"
-              class="min-h-11 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-400 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1"
-              @click="playClip(clip.url)"
-            >
-              <span>🔊</span>
-              <span>{{ clip.label }}</span>
-            </button>
+        <EnglishPronunciations :groups="activeMatch.pronunciations || []" :fallback="activeMatch.audio" @play="playClip" />
             <button
               type="button"
               class="min-h-11 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs font-black text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
@@ -172,7 +163,7 @@
           </label>
         </div>
 
-        <EnglishSensesEditor v-model="form" :candidates="dictionaryCandidates" :disabled="saving" />
+        <EnglishSensesEditor v-model="form" :candidates="dictionaryCandidates" :pronunciations="activeMatch?.pronunciations || []" :disabled="saving" />
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
@@ -266,6 +257,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
+import EnglishPronunciations from './EnglishPronunciations.vue';
 import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
@@ -377,7 +369,7 @@ function close() {
 function applyMatchToForm(match, preserveEdits = false) {
   if (!match) return;
   if ((preserveEdits || identityKey(form.value.word) === identityKey(match.word)) && (form.value.phonetic_uk || form.value.phonetic_us
-    || form.value.senses.some(sense => sense.pos || sense.definition_zh || sense.definition_en || sense.example))) return;
+    || form.value.senses.some(sense => sense.pos || sense.definition_zh || sense.definition_en || sense.example || sense.audio_refs?.length))) return;
   const senses = sensesFromEntry(match);
   form.value = withEnglishSenses({
     ...form.value,

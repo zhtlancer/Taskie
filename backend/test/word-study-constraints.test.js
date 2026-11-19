@@ -21,6 +21,7 @@ function downgrade(db) {
         db.exec(sql);
         db.exec(`INSERT INTO ${table}_old SELECT * FROM ${table}; DROP TABLE ${table}; ALTER TABLE ${table}_old RENAME TO ${table}`);
       }
+      db.exec('ALTER TABLE word_study_items DROP COLUMN audio_refs');
       db.exec('CREATE INDEX idx_word_study_due ON word_study_states(child_id, language, skill, next_due_date); CREATE INDEX idx_word_study_items_batch ON word_study_items(batch_id, position)');
       db.pragma('user_version = 39');
     })();
@@ -108,7 +109,8 @@ test('v39 upgrade cleans orphan states and retains every live state, history, re
   initDb(ctx.db);
   validateWordStudyConstraints(ctx.db);
   assert.equal(ctx.db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
-  for (const [table, rows] of Object.entries(history)) assert.deepEqual(ctx.db.prepare(`SELECT * FROM ${table} ORDER BY id`).all(), table === 'word_study_states' ? rows.filter(row => row.character_id || row.english_word_id) : rows, table);
+  for (const [table, rows] of Object.entries(history)) assert.deepEqual(ctx.db.prepare(`SELECT * FROM ${table} ORDER BY id`).all(), table === 'word_study_states' ? rows.filter(row => row.character_id || row.english_word_id)
+    : table === 'word_study_items' ? rows.map(row => ({ ...row, audio_refs: null })) : rows, table);
   assert.deepEqual(ctx.db.pragma('foreign_key_check'), []);
   ctx.chars.deleteCharacter(ctx.character.id, { role: 'parent' });
   assert.equal(ctx.db.prepare('SELECT COUNT(*) n FROM word_study_states').get().n, 0);

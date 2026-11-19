@@ -237,7 +237,7 @@ test('DictionaryService indexes synthetic BGL + DSL + ZIP media and serves looku
     const ukAudio = await service.getAudio('oald8', 'z_apple_gb.wav');
     assert.equal(ukAudio.contentType, 'audio/mpeg');
     assert.deepEqual(ukAudio.buffer, fakeMp3);
-    assert.equal(ukAudio.cached, false);
+    assert.equal(ukAudio.cached, true, 'lookup verifies and warms the selected clip');
 
     const ukAudioCached = await service.getAudio('oald8', 'z_apple_gb.wav');
     assert.equal(ukAudioCached.cached, true);
@@ -289,12 +289,12 @@ test('ZIP-only updates rebuild media offsets and invalidate disk/browser audio v
   const afterUrl = after.exact_matches[0].audio[0].url;
   assert.notEqual(afterUrl, beforeUrl);
   const audio = await service.getAudio('oald8', 'z_apple_gb.wav');
-  assert.equal(audio.cached, false);
+  assert.equal(audio.cached, true);
   assert.deepEqual(audio.buffer, newWav);
   assert.deepEqual((await service.getAudio('oald8', 'added.wav')).buffer, newWav);
   const article = await service.getArticles('apple');
   const node = article.articles[0].entries[0].blocks.flatMap(b => b.nodes).find(n => n.type === 'audio');
-  assert.equal(node.url, afterUrl);
+  assert.equal(new URL(node.url, 'http://localhost').pathname, new URL(afterUrl, 'http://localhost').pathname);
   service.close();
   service = new DictionaryService({ dictDir, cacheDir });
   assert.equal(service.status().index_ready, true);
@@ -305,8 +305,8 @@ test('ZIP-only updates rebuild media offsets and invalidate disk/browser audio v
   fs.utimesSync(zip, nextVersion, nextVersion);
   assert.equal(service.status().index_ready, false);
   const touchedUrl = (await service.lookup('apple')).exact_matches[0].audio[0].url;
-  assert.notEqual(touchedUrl, afterUrl);
-  assert.equal((await service.getAudio('oald8', 'z_apple_gb.wav')).cached, false);
+  assert.equal(touchedUrl, afterUrl, 'identical audio keeps its stable content reference after repacking or touching');
+  assert.deepEqual((await service.getAudio('oald8', 'z_apple_gb.wav')).buffer, newWav);
 });
 
 test('unwrapMediaResource recognizes raw MP3 and PCM WAV cleanly', () => {

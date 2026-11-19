@@ -13,7 +13,7 @@ module.exports = async function checkEnglishSenses({ browser, base, api, parentT
         const lookup = page.getByRole('dialog', { name: '查词与收录单词' });
         await lookup.getByPlaceholder(/输入英文单词或短语/).fill('apple');
         await lookup.getByRole('button', { name: /查词/ }).click();
-        await lookup.getByText('ˈæpl').waitFor();
+      await lookup.getByText('英 /ˈæpl/', { exact: true }).waitFor();
         await lookup.getByLabel('中文释义', { exact: true }).fill('手工更正：苹果');
         // Looking up the same spelling again must preserve edits.
         await lookup.getByRole('button', { name: /查词/ }).click();
