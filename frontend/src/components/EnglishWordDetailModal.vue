@@ -94,7 +94,7 @@
             <input v-model="editForm.phonetic_us" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
           </label>
         </div>
-        <EnglishSensesEditor v-model="editForm" :candidates="dictionaryCandidates" :pronunciations="dictMatch?.pronunciations || []" :disabled="busy" />
+        <EnglishSensesEditor v-model="editForm" :candidates="dictionaryCandidates" :pronunciations="dictionaryPronunciations" :disabled="busy" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
             教材/分类
@@ -238,6 +238,7 @@ const editing = ref(false);
 const savingEdit = ref(false);
 const savingCategories = ref(false);
 const dictionaryCandidates = computed(() => identityKey(editForm.value.word) === identityKey(props.word.word) ? dictMatch.value?.senses || [] : []);
+const dictionaryPronunciations = computed(() => identityKey(editForm.value.word) === identityKey(props.word.word) ? dictMatch.value?.pronunciations || [] : []);
 
 const editForm = ref({});
 const serverCaseVariants = ref([]);

@@ -15,9 +15,9 @@
       </label>
       <p v-if="pronunciations.length > 1" class="text-xs text-slate-500 dark:text-slate-400">请按此义项的词性和含义选择发音，不同读音分别保留。</p>
       <div v-if="sense.audio_refs?.length" class="flex flex-wrap gap-2">
-        <button v-for="clip in audioClips(sense.audio_refs)" :key="clip.id" type="button" class="ui-button-secondary min-h-11" @click="previewAudio(clip.url)">试听{{ clip.label }}</button>
+        <button v-for="clip in audioClips(sense.audio_refs)" :key="clip.id" type="button" class="ui-button-secondary min-h-11" @click="previewAudio(sense.id, clip.url)">试听{{ clip.label }}</button>
       </div>
-      <p v-if="audioError" role="alert" class="text-xs text-amber-700 dark:text-amber-300">{{ audioError }}</p>
+      <p v-if="audioError.message && audioError.senseId === sense.id" role="alert" class="text-xs text-amber-700 dark:text-amber-300">{{ audioError.message }}</p>
       <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
         {{ isPrimary(sense) ? '词性' : `义项 ${index + 1} 词性` }}
         <input :value="sense.pos" maxlength="60" placeholder="如 n. / v. / adj." class="sense-input" @input="update(sense.id, 'pos', $event.target.value)" />
@@ -59,16 +59,16 @@ import { ref, onBeforeUnmount } from 'vue';
 import { audioClips, pronunciationLabel } from '../utils/englishAudio';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
 const props = defineProps({ modelValue: { type: Object, required: true }, candidates: { type: Array, default: () => [] }, pronunciations: { type: Array, default: () => [] }, disabled: Boolean });
-const audioError = ref('');
+const audioError = ref({ senseId: '', message: '' });
 let alive = true;
 onBeforeUnmount(() => { alive = false; stopDictionaryAudio(); });
-async function previewAudio(url) { audioError.value = ''; try { await playDictionaryAudio(url); } catch (err) { if (alive) audioError.value = err?.message || '发音播放失败'; } }
+async function previewAudio(senseId, url) { audioError.value = { senseId: '', message: '' }; try { await playDictionaryAudio(url); } catch (err) { if (alive) audioError.value = { senseId, message: err?.message || '发音播放失败' }; } }
 function audioSelection(sense) {
   if (!sense.audio_refs?.length) return '';
   return props.pronunciations.find(group => group.audio_refs.length === sense.audio_refs.length &&
     group.audio_refs.every((ref, i) => ref.entry_key === sense.audio_refs[i].entry_key && ref.sha256 === sense.audio_refs[i].sha256 && ref.file === sense.audio_refs[i].file && ref.dict_id === sense.audio_refs[i].dict_id))?.id || 'saved';
 }
-function chooseAudio(id, key) { if (key === 'saved') return; stopDictionaryAudio(); update(id, 'audio_refs', props.pronunciations.find(group => group.id === key)?.audio_refs.map(ref => ({ ...ref })) || []); }
+function chooseAudio(id, key) { if (key === 'saved') return; stopDictionaryAudio(); audioError.value = { senseId: '', message: '' }; update(id, 'audio_refs', props.pronunciations.find(group => group.id === key)?.audio_refs.map(ref => ({ ...ref })) || []); }
 const emit = defineEmits(['update:modelValue']);
 const isPrimary = sense => sense.id === props.modelValue.primary_sense_id;
 const hasCandidate = candidate => props.modelValue.senses.some(sense => sameEnglishSense(sense, candidate));

@@ -163,7 +163,7 @@
           </label>
         </div>
 
-        <EnglishSensesEditor v-model="form" :candidates="dictionaryCandidates" :pronunciations="activeMatch?.pronunciations || []" :disabled="saving" />
+        <EnglishSensesEditor v-model="form" :candidates="dictionaryCandidates" :pronunciations="dictionaryPronunciations" :disabled="saving" />
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
@@ -349,6 +349,7 @@ function reset() {
 
 const activeMatch = computed(() => matches.value[selectedMatchIndex.value] || null);
 const dictionaryCandidates = computed(() => identityKey(form.value.word) === identityKey(activeMatch.value?.word) ? activeMatch.value?.senses || [] : []);
+const dictionaryPronunciations = computed(() => identityKey(form.value.word) === identityKey(activeMatch.value?.word) ? activeMatch.value?.pronunciations || [] : []);
 const alreadyInBook = computed(() => {
   const key = identityKey(form.value.word);
   return Boolean(key && store.isWordInBook(key, props.childId));
