@@ -47,7 +47,9 @@ function installAuthorization(app, db) {
       db.prepare("SELECT value FROM settings WHERE key = 'parent_pin_is_default'").get()?.value === '1') {
       return reply.code(403).send({ error: '请先修改默认家长 PIN', code: 'PARENT_PIN_CHANGE_REQUIRED' });
     }
-    const parentOnly = /^\/api\/(?:daily-tasks|homework)\/[^/]+\/study\/legacy\/?$/.test(url) || /^\/api\/children\/[^/]+\/word-study\/plans\/[^/]+\/?$/.test(url) || url.startsWith('/api/backups') || url === '/api/auth/parent-pin' || url.startsWith('/api/devices') ||
+    const parentOnly = /^\/api\/(?:daily-tasks|homework)\/[^/]+\/study\/legacy\/?$/.test(url)
+    || /^\/api\/children\/[^/]+\/word-study(?:\/[^/]+)?\/plans\/[^/]+\/?$/.test(url)
+    || /^\/api\/dictionary\/rebuild-index\/?$/.test(url) || url.startsWith('/api/backups') || url === '/api/auth/parent-pin' || url.startsWith('/api/devices') ||
       url.startsWith('/api/task-templates') && request.method !== 'GET' ||
       /^\/api\/children(?:\/[^/]+)?\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/reward-items') && request.method !== 'GET' ||
@@ -80,8 +82,8 @@ function installAuthorization(app, db) {
       const row = db.prepare('SELECT child_id FROM daily_tasks WHERE id = ?').get(request.params.id);
       if (row) app.requireChildAccess(request, row.child_id);
     }
-    for (const [prefix, table] of [['/api/mistakes/', 'mistake_records'], ['/api/characters/', 'characters'], ['/api/redemptions/', 'reward_redemptions'], ['/api/skip-requests/', 'task_skip_requests'], ['/api/homework/', 'homework_records']]) {
-      if (url.startsWith(prefix)) {
+    for (const [prefix, table] of [['/api/mistakes/', 'mistake_records'], ['/api/characters/', 'characters'], ['/api/english-words/', 'english_words'], ['/api/redemptions/', 'reward_redemptions'], ['/api/skip-requests/', 'task_skip_requests'], ['/api/homework/', 'homework_records']]) {
+      if (url.startsWith(prefix) && request.params?.id) {
         const row = db.prepare(`SELECT child_id FROM ${table} WHERE id = ?`).get(request.params.id);
         if (row) app.requireChildAccess(request, row.child_id);
       }
@@ -94,7 +96,7 @@ function installAuthorization(app, db) {
         : null;
     if (periodOwner) app.requireChildAccess(request, periodOwner.child_id);
     if (url.replace(/\/$/, '') === '/api/daily-tasks' ||
-      ['/api/mistakes', '/api/characters'].includes(url.replace(/\/$/, '')) && !request.isMultipart()) {
+      ['/api/mistakes', '/api/characters', '/api/english-words', '/api/english-words/taxonomy', '/api/english-words/batch-preview', '/api/english-words/batch'].includes(url.replace(/\/$/, '')) && !request.isMultipart()) {
       app.requireChildAccess(request, request.method === 'GET' ? request.query.child_id : request.body?.child_id);
     }
   });

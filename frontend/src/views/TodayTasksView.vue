@@ -611,7 +611,11 @@ watch(() => timerStore.changedAt, () => refreshGoals());
 async function handleTaskToggle(task, durationBody = null) {
   const toggledChildId = childId.value;
   if (task.homework) { studyRecord.value = task.homework.id; return; }
-  if (task.origin === 'study') { router.push(`/child/${childId.value}/word-study`); return; }
+  if (task.origin === 'study') {
+    const lang = task.subject === '英语' ? 'en' : 'zh';
+    router.push(`/child/${childId.value}/word-study?language=${lang}`);
+    return;
+  }
   if ((task.track_time || task.study_sessions) && task.origin !== 'goal') { studyTask.value = task.id; return; }
   const willComplete = !task.is_completed;
   const wasAllDone = allDone.value;

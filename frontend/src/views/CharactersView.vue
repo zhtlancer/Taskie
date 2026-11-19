@@ -17,24 +17,46 @@
           <div class="min-w-0">
             <h1 class="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight flex flex-wrap items-center gap-2">
               <span>📖</span>
-              <span>生字生词本</span>
+              <span>{{ activeBook === 'en' ? '英语单词本' : '生字生词本' }}</span>
               <span class="hidden sm:inline text-xs font-bold text-brand-600 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/40 px-2 py-0.5 rounded-md border border-brand-200 dark:border-brand-800">
-                笔顺动画 · 描红临摹
+                {{ activeBook === 'en' ? '离线查词 · 音标发音 · 单元积累' : '笔顺动画 · 描红临摹' }}
               </span>
             </h1>
             <p class="text-xs font-bold text-slate-500 dark:text-slate-400">
-              收录生字和词语，点开看笔顺演示与临摹，拼音默认遮罩自主考查
+              {{ activeBook === 'en' ? '收录英语单词与短语，查牛津/韦氏/英汉原词典并播放发音' : '收录生字和词语，点开看笔顺演示与临摹，拼音默认遮罩自主考查' }}
             </p>
           </div>
         </div>
 
-        <p data-characters-summary class="order-last w-full text-xs font-bold text-slate-500 dark:text-slate-400">
+        <p v-if="activeBook === 'zh'" data-characters-summary class="order-last w-full text-xs font-bold text-slate-500 dark:text-slate-400">
           共 {{ isLoaded ? characterStore.totalCount : '—' }} 项 · 已掌握 {{ isLoaded ? characterStore.masteredCount : '—' }} · 学习中 {{ isLoaded ? characterStore.learningCount : '—' }} · 掌握率 {{ isLoaded ? `${characterStore.masteryRate}%` : '—' }}
         </p>
 
         <!-- Right: Actions -->
         <div class="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          <router-link :to="`/child/${childId}/word-study`" class="min-h-11 inline-flex items-center px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-xs active:scale-95 transition-all">📚 字词学习</router-link>
+          <div class="inline-flex rounded-xl bg-slate-200/70 dark:bg-slate-800 p-1" role="tablist" aria-label="字词本语言切换">
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeBook === 'zh'"
+              class="min-h-11 min-w-11 px-3 py-1.5 rounded-lg text-xs font-black transition-all"
+              :class="activeBook === 'zh' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-xs' : 'text-slate-600 dark:text-slate-300'"
+              @click="switchBook('zh')"
+            >
+              语文字词
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="activeBook === 'en'"
+              class="min-h-11 min-w-11 px-3 py-1.5 rounded-lg text-xs font-black transition-all"
+              :class="activeBook === 'en' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-xs' : 'text-slate-600 dark:text-slate-300'"
+              @click="switchBook('en')"
+            >
+              英语单词
+            </button>
+          </div>
+          <router-link :to="`/child/${childId}/word-study?language=${activeBook}`" class="min-h-11 inline-flex items-center px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-xs active:scale-95 transition-all">📚 {{ activeBook === 'en' ? '背单词学习' : '字词学习' }}</router-link>
           <SoundToggle />
           <router-link
             to="/parent/login"
@@ -47,6 +69,9 @@
         </div>
       </header>
 
+      <EnglishWordBookPanel v-if="activeBook === 'en'" :child-id="childId" />
+
+      <template v-else>
       <!-- Subheader: Filters & Quick Search Entry -->
       <div class="bg-white dark:bg-slate-900 rounded-2xl p-3 px-4 border border-slate-200/90 dark:border-slate-700/90 shadow-sm mb-4 sm:mb-6 flex flex-wrap items-center justify-between gap-3">
         <!-- Left: Status Filter Capsules -->
@@ -263,6 +288,7 @@
           </div>
         </div>
       </template>
+      </template>
     </div>
 
     <!-- Modals -->
@@ -291,13 +317,14 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { getCharPinyin } from '../utils/hanzi';
 import { getToken } from '../utils/session.js';
 import { useCharacterStore } from '../stores/character';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import CharacterCard from '../components/CharacterCard.vue';
 import CharacterDetailModal from '../components/CharacterDetailModal.vue';
+import EnglishWordBookPanel from '../components/EnglishWordBookPanel.vue';
 import PageState from '../components/ParentPageState.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
 import SoundToggle from '../components/SoundToggle.vue';
@@ -306,7 +333,17 @@ import { loadLearningFont } from '../utils/learningFont';
 import { CATEGORIES } from '../utils/wordBook';
 
 const route = useRoute();
+const router = useRouter();
 const childId = computed(() => route.params.id || '');
+const activeBook = computed(() => (route.query.lang === 'en' || route.query.language === 'en' ? 'en' : 'zh'));
+function switchBook(lang) {
+  playClick();
+  const nextQuery = { ...route.query };
+  if (lang === 'en') nextQuery.lang = 'en';
+  else delete nextQuery.lang;
+  delete nextQuery.language;
+  router.replace({ query: nextQuery });
+}
 const characterStore = useCharacterStore();
 
 const currentFilter = ref('all');

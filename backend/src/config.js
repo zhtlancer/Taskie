@@ -1,4 +1,16 @@
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+function resolveDefaultDictDir() {
+  if (process.env.DICT_DIR !== undefined) {
+    const trimmed = process.env.DICT_DIR.trim();
+    return trimmed && trimmed.toLowerCase() !== 'off' ? trimmed : null;
+  }
+  if (process.env.NODE_TEST_CONTEXT || process.env.NODE_ENV === 'test') return null;
+  const candidate = path.join(os.homedir(), '.goldendict', 'dicts');
+  return fs.existsSync(candidate) ? candidate : null;
+}
 
 module.exports = {
   port: parseInt(process.env.PORT || '3000', 10),
@@ -15,6 +27,8 @@ module.exports = {
   deviceAuth: process.env.DEVICE_AUTH !== 'off',
   authorizedTokensFile: process.env.AUTHORIZED_TOKENS_FILE || path.resolve(path.dirname(process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite')), 'authorized_tokens'),
   defaultParentPin: process.env.DEFAULT_PARENT_PIN || '1234',
+  dictDir: resolveDefaultDictDir(),
+  dictCacheDir: process.env.DICT_CACHE_DIR || path.resolve(path.dirname(process.env.DATABASE_PATH || path.resolve(__dirname, '../data.sqlite')), 'dict-cache'),
   imageProcessing: {
     maxDimension: parseInt(process.env.IMAGE_MAX_DIMENSION || '1600', 10),
     format: process.env.IMAGE_FORMAT || 'webp',

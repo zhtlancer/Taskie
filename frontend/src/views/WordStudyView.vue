@@ -2,14 +2,44 @@
   <div class="min-h-screen bg-[var(--ui-page)] px-4 py-5 pb-24">
     <main class="max-w-4xl mx-auto space-y-5">
       <header class="flex flex-wrap items-center justify-between gap-3">
-        <div><h1 class="text-xl font-black text-slate-800 dark:text-slate-100">📚 字词学习</h1><p class="text-xs text-slate-500 dark:text-slate-400 mt-1">先回忆，再核对；每天达标后还可以自愿多学。</p></div>
-        <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm font-bold [&>a]:inline-flex [&>a]:items-center [&>a]:min-h-[44px] [&>button]:min-h-[44px] text-brand-600 dark:text-brand-300">
-          <router-link :to="`/child/${childId}/characters`">生字生词本</router-link>
+        <div>
+          <h1 class="text-xl font-black text-slate-800 dark:text-slate-100">{{ language === 'en' ? '🔤 英语背单词' : '📚 字词学习' }}</h1>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">先回忆，再核对；每天达标后还可以自愿多学。</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-sm font-bold [&>a]:inline-flex [&>a]:items-center [&>a]:min-h-[44px] [&>button]:min-h-[44px] text-brand-600 dark:text-brand-300">
+          <div class="inline-flex rounded-xl bg-slate-200/70 dark:bg-slate-800 p-1" role="tablist" aria-label="学习语言切换">
+            <button
+              type="button"
+              role="tab"
+              :disabled="busy || loading || Boolean(active)"
+              :aria-selected="language === 'zh'"
+              class="min-h-11 min-w-11 px-3 py-1 rounded-lg text-xs font-black transition-all"
+              :class="language === 'zh' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-xs' : 'text-slate-600 dark:text-slate-300'"
+              @click="switchLanguage('zh')"
+            >
+              语文字词
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :disabled="busy || loading || Boolean(active)"
+              :aria-selected="language === 'en'"
+              class="min-h-11 min-w-11 px-3 py-1 rounded-lg text-xs font-black transition-all"
+              :class="language === 'en' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-xs' : 'text-slate-600 dark:text-slate-300'"
+              @click="switchLanguage('en')"
+            >
+              英语单词
+            </button>
+          </div>
+          <router-link :to="`/child/${childId}/characters?lang=${language}`">{{ language === 'en' ? '英语单词本' : '生字生词本' }}</router-link>
           <router-link :to="`/child/${childId}/today`">今日看板</router-link>
           <button :disabled="busy || loading || active" @click="refresh">刷新安排</button>
           <router-link v-if="asParent" :to="{ path: '/parent/word-plans', query: { child: childId } }">管理字词计划</router-link>
         </div>
       </header>
+      <p v-if="language === 'en' && missingDefinitionCount > 0" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-bold text-amber-800 dark:text-amber-200">
+        有 {{ missingDefinitionCount }} 个缺少释义的单词暂未纳入英语学习池，可在“英语单词本”补充释义。
+      </p>
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="notice" role="status" class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
       <p v-if="loading" class="text-center py-12 text-brand-600 dark:text-brand-300">正在安排学习…</p>
@@ -32,7 +62,7 @@
               <button v-else :disabled="busy" class="min-h-[44px] px-2 text-brand-600 dark:text-brand-300" @click="begin(day, batch)">开始 / 继续 →</button>
             </div>
             <details class="mt-2"><summary class="min-h-[44px] py-3 text-xs text-slate-500 dark:text-slate-400 cursor-pointer">查看字词清单与练习结果</summary><div class="flex flex-wrap gap-2">
-              <button v-for="item in batch.items" :key="item.id" :disabled="busy" class="min-h-[44px] px-3 py-2 rounded-lg border text-xs" :class="item.result === 'good' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : item.result ? 'text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'" @click="openItem(day, batch, item)">{{ item.text }} · {{ resultName(item.result) }}</button>
+              <button v-for="(item, idx) in batch.items" :key="item.id" :disabled="busy" class="min-h-[44px] px-3 py-2 rounded-lg border text-xs" :class="item.result === 'good' ? 'text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' : item.result ? 'text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'" @click="openItem(day, batch, item)">{{ day.language === 'en' && day.skill === 'write' && !item.result ? `待默写 #${idx + 1}` : item.text }} · {{ resultName(item.result) }}</button>
             </div></details>
           </div>
           <p v-if="day.remaining_early" class="text-xs text-slate-400">还有 {{ day.remaining_early }} 项可提前巩固，答对不会跳过原定复习阶段。</p>
@@ -55,7 +85,113 @@
           <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white font-bold disabled:opacity-50" @click="switchToToday">换成今天的清单</button>
         </div>
         <p v-else-if="dayChanged" role="status" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-200">已经到新的一天，这次练习结束后会换成今天的清单</p>
-        <p class="text-xs text-slate-500 dark:text-slate-400">{{ active.skill === 'write' ? '先听词或看拼音，在纸上默写，再核对字形与笔顺。' : '先尝试读出字词，再揭晓拼音核对。' }}</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          <template v-if="active.language === 'en'">
+            {{ active.skill === 'write' ? '看中文释义或听发音，在下方输入英语拼写并核对。' : '先看单词与音标回忆中文释义，再揭晓核对。' }}
+          </template>
+          <template v-else>
+            {{ active.skill === 'write' ? '先听词或看拼音，在纸上默写，再核对字形与笔顺。' : '先尝试读出字词，再揭晓拼音核对。' }}
+          </template>
+        </p>
+
+        <!-- English Practice Mode -->
+        <template v-if="active.language === 'en'">
+          <div v-if="active.skill === 'recognize' || revealed" class="text-4xl font-black text-slate-900 dark:text-slate-100 break-words [overflow-wrap:anywhere]">
+            {{ active.item.text }}
+          </div>
+          <div v-if="active.item.phonetic" class="text-base font-mono text-cyan-700 dark:text-cyan-300">
+            /{{ active.item.phonetic }}/
+          </div>
+
+          <div v-if="englishAudio.length" class="flex flex-wrap justify-center gap-2">
+            <button
+              v-for="clip in englishAudio.slice(0, 3)"
+              :key="clip.id"
+              type="button"
+              class="min-h-[44px] px-4 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-sm font-bold border border-sky-200 dark:border-sky-800"
+              @click="playEnglishClip(clip.url)"
+            >
+              🔊 {{ clip.label }}
+            </button>
+          </div>
+          <p v-if="englishAudioError" class="text-xs font-bold text-amber-700 dark:text-amber-300">{{ englishAudioError }}</p>
+
+          <div v-if="active.skill === 'write' || revealed" class="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3.5 text-sm space-y-1">
+            <p v-if="active.item.meaning_zh" class="font-bold text-slate-800 dark:text-slate-100">{{ active.item.meaning_zh }}</p>
+            <p v-if="active.item.meaning_en" class="text-xs text-slate-600 dark:text-slate-300">{{ active.item.meaning_en }}</p>
+          </div>
+
+          <!-- English Spelling Input (write skill) -->
+          <div v-if="active.skill === 'write' && !revealed" class="space-y-3">
+            <form class="space-y-2.5" @submit.prevent="checkEnglishSpelling">
+              <input
+                v-model="typedSpelling"
+                type="text"
+                autofocus
+                autocapitalize="off"
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+                placeholder="在此输入英文拼写…"
+                class="w-full max-w-sm mx-auto block min-h-12 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 text-center text-lg font-black text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <div class="flex flex-wrap justify-center gap-2">
+                <button
+                  type="submit"
+                  :disabled="!typedSpelling.trim()"
+                  class="min-h-[44px] px-5 py-2.5 rounded-xl bg-brand-500 text-white text-sm font-black disabled:opacity-50"
+                >
+                  核对拼写
+                </button>
+                <button
+                  type="button"
+                  class="min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-bold"
+                  @click="revealed = true"
+                >
+                  看提示/直接揭晓
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <button v-else-if="!revealed" class="block mx-auto min-h-[44px] px-5 py-3 rounded-xl bg-brand-500 text-white font-bold" @click="revealed = true">
+            我已回忆，揭晓释义
+          </button>
+
+          <template v-else>
+            <div v-if="spellingCheck" class="rounded-xl p-3 text-sm font-bold" :class="spellingCheck.is_correct ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-200 border border-rose-200 dark:border-rose-800'">
+              <p v-if="spellingCheck.is_correct">
+                ✅ 拼写正确！
+                <span v-if="!spellingCheck.exact_case" class="block text-xs mt-1 font-normal">提示：标准大小写为 “{{ active.item.text }}”</span>
+              </p>
+              <p v-else>
+                ❌ 你输入的是 “{{ spellingCheck.normalized_typed }}”，正确拼写是 “{{ active.item.text }}”
+              </p>
+            </div>
+
+            <div v-if="!feedbackResult && !expiredPractice" class="flex flex-wrap justify-center gap-2">
+              <button v-if="uncertainAttempt" :disabled="busy" class="p-3 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50" @click="grade(pendingAttempt.result)">重试确认这次练习</button>
+              <template v-else>
+                <button :disabled="busy" class="min-h-[44px] p-3 rounded-xl bg-emerald-500 text-white text-sm font-bold disabled:opacity-50" @click="grade('good')">
+                  {{ active.skill === 'write' && spellingCheck?.is_correct ? '提交：独立拼对' : '独立完成' }}
+                </button>
+                <button :disabled="busy" class="min-h-[44px] p-3 rounded-xl bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-sm font-bold disabled:opacity-50" @click="grade('hinted')">提示后完成</button>
+                <button :disabled="busy" class="min-h-[44px] p-3 rounded-xl bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-sm font-bold disabled:opacity-50" @click="grade('again')">还不熟</button>
+              </template>
+            </div>
+            <div v-else-if="feedbackResult" class="space-y-3">
+              <p v-if="confirmedAttempt" role="status" class="text-sm text-emerald-700 dark:text-emerald-300">这次练习已经记下了</p>
+              <p v-if="nextDue" class="text-xs text-brand-600 dark:text-brand-300">下次复习：{{ nextDue }}</p>
+              <p class="text-sm text-emerald-700 dark:text-emerald-300">已记录“{{ resultName(feedbackResult) }}”。同日再练不会重复加分或连续升级。</p>
+              <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm font-bold mr-2 disabled:opacity-50" @click="resetPracticeTry">再练一次</button>
+              <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50" @click="nextItem">下一项 / 返回清单</button>
+            </div>
+          </template>
+        </template>
+
+        <!-- Chinese Practice Mode (existing unchanged flow) -->
+        <template v-else>
+        <p v-if="false"></p>
         <div v-if="active.skill === 'recognize' || revealed" class="text-4xl font-reading text-slate-800 dark:text-slate-100">{{ active.item.text }}</div>
         <div v-if="active.skill === 'write' || revealed" class="text-xl text-brand-600 dark:text-brand-300">{{ active.item.pinyin || getCharPinyin(active.item.text) }}</div>
         <button v-if="active.skill === 'write' || revealed" class="min-h-[44px] px-4 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 text-sm font-bold" @click="speakHanzi(active.item.text)">🔊 听发音</button>
@@ -82,6 +218,7 @@
             <button :disabled="busy" class="min-h-[44px] px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-bold disabled:opacity-50" @click="nextItem">下一项 / 返回清单</button>
           </div>
         </template>
+        </template>
         <p v-if="error" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ error }}</p>
       </div>
     </UiDialog>
@@ -91,8 +228,10 @@
 
 <script setup>
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import api from '../api/client';
+import { compareSpellingAnswer } from '../utils/englishWord';
+import { playDictionaryAudio } from '../utils/dictionaryAudio';
 import { useCalendarStore } from '../stores/calendar';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import UiDialog from '../components/UiDialog.vue';
@@ -101,12 +240,14 @@ import { getCharPinyin, speakHanzi } from '../utils/hanzi';
 import { currentRole } from '../utils/session';
 import { loadLearningFont } from '../utils/learningFont';
 
-const route = useRoute(), childId = computed(() => route.params.id);
+const route = useRoute(), router = useRouter(), childId = computed(() => route.params.id);
+const language = ref(route.query.language === 'en' ? 'en' : 'zh');
 const calendar = useCalendarStore();
 const asParent = currentRole() === 'parent';
-const days = ref([]), history = ref([]), date = ref('');
+const days = ref([]), history = ref([]), date = ref(''), missingDefinitionCount = ref(0);
 const loading = ref(true), busy = ref(false), error = ref(''), notice = ref('');
 const active = ref(null), revealed = ref(false), charIndex = ref(0), feedbackResult = ref(null);
+const typedSpelling = ref(''), spellingCheck = ref(null), englishAudio = ref([]), englishAudioError = ref('');
 const expiredPractice = ref(false);
 const nextDue = computed(() => {
   const day = days.value.find(day => day.id === active.value?.dayId);
@@ -144,29 +285,47 @@ const closeRestoredForm = () => { active.value = null; pendingAttempt.value = nu
 onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
 onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const skillName = skill => skill === 'write' ? '书写' : '认读';
+const skillName = skill => {
+  if (language.value === 'en') return skill === 'write' ? '英语默写' : '英语认读';
+  return skill === 'write' ? '书写' : '认读';
+};
+function switchLanguage(nextLang) {
+  if (nextLang === language.value || busy.value || loading.value || active.value) return;
+  language.value = nextLang;
+  loaded = false;
+  router.replace({ query: { ...route.query, language: nextLang } });
+  refresh();
+}
+watch(() => route.query.language, (val) => {
+  const next = val === 'en' ? 'en' : 'zh';
+  if (next !== language.value && !active.value && !busy.value) {
+    language.value = next;
+    loaded = false;
+    refresh();
+  }
+});
 const resultName = result => ({ good: '独立完成', hinted: '提示后完成', again: '还不熟' }[result] || '待学习');
 const baseCount = (day, kind) => day.batches.find(batch => !batch.is_extra)?.items.filter(item => item.kind === kind).length || 0;
 const message = err => typeof err === 'string' ? err : err?.message || '操作失败，请重试';
 
 async function refreshHistory() {
-  const serial = ++historySerial, id = childId.value, requestedDate = calendar.today, timeZone = calendar.timeZone;
+  const serial = ++historySerial, id = childId.value, lang = language.value, requestedDate = calendar.today, timeZone = calendar.timeZone;
   try {
-    const recent = await api.getWordStudyHistory(id);
-    if (serial === historySerial && id === childId.value && calendar.ready && requestedDate === calendar.today && timeZone === calendar.timeZone) history.value = recent;
+    const recent = await api.getWordStudyHistory(id, lang);
+    if (serial === historySerial && id === childId.value && lang === language.value && calendar.ready && requestedDate === calendar.today && timeZone === calendar.timeZone) history.value = recent;
   } catch { /* The accepted score remains usable; the API reports history errors. */ }
 }
 
 async function load({ recoverDate = false } = {}) {
   if (!calendar.ready) return;
   stopRetry();
-  const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value;
+  const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value, lang = language.value;
   const recentSerial = ++historySerial;
   pendingDate = requestedDate;
-  const current = () => serial === studySerial && calendar.ready && requestedDate === calendar.today &&
+  const current = () => serial === studySerial && lang === language.value && calendar.ready && requestedDate === calendar.today &&
     timeZone === calendar.timeZone && id === childId.value;
   try {
-    const [overview, recent] = await Promise.all([api.getWordStudy(id), api.getWordStudyHistory(id)]);
+    const [overview, recent] = await Promise.all([api.getWordStudy(id, lang), api.getWordStudyHistory(id, lang)]);
     const sameRecoveredDate = recoveredDeviceDate.value === requestedDate && overview.date === date.value;
     if (!current() || active.value) return;
     if (!recoverDate && !sameRecoveredDate && overview.date !== requestedDate) {
@@ -177,6 +336,7 @@ async function load({ recoverDate = false } = {}) {
     recoveredDeviceDate.value = overview.date === requestedDate ? '' : requestedDate;
     days.value = overview.days;
     date.value = overview.date;
+    missingDefinitionCount.value = overview.missing_definition_count || 0;
     if (recentSerial === historySerial) history.value = recent;
     loaded = true;
   } catch (err) {
@@ -186,10 +346,42 @@ async function load({ recoverDate = false } = {}) {
   }
 }
 
+async function loadEnglishAudio(word) {
+  englishAudio.value = [];
+  englishAudioError.value = '';
+  try {
+    const res = await api.lookupDictionary(word, undefined, { silentError: true });
+    const match = res?.exact_matches?.find(m => m.word === word) || res?.exact_matches?.[0];
+    if (active.value?.item?.text === word) englishAudio.value = match?.audio || [];
+  } catch {}
+}
+
+async function playEnglishClip(url) {
+  englishAudioError.value = '';
+  try { await playDictionaryAudio(url); }
+  catch (err) { englishAudioError.value = err?.message || '发音播放失败'; }
+}
+
+function checkEnglishSpelling() {
+  if (!active.value) return;
+  spellingCheck.value = compareSpellingAnswer(typedSpelling.value, active.value.item.text);
+  revealed.value = true;
+}
+
+function resetPracticeTry() {
+  revealed.value = false;
+  feedbackResult.value = null;
+  typedSpelling.value = '';
+  spellingCheck.value = null;
+}
+
 function openItem(day, batch, item) {
   stopRetry();
-  active.value = { dayId: day.id, batchId: batch.id, skill: day.skill, item };
-  revealed.value = false; charIndex.value = 0; feedbackResult.value = null; pendingAttempt.value = null; pendingItemId.value = null; attemptUnknown.value = false; confirmedAttempt.value = false; error.value = ''; expiredPractice.value = false;
+  const lang = day.language || language.value || 'zh';
+  active.value = { dayId: day.id, batchId: batch.id, skill: day.skill, language: lang, item };
+  revealed.value = false; charIndex.value = 0; feedbackResult.value = null; typedSpelling.value = ''; spellingCheck.value = null;
+  pendingAttempt.value = null; pendingItemId.value = null; attemptUnknown.value = false; confirmedAttempt.value = false; error.value = ''; expiredPractice.value = false;
+  if (lang === 'en') loadEnglishAudio(item.text);
 }
 function begin(day, batch) { const item = batch.items.find(item => !item.result); if (item) openItem(day, batch, item); }
 function closePractice() { if (!busy.value) { active.value = null; pendingAttempt.value = null; } }

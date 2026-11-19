@@ -9,6 +9,8 @@ test-results
 .git
 .agents
 data
+dictionaries
+backend/dict-cache
 backend/backups
 .multica
 .codex

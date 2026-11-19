@@ -242,6 +242,46 @@ docker compose down
 
 ---
 
+### 离线英语词典（可选）
+
+英语单词本位于孩子端“字词本 → 英语单词”，家长在“学习安排 → 字词学习计划 → 英语单词计划”开启认读或默写。没有词典包时也能手工收录、编辑释义和学习已保存的单词。
+
+两份 Compose 配置均把宿主机 `./dictionaries` 只读挂载到容器 `/app/dictionaries`，索引和音频缓存写入现有数据目录下的 `./data/dict-cache`。只读挂载的含义见 [Docker 官方说明](https://docs.docker.com/engine/storage/bind-mounts/#use-a-read-only-bind-mount)。先在 Compose 文件所在目录建立 `dictionaries`，保持词典正文与配套 ZIP 的目录和文件名：
+
+```text
+dictionaries/
+├── Goldendict_Babylon_English_Chinese_S_.BGL
+├── OALD8/
+│   ├── En-En_Oxford_Advanced_Learners_Dictionary.dsl.dz
+│   └── En-En_Oxford_Advanced_Learners_Dictionary.dsl.files.zip
+└── MWCollegiate11_En_En/
+    ├── En-En-MWCollegiate11.dsl.dz
+    └── En-En-MWCollegiate11.dsl.files.zip
+```
+
+也可以在 Compose 同目录的 `.env` 设置 `DICT_HOST_DIR=/volume1/dictionaries`，直接挂载 NAS 上已有的词典目录。宿主机目录及父目录须允许 `PUID:PGID` 对应用户读取文件和访问目录；应用不会修改或接管原包权限。未使用词典时可保留空目录，或设置 `DICT_DIR=off` 关闭查词。
+
+首次索引可能耗时数十秒。建议在启动应用前离线准备索引，避免第一次查词时等待；使用本地构建时先运行 `docker compose build`，NAS 则使用已包含单词本功能的镜像：
+
+```bash
+mkdir -p dictionaries data
+docker compose run --rm --no-deps taskie node src/dictionary-index.js
+docker compose up -d
+```
+
+NAS 配置在以上 Compose 命令中添加 `-f docker-compose.nas.yml`。上述初始化通过镜像入口按 `PUID:PGID` 运行，只生成可重建的词典索引，不打开业务数据库。首次准备好后正常启动；更新原包或主动重建时，先停止应用，再完整替换文件、运行索引命令并重新启动。普通启动也会在查词时按资源大小、修改时间及索引版本自动检测是否需要重建。发音包变化会使音频缓存标识失效。无需安装 GoldenDict 桌面程序或 `ffmpeg`。
+
+原包应单独备份；索引和音频缓存可在应用停止后删除重建，均不进入 Taskie 业务备份。业务备份保留已收录的释义、计划及学习历史，缺少词典原包时仍可恢复和学习，原文查阅和发音则不可用。词典释义仅供选择，须按教材语境核对；收录时可修改，重新查词不会自动覆盖已保存的释义。
+
+本地裸机可设置 `DICT_DIR`、`DICT_CACHE_DIR`，并运行 `node backend/src/dictionary-index.js` 预建索引。真实资源验收需显式传入词典目录，使用临时业务数据库和缓存，不会修改原包，也不在 CI 中依赖个人词典：
+
+```bash
+npm run build
+DICT_DIR=/path/to/dictionaries npm run test:browser:real-dictionary
+```
+
+该专项检查真实英汉释义、音标、多义词、短语、词形与大小写，实际播放牛津英美 MP3 和韦氏 PCM，并验证查词收录、人工修订、双技能计划和练习。真实 iPad Safari 试听及 Docker 设备授权、普通用户运行仍需分别验收。
+
 ### 方式二：群晖 NAS (Synology) 预构建镜像部署指南（免编译、首选推荐）
 
 群晖 NAS 硬件配置（如赛扬 J4125、Realtek ARM）性能有限，**强烈建议直接使用云端自动预构建好的轻量多架构镜像**，避免在群晖本地进行耗时的 npm 依赖下载与前端编译。
@@ -265,8 +305,12 @@ docker compose down
          restart: unless-stopped
          ports:
            - "3000:3000"
+         environment:
+           - DICT_DIR=/app/dictionaries
+           - DICT_CACHE_DIR=/app/data/dict-cache
          volumes:
            - ./data:/app/data
+           - ./dictionaries:/app/dictionaries:ro
      ```
    - 点击下一步，勾选「向导完成后立即启动项目」并完成。
 3. 群晖将直接从云端高速拉取预构建镜像，秒级完成启动！
@@ -448,6 +492,12 @@ npm run test:browser:child-history
 
 ```bash
 npm run test:browser:child-characters
+```
+
+英语单词本与离线查词学习回归覆盖中英文词本切换、多词典查词（音标/发音真实播放/完整原词典与交叉引用跳转）、大小写与弯引号规范化、批量预览导入、缺释义拦截与双语认读/拼写计划与练习、跨孩子权限隔离，以及 320–1180px 浅暗色布局和 44px 触控尺寸（使用临时数据库与合成词典，无外部字典文件依赖）：
+
+```bash
+npm run test:browser:english-wordbook
 ```
 
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
@@ -654,6 +704,9 @@ Docker 部署的自动备份位于宿主机 `./data/backups`，数据库和照�
 | `BACKUP_INTERVAL_HOURS` | `24` | 自动备份间隔；设为 `0` 关闭 |
 | `BACKUP_RETENTION` | `7` | 保留的备份份数 |
 | `BACKUP_DIR` | 数据库所在目录下的 `backups` | 备份存储目录 |
+| `DICT_DIR` | Docker Compose 为 `/app/dictionaries`；裸机发现 `~/.goldendict/dicts` 时使用该目录 | 容器内/进程可见的词典目录；设为 `off` 关闭 |
+| `DICT_CACHE_DIR` | 数据库所在目录下的 `dict-cache` | 可写、可重建的词典索引与音频缓存；不进入业务备份 |
+| `DICT_HOST_DIR` | Compose 同目录的 `./dictionaries` | Compose 使用的宿主机词典目录，只读挂载 |
 | `JWT_SECRET` | 自动生成并保存到数据库 | 可选的自定义签名密钥；勿使用示例中的固定密钥 |
 | `PUID` / `PGID` | `1000` / `1000` | Docker 中运行程序的用户与用户组，启动时自动接管数据目录；如需修改，请使用专用普通账户，不要使用管理员账户 |
 

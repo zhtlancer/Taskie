@@ -122,6 +122,19 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
       !['template_id', 'child_id', 'cycle_start', 'scheduled_date', 'title', 'homework_id', 'skipped', 'created_at'].every(c => hasColumn('recurring_homework_occurrences', c)))) {
       throw fail('备份缺少周期作业模板或生成凭据，无法恢复');
     }
+    if (schemaVersion >= 36 && (!tables.includes('english_words') || !Object.entries({
+      english_words: ['id', 'child_id', 'word', 'identity_key', 'canonical_key', 'phonetic', 'phonetic_uk', 'phonetic_us',
+        'pos', 'definition_zh', 'definition_en', 'textbook', 'unit', 'note', 'categories', 'is_mastered', 'created_at', 'mastered_at'],
+      word_study_plans: ['language', 'textbook', 'units'],
+      word_study_states: ['language', 'english_word_id'],
+      word_study_days: ['language'],
+      word_study_items: ['english_word_id', 'phonetic', 'meaning_zh', 'meaning_en']
+    }).every(([table, columns]) => columns.every(column => hasColumn(table, column))))) {
+      throw fail('备份缺少英语单词本或双语学习数据，无法恢复');
+    }
+    if (schemaVersion >= 37 && !['textbook', 'units'].every(column => hasColumn('word_study_days', column))) {
+      throw fail('备份缺少学习清单范围快照，无法恢复');
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     // initDb also backfills missing attendance/fee revisions on current-schema backups,
     // before the candidate is serialized and copied into the live database.

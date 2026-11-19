@@ -662,3 +662,32 @@ CREATE TABLE IF NOT EXISTS photo_expectations (
   size INTEGER NOT NULL,
   sha256 TEXT NOT NULL
 );
+
+-- English vocabulary notebook (英语单词本): dictionary-free portable study metadata.
+CREATE TABLE IF NOT EXISTS english_words (
+  id TEXT PRIMARY KEY,
+  child_id TEXT NOT NULL,
+  word TEXT NOT NULL,
+  identity_key TEXT NOT NULL,
+  canonical_key TEXT NOT NULL,
+  phonetic TEXT,
+  phonetic_uk TEXT,
+  phonetic_us TEXT,
+  pos TEXT,
+  definition_zh TEXT,
+  definition_en TEXT,
+  textbook TEXT,
+  unit TEXT,
+  note TEXT,
+  categories TEXT NOT NULL DEFAULT '[]',
+  is_mastered INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  mastered_at TEXT,
+  UNIQUE(child_id, identity_key),
+  FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_english_words_child ON english_words(child_id);
+CREATE INDEX IF NOT EXISTS idx_english_words_child_mastered ON english_words(child_id, is_mastered);
+CREATE INDEX IF NOT EXISTS idx_english_words_child_canonical ON english_words(child_id, canonical_key);
+CREATE INDEX IF NOT EXISTS idx_english_words_child_unit ON english_words(child_id, textbook, unit);

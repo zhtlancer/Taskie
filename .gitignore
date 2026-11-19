@@ -20,6 +20,8 @@ test-results/
 *.sqlite-shm
 backend/data.sqlite*
 data/
+dictionaries/
+backend/dict-cache/
 backend/backups/
 
 # Uploaded mistake photos

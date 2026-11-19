@@ -112,7 +112,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 35;
+const SCHEMA_VERSION = 37;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -548,6 +548,133 @@ function initDb(db) {
   }
   // v35: weekly homework templates and immutable occurrence receipts are declared in schema.sql.
   if (db.pragma('user_version', { simple: true }) < 35) db.pragma('user_version = 35');
+  // v36: English wordbook (english_words in schema.sql) + bilingual word study plans/states/days/items.
+  if (db.pragma('user_version', { simple: true }) < 36) {
+    const plansHasLanguage = db.pragma('table_info(word_study_plans)').some(c => c.name === 'language');
+    const statesHasLanguage = db.pragma('table_info(word_study_states)').some(c => c.name === 'language');
+    const daysHasLanguage = db.pragma('table_info(word_study_days)').some(c => c.name === 'language');
+    const itemsCols = new Set(db.pragma('table_info(word_study_items)').map(c => c.name));
+
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        if (!plansHasLanguage) {
+          db.exec(`
+            CREATE TABLE word_study_plans_new (
+              id TEXT PRIMARY KEY,
+              child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+              language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh', 'en')),
+              skill TEXT NOT NULL CHECK(skill IN ('recognize', 'write')),
+              enabled INTEGER NOT NULL DEFAULT 1,
+              start_date TEXT NOT NULL,
+              days_of_week TEXT NOT NULL,
+              categories TEXT NOT NULL DEFAULT '[]',
+              include_mastered INTEGER NOT NULL DEFAULT 0,
+              new_target INTEGER NOT NULL DEFAULT 3,
+              review_target INTEGER NOT NULL DEFAULT 10,
+              required INTEGER NOT NULL DEFAULT 1,
+              points INTEGER NOT NULL DEFAULT 10,
+              extra_points INTEGER NOT NULL DEFAULT 0,
+              extra_reward_limit INTEGER NOT NULL DEFAULT 0,
+              last_scheduled_date TEXT,
+              textbook TEXT,
+              units TEXT NOT NULL DEFAULT '[]',
+              created_at TEXT NOT NULL,
+              UNIQUE(child_id, language, skill)
+            );
+            INSERT INTO word_study_plans_new (
+              id, child_id, language, skill, enabled, start_date, days_of_week,
+              categories, include_mastered, new_target, review_target, required,
+              points, extra_points, extra_reward_limit, last_scheduled_date,
+              textbook, units, created_at
+            )
+            SELECT
+              id, child_id, 'zh', skill, enabled, start_date, days_of_week,
+              categories, include_mastered, new_target, review_target, required,
+              points, extra_points, extra_reward_limit, last_scheduled_date,
+              NULL, '[]', created_at
+            FROM word_study_plans;
+            DROP TABLE word_study_plans;
+            ALTER TABLE word_study_plans_new RENAME TO word_study_plans;
+          `);
+        }
+
+        if (!statesHasLanguage) {
+          db.exec(`
+            CREATE TABLE word_study_states_new (
+              id TEXT PRIMARY KEY,
+              child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+              language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh', 'en')),
+              character_id TEXT REFERENCES characters(id) ON DELETE SET NULL,
+              english_word_id TEXT REFERENCES english_words(id) ON DELETE SET NULL,
+              skill TEXT NOT NULL,
+              stage INTEGER NOT NULL DEFAULT 0,
+              next_due_date TEXT NOT NULL,
+              last_review_date TEXT NOT NULL,
+              failures INTEGER NOT NULL DEFAULT 0,
+              UNIQUE(character_id, skill),
+              UNIQUE(english_word_id, skill)
+            );
+            INSERT INTO word_study_states_new (
+              id, child_id, language, character_id, english_word_id, skill,
+              stage, next_due_date, last_review_date, failures
+            )
+            SELECT
+              id, child_id, 'zh', character_id, NULL, skill,
+              stage, next_due_date, last_review_date, failures
+            FROM word_study_states;
+            DROP TABLE word_study_states;
+            ALTER TABLE word_study_states_new RENAME TO word_study_states;
+            DROP INDEX IF EXISTS idx_word_study_due;
+            CREATE INDEX IF NOT EXISTS idx_word_study_due ON word_study_states(child_id, language, skill, next_due_date);
+          `);
+        }
+
+        if (!daysHasLanguage) {
+          db.exec(`
+            ALTER TABLE word_study_days ADD COLUMN language TEXT NOT NULL DEFAULT 'zh' CHECK(language IN ('zh', 'en'));
+            UPDATE word_study_days
+            SET language = COALESCE((SELECT p.language FROM word_study_plans p WHERE p.id = word_study_days.plan_id), 'zh');
+          `);
+        }
+
+        if (!itemsCols.has('english_word_id')) {
+          db.exec('ALTER TABLE word_study_items ADD COLUMN english_word_id TEXT REFERENCES english_words(id) ON DELETE SET NULL;');
+        }
+        if (!itemsCols.has('phonetic')) {
+          db.exec('ALTER TABLE word_study_items ADD COLUMN phonetic TEXT;');
+        }
+        if (!itemsCols.has('meaning_zh')) {
+          db.exec('ALTER TABLE word_study_items ADD COLUMN meaning_zh TEXT;');
+        }
+        if (!itemsCols.has('meaning_en')) {
+          db.exec('ALTER TABLE word_study_items ADD COLUMN meaning_en TEXT;');
+        }
+
+        const fkViolations = db.pragma('foreign_key_check');
+        if (fkViolations.length) {
+          throw new Error(`Foreign key violation in v36 migration: ${JSON.stringify(fkViolations[0])}`);
+        }
+        db.pragma('user_version = 36');
+      })();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  }
+  // v37: freeze textbook/unit filters with each daily study list. For v36 lists the
+  // original filter cannot be recovered; retain the filter effective at upgrade.
+  if (db.pragma('user_version', { simple: true }) < 37) {
+    db.transaction(() => {
+      const columns = new Set(db.pragma('table_info(word_study_days)').map(c => c.name));
+      if (!columns.has('textbook')) db.exec('ALTER TABLE word_study_days ADD COLUMN textbook TEXT');
+      if (!columns.has('units')) db.exec("ALTER TABLE word_study_days ADD COLUMN units TEXT NOT NULL DEFAULT '[]'");
+      db.exec(`UPDATE word_study_days SET
+        textbook = (SELECT p.textbook FROM word_study_plans p WHERE p.id = word_study_days.plan_id),
+        units = COALESCE((SELECT p.units FROM word_study_plans p WHERE p.id = word_study_days.plan_id), '[]')
+        WHERE language = 'en'`);
+      db.pragma('user_version = 37');
+    })();
+  }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new

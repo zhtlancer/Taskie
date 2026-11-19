@@ -16,6 +16,8 @@ const RewardsService = require('./services/rewards.service');
 const MistakesService = require('./services/mistakes.service');
 const StatsService = require('./services/stats.service');
 const CharactersService = require('./services/characters.service');
+const EnglishWordsService = require('./services/english-words.service');
+const { DictionaryService } = require('./services/dictionary');
 const RedemptionsService = require('./services/redemptions.service');
 const PeriodsService = require('./services/periods.service');
 const SkipsService = require('./services/skips.service');
@@ -41,6 +43,8 @@ const rewardsRoutes = require('./routes/rewards.routes');
 const statsRoutes = require('./routes/stats.routes');
 const mistakesRoutes = require('./routes/mistakes.routes');
 const charactersRoutes = require('./routes/characters.routes');
+const englishWordsRoutes = require('./routes/english-words.routes');
+const dictionaryRoutes = require('./routes/dictionary.routes');
 const redemptionsRoutes = require('./routes/redemptions.routes');
 const periodsRoutes = require('./routes/periods.routes');
 const adhocTasksRoutes = require('./routes/adhoc-tasks.routes');
@@ -76,6 +80,11 @@ function buildApp(opts = {}) {
   const mistakesService = new MistakesService(db, uploadDirectory);
   const statsService = new StatsService(db, tasksService);
   const charactersService = new CharactersService(db);
+  const englishWordsService = new EnglishWordsService(db);
+  const dictionaryService = opts.dictionaryService || new DictionaryService({
+    dictDir: opts.dictDir !== undefined ? opts.dictDir : config.dictDir,
+    cacheDir: opts.dictCacheDir !== undefined ? opts.dictCacheDir : config.dictCacheDir
+  });
   const redemptionsService = new RedemptionsService(db, rewardsService);
   const periodsService = new PeriodsService(db, rewardsService, tasksService);
   const skipsService = new SkipsService(db, tasksService, rewardsService);
@@ -117,6 +126,8 @@ function buildApp(opts = {}) {
     mistakesService,
     statsService,
     charactersService,
+    englishWordsService,
+    dictionaryService,
     redemptionsService,
     periodsService,
     skipsService,
@@ -211,6 +222,7 @@ function buildApp(opts = {}) {
   });
   fastify.addHook('onClose', async () => {
     clearInterval(backupTimer);
+    dictionaryService.close();
     await backupService.operation;
     await Promise.allSettled(backupService.manifestReads.values());
   });
@@ -230,6 +242,8 @@ function buildApp(opts = {}) {
   fastify.register(statsRoutes, { prefix: '/api', statsService, timeStatsService });
   fastify.register(mistakesRoutes, { prefix: '/api/mistakes', mistakesService, uploadDir: uploadDirectory });
   fastify.register(charactersRoutes, { prefix: '/api/characters', charactersService });
+  fastify.register(englishWordsRoutes, { prefix: '/api/english-words', englishWordsService, dictionaryService });
+  fastify.register(dictionaryRoutes, { prefix: '/api/dictionary', dictionaryService });
   fastify.register(redemptionsRoutes, { prefix: '/api', redemptionsService });
   fastify.register(periodsRoutes, { prefix: '/api', periodsService });
   fastify.register(adhocTasksRoutes, { prefix: '/api', tasksService });

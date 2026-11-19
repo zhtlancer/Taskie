@@ -5,9 +5,10 @@ async function wordStudyRoutes(app, { wordStudyService: study }) {
     try { return fn(request); }
     catch (error) { return reply.code(error.status || error.statusCode || 500).send({ error: error.message || '学习操作失败' }); }
   };
-  app.get('/children/:id/word-study', handle(request => study.today(request.params.id)));
-  app.get('/children/:id/word-study/history', handle(request => study.history(request.params.id)));
-  app.put('/children/:id/word-study/plans/:skill', handle(request => study.savePlan(request.params.id, request.params.skill, request.body || {})));
+  app.get('/children/:id/word-study', handle(request => study.today(request.params.id, request.query?.language)));
+  app.get('/children/:id/word-study/history', handle(request => study.history(request.params.id, request.query?.language)));
+  app.put('/children/:id/word-study/plans/:skill', handle(request => study.savePlan(request.params.id, request.params.skill, request.body || {}, request.query?.language)));
+  app.put('/children/:id/word-study/:language/plans/:skill', handle(request => study.savePlan(request.params.id, request.params.skill, request.body || {}, request.params.language)));
   app.post('/word-study/days/:id/extra', generationWrite(app, request => {
     app.requireChildAccess(request, study.getDay(request.params.id).child_id);
     return study.extra(request.params.id, request.body?.request_id);

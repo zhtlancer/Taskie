@@ -42,7 +42,7 @@ function waitPastFamilyMidnight() {
   if (left < MIDNIGHT_GUARD_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, left + 50);
 }
 
-function createTestApp({ authenticated = true, defaultParentPin = false, deviceAuth = false } = {}) {
+function createTestApp({ authenticated = true, defaultParentPin = false, deviceAuth = false, ...extraOpts } = {}) {
   waitPastFamilyMidnight();
   // Use in-memory SQLite for isolated, fast tests
   const db = getDb(':memory:');
@@ -60,7 +60,8 @@ function createTestApp({ authenticated = true, defaultParentPin = false, deviceA
     backupIntervalHours: 0,
     // Feature tests run as an already-authorized device; the device gate has its own tests.
     deviceAuth,
-    authorizedTokensFile: path.join(tempUploadDir, '../authorized-tokens-' + Math.random().toString(36).slice(2))
+    authorizedTokensFile: path.join(tempUploadDir, '../authorized-tokens-' + Math.random().toString(36).slice(2)),
+    ...extraOpts
   });
   const rawInject = app.inject.bind(app);
   if (authenticated) app.inject = async options => {

@@ -172,15 +172,37 @@ export const api = {
   },
   markMistakeMastered: (id, mastered = true) => put(`/mistakes/${id}/master`, { is_mastered: mastered }),
   deleteMistake: id => remove(`/mistakes/${id}`),
-  getWordStudy: id => get(`/children/${id}/word-study`),
-  getWordStudyHistory: id => get(`/children/${id}/word-study/history`),
-  saveWordStudyPlan: (id, skill, data) => put(`/children/${id}/word-study/plans/${skill}`, data),
+  getWordStudy: (id, language = 'zh', signal, options) => get(`/children/${id}/word-study`, language === 'en' ? { language: 'en' } : undefined, signal, options),
+  getWordStudyHistory: (id, language = 'zh') => get(`/children/${id}/word-study/history`, language === 'en' ? { language: 'en' } : undefined),
+  saveWordStudyPlan: (id, skill, data, language = data?.language || 'zh', options) => put(
+    language === 'en' ? `/children/${id}/word-study/en/plans/${skill}` : `/children/${id}/word-study/plans/${skill}`,
+    data, options
+  ),
   addWordStudyExtra: (id, requestId) => idempotentPost(`/word-study/days/${id}/extra`, { request_id: requestId }),
   gradeWordStudyItem: (id, data) => idempotentPost(`/word-study/items/${id}/attempts`, data, {
     preserveNetworkError: true,
     // The practice dialog provides recovery only for this specific date rejection.
     silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
   }),
+  getEnglishWords: (id, params = {}, signal, options) => get('/english-words', { child_id: id, ...params }, signal, options),
+  getEnglishWordTaxonomy: (id, signal, options) => get('/english-words/taxonomy', { child_id: id }, signal, options),
+  createEnglishWord: (data, options) => post('/english-words', data, options),
+  previewEnglishBatch: (childId, text, options) => post('/english-words/batch-preview', { child_id: childId, text }, options),
+  commitEnglishBatch: (data, options) => post('/english-words/batch', data, options),
+  updateEnglishWord: (id, data, options) => put(`/english-words/${id}`, data, options),
+  markEnglishWordMastered: (id, mastered = null, options) => put(`/english-words/${id}/master`, { is_mastered: mastered }, options),
+  setEnglishWordCategories: (id, categories, options) => put(`/english-words/${id}/categories`, { categories }, options),
+  deleteEnglishWord: (id, options) => remove(`/english-words/${id}`, options),
+  getDictionaryStatus: (signal, options) => get('/dictionary/status', undefined, signal, options),
+  lookupDictionary: (word, signal, options) => get('/dictionary/lookup', { word }, signal, options),
+  suggestDictionary: (prefix, limit = 10, signal, options) => get('/dictionary/suggest', { prefix, limit }, signal, options),
+  getDictionaryArticle: (word, dictId = 'all', signal, options) => get('/dictionary/article', { word, dict_id: dictId }, signal, options),
+  rebuildDictionaryIndex: (options) => post('/dictionary/rebuild-index', undefined, options),
+  async fetchDictionaryAudioBlob(url, signal) {
+    const apiPath = url.startsWith('/api/') ? url.slice(4) : url;
+    const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true });
+    return response.data;
+  },
   getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),
   createCharacter: (data, options) => post('/characters', data, options),
   markCharacterMastered: (id, mastered = null, options) => put(`/characters/${id}/master`, { is_mastered: mastered }, options),
