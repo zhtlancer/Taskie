@@ -163,6 +163,7 @@ import UiDialog from './UiDialog.vue';
 import DictionaryImage from './DictionaryImage.vue';
 import api from '../api/client';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
+import { getToken } from '../utils/session.js';
 
 const props = defineProps({
   initialWord: { type: String, required: true },
@@ -272,9 +273,16 @@ watch(() => props.initialWord, (next) => {
 }, { immediate: true });
 
 function resetScope() {
+  loadSerial++;
+  controller?.abort();
+  stopDictionaryAudio();
   history.value = [];
+  articles.value = [];
+  loading.value = false;
+  error.value = '';
+  audioError.value = '';
   currentWord.value = props.initialWord;
-  loadWord(currentWord.value);
+  if (getToken()) loadWord(currentWord.value);
 }
 onMounted(() => {
   window.addEventListener('taskie:session-changed', resetScope);

@@ -183,7 +183,7 @@ async function main() {
           assert.ok(dimensions.width>0&&dimensions.height>0);assert.equal(dimensions.filter,'none');
           assert.ok(dimensions.displayWidth<=width);assert.equal(await imagesPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
           console.log(`IMAGE ${width}/${theme} ${word}/${source}: ${dimensions.width}x${dimensions.height}`);
-          if(word==='abandon')await imagesPage.screenshot({path:`/tmp/taskie-real-article-${width}-${theme}.png`});
+          if(process.env.SCREENSHOT_DIR&&word==='abandon'){fs.mkdirSync(process.env.SCREENSHOT_DIR,{recursive:true});await imagesPage.screenshot({path:path.join(process.env.SCREENSHOT_DIR,`real-article-${width}-${theme}.png`)});}
           await original.getByRole('button',{name:'关闭',exact:true}).last().click();
         }
       } finally {await imagesContext.close();}

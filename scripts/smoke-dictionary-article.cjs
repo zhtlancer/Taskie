@@ -66,8 +66,9 @@ async function checkDictionaryArticle({ browser, base, api, parentToken, openCon
         const controls=await article.locator('button').evaluateAll(buttons=>buttons.filter(button=>button.getClientRects().length).map(button=>({text:button.textContent.trim(),width:button.getBoundingClientRect().width,height:button.getBoundingClientRect().height})));
         assert.deepEqual(controls.filter(control=>control.width<43.9||control.height<43.9),[],'all article buttons and internal links must be at least 44px');
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-        if (width===390&&theme==='light'||width===820&&theme==='dark') {
-          await tableBox().scrollIntoViewIfNeeded();await page.screenshot({path:`/tmp/taskie-dictionary-article-${width}-${theme}.png`});
+        if (process.env.SCREENSHOT_DIR && (width===390&&theme==='light'||width===820&&theme==='dark')) {
+          fs.mkdirSync(process.env.SCREENSHOT_DIR,{recursive:true});
+          await tableBox().scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.SCREENSHOT_DIR,`dictionary-article-${width}-${theme}.png`)});
         }
         await article.getByRole('button',{name:'next',exact:true}).click();
         const next=page.getByRole('dialog',{name:'原词典 · next',exact:true});

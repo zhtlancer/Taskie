@@ -604,8 +604,10 @@ class DictionaryService {
       throw { status: 400, message: '词典图片来源或文件名无效' };
     }
     if (version !== undefined && (typeof version !== 'string' || !/^[a-f0-9]{64}$/.test(version))) throw { status: 400, message: '词典图片版本无效' };
+    const discovered = this.getSources()[dictId];
+    if (!discovered?.zipPath || !fs.existsSync(discovered.zipPath)) throw { status: 404, message: '词典图片资源不可用' };
     const index = await this.ensureIndex();
-    if (!index) throw { status: 404, message: '词典图片资源不可用' };
+    if (!index) throw { status: 503, message: '词典索引尚未就绪' };
     const { db, sources } = index;
     const source = sources[dictId];
     if (!source?.zipPath) throw { status: 404, message: '词典图片资源不可用' };

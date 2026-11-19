@@ -7,6 +7,7 @@ const { createTestApp, cleanupTestApp } = require('./helper');
 const { writeImageFixture } = require('./dictionary-image-fixture');
 const { zip } = require('./dictionary-audio-fixture');
 const { MAX_IMAGE_BYTES, imageContentType } = require('../src/services/dictionary/image-resource');
+const { DictionaryService } = require('../src/services/dictionary');
 const { parseDslArticleToAst } = require('../src/services/dictionary/dsl-parser');
 const { readZipEntry, scanZipCentralDirectory } = require('../src/services/dictionary/zip64-reader');
 
@@ -95,4 +96,15 @@ test('signature-only corrupt images and excessive decoded pixel dimensions are r
   image.writeUInt32BE(require('node:zlib').crc32(image.subarray(12,29)),29);
   assert.equal((await sharp(image).metadata()).width,7000);
   await assert.rejects(imageContentType('large.png',image),err=>err.status===422);
+});
+
+test('getImage returns 503 when index is not built under autoBuild=false and 404 when media archive is missing', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-image-state-'));
+  const dictDir = path.join(root, 'dicts');
+  const { zipPath } = await writeImageFixture(dictDir);
+  const service = new DictionaryService({ dictDir, cacheDir: path.join(root, 'cache'), autoBuild: false });
+  t.after(async () => { await service.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  await assert.rejects(service.getImage('oald8', 'table.png'), err => err.status === 503);
+  fs.rmSync(zipPath);
+  await assert.rejects(service.getImage('oald8', 'table.png'), err => err.status === 404);
 });
