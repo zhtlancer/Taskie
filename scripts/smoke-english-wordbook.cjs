@@ -13,6 +13,7 @@ const checkEnglishCaseRules = require('./english-case-browser.cjs');
 const checkEnglishSenses = require('./english-senses-browser.cjs');
 const checkEnglishProgress = require('./english-progress-browser.cjs');
 const checkDictionaryFallback = require('./dictionary-fallback-browser.cjs');
+const checkDictionaryIndexNotice = require('./dictionary-index-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -515,6 +516,7 @@ async function main() {
     await checkEnglishSenses({ browser, base, api, parentToken, openContext, errors });
     await checkEnglishProgress({ browser, base, api, parentToken, openContext, errors, db });
     await checkDictionaryFallback({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService });
+    await checkDictionaryIndexNotice({ browser, base, api, parentToken, openContext, errors });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

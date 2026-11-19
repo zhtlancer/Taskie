@@ -2,6 +2,8 @@
 function dictionaryFailure(error) {
   const code = error?.code || '';
   const message = error?.message || '';
+  if (code === 'DICTIONARY_CHANGED') return { status: 503, code, message: '词典文件在准备期间发生变化，请稍后重试。' };
+  if (code === 'DICTIONARY_CLOSED') return { status: 503, code, message: '词典服务正在关闭，请稍后重试。' };
   if (code === 'DICTIONARY_ENTRY_INVALID') return { status: 503, code, message: '部分词条的词典数据无法读取，可手动填写释义。' };
   if (/Unsupported ZIP compression method/.test(message)) return { status: 503, code: 'DICTIONARY_UNSUPPORTED', message: '词典资源的压缩格式暂不支持，可手动填写释义。' };
   if (code === 'DICTIONARY_INVALID' || ['Z_DATA_ERROR', 'Z_BUF_ERROR', 'ERR_BUFFER_OUT_OF_BOUNDS', 'SQLITE_CORRUPT', 'SQLITE_NOTADB'].includes(code)

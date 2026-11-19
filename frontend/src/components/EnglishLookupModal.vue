@@ -24,6 +24,8 @@
         </button>
       </form>
 
+      <DictionaryIndexNotice v-if="lookingUp" />
+
       <!-- Live autocomplete suggestions -->
       <div v-if="suggestList.length" class="flex flex-wrap items-center gap-1.5">
         <span class="text-xs font-bold text-slate-500 dark:text-slate-400">猜你想查：</span>
@@ -264,6 +266,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
+import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
 import { newEnglishSense, withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';

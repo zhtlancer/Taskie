@@ -49,8 +49,15 @@ client.interceptors.response.use(response => response, error => {
     ...(Array.isArray(error.response?.data?.conflicts) ? { conflicts: error.response.data.conflicts } : {})
   }) : message);
 });
+const requestTimeout = (url, data) => {
+  if (url.startsWith('/backups')) return 180000;
+  // A cold dictionary query waits for a shared background build on slower devices.
+  if ((url.startsWith('/dictionary/') && url !== '/dictionary/status') ||
+    (url === '/english-words/batch-preview' && data?.use_dictionary !== false)) return 120000;
+  return 15000;
+};
 const request = async (method, url, data, params, signal, options = {}) =>
-  (await client.request({ ...options, method, url, data, params, signal, timeout: url.startsWith('/backups') ? 180000 : 15000 })).data;
+  (await client.request({ ...options, method, url, data, params, signal, timeout: requestTimeout(url, data) })).data;
 const get = (url, params, signal, options) => request('get', url, undefined, params, signal, options);
 const post = (url, data, options) => request('post', url, data, undefined, undefined, options);
 const generationHeaders = generation => generation ? { 'X-Taskie-Data-Generation': generation } : {};
@@ -203,7 +210,7 @@ export const api = {
   rebuildDictionaryIndex: (options) => post('/dictionary/rebuild-index', undefined, options),
   async fetchDictionaryAudioBlob(url, signal) {
     const apiPath = url.startsWith('/api/') ? url.slice(4) : url;
-    const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true });
+    const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true, timeout: requestTimeout(apiPath) });
     return response.data;
   },
   getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),

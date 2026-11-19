@@ -1,19 +1,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
+const { Worker } = require('node:worker_threads');
 const Database = require('better-sqlite3');
+const { dictionaryFailure } = require('./issues');
 
 const { identityKey, canonicalKey } = require('../../utils/english-word');
-const { parseBglFile, summarizeBglEntries } = require('./bgl-parser');
+const { summarizeBglEntries } = require('./bgl-parser');
 const {
   parseDictzipHeader,
   readDslSlice,
-  scanDslEntries,
   extractDslSummary,
   parseDslArticleToAst
 } = require('./dsl-parser');
 const {
-  scanZipCentralDirectory,
   readZipEntry,
   unwrapMediaResource
 } = require('./zip64-reader');
@@ -107,14 +107,30 @@ class DictionaryService {
     this.indexDb = null;
     this.dslHeaders = new Map();
     this.buildPromise = null;
+    this.buildWorker = null;
+    this.buildProgress = null;
+    this.lastBuildError = null;
+    this.indexStamp = null;
+    this.closed = false;
   }
 
-  close() {
+  releaseIndex() {
     if (this.indexDb) {
       try { this.indexDb.close(); } catch {}
       this.indexDb = null;
     }
     this.dslHeaders.clear();
+    this.indexStamp = null;
+  }
+
+  close() {
+    this.closed = true;
+    this.releaseIndex();
+    if (!this.closePromise) this.closePromise = (async () => {
+      await this.buildWorker?.terminate();
+      await this.buildPromise?.catch(() => {});
+    })();
+    return this.closePromise;
   }
 
   getSources() {
@@ -133,6 +149,9 @@ class DictionaryService {
       return {
         available: false,
         index_ready: false,
+        indexing: Boolean(this.buildPromise),
+        progress: this.buildProgress,
+        last_error: this.lastBuildError,
         dictionaries: [],
         reason: '未配置或未发现本地离线词典文件，可手动填写释义添加单词'
       };
@@ -142,6 +161,8 @@ class DictionaryService {
       available: true,
       index_ready: ready,
       indexing: Boolean(this.buildPromise),
+      progress: this.buildProgress,
+      last_error: this.lastBuildError,
       dictionaries: sourceList,
       reason: ready ? null : '正在准备或等待构建词典索引'
     };
@@ -173,181 +194,86 @@ class DictionaryService {
   }
 
   openIndexDb() {
+    if (this.closed) return null;
+    if (!this.indexPath || !fs.existsSync(this.indexPath)) {
+      this.releaseIndex();
+      return null;
+    }
+    // A separate offline indexer may have atomically replaced the cache file.
+    const stat = fs.statSync(this.indexPath);
+    const stamp = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+    if (this.indexDb && stamp !== this.indexStamp) this.releaseIndex();
     if (this.indexDb) return this.indexDb;
-    if (!this.indexPath || !fs.existsSync(this.indexPath)) return null;
     this.indexDb = new Database(this.indexPath, { readonly: true });
+    this.indexStamp = stamp;
     return this.indexDb;
   }
 
   async ensureIndex() {
-    const sources = this.getSources();
+    if (this.closed) throw Object.assign(new Error('Dictionary service is closed'), { code: 'DICTIONARY_CLOSED' });
+    let sources = this.getSources();
     if (!Object.keys(sources).length) return null;
-    if (this.isIndexCurrent(sources)) return this.openIndexDb();
+    if (this.isIndexCurrent(sources)) return { db: this.openIndexDb(), sources };
     if (!this.autoBuild) return null;
     await this.rebuildIndex();
-    return this.openIndexDb();
+    sources = this.getSources();
+    if (this.closed) throw Object.assign(new Error('Dictionary service is closed'), { code: 'DICTIONARY_CLOSED' });
+    if (!this.isIndexCurrent(sources)) throw Object.assign(new Error('Dictionary changed during indexing'), { code: 'DICTIONARY_CHANGED' });
+    return { db: this.openIndexDb(), sources };
   }
 
-  async rebuildIndex() {
+  rebuildIndex() {
     if (this.buildPromise) return this.buildPromise;
-    this.buildPromise = (async () => {
+    this.buildProgress = { phase: 'starting', processed: 0 };
+    this.lastBuildError = null;
+    // Defer setup until buildPromise is assigned, so even concurrent first lookups share one job.
+    this.buildPromise = Promise.resolve().then(async () => {
+      if (this.closed) throw Object.assign(new Error('Dictionary service is closed'), { code: 'DICTIONARY_CLOSED' });
       const sources = this.getSources();
-      if (!Object.keys(sources).length) {
-        return { built: false, reason: '未发现词典文件' };
-      }
-      if (!this.indexPath) {
-        throw new Error('Dictionary cacheDir is not configured');
-      }
+      if (!Object.keys(sources).length) return { built: false, reason: '未发现词典文件' };
+      if (!this.indexPath) throw new Error('Dictionary cacheDir is not configured');
       fs.mkdirSync(this.cacheDir, { recursive: true });
-      const tmpPath = `${this.indexPath}.${process.pid}.${Date.now()}.tmp`;
-      this.close();
-
-      const db = new Database(tmpPath);
+      const tmpPath = `${this.indexPath}.${randomUUID()}.tmp`;
+      let worker;
       try {
-        db.pragma('journal_mode = OFF');
-        db.pragma('synchronous = OFF');
-        db.pragma('temp_store = MEMORY');
-        db.exec(`
-          CREATE TABLE dict_sources (
-            dict_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            file_path TEXT NOT NULL,
-            zip_path TEXT,
-            file_size INTEGER NOT NULL,
-            mtime_ms INTEGER NOT NULL,
-            zip_size INTEGER NOT NULL,
-            zip_mtime_ms INTEGER NOT NULL,
-            entry_count INTEGER NOT NULL DEFAULT 0,
-            media_count INTEGER NOT NULL DEFAULT 0
-          );
-          CREATE TABLE bgl_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            headword TEXT NOT NULL,
-            pos TEXT,
-            phonetic TEXT,
-            definition TEXT NOT NULL,
-            inflections TEXT,
-            entry_order INTEGER NOT NULL DEFAULT 0
-          );
-          CREATE TABLE dsl_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            dict_id TEXT NOT NULL,
-            headword TEXT NOT NULL,
-            body_offset INTEGER NOT NULL,
-            body_length INTEGER NOT NULL
-          );
-          CREATE TABLE headwords (
-            headword_exact TEXT NOT NULL,
-            headword_ci TEXT NOT NULL,
-            dict_id TEXT NOT NULL,
-            ref_id INTEGER NOT NULL
-          );
-          CREATE TABLE inflections (
-            form_ci TEXT NOT NULL,
-            base_exact TEXT NOT NULL,
-            base_ci TEXT NOT NULL
-          );
-          CREATE TABLE media_files (
-            dict_id TEXT NOT NULL,
-            filename_ci TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            method INTEGER NOT NULL,
-            comp_size INTEGER NOT NULL,
-            uncomp_size INTEGER NOT NULL,
-            local_offset INTEGER NOT NULL,
-            PRIMARY KEY (dict_id, filename_ci)
-          );
-        `);
-
-        const insertBgl = db.prepare('INSERT INTO bgl_entries (headword, pos, phonetic, definition, inflections, entry_order) VALUES (?, ?, ?, ?, ?, ?)');
-        const insertDsl = db.prepare('INSERT INTO dsl_entries (dict_id, headword, body_offset, body_length) VALUES (?, ?, ?, ?)');
-        const insertHw = db.prepare('INSERT INTO headwords (headword_exact, headword_ci, dict_id, ref_id) VALUES (?, ?, ?, ?)');
-        const insertInfl = db.prepare('INSERT INTO inflections (form_ci, base_exact, base_ci) VALUES (?, ?, ?)');
-        const insertMedia = db.prepare('INSERT OR IGNORE INTO media_files (dict_id, filename_ci, filename, method, comp_size, uncomp_size, local_offset) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        const insertSrc = db.prepare('INSERT INTO dict_sources (dict_id, name, file_path, zip_path, file_size, mtime_ms, zip_size, zip_mtime_ms, entry_count, media_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-
-        const runBuild = db.transaction(() => {
-          if (sources.bgl) {
-            const s = sources.bgl;
-            let entryCount = 0;
-            parseBglFile(s.filePath, entry => {
-              const exact = identityKey(entry.headword);
-              const ci = canonicalKey(entry.headword);
-              if (!exact) return;
-              const info = insertBgl.run(
-                exact,
-                entry.pos || null,
-                entry.phonetic || null,
-                entry.definition,
-                entry.inflections.length ? JSON.stringify(entry.inflections) : null,
-                entry.order
-              );
-              insertHw.run(exact, ci, 'bgl', Number(info.lastInsertRowid));
-              for (const form of entry.inflections) {
-                const formCi = canonicalKey(form);
-                if (formCi && formCi !== ci) insertInfl.run(formCi, exact, ci);
-              }
-              entryCount += 1;
-            });
-            insertSrc.run('bgl', s.name, s.filePath, null, s.fileSize, s.mtimeMs, s.zipSize, s.zipMtimeMs, entryCount, 0);
-          }
-
-          for (const dictId of ['oald8', 'mw11']) {
-            const s = sources[dictId];
-            if (!s) continue;
-            let entryCount = 0;
-            scanDslEntries(s.filePath, entry => {
-              const primaryHw = identityKey(entry.headwords[0] || '');
-              if (!primaryHw) return;
-              const info = insertDsl.run(dictId, primaryHw, entry.bodyOffset, entry.bodyLength);
-              const refId = Number(info.lastInsertRowid);
-              const seenHw = new Set();
-              for (const rawHw of entry.headwords) {
-                const exact = identityKey(rawHw);
-                if (!exact || seenHw.has(exact)) continue;
-                seenHw.add(exact);
-                insertHw.run(exact, canonicalKey(exact), dictId, refId);
-              }
-              entryCount += 1;
-            });
-
-            let mediaCount = 0;
-            if (s.zipPath && fs.existsSync(s.zipPath)) {
-              scanZipCentralDirectory(s.zipPath, item => {
-                const name = path.basename(item.filename);
-                insertMedia.run(dictId, name.toLowerCase(), name, item.method, item.compSize, item.uncompSize, item.localHeaderOffset);
-                mediaCount += 1;
-              });
-            }
-            insertSrc.run(dictId, s.name, s.filePath, s.zipPath || null, s.fileSize, s.mtimeMs, s.zipSize, s.zipMtimeMs, entryCount, mediaCount);
-          }
-
-          db.exec(`
-            CREATE INDEX idx_hw_exact ON headwords(headword_exact);
-            CREATE INDEX idx_hw_ci ON headwords(headword_ci);
-            CREATE INDEX idx_infl_form ON inflections(form_ci);
-          `);
-          db.pragma(`user_version = ${INDEX_VERSION}`);
+        const rows = await new Promise((resolve, reject) => {
+          worker = new Worker(path.join(__dirname, 'index-worker.js'), {
+            workerData: { sources, tmpPath, indexVersion: INDEX_VERSION }
+          });
+          this.buildWorker = worker;
+          worker.on('message', message => {
+            if (message.type === 'progress') this.buildProgress = message.progress;
+            if (message.type === 'complete') resolve(message.sources);
+            if (message.type === 'failed') reject(Object.assign(new Error(message.error.message), { code: message.error.code }));
+          });
+          worker.once('error', reject);
+          worker.once('exit', code => reject(Object.assign(new Error(`Dictionary index worker exited (${code})`), {
+            code: this.closed ? 'DICTIONARY_CLOSED' : 'DICTIONARY_BUILD_FAILED'
+          })));
         });
-
-        runBuild();
-        db.close();
+        await worker.terminate();
+        if (this.closed) throw Object.assign(new Error('Dictionary service is closed'), { code: 'DICTIONARY_CLOSED' });
+        if (JSON.stringify(this.getSources()) !== JSON.stringify(sources)) {
+          throw Object.assign(new Error('Dictionary changed during indexing'), { code: 'DICTIONARY_CHANGED' });
+        }
+        // Keep the previous index open until a fully built, verified replacement is ready.
+        this.releaseIndex();
         fs.renameSync(tmpPath, this.indexPath);
-      } catch (err) {
-        try { db.close(); } catch {}
-        try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
-        throw err;
+        return { built: true, sources: rows };
+      } finally {
+        // A terminated worker must stop writing before its private file is removed.
+        await worker?.terminate();
+        this.buildWorker = null;
+        fs.rmSync(tmpPath, { force: true });
       }
-
-      const statRows = this.openIndexDb().prepare('SELECT dict_id, entry_count, media_count FROM dict_sources').all();
-      return { built: true, sources: statRows };
-    })();
-
-    try {
-      return await this.buildPromise;
-    } finally {
+    }).catch(error => {
+      this.lastBuildError = dictionaryFailure(error);
+      throw error;
+    }).finally(() => {
       this.buildPromise = null;
-    }
+      this.buildProgress = null;
+    });
+    return this.buildPromise;
   }
 
   getDslHeader(dictId, filePath) {
@@ -483,8 +409,8 @@ class DictionaryService {
       };
     }
 
-    const sources = this.getSources();
-    if (!Object.keys(sources).length) {
+    const discovered = this.getSources();
+    if (!Object.keys(discovered).length) {
       return {
         available: false,
         index_ready: false,
@@ -495,8 +421,8 @@ class DictionaryService {
       };
     }
 
-    const db = await this.ensureIndex();
-    if (!db) {
+    const index = await this.ensureIndex();
+    if (!index) {
       return {
         available: true,
         index_ready: false,
@@ -507,6 +433,7 @@ class DictionaryService {
       };
     }
 
+    const { db, sources } = index;
     const variantRows = db.prepare('SELECT DISTINCT headword_exact FROM headwords WHERE headword_ci = ?').all(queryCi);
     // Keep case-exact match first ("May" before "may" when querying "May"), then remaining case variants.
     const sortedVariants = variantRows
@@ -562,8 +489,9 @@ class DictionaryService {
   async suggest(rawPrefix, limit = 10) {
     const prefix = canonicalKey(rawPrefix);
     if (!prefix) return { available: Boolean(this.indexDb || Object.keys(this.getSources()).length), items: [] };
-    const db = await this.ensureIndex();
-    if (!db) return { available: false, items: [] };
+    const index = await this.ensureIndex();
+    if (!index) return { available: false, items: [] };
+    const { db } = index;
     const cap = Math.max(1, Math.min(20, Number(limit) || 10));
     const rows = db.prepare(`
       SELECT DISTINCT headword_exact, headword_ci
@@ -583,15 +511,16 @@ class DictionaryService {
     const wordCi = canonicalKey(rawWord);
     if (!wordExact) return { available: true, word: '', articles: [] };
 
-    const sources = this.getSources();
-    if (!Object.keys(sources).length) {
+    const discovered = this.getSources();
+    if (!Object.keys(discovered).length) {
       return { available: false, word: wordExact, articles: [], reason: '未配置或未发现本地离线词典' };
     }
-    const db = await this.ensureIndex();
-    if (!db) {
+    const index = await this.ensureIndex();
+    if (!index) {
       return { available: true, word: wordExact, articles: [], reason: '词典索引尚未构建' };
     }
 
+    const { db, sources } = index;
     const exactRows = db.prepare('SELECT dict_id, ref_id, headword_exact FROM headwords WHERE headword_exact = ?').all(wordExact);
     const hwRows = exactRows.length
       ? exactRows
@@ -657,16 +586,19 @@ class DictionaryService {
       throw { status: 400, message: '音频文件名无效' };
     }
 
-    const sources = this.getSources();
-    const src = sources[dictId];
-    if (!src || !src.zipPath || !fs.existsSync(src.zipPath)) {
+    const discovered = this.getSources();
+    const source = discovered[dictId];
+    if (!source || !source.zipPath || !fs.existsSync(source.zipPath)) {
       throw { status: 404, message: '词典发音包不可用' };
     }
-    const db = await this.ensureIndex();
-    if (!db) {
+    const index = await this.ensureIndex();
+    if (!index) {
       throw { status: 503, message: '词典索引尚未就绪' };
     }
 
+    const { db, sources } = index;
+    const src = sources[dictId];
+    if (!src?.zipPath) throw { status: 404, message: '词典发音包不可用' };
     const meta = db.prepare(`
       SELECT filename, method, comp_size, uncomp_size, local_offset
       FROM media_files

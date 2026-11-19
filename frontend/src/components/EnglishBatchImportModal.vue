@@ -78,6 +78,7 @@
         </span>
       </div>
 
+      <DictionaryIndexNotice v-if="previewing && previewUsesDictionary" />
       <p v-if="error" role="alert" class="text-xs font-bold text-rose-600 dark:text-rose-300">{{ error }}</p>
       <div v-if="dictionaryWarnings.length" data-dictionary-batch-warning role="status" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-1 text-xs text-amber-800 dark:text-amber-200">
         <p v-for="notice in dictionaryWarnings" :key="notice.code">{{ notice.message }}</p>
@@ -161,6 +162,7 @@ import { ref, computed, watch } from 'vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
 import { mergeEnglishBatchPreview } from '../utils/englishBatchPreview';
 import UiDialog from './UiDialog.vue';
+import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
 import { useEnglishWordStore } from '../stores/englishWord';
@@ -183,6 +185,7 @@ const unit = ref('');
 const categories = ref(['recognize', 'write']);
 const previewItems = ref([]);
 const previewing = ref(false);
+const previewUsesDictionary = ref(true);
 const importing = ref(false);
 const error = ref('');
 const dictionaryWarnings = ref([]);
@@ -256,6 +259,7 @@ function rowStyle(status) {
 async function runPreview(useDictionary = true) {
   if (busy.value || !rawText.value.trim()) return;
   previewing.value = true;
+  previewUsesDictionary.value = useDictionary;
   error.value = '';
   const serial = ++previewSerial;
   const matchesScope = capture();

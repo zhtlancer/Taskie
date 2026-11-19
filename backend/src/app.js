@@ -220,9 +220,12 @@ function buildApp(opts = {}) {
     backupTimer = setInterval(run, intervalHours * 3600000);
     backupTimer.unref();
   });
+  // Stop index workers before waiting for in-flight HTTP queries to drain.
+  fastify.addHook('preClose', async () => {
+    await dictionaryService.close();
+  });
   fastify.addHook('onClose', async () => {
     clearInterval(backupTimer);
-    dictionaryService.close();
     await backupService.operation;
     await Promise.allSettled(backupService.manifestReads.values());
   });

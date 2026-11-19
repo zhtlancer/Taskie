@@ -9,7 +9,7 @@ async function main() {
     const result = await service.rebuildIndex();
     if (!result.built) throw new Error(result.reason || '未配置可用的离线词典');
     console.log(JSON.stringify(result, null, 2));
-  } finally { service.close(); }
+  } finally { await service.close(); }
 }
 
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

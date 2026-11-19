@@ -43,6 +43,7 @@
         </button>
       </div>
 
+      <DictionaryIndexNotice v-if="dictLoading" />
       <div data-dictionary-detail-state class="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
         <p v-if="dictLoading" role="status">正在查询词典释义与发音…</p>
         <p v-else-if="dictNotice" :role="dictNotice.failed ? 'alert' : 'status'">{{ dictNotice.message }} 已保存内容和编辑中的更正会保留，可继续手工编辑。</p>
@@ -205,6 +206,7 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import UiDialog from './UiDialog.vue';
+import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import EnglishStudyProgress from './EnglishStudyProgress.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
