@@ -102,6 +102,9 @@ async function checkEnglishEdits({ browser, base, api, parentToken, openContext,
       await renamed.getByRole('alert').getByText(/此单词已被移出/).waitFor();
       assert.equal(await renamed.getByLabel('记忆笔记', { exact: true }).inputValue(), '删除后的草稿');
       assert.equal(await first.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await renamed.getByRole('button', { name: '取消', exact: true }).click();
+      assert.equal(await renamed.locator('[data-english-edit-conflict]').count(), 0);
+      assert.equal(await renamed.locator('button[aria-pressed]').first().isEnabled(), true);
       console.log(`PASS English edit conflicts ${width}/${theme}: two devices, read retry, retained draft, rebase, repeated conflict, remote rename, restore/read isolation, explicit latest and deletion`);
     } finally { await first.context.close(); await second.context.close(); }
   }

@@ -55,7 +55,7 @@
       </p>
 
       <section v-if="editConflict" data-english-edit-conflict class="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-3 text-sm [overflow-wrap:anywhere]">
-        <p role="status">此单词已有新修改。当前草稿仍保留；核对最新内容后再保存。</p>
+        <p role="status">{{ editing ? '此单词已有新修改。当前草稿仍保留；核对最新内容后再保存。' : '此单词已有新修改，本次分类未保存。请读取最新内容后重新操作。' }}</p>
         <button type="button" class="ui-button-secondary" :disabled="busy" @click="readLatestWord">{{ readingLatest ? '读取中…' : '读取最新内容' }}</button>
         <div v-if="latestWord" data-english-latest class="space-y-2">
           <p class="font-bold">服务器最新内容：{{ latestWord.word }}</p>
@@ -141,7 +141,7 @@
         <p class="text-xs text-slate-500 dark:text-slate-400">修改规则仅影响后续生成的学习项，旧清单继续使用原规则。</p>
         <EnglishCaseConfirmation v-model="editForm.confirmed_case_variants" :word="editForm.word || ''" :variants="caseVariants" :disabled="busy" />
         <div class="flex flex-wrap gap-2 justify-end">
-          <button type="button" :disabled="savingEdit" class="ui-button-secondary" @click="editing = false">取消</button>
+          <button type="button" :disabled="busy" class="ui-button-secondary" @click="cancelEdit">取消</button>
           <button type="button" :disabled="busy || editConflict || !caseConfirmed" class="ui-button-primary" @click="saveEdit">
             {{ savingEdit ? '保存中…' : '保存修改' }}
           </button>
@@ -335,6 +335,15 @@ function startEdit() {
   editVersion = props.word.version; editGeneration = getDataGeneration();
   editConflict.value = false; latestWord.value = null; localError.value = '';
   editing.value = true;
+}
+
+function cancelEdit() {
+  if (busy.value) return;
+  latestController?.abort();
+  editing.value = false;
+  editConflict.value = false;
+  latestWord.value = null;
+  localError.value = '';
 }
 
 async function readLatestWord() {
