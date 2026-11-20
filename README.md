@@ -517,8 +517,19 @@ npm run test:browser:child-characters
 英语单词本与离线查词学习回归覆盖中英文词本切换、多词典查词（音标/发音真实播放/完整原词典与交叉引用跳转）、大小写与弯引号规范化、批量预览导入、缺释义拦截与双语认读/拼写计划与练习、跨孩子权限隔离，以及 320–1180px 浅暗色布局和 44px 触控尺寸（使用临时数据库与合成词典，无外部字典文件依赖）：
 
 ```bash
-npm run test:browser:english-wordbook
+BROWSER=chromium npm run test:browser:english-wordbook
 ```
+
+英语完整专项也支持 WebKit，包含真实触控点击后的鉴权音频播放、切换/关闭/延迟响应时的停止处理、原文图片解码与重试、拼写及编辑冲突、嵌套弹窗的键盘焦点和滚动锁。WebKit 必须先安装浏览器及系统依赖；Linux 的验证不能替代实际 iPad Safari 或移动输入法验收。CI 的 `english-webkit` 项使用合成词典，真实词典仍只在本地按需抽验。
+
+```bash
+node node_modules/playwright/cli.js install --with-deps webkit
+npm run test:browser:english-webkit
+BROWSER=webkit npm run test:browser:english-interactions
+BROWSER=webkit DICT_DIR=/host/dicts npm run test:browser:real-dictionary
+```
+
+`english-wordbook`、`english-interactions`、`english-edit`、`dictionary-article` 与 `real-dictionary` 接受 `BROWSER=chromium` 或 `BROWSER=webkit`，默认 Chromium；其他值会明确报错，不会静默改用另一引擎。实际词典验收会核对原音频编码及服务输出类型，等待音频实际播完，并读取只读原包、在临时目录建立索引和业务数据。若已准备不包含 ffmpeg 的运行 PATH，可加 `ASSERT_NO_FFMPEG=1` 强制检查该条件。无需为生产部署安装 Playwright。
 
 原词典图片专项使用生成的图片与临时词库，覆盖鉴权读取、图片解码、缺失/失败重试、切换词条取消与对象地址释放，以及 320、390、820、1024px 浅暗色和触控布局。完整英语专项也包含此检查：
 

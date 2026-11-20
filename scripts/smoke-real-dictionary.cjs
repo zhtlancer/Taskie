@@ -4,11 +4,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
+const { launchBrowser, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
+const { readZipEntry } = require('../backend/src/services/dictionary/zip64-reader');
 
 async function main() {
+  if (process.env.ASSERT_NO_FFMPEG === '1') {
+    const probe = require('node:child_process').spawnSync('ffmpeg', ['-version']);
+    assert.equal(probe.error?.code, 'ENOENT', 'ffmpeg must be unavailable on PATH for this acceptance run');
+    console.log('AUDIO environment: ffmpeg unavailable on PATH');
+  }
   const dictDir = process.env.DICT_DIR;
   assert.ok(dictDir && dictDir !== 'off' && fs.statSync(dictDir).isDirectory(), '请显式设置 DICT_DIR 指向真实词典目录');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-real-dictionary-'));
@@ -65,23 +71,31 @@ async function main() {
     assert.equal((await api('GET', '/dictionary/lookup?word=taskiezzzznonword')).exact_matches.length, 0);
     const noAudio = lookups.get('look after');
     console.log(`PHRASE look after: ${noAudio.audio.length} audio clips (missing audio is allowed)`);
+    const audioIndex = await app.services.dictionaryService.ensureIndex();
     for (const word of ['apple', 'book', 'school']) {
       const match = lookups.get(word);
       assert.ok(match.phonetic_uk && match.phonetic_us, `${word}: missing IPA`);
       for (const [dictId, accent, contentType] of [['oald8', 'uk', 'audio/mpeg'], ['oald8', 'us', 'audio/mpeg'], ['mw11', 'mw', 'audio/wav']]) {
         const clip = match.audio.find(a => a.dict_id === dictId && a.accent === accent);
         assert.ok(clip, `${word}: missing ${dictId}/${accent}`);
+        const meta = audioIndex.db.prepare('SELECT filename, method, comp_size, uncomp_size, local_offset FROM media_files WHERE dict_id = ? AND filename_ci = ?').get(dictId, clip.file.toLowerCase());
+        assert.ok(meta, `${word}: original audio resource is indexed`);
+        const original = readZipEntry(audioIndex.sources[dictId].zipPath, { filename: meta.filename, method: meta.method, compSize: meta.comp_size, uncompSize: meta.uncomp_size, localHeaderOffset: meta.local_offset });
+        assert.equal(original.toString('ascii', 0, 4), 'RIFF');
+        const format = original.indexOf(Buffer.from('fmt ')); assert.ok(format >= 12 && format + 10 <= original.length);
+        assert.equal(original.readUInt16LE(format + 8), dictId === 'oald8' ? 0x55 : 1, 'verify actual source encoding, not its file extension');
         const audio = await app.services.dictionaryService.getAudio(dictId, clip.file);
         assert.equal(audio.contentType, contentType);
         assert.ok(audio.buffer.length > 100);
+        console.log(`AUDIO ${word} ${dictId}/${accent}: ${dictId === 'oald8' ? 'RIFF MP3 → MPEG' : 'PCM WAV → WAV'} ${audio.contentType} ${audio.buffer.length} bytes`);
       }
     }
     const articles = await api('GET', '/dictionary/article?word=apple');
     assert.equal(articles.articles.length, 3);
     const child = await api('POST', '/children', { name: '真实词典验收' });
     const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
-    browser = await chromium.launch(launchOptions());
-    const context = await browser.newContext({ viewport: { width: 1180, height: 1024 }, timezoneId: 'Asia/Shanghai', serviceWorkers: 'block' });
+    browser = await launchBrowser();
+    const context = await browser.newContext({ viewport: { width: 1180, height: 1024 }, hasTouch: true, isMobile: process.env.BROWSER === 'webkit', timezoneId: 'Asia/Shanghai', serviceWorkers: 'block' });
     await context.addInitScript(({ token, child }) => {
       sessionStorage.setItem('taskie_parent_token', token);
       sessionStorage.setItem('current_child', JSON.stringify(child));
@@ -111,7 +125,7 @@ async function main() {
       for (const label of ['英音', '美音', '朗读']) {
         const before = await page.evaluate(() => window.__playedDictionaryAudio.length);
         const group = dialog.locator('[data-english-pronunciations] > div').filter({ hasText: label === '朗读' ? '韦氏' : '牛津' }).first();
-        await group.getByRole('button', { name: `🔊 ${label}`, exact: true }).click();
+        await group.getByRole('button', { name: `🔊 ${label}`, exact: true }).tap();
         await page.waitForFunction(count => window.__playedDictionaryAudio.length > count, before);
         const played = await page.evaluate(() => window.__playedDictionaryAudio.at(-1));
         assert.ok(Number.isFinite(played.duration) && played.duration > 0);

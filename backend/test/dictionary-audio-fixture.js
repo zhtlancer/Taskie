@@ -2,8 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { deflateRawSync } = require('node:zlib');
 
-function wav(sample = 128) {
-  const data = Buffer.alloc(800, sample), result = Buffer.alloc(44 + data.length);
+function wav(sample = 128, seconds = 0.1) {
+  const data = Buffer.alloc(Math.round(8000 * seconds), sample), result = Buffer.alloc(44 + data.length);
   result.write('RIFF'); result.writeUInt32LE(result.length - 8, 4); result.write('WAVEfmt ', 8);
   result.writeUInt32LE(16, 16); result.writeUInt16LE(1, 20); result.writeUInt16LE(1, 22);
   result.writeUInt32LE(8000, 24); result.writeUInt32LE(8000, 28); result.writeUInt16LE(1, 32);

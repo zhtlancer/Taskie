@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
-const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
+const { launchBrowser, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const checkEnglishModalRaces = require('./english-wordbook-races.cjs');
@@ -18,6 +18,7 @@ const checkEnglishAudio = require('./english-audio-browser.cjs');
 const checkDictionaryArticle = require('./smoke-dictionary-article.cjs');
 const checkWordStudyStates = require('./word-study-states-browser.cjs');
 const checkEnglishEdits = require('./english-edit-browser.cjs');
+const checkEnglishInteractions = require('./english-interactions-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -172,6 +173,7 @@ async function openContext(browser, base, width, theme, token, child, role = 'ch
     viewport: { width, height: width < 500 ? 844 : 1024 },
     colorScheme: theme,
     hasTouch: true,
+    isMobile: process.env.BROWSER === 'webkit',
     timezoneId: 'Asia/Shanghai',
     serviceWorkers: 'block',
     reducedMotion: 'reduce'
@@ -228,7 +230,7 @@ async function main() {
     // Seed one empty-definition word to verify empty-def exclusion hint
     await api('POST', '/english-words', { child_id: child.id, word: 'mystery', unit: 'Unit 1' });
 
-    browser = await chromium.launch(launchOptions());
+    browser = await launchBrowser();
     const errors = [];
 
     // 1. Child flow: lookup, play real audio, view original dictionary + cross-ref jump, add word, May/may, batch import
@@ -532,6 +534,7 @@ async function main() {
     await checkDictionaryArticle({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService });
     await checkWordStudyStates({ browser, base, api, parentToken, openContext, errors });
     await checkEnglishEdits({ browser, base, api, parentToken, openContext, errors });
+    await checkEnglishInteractions({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

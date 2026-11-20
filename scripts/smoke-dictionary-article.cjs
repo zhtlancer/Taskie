@@ -129,7 +129,7 @@ async function checkDictionaryArticle({ browser, base, api, parentToken, openCon
 module.exports=checkDictionaryArticle;
 
 if (require.main===module) (async()=>{
-  const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
+  const { launchBrowser, smokePort } = require('./browser-env.cjs');
   const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
   const ctx=createTestApp({clientDistDir:path.resolve(__dirname,'../frontend/dist')});
   let browser;
@@ -148,7 +148,7 @@ if (require.main===module) (async()=>{
       await page.route('**/*',route=>new URL(route.request().url()).origin===base?route.continue():route.abort());
       return {context,page};
     };
-    browser=await chromium.launch(launchOptions());const errors=[];
+    browser=await launchBrowser();const errors=[];
     await checkDictionaryArticle({browser,base,api,parentToken,openContext,errors,dictionaryService:ctx.app.services.dictionaryService});
     assert.deepEqual(errors,[]);
   } finally { await browser?.close();await ctx.app.close();cleanupTestApp(ctx); }

@@ -169,7 +169,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-refine, homework-dates, period-dates, input-dates, completion-duration, task-priority, board-workflow, record-editing, refunds-drafts, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-homework, recurring-homework, parent-navigation, parent-forms, parent-schedule, child-schedule, child-rewards, child-history, child-characters, english-wordbook, parent-settings, parent-backfill, parent-dashboard, class-count, class-move-dates, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
+        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-refine, homework-dates, period-dates, input-dates, completion-duration, task-priority, board-workflow, record-editing, refunds-drafts, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-homework, recurring-homework, parent-navigation, parent-forms, parent-schedule, child-schedule, child-rewards, child-history, child-characters, english-wordbook, english-webkit, parent-settings, parent-backfill, parent-dashboard, class-count, class-move-dates, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -191,12 +191,17 @@ jobs:
         run: npm install --no-save --package-lock=false playwright@1.64.0
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Install WebKit and system dependencies
+        if: matrix.suite == 'english-webkit'
+        timeout-minutes: 5
+        run: node node_modules/playwright/cli.js install --with-deps webkit
       - name: Browser suite ${{ matrix.suite }}
-        timeout-minutes: 7
+        timeout-minutes: 12
         run: node scripts/run-browser-suite.cjs "${{ matrix.suite }}"
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
           BROWSER_DIAGNOSTICS_DIR: test-results/${{ matrix.suite }}
+          BROWSER_SUITE_TIMEOUT_MS: ${{ matrix.suite == 'english-webkit' && '600000' || '300000' }}
       - name: Upload browser diagnostics
         if: ${{ failure() || cancelled() }}
         timeout-minutes: 2

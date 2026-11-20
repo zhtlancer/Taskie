@@ -43,6 +43,8 @@
     "test:browser:child-history": "node scripts/smoke-child-history.cjs",
     "test:browser:child-characters": "node scripts/smoke-child-characters.cjs",
     "test:browser:english-wordbook": "node scripts/smoke-english-wordbook.cjs",
+    "test:browser:english-webkit": "node scripts/smoke-english-webkit.cjs",
+    "test:browser:english-interactions": "node scripts/english-interactions-browser.cjs",
     "test:browser:dictionary-article": "node scripts/smoke-dictionary-article.cjs",
     "test:browser:word-study-states": "node scripts/word-study-states-browser.cjs",
     "test:browser:english-edit": "node scripts/english-edit-browser.cjs",

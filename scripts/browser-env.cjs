@@ -1,9 +1,10 @@
 // Shared setup for the local browser smoke scripts. Playwright comes from PLAYWRIGHT_MODULE_PATH (an
 // absolute path to an installation outside the project) or the project; the browser from CHROMIUM_PATH,
 // else a system Chromium/Chrome, else Playwright's own; the app listens on SMOKE_PORT, else a free port.
+// English acceptance scripts use launchBrowser to explicitly select BROWSER=chromium|webkit.
 const fs = require('node:fs');
 
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
+const { chromium, webkit } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 const SYSTEM_BROWSERS = ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'];
 
 function launchOptions() {
@@ -13,4 +14,11 @@ function launchOptions() {
 
 const smokePort = () => Number(process.env.SMOKE_PORT) || 0;
 
-module.exports = { chromium, launchOptions, smokePort };
+async function launchBrowser() {
+  const name = process.env.BROWSER || 'chromium';
+  if (!['chromium', 'webkit'].includes(name)) throw new Error(`Unsupported BROWSER: ${name}`);
+  console.log(`BROWSER ${name}`);
+  return name === 'webkit' ? webkit.launch({ headless: true }) : chromium.launch(launchOptions());
+}
+
+module.exports = { chromium, launchOptions, smokePort, launchBrowser };
