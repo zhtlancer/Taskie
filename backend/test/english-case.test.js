@@ -14,7 +14,7 @@ test('case-variant confirmation covers create, rename, stale confirmations and a
   const child = ctx.app.services.childrenService.createChild({ name: '大小写确认' });
   const sibling = ctx.app.services.childrenService.createChild({ name: '独立单词本' });
   const headers = { authorization: `Bearer ${ctx.app.jwt.sign({ role: 'child', child_id: child.id, epoch: ctx.app.sessionEpoch() })}` };
-  const send = (method, suffix, payload) => ctx.app.inject({ method, url: `/api/english-words${suffix}`, headers, payload });
+  const send = (method, suffix, payload) => ctx.app.inject({ method, url: `/api/english-words${suffix}`, headers, payload: method === 'PUT' ? { expected_version: ctx.app.services.englishWordsService.getWord(suffix.slice(1))?.version, ...payload } : payload });
   const add = payload => send('POST', '', { child_id: child.id, ...payload });
   const first = await add({ word: 'May', strict_case: true, definition_zh: '五月' });
   assert.equal(first.statusCode, 201);
@@ -84,14 +84,14 @@ test('spelling rules are item snapshots; v37 upgrades, current restores and dama
   study.savePlan(child.id, 'write', { days_of_week: [0, 1, 2, 3, 4, 5, 6], new_target: 1, review_target: 1 }, 'en');
   const first = study.today(child.id, 'en').days[0];
   assert.equal(first.batches[0].items[0].strict_case, true);
-  book.updateWord(word.id, { strict_case: false, definition_zh: '新的释义' });
+  book.updateWord(word.id, { expected_version: book.getWord(word.id).version, strict_case: false, definition_zh: '新的释义' });
   assert.equal(study.describeDay(first.id).batches[0].items[0].strict_case, true);
   assert.equal(study.describeDay(first.id).batches[0].items[0].meaning_zh, '五月');
   study.grade(first.batches[0].items[0].id, { result: 'good', request_id: 'strict-case-first-grade' }, 'child');
   t.mock.timers.tick(86400000);
   const next = study.today(child.id, 'en').days[0];
   assert.equal(next.batches[0].items[0].strict_case, false);
-  book.updateWord(word.id, { strict_case: true, word: 'Mayflower' });
+  book.updateWord(word.id, { expected_version: book.getWord(word.id).version, strict_case: true, word: 'Mayflower' });
   assert.equal(study.describeDay(next.id).batches[0].items[0].text, 'May');
   assert.equal(study.describeDay(next.id).batches[0].items[0].strict_case, false);
 

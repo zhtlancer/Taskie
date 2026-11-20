@@ -62,7 +62,7 @@ test('both skills freeze the selected sense audio; changing the meaning, renamin
   const ctx = await fixture(t);
   for (const skill of ['recognize', 'write']) ctx.study.savePlan(ctx.child.id, skill, { days_of_week: [0,1,2,3,4,5,6], new_target: 1, review_target: 1 }, 'en');
   const days = ctx.study.today(ctx.child.id, 'en').days;
-  ctx.book.updateWord(ctx.word.id, { primary_sense_id: ctx.match.senses[1].id });
+  ctx.book.updateWord(ctx.word.id, { expected_version: ctx.book.getWord(ctx.word.id).version, primary_sense_id: ctx.match.senses[1].id });
   for (const day of days) {
     const item = ctx.study.describeDay(day.id).batches[0].items[0];
     assert.equal(item.audio_refs[0].file, 'record_n_gb.wav'); assert.equal(item.phonetic, 'ˈrekɔːd');
@@ -71,7 +71,7 @@ test('both skills freeze the selected sense audio; changing the meaning, renamin
   t.mock.timers.tick(86400000);
   const next = ctx.study.today(ctx.child.id, 'en').days;
   for (const day of next) assert.equal(day.batches[0].items[0].audio_refs[0].file, 'record_v_gb.wav');
-  ctx.book.updateWord(ctx.word.id, { word: 'recording' });
+  ctx.book.updateWord(ctx.word.id, { expected_version: ctx.book.getWord(ctx.word.id).version, word: 'recording' });
   assert.deepEqual(ctx.book.getWord(ctx.word.id).senses[0].audio_refs, [], 'a renamed word must not inherit another spelling audio');
   ctx.book.deleteWord(ctx.word.id, { role: 'parent' });
   for (const day of days) {
@@ -108,7 +108,7 @@ test('v41 audio snapshots round-trip without dictionary files; v40 keeps unknown
   const parsed = JSON.parse(gunzipSync(archive));
   const candidate = mutate => { const db = new Database(Buffer.from(parsed.database, 'base64')); try { mutate(db); return gzipSync(JSON.stringify({...parsed,database:db.serialize().toString('base64')})); } finally { db.close(); } };
   ctx.dictionary.dictDir = null;
-  ctx.book.updateWord(ctx.word.id, { primary_sense_id: ctx.match.senses[1].id });
+  ctx.book.updateWord(ctx.word.id, { expected_version: ctx.book.getWord(ctx.word.id).version, primary_sense_id: ctx.match.senses[1].id });
   await backup.restore(archive);
   assert.deepEqual(ctx.study.describeDay(day.id).batches[0].items[0].audio_refs, item.audio_refs);
   for (const mutate of [

@@ -35,7 +35,7 @@ test('English progress is read-only, independently scoped by skill, child and la
   const marked = book.markMastered(word.id, true);
   assert.equal(marked.is_mastered, true);
   assert.equal(marked.study_progress.recognize.status, 'due', 'manual mastery must not hide due practice');
-  assert.equal(book.updateWord(word.id, { note: '教材中的意思' }).study_progress.write.status, 'learning');
+  assert.equal(book.updateWord(word.id, { expected_version: book.getWord(word.id).version, note: '教材中的意思' }).study_progress.write.status, 'learning');
 
   const auth = childId => ({ authorization: `Bearer ${ctx.app.jwt.sign({ role: 'child', child_id: childId, epoch: ctx.app.sessionEpoch() })}` });
   const own = await ctx.app.inject({ method: 'GET', url: `/api/english-words?child_id=${child.id}`, headers: auth(child.id) });

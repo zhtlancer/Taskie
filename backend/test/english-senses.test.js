@@ -22,7 +22,7 @@ test('structured senses, legacy edits, primary-only selection, search and author
   const child = childrenService.createChild({ name: '多义项' });
   const other = childrenService.createChild({ name: '其他孩子' });
   const headers = { authorization: `Bearer ${ctx.app.jwt.sign({ role: 'child', child_id: child.id, epoch: ctx.app.sessionEpoch() })}` };
-  const send = (method, suffix, payload) => ctx.app.inject({ method, url: `/api/english-words${suffix}`, headers, payload });
+  const send = (method, suffix, payload) => ctx.app.inject({ method, url: `/api/english-words${suffix}`, headers, payload: method === 'PUT' ? { expected_version: ctx.app.services.englishWordsService.getWord(suffix.slice(1))?.version, ...payload } : payload });
   const created = await send('POST', '', { child_id: child.id, word: 'bank', senses: senses(), primary_sense_id: 'finance' });
   assert.equal(created.statusCode, 201);
   const first = created.json();
@@ -79,7 +79,7 @@ test('both skills snapshot the selected sense; later days use the new sense', as
   const word = book.createWord({ child_id: child.id, word: 'bank', senses: senses(), primary_sense_id: 'finance' });
   for (const skill of ['recognize', 'write']) study.savePlan(child.id, skill, { days_of_week: [0, 1, 2, 3, 4, 5, 6], new_target: 1, review_target: 1 }, 'en');
   const days = study.today(child.id, 'en').days;
-  book.updateWord(word.id, { primary_sense_id: 'river' });
+  book.updateWord(word.id, { expected_version: book.getWord(word.id).version, primary_sense_id: 'river' });
   for (const day of days) {
     const item = study.describeDay(day.id).batches[0].items[0];
     assert.equal(item.meaning_zh, '银行');
@@ -109,7 +109,7 @@ test('current sense backups round-trip, v38 definitions migrate, corrupt v39 dat
     try { mutate(db); return zlib.gzipSync(JSON.stringify({ ...parsed, database: db.serialize().toString('base64') })); }
     finally { db.close(); }
   };
-  book.updateWord(word.id, { primary_sense_id: 'finance' });
+  book.updateWord(word.id, { expected_version: book.getWord(word.id).version, primary_sense_id: 'finance' });
   await ctx.app.backupService.restore(archive);
   assert.deepEqual(book.getWord(word.id).senses, word.senses);
   assert.equal(book.getWord(word.id).primary_sense_id, 'river');

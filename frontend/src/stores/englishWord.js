@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import api from '../api/client';
-import { getToken } from '../utils/session.js';
+import { getToken, getDataGeneration } from '../utils/session.js';
 import { playStarAdded } from '../utils/sound';
 import { identityKey, hasEnglishDefinition } from '../utils/englishWord';
 
@@ -93,6 +93,16 @@ export const useEnglishWordStore = defineStore('englishWord', {
       this.units = [...new Set(this.words.map((w) => w.unit).filter(Boolean))].sort();
     },
 
+    acceptWordSnapshot(word) {
+      if (!word || word.child_id !== this.currentChildId || !this.isLoaded) return false;
+      const existing = this.words.find(entry => entry.id === word.id);
+      if (!existing || existing.version > word.version) return false;
+      this.abortFetch();
+      this.words = this.words.map(entry => entry.id === word.id ? word : entry);
+      this.syncTaxonomy();
+      return true;
+    },
+
     refreshAfterMutation(childId) {
       // A read already in flight may still contain the list from before this write.
       // fetchWords cancels and invalidates that read before loading a fresh snapshot.
@@ -181,14 +191,14 @@ export const useEnglishWordStore = defineStore('englishWord', {
       return result;
     },
 
-    async updateWord(id, payload) {
+    async updateWord(id, payload, dataGeneration = getDataGeneration()) {
       if (!id || this.busyIds[id]) return null;
       const targetChildId = this.currentChildId;
       const scope = scopeFor(targetChildId);
       const generation = this.scopeGeneration;
       this.busyIds = { ...this.busyIds, [id]: true };
       try {
-        const updated = await api.updateEnglishWord(id, payload, SILENT_WRITE);
+        const updated = await api.updateEnglishWord(id, payload, SILENT_WRITE, dataGeneration);
         if (generation !== this.scopeGeneration || this.currentChildId !== targetChildId || scopeFor(targetChildId) !== scope) return null;
         this.words = this.words.map((w) => (w.id === id ? updated : w));
         this.syncTaxonomy();
@@ -227,14 +237,14 @@ export const useEnglishWordStore = defineStore('englishWord', {
       }
     },
 
-    async setCategories(id, categories) {
+    async setCategories(id, categories, expectedVersion) {
       if (!id || this.busyIds[id]) return null;
       const targetChildId = this.currentChildId;
       const scope = scopeFor(targetChildId);
       const generation = this.scopeGeneration;
       this.busyIds = { ...this.busyIds, [id]: true };
       try {
-        const updated = await api.setEnglishWordCategories(id, categories, SILENT_WRITE);
+        const updated = await api.setEnglishWordCategories(id, categories, expectedVersion, SILENT_WRITE, getDataGeneration());
         if (generation !== this.scopeGeneration || this.currentChildId !== targetChildId || scopeFor(targetChildId) !== scope) return null;
         this.words = this.words.map((w) => (w.id === id ? updated : w));
         this.refreshAfterMutation(targetChildId);

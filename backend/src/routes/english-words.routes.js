@@ -1,3 +1,5 @@
+const { generationWrite } = require('../utils/data-generation');
+
 async function englishWordsRoutes(fastify, options) {
   const { englishWordsService, dictionaryService } = options;
   const handle = (fn, status = 200) => async (request, reply) => {
@@ -30,13 +32,15 @@ async function englishWordsRoutes(fastify, options) {
     englishWordsService.batchImport(request.body?.child_id, request.body || {}, { role: request.user?.role })
   ), 201));
 
-  fastify.put('/:id', handle(request => englishWordsService.updateWord(request.params.id, request.body || {}, { role: request.user?.role })));
+  fastify.put('/:id', generationWrite(fastify, request => (
+    englishWordsService.updateWord(request.params.id, request.body || {}, { role: request.user?.role })
+  )));
   fastify.put('/:id/master', handle(request => {
     const isMastered = request.body && request.body.is_mastered !== undefined ? request.body.is_mastered : null;
     return englishWordsService.markMastered(request.params.id, isMastered);
   }));
-  fastify.put('/:id/categories', handle(request => (
-    englishWordsService.setCategories(request.params.id, request.body?.categories, { role: request.user?.role })
+  fastify.put('/:id/categories', generationWrite(fastify, request => (
+    englishWordsService.setCategories(request.params.id, request.body?.categories, { role: request.user?.role, expected_version: request.body?.expected_version })
   )));
   fastify.delete('/:id', handle(request => englishWordsService.deleteWord(request.params.id, { role: request.user?.role })));
 }

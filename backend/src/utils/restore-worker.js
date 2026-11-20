@@ -165,6 +165,12 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
         }
       } catch { throw fail('备份中的学习发音快照无效，无法恢复'); }
     }
+    if (schemaVersion >= 42) {
+      if (!hasColumn('english_words', 'version')) throw fail('备份缺少英语词条版本，无法恢复');
+      if (candidate.prepare("SELECT 1 FROM english_words WHERE typeof(version) != 'integer' OR version < 1 OR version > 9007199254740991 LIMIT 1").get()) {
+        throw fail('备份中的英语词条版本无效，无法恢复');
+      }
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     if (schemaVersion >= 40) {
       try { validateWordStudyConstraints(candidate); }

@@ -90,7 +90,7 @@ test('English wordbook CRUD, case variants, normalization and batch import previ
   // Categories permission: child can add, only parent can remove or delete categorized word
   const addCat = await ctx.app.inject({
     method: 'PUT', url: `/api/english-words/${r2.json().id}/categories`, headers: childHeaders,
-    payload: { categories: ['write'] }
+    payload: { categories: ['write'], expected_version: r2.json().version }
   });
   assert.equal(addCat.statusCode, 200);
   const childRemoveCat = await ctx.app.inject({
@@ -133,7 +133,7 @@ test('English wordbook CRUD, case variants, normalization and batch import previ
   // Update word
   const editRes = await ctx.app.inject({
     method: 'PUT', url: `/api/english-words/${commitRes.json().added[0].id}`, headers: childHeaders,
-    payload: { note: '记得加 s' }
+    payload: { note: '记得加 s', expected_version: commitRes.json().added[0].version }
   });
   assert.equal(editRes.statusCode, 200);
   assert.equal(editRes.json().note, '记得加 s');
@@ -146,7 +146,7 @@ test('English textbooks and units are parent-only across create, edit and batch 
   const child = ctx.app.services.childrenService.createChild({ name: '教材权限' });
   const parent = authHeader(ctx.app, { role: 'parent' });
   const student = authHeader(ctx.app, { role: 'child', child_id: child.id });
-  const send = (method, url, payload, headers = student) => ctx.app.inject({ method, url: `/api/english-words${url}`, payload, headers });
+  const send = (method, url, payload, headers = student) => ctx.app.inject({ method, url: `/api/english-words${url}`, payload: method === 'PUT' ? { expected_version: ctx.app.services.englishWordsService.getWord(url.slice(1).split('/')[0])?.version, ...payload } : payload, headers });
   for (const key of ['textbook', 'unit']) {
     const blocked = await send('POST', '', { child_id: child.id, word: 'blocked', [key]: 'U1' });
     assert.equal(blocked.statusCode, 403);

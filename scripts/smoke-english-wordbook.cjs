@@ -17,6 +17,7 @@ const checkDictionaryIndexNotice = require('./dictionary-index-browser.cjs');
 const checkEnglishAudio = require('./english-audio-browser.cjs');
 const checkDictionaryArticle = require('./smoke-dictionary-article.cjs');
 const checkWordStudyStates = require('./word-study-states-browser.cjs');
+const checkEnglishEdits = require('./english-edit-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -311,12 +312,19 @@ async function main() {
         assert.equal(await childDetail.getByLabel('教材/分类', { exact: true }).isDisabled(), true);
         assert.equal(await childDetail.getByLabel('单元', { exact: true }).isDisabled(), true);
         const apple = (await api('GET', `/english-words?child_id=${child.id}`)).find(word => word.word === 'apple');
-        await api('PUT', `/english-words/${apple.id}`, { textbook: '家长新教材', unit: 'Unit 2' });
+        await api('PUT', `/english-words/${apple.id}`, { textbook: '家长新教材', unit: 'Unit 2', expected_version: apple.version });
         await childDetail.getByLabel('记忆笔记', { exact: true }).fill('孩子补充笔记');
         const noteSave = page.waitForResponse(res => new URL(res.url()).pathname === `/api/english-words/${apple.id}` && res.request().method() === 'PUT');
         await childDetail.getByRole('button', { name: '保存修改', exact: true }).click();
         const noteResponse = await noteSave;
-        assert.equal(noteResponse.status(), 200);
+        assert.equal(noteResponse.status(), 409, 'parent edit must not be silently overwritten');
+        await childDetail.getByRole('button', { name: '读取最新内容', exact: true }).click();
+        await childDetail.locator('[data-english-latest]').getByText(/家长新教材/).waitFor();
+        assert.equal(await childDetail.getByLabel('记忆笔记', { exact: true }).inputValue(), '孩子补充笔记');
+        await childDetail.getByRole('button', { name: '核对完成，保留我的更改继续编辑', exact: true }).click();
+        const retried = page.waitForResponse(res => new URL(res.url()).pathname === `/api/english-words/${apple.id}` && res.request().method() === 'PUT');
+        await childDetail.getByRole('button', { name: '保存修改', exact: true }).click();
+        assert.equal((await retried).status(), 200);
         const childPayload = noteResponse.request().postDataJSON();
         assert.equal(Object.hasOwn(childPayload, 'textbook'), false);
         assert.equal(Object.hasOwn(childPayload, 'unit'), false);
@@ -523,6 +531,7 @@ async function main() {
     await checkEnglishAudio({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService, db });
     await checkDictionaryArticle({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService });
     await checkWordStudyStates({ browser, base, api, parentToken, openContext, errors });
+    await checkEnglishEdits({ browser, base, api, parentToken, openContext, errors });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

@@ -14,7 +14,7 @@ const {
 } = require('../utils/english-word');
 
 const COLUMNS = `id, child_id, word, identity_key, canonical_key, phonetic, phonetic_uk, phonetic_us,
-  pos, definition_zh, definition_en, textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case, senses, primary_sense_id`;
+  pos, definition_zh, definition_en, textbook, unit, note, categories, is_mastered, created_at, mastered_at, strict_case, senses, primary_sense_id, version`;
 
 const MAX_BATCH_WORDS = 100;
 
@@ -65,6 +65,15 @@ function toEntry(row) {
     categories,
     senses: JSON.parse(row.senses)
   };
+}
+
+function requireVersion(expected, existing) {
+  if (!Number.isSafeInteger(expected) || expected < 1) {
+    throw { status: 400, code: 'ENGLISH_WORD_VERSION_REQUIRED', message: '缺少有效的词条版本，请刷新页面后重新编辑' };
+  }
+  if (expected !== existing.version) {
+    throw { status: 409, code: 'ENGLISH_WORD_EDIT_CONFLICT', message: '此单词已在其他设备或操作中修改，本次未保存。请读取最新内容后核对，当前草稿已保留。' };
+  }
 }
 
 class EnglishWordsService {
@@ -261,6 +270,7 @@ class EnglishWordsService {
     }
 
     checkMetadataPermission(payload, role, existing);
+    requireVersion(payload.expected_version, existing);
     const cleanStrictCase = strictCase(payload.strict_case, existing.strict_case);
     const meanings = resolveSenses(payload, existing);
 
@@ -295,13 +305,13 @@ class EnglishWordsService {
       ? (normalizeOptionalText(payload.phonetic, 80) || nextUk || nextUs || null)
       : (existing.phonetic || nextUk || nextUs || null);
 
-    this.db.prepare(`
+    const saved = this.db.prepare(`
       UPDATE english_words
       SET word = ?, identity_key = ?, canonical_key = ?,
           phonetic = ?, phonetic_uk = ?, phonetic_us = ?,
           pos = ?, definition_zh = ?, definition_en = ?,
-          textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?, senses = ?, primary_sense_id = ?
-      WHERE id = ?
+          textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?, senses = ?, primary_sense_id = ?, version = version + 1
+      WHERE id = ? AND version = ?
     `).run(
       nextWord,
       nextIdKey,
@@ -317,8 +327,9 @@ class EnglishWordsService {
       payload.note !== undefined ? normalizeOptionalText(payload.note, 300) : existing.note,
       JSON.stringify(nextCategories),
       +cleanStrictCase, JSON.stringify(meanings.senses), meanings.primary_sense_id,
-      id
+      id, payload.expected_version
     );
+    if (!saved.changes) throw { status: 409, code: 'ENGLISH_WORD_EDIT_CONFLICT', message: '此单词又有新修改，本次未保存。请重新读取最新内容后核对。' };
 
     return this.getWord(id);
   }
@@ -332,12 +343,12 @@ class EnglishWordsService {
       ? Boolean(isMastered)
       : !existing.is_mastered;
     const now = targetMastered ? new Date().toISOString() : null;
-    this.db.prepare('UPDATE english_words SET is_mastered = ?, mastered_at = ? WHERE id = ?')
+    this.db.prepare('UPDATE english_words SET is_mastered = ?, mastered_at = ?, version = version + 1 WHERE id = ?')
       .run(targetMastered ? 1 : 0, now, id);
     return this.getWord(id);
   }
 
-  setCategories(id, categories, { role } = {}) {
+  setCategories(id, categories, { role, expected_version } = {}) {
     const existing = this.getWord(id);
     if (!existing) {
       throw { status: 404, message: '该单词不存在，可能已被移出，请刷新后重试' };
@@ -346,7 +357,9 @@ class EnglishWordsService {
     if (role !== 'parent' && existing.categories.some(key => !next.includes(key))) {
       throw { status: 403, message: '只有家长可以去掉分类' };
     }
-    this.db.prepare('UPDATE english_words SET categories = ? WHERE id = ?').run(JSON.stringify(next), id);
+    requireVersion(expected_version, existing);
+    const saved = this.db.prepare('UPDATE english_words SET categories = ?, version = version + 1 WHERE id = ? AND version = ?').run(JSON.stringify(next), id, expected_version);
+    if (!saved.changes) throw { status: 409, code: 'ENGLISH_WORD_EDIT_CONFLICT', message: '此单词又有新修改，本次未保存。请重新读取最新内容后核对。' };
     return this.getWord(id);
   }
 

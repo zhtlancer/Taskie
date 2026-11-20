@@ -54,6 +54,30 @@
         {{ localError || error }}
       </p>
 
+      <section v-if="editConflict" data-english-edit-conflict class="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-3 text-sm [overflow-wrap:anywhere]">
+        <p role="status">此单词已有新修改。当前草稿仍保留；核对最新内容后再保存。</p>
+        <button type="button" class="ui-button-secondary" :disabled="busy" @click="readLatestWord">{{ readingLatest ? '读取中…' : '读取最新内容' }}</button>
+        <div v-if="latestWord" data-english-latest class="space-y-2">
+          <p class="font-bold">服务器最新内容：{{ latestWord.word }}</p>
+          <p>英 /{{ latestWord.phonetic_uk || '—' }}/ · 美 /{{ latestWord.phonetic_us || '—' }}/</p>
+          <p v-if="!latestWord.phonetic_uk && !latestWord.phonetic_us && latestWord.phonetic">音标（未区分口音）：/{{ latestWord.phonetic }}/</p>
+          <div v-for="sense in latestWord.senses" :key="sense.id" class="border-l-2 border-amber-300 dark:border-amber-700 pl-2 space-y-1">
+            <p>{{ sense.id === latestWord.primary_sense_id ? '学习释义 · ' : '' }}{{ sense.pos }} {{ sense.definition_zh }} {{ sense.definition_en }}</p>
+            <p v-if="sense.example">例句：{{ sense.example }}</p>
+            <p v-for="(audio, index) in sense.audio_refs || []" :key="index">学习发音：{{ audio.accent === 'uk' ? '英音' : audio.accent === 'us' ? '美音' : '朗读' }} /{{ audio.phonetic || '—' }}/ · {{ audio.headword }}</p>
+          </div>
+          <p>教材：{{ latestWord.textbook || '未设置' }} · 单元：{{ latestWord.unit || '未设置' }}</p>
+          <p>笔记：{{ latestWord.note || '未填写' }}</p>
+          <p>严格区分大小写：{{ latestWord.strict_case ? '是' : '否' }}</p>
+          <p>分类：{{ latestCategoryNames || '未设置' }} · 手工掌握：{{ latestWord.is_mastered ? '已掌握' : '未掌握' }}</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="ui-button-secondary" :disabled="busy" @click="useLatestWord(false)">{{ editing ? '使用最新内容重新编辑' : '更新为最新内容' }}</button>
+            <button v-if="editing" type="button" class="ui-button-secondary" :disabled="busy" @click="useLatestWord(true)">核对完成，保留我的更改继续编辑</button>
+          </div>
+          <p v-if="editing" class="text-xs">继续编辑时，未改动的字段采用最新内容；你改过的字段保留草稿。释义作为整体保留，请核对其中的发音与例句。</p>
+        </div>
+      </section>
+
       <!-- Display Mode -->
       <div v-if="!editing" class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-2.5 text-sm">
         <div v-for="(sense, index) in word.senses" :key="sense.id" class="space-y-1 [overflow-wrap:anywhere]" :data-sense-detail="sense.id">
@@ -75,7 +99,7 @@
       </div>
 
       <!-- Edit Mode -->
-      <div v-else class="rounded-2xl border border-brand-200 dark:border-brand-800 bg-brand-50/30 dark:bg-brand-950/20 p-4 space-y-3">
+      <fieldset v-else :disabled="busy" class="min-w-0 rounded-2xl border border-brand-200 dark:border-brand-800 bg-brand-50/30 dark:bg-brand-950/20 p-4 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="text-sm font-black text-slate-800 dark:text-slate-100">编辑词条内容</h3>
         </div>
@@ -118,11 +142,11 @@
         <EnglishCaseConfirmation v-model="editForm.confirmed_case_variants" :word="editForm.word || ''" :variants="caseVariants" :disabled="busy" />
         <div class="flex flex-wrap gap-2 justify-end">
           <button type="button" :disabled="savingEdit" class="ui-button-secondary" @click="editing = false">取消</button>
-          <button type="button" :disabled="busy || !caseConfirmed" class="ui-button-primary" @click="saveEdit">
+          <button type="button" :disabled="busy || editConflict || !caseConfirmed" class="ui-button-primary" @click="saveEdit">
             {{ savingEdit ? '保存中…' : '保存修改' }}
           </button>
         </div>
-      </div>
+      </fieldset>
 
       <EnglishStudyProgress :word="word" :disabled="busy" />
       <p class="text-xs text-slate-500 dark:text-slate-400">进度按 {{ word.study_date || '最近读取的数据' }} 的记忆周期展示，与手工掌握标记独立；练习入口前往对应技能的今日清单。</p>
@@ -137,7 +161,7 @@
             v-for="cat in ENGLISH_CATEGORIES"
             :key="cat.key"
             type="button"
-            :disabled="busy || savingEdit"
+            :disabled="busy || editing || editConflict"
             :aria-pressed="word.categories?.includes(cat.key)"
             class="min-h-11 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all"
             :class="word.categories?.includes(cat.key)
@@ -206,10 +230,10 @@ import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import EnglishStudyProgress from './EnglishStudyProgress.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
-import { withEnglishSenses, sensesFromEntry } from '../utils/englishSenses';
+import { englishEditForm, rebaseEnglishEdit } from '../utils/englishEdit';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
-import { currentRole } from '../utils/session';
+import { currentRole, getDataGeneration } from '../utils/session';
 import { useEnglishWordStore } from '../stores/englishWord';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
 import { ENGLISH_CATEGORIES, toggleEnglishCategory, identityKey, englishCaseVariants } from '../utils/englishWord';
@@ -237,6 +261,9 @@ const confirmDelete = ref(false);
 const editing = ref(false);
 const savingEdit = ref(false);
 const savingCategories = ref(false);
+const editConflict = ref(false), latestWord = ref(null), readingLatest = ref(false);
+const latestCategoryNames = computed(() => ENGLISH_CATEGORIES.filter(category => latestWord.value?.categories?.includes(category.key)).map(category => category.label).join('、'));
+let editBase, editVersion, editGeneration, latestController;
 const dictionaryCandidates = computed(() => identityKey(editForm.value.word) === identityKey(props.word.word) ? dictMatch.value?.senses || [] : []);
 const dictionaryPronunciations = computed(() => identityKey(editForm.value.word) === identityKey(props.word.word) ? dictMatch.value?.pronunciations || [] : []);
 
@@ -249,13 +276,15 @@ watch(() => editForm.value.word, () => {
   editForm.value.confirmed_case_variants = [];
   serverCaseVariants.value = [];
 }, { flush: 'sync' });
-const busy = computed(() => props.busy || savingEdit.value || savingCategories.value || store.isBusy(props.word.id));
+const busy = computed(() => props.busy || savingEdit.value || savingCategories.value || readingLatest.value || store.isBusy(props.word.id));
 let audioController = null;
 let dictionarySerial = 0;
-const { capture } = useAsyncScope(() => [props.word.id, props.word.word, props.word.child_id, store.scopeGeneration], () => {
+const { capture } = useAsyncScope(() => [props.word.id, props.word.child_id, store.scopeGeneration], () => {
   role.value = currentRole();
   stopDictionaryAudio();
   audioController?.abort();
+  latestController?.abort();
+  readingLatest.value = false; editConflict.value = false; latestWord.value = null;
   dictionarySerial++;
   dictLoading.value = false;
   dictNotice.value = null;
@@ -301,23 +330,46 @@ watch([() => props.word.id, () => props.word.word, () => props.word.child_id, ()
 
 function startEdit() {
   if (busy.value) return;
-  editForm.value = withEnglishSenses({
-    word: props.word.word,
-    pos: props.word.pos || '',
-    phonetic_uk: props.word.phonetic_uk || '',
-    phonetic_us: props.word.phonetic_us || '',
-    definition_zh: props.word.definition_zh || '',
-    definition_en: props.word.definition_en || '',
-    textbook: props.word.textbook || '',
-    unit: props.word.unit || '',
-    note: props.word.note || '',
-    strict_case: Boolean(props.word.strict_case), confirmed_case_variants: []
-  }, sensesFromEntry(props.word), props.word.primary_sense_id);
+  editForm.value = englishEditForm(props.word);
+  editBase = JSON.parse(JSON.stringify(editForm.value));
+  editVersion = props.word.version; editGeneration = getDataGeneration();
+  editConflict.value = false; latestWord.value = null; localError.value = '';
   editing.value = true;
 }
 
-async function saveEdit() {
+async function readLatestWord() {
   if (busy.value) return;
+  const matchesScope = capture();
+  const controller = new AbortController(); latestController = controller;
+  readingLatest.value = true; latestWord.value = null; localError.value = '';
+  try {
+    const latest = await api.getEnglishWord(props.word.id, controller.signal, { silentError: true, preserveError: true });
+    if (matchesScope()) latestWord.value = latest;
+  } catch (err) {
+    if (matchesScope() && err?.code !== 'ERR_CANCELED') localError.value = err?.status === 404 ? '此单词已被移出，无法保存。当前草稿仍保留，可复制内容后关闭。' : err?.message || '读取失败，请重试';
+  } finally {
+    if (matchesScope()) { readingLatest.value = false; latestController = null; }
+  }
+}
+
+function useLatestWord(keepChanges) {
+  if (busy.value || !latestWord.value) return;
+  const latest = latestWord.value;
+  if (!store.acceptWordSnapshot(latest)) {
+    latestWord.value = null; localError.value = '词条又有更新，请再次读取最新内容后核对。'; return;
+  }
+  if (editing.value) {
+    const form = englishEditForm(latest);
+    editForm.value = keepChanges ? rebaseEnglishEdit(editForm.value, editBase, form) : form;
+    editBase = JSON.parse(JSON.stringify(form)); editVersion = latest.version;
+    serverCaseVariants.value = [];
+  }
+  emit('updated', latest);
+  editConflict.value = false; latestWord.value = null; localError.value = '';
+}
+
+async function saveEdit() {
+  if (busy.value || editConflict.value) return;
   savingEdit.value = true;
   localError.value = '';
   const matchesScope = capture();
@@ -325,18 +377,20 @@ async function saveEdit() {
   try {
     const payload = {
       ...editForm.value,
-      phonetic: editForm.value.phonetic_uk || editForm.value.phonetic_us || ''
+      expected_version: editVersion,
+      phonetic: editForm.value.phonetic_uk || editForm.value.phonetic_us || editForm.value.phonetic || ''
     };
     if (role.value !== 'parent') {
       delete payload.textbook;
       delete payload.unit;
     }
-    const updated = await store.updateWord(props.word.id, payload);
+    const updated = await store.updateWord(props.word.id, payload, editGeneration);
     if (matchesScope() && updated) {
       editing.value = false;
       emit('updated', updated);
     }
   } catch (err) {
+    if (matchesScope() && (err?.code === 'ENGLISH_WORD_EDIT_CONFLICT' || err?.status === 404)) { editConflict.value = true; latestWord.value = null; }
     if (matchesScope() && targetWord === identityKey(editForm.value.word) && err?.code === 'ENGLISH_CASE_CONFIRMATION_REQUIRED') {
       serverCaseVariants.value = err.conflicts?.find(item => item.word === targetWord)?.variants || [];
     }
@@ -347,7 +401,7 @@ async function saveEdit() {
 }
 
 async function onToggleCategory(key) {
-  if (busy.value) return;
+  if (busy.value || editing.value || editConflict.value) return;
   localError.value = '';
   const { categories, blocked } = toggleEnglishCategory(props.word.categories || [], key, role.value);
   if (blocked) {
@@ -357,9 +411,10 @@ async function onToggleCategory(key) {
   const matchesScope = capture();
   savingCategories.value = true;
   try {
-    const updated = await store.setCategories(props.word.id, categories);
+    const updated = await store.setCategories(props.word.id, categories, props.word.version);
     if (matchesScope() && updated) emit('updated', updated);
   } catch (err) {
+    if (matchesScope() && err?.code === 'ENGLISH_WORD_EDIT_CONFLICT') { editConflict.value = true; latestWord.value = null; }
     if (matchesScope()) localError.value = typeof err === 'string' ? err : err?.message || '更新分类失败';
   } finally {
     if (matchesScope()) savingCategories.value = false;

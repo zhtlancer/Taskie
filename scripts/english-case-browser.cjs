@@ -98,7 +98,7 @@ module.exports = async function checkEnglishCaseRules({ browser, base, api, pare
   const day = (await api('GET', `/children/${child.id}/word-study?language=en`)).days.find(day => day.skill === 'write');
   const all = await words();
   for (const word of all.filter(word => ['May', 'US', 'book'].includes(word.word))) {
-    await api('PUT', `/english-words/${word.id}`, { strict_case: !word.strict_case });
+    await api('PUT', `/english-words/${word.id}`, { strict_case: !word.strict_case, expected_version: word.version });
   }
   const dark = await openContext(browser, base, 820, 'dark', parentToken, child, 'parent', errors);
   try {
