@@ -44,7 +44,8 @@ onMounted(async () => {
   dialogs.sort((a, b) => Number(a.confirmation) - Number(b.confirmation));
   document.addEventListener('keydown', onKey, true);
   await nextTick();
-  if (dialogs.at(-1) === dialog && panel.value?.isConnected) (panel.value.querySelector('[autofocus]') || panel.value).focus();
+  // Keep a control the user (or a fast tap) already focused inside this dialog.
+  if (dialogs.at(-1) === dialog && panel.value?.isConnected && !panel.value.contains(document.activeElement)) (panel.value.querySelector('[autofocus]') || panel.value).focus();
 });
 onBeforeUnmount(() => {
   const wasTop = dialogs.at(-1) === dialog;

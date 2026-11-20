@@ -43,6 +43,14 @@ async function main() {
         await picker().getByRole('button', { name: new RegExp(child.name) }).waitFor();
         assert.equal(await picker().getByRole('button', { name: new RegExp(child.name) }).getAttribute('aria-pressed'), 'true');
       };
+      // Sections are lazy routes: the outgoing page's picker may already show the child,
+      // so wait until the router confirms the section before selecting another child.
+      const openSection = async name => {
+        const link = mainNav().getByRole('link', { name, exact: true });
+        await link.click();
+        await page.waitForFunction(label => [...document.querySelectorAll('[aria-label="家长导航"] a')]
+          .some(el => el.textContent.trim() === label && el.getAttribute('aria-current') === 'page'), name);
+      };
       const fits = async () => assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `page fits ${width}/${theme}`);
       await go(`/parent/tasks?child=${b.id}`); await selected(b);
       await page.getByRole('heading', { name: `乙任务${suffix}`, exact: true }).waitFor();
@@ -54,12 +62,12 @@ async function main() {
       assert.deepEqual(await mainNav().getByRole('link').allTextContents(), ['总览', '学习安排', '课程日历', '统计', '管理']);
       const buttons = await mainNav().getByRole('link').evaluateAll(links => links.map(link => link.getBoundingClientRect().height));
       assert.ok(buttons.every(height => height >= 43.9)); await fits();
-      await mainNav().getByRole('link', { name: '课程日历', exact: true }).click(); await selected(b);
+      await openSection('课程日历'); await selected(b);
       await picker().getByRole('button', { name: new RegExp(a.name) }).click(); await selected(a);
       await page.getByRole('navigation', { name: '课程日历分类' }).getByRole('link', { name: '假期与调休', exact: true }).click();
       await selected(a); await page.getByRole('button', { name: '➕ 新增假期', exact: true }).waitFor();
       assert.equal(await page.getByRole('button', { name: /新增长期任务/ }).count(), 0);
-      await mainNav().getByRole('link', { name: '学习安排', exact: true }).click(); await selected(a);
+      await openSection('学习安排'); await selected(a);
       await page.getByRole('navigation', { name: '学习安排分类' }).getByRole('link', { name: '长期任务', exact: true }).click();
       await selected(a); await page.getByRole('button', { name: /新增长期任务/ }).waitFor();
       assert.equal(await page.getByRole('button', { name: /新增假期/ }).count(), 0);
@@ -96,8 +104,8 @@ async function main() {
         fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
         await page.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, `parent-plans-${width}-${theme}.png`), fullPage: true });
       }
-      await mainNav().getByRole('link', { name: '统计', exact: true }).click(); await selected(a); await fits();
-      await mainNav().getByRole('link', { name: '管理', exact: true }).click();
+      await openSection('统计'); await selected(a); await fits();
+      await openSection('管理');
       await page.getByRole('navigation', { name: '管理分类' }).getByRole('link', { name: '奖励配置', exact: true }).click();
       assert.equal(await mainNav().getByRole('link', { name: '管理', exact: true }).getAttribute('aria-current'), 'page');
       await fits();

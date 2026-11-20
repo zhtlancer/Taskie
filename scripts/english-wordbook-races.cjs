@@ -72,8 +72,16 @@ module.exports = async function checkEnglishModalRaces({ page, base, child, chil
     if (type === 'lookup') {
       await page.getByRole('button', { name: /查词 · 收录单词/ }).click();
       const dialog = page.getByRole('dialog', { name: '查词与收录单词' });
-      await dialog.getByLabel('英文词条 *', { exact: true }).fill(word);
-      await dialog.getByPlaceholder('例如：n. 苹果').fill('竞态释义');
+      // WebKit fill() focuses first and inserts text in a later step; let the
+      // dialog's initial autofocus settle so the text reaches the intended field.
+      await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"]')].at(-1)?.contains(document.activeElement));
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const wordInput = dialog.getByLabel('英文词条 *', { exact: true });
+      const definition = dialog.getByPlaceholder('例如：n. 苹果');
+      await wordInput.fill(word);
+      await definition.fill('竞态释义');
+      assert.equal(await wordInput.inputValue(), word, 'lookup word field keeps the filled word');
+      assert.equal(await definition.inputValue(), '竞态释义');
       assert.equal(await dialog.getByPlaceholder('如 Unit 1').isEnabled(), true);
       return { dialog, button: dialog.locator('button.ui-button-primary'), action: 'addWord', method: 'POST', pathname: '/api/english-words' };
     }
