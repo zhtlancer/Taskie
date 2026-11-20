@@ -129,7 +129,7 @@ async function checkDictionaryArticle({ browser, base, api, parentToken, openCon
 module.exports=checkDictionaryArticle;
 
 if (require.main===module) (async()=>{
-  const { launchBrowser, smokePort } = require('./browser-env.cjs');
+  const { browserEngine, launchBrowser, smokePort } = require('./browser-env.cjs');
   const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
   const ctx=createTestApp({clientDistDir:path.resolve(__dirname,'../frontend/dist')});
   let browser;
@@ -140,7 +140,7 @@ if (require.main===module) (async()=>{
       const res=await ctx.app.inject({method,url:`/api${url}`,payload});assert.ok(res.statusCode<300,`${url}: ${res.body}`);return res.json();
     };
     const openContext=async(browser,base,width,theme,token,child,role,errors)=>{
-      const context=await browser.newContext({viewport:{width,height:width<500?844:1024},colorScheme:theme,hasTouch:true,timezoneId:'Asia/Shanghai',serviceWorkers:'block',reducedMotion:'reduce'});
+      const context=await browser.newContext({viewport:{width,height:width<500?844:1024},colorScheme:theme,hasTouch:true,isMobile:browserEngine()==='webkit',timezoneId:'Asia/Shanghai',serviceWorkers:'block',reducedMotion:'reduce'});
       await context.addInitScript(({token,child,theme,role})=>{
         sessionStorage.setItem(`taskie_${role}_token`,token);sessionStorage.setItem('current_child',JSON.stringify(child));localStorage.setItem('taskie_theme',theme);localStorage.setItem('app_sound_muted','true');
       },{token,child,theme,role});

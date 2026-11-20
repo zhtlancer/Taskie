@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { launchBrowser, smokePort } = require('./browser-env.cjs');
+const { browserEngine, launchBrowser, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const { readZipEntry } = require('../backend/src/services/dictionary/zip64-reader');
@@ -82,8 +82,14 @@ async function main() {
         assert.ok(meta, `${word}: original audio resource is indexed`);
         const original = readZipEntry(audioIndex.sources[dictId].zipPath, { filename: meta.filename, method: meta.method, compSize: meta.comp_size, uncompSize: meta.uncomp_size, localHeaderOffset: meta.local_offset });
         assert.equal(original.toString('ascii', 0, 4), 'RIFF');
-        const format = original.indexOf(Buffer.from('fmt ')); assert.ok(format >= 12 && format + 10 <= original.length);
-        assert.equal(original.readUInt16LE(format + 8), dictId === 'oald8' ? 0x55 : 1, 'verify actual source encoding, not its file extension');
+        assert.equal(original.toString('ascii', 8, 12), 'WAVE');
+        let formatTag = null;
+        for (let pos = 12; pos + 8 <= original.length;) {
+          const id = original.toString('ascii', pos, pos + 4), size = original.readUInt32LE(pos + 4);
+          if (id === 'fmt ' && size >= 2 && pos + 10 <= original.length) { formatTag = original.readUInt16LE(pos + 8); break; }
+          pos += 8 + size + (size % 2);
+        }
+        assert.equal(formatTag, dictId === 'oald8' ? 0x55 : 1, 'verify actual source encoding, not its file extension');
         const audio = await app.services.dictionaryService.getAudio(dictId, clip.file);
         assert.equal(audio.contentType, contentType);
         assert.ok(audio.buffer.length > 100);
@@ -95,7 +101,7 @@ async function main() {
     const child = await api('POST', '/children', { name: '真实词典验收' });
     const base = await app.listen({ host: '127.0.0.1', port: smokePort() });
     browser = await launchBrowser();
-    const context = await browser.newContext({ viewport: { width: 1180, height: 1024 }, hasTouch: true, isMobile: process.env.BROWSER === 'webkit', timezoneId: 'Asia/Shanghai', serviceWorkers: 'block' });
+    const context = await browser.newContext({ viewport: { width: 1180, height: 1024 }, hasTouch: true, isMobile: browserEngine() === 'webkit', timezoneId: 'Asia/Shanghai', serviceWorkers: 'block' });
     await context.addInitScript(({ token, child }) => {
       sessionStorage.setItem('taskie_parent_token', token);
       sessionStorage.setItem('current_child', JSON.stringify(child));
@@ -172,7 +178,7 @@ async function main() {
     }
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM word_study_states WHERE english_word_id = ?').get(saved.id).n, 2);
     for (const [width,theme] of [[390,'light'],[820,'dark']]) {
-      const imagesContext=await browser.newContext({viewport:{width,height:1024},colorScheme:theme,hasTouch:true,serviceWorkers:'block'});
+      const imagesContext=await browser.newContext({viewport:{width,height:1024},colorScheme:theme,hasTouch:true,isMobile:browserEngine()==='webkit',serviceWorkers:'block'});
       try {
         await imagesContext.addInitScript(({token,child,theme})=>{
           sessionStorage.setItem('taskie_parent_token',token);sessionStorage.setItem('current_child',JSON.stringify(child));

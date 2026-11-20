@@ -128,7 +128,7 @@ async function bounded(promise) {
 }
 
 if (require.main === module) (async () => {
-  const { launchBrowser, smokePort } = require('./browser-env.cjs');
+  const { browserEngine, launchBrowser, smokePort } = require('./browser-env.cjs');
   const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
   const ctx = createTestApp({ clientDistDir: path.resolve(__dirname, '../frontend/dist'), dictDir: 'off' });
   let browser;
@@ -140,7 +140,7 @@ if (require.main === module) (async () => {
     };
     const errors = [];
     const openContext = async (browser, base, width, theme, token, child) => {
-      const context = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1024 }, colorScheme: theme, hasTouch: true, isMobile: process.env.BROWSER === 'webkit', serviceWorkers: 'block', reducedMotion: 'reduce' });
+      const context = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1024 }, colorScheme: theme, hasTouch: true, isMobile: browserEngine() === 'webkit', serviceWorkers: 'block', reducedMotion: 'reduce' });
       await context.addInitScript(({ token, child, theme }) => {
         sessionStorage.setItem('taskie_parent_token', token); sessionStorage.setItem('current_child', JSON.stringify(child)); localStorage.setItem('taskie_theme', theme); localStorage.setItem('app_sound_muted', 'true');
       }, { token, child, theme });

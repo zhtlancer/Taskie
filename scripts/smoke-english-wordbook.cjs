@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
-const { launchBrowser, smokePort } = require('./browser-env.cjs');
+const { browserEngine, launchBrowser, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
 const checkEnglishModalRaces = require('./english-wordbook-races.cjs');
@@ -173,7 +173,7 @@ async function openContext(browser, base, width, theme, token, child, role = 'ch
     viewport: { width, height: width < 500 ? 844 : 1024 },
     colorScheme: theme,
     hasTouch: true,
-    isMobile: process.env.BROWSER === 'webkit',
+    isMobile: browserEngine() === 'webkit',
     timezoneId: 'Asia/Shanghai',
     serviceWorkers: 'block',
     reducedMotion: 'reduce'

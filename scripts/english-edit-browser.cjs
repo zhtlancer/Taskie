@@ -119,7 +119,7 @@ async function bounded(promise) {
 
 if (require.main === module) (async () => {
   const path = require('node:path');
-  const { launchBrowser, smokePort } = require('./browser-env.cjs');
+  const { browserEngine, launchBrowser, smokePort } = require('./browser-env.cjs');
   const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
   const ctx = createTestApp({ clientDistDir: path.resolve(__dirname, '../frontend/dist'), dictDir: 'off' });
   let browser;
@@ -129,7 +129,7 @@ if (require.main === module) (async () => {
     const api = async (method, url, payload) => { const response = await ctx.app.inject({ method, url: `/api${url}`, payload }); assert.ok(response.statusCode < 300, response.body); return response.json(); };
     const errors = [];
     const openContext = async (browser, base, width, theme, token, child, role) => {
-      const context = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1024 }, colorScheme: theme, hasTouch: true, serviceWorkers: 'block', reducedMotion: 'reduce' });
+      const context = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1024 }, colorScheme: theme, hasTouch: true, isMobile: browserEngine() === 'webkit', serviceWorkers: 'block', reducedMotion: 'reduce' });
       await context.addInitScript(({ token, child, theme }) => { sessionStorage.setItem('taskie_parent_token', token); sessionStorage.setItem('current_child', JSON.stringify(child)); localStorage.setItem('taskie_theme', theme); localStorage.setItem('app_sound_muted', 'true'); }, { token, child, theme });
       const page = await context.newPage(); page.setDefaultTimeout(12000); page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort()); return { context, page };

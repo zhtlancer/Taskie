@@ -446,7 +446,7 @@ CI 用两个独立作业对前后端锁文件运行 `npm audit --package-lock-on
 
 只要前后端依赖安装成功且作业未取消，逻辑测试会独立执行；仓库检查或 CI 工具测试失败不会跳过它们，整体检查仍保留失败结果。共享字体动作在工作流调用步骤上整体限时 16 分钟，内部安装命令用 `timeout 12m` 限时；复合动作内部不使用不受 GitHub 支持的 `timeout-minutes` 属性。缓存受分片下载超时和动作整体预算约束，不再单独设置 2 分钟步骤上限。
 
-浏览器专项通过 `node scripts/run-browser-suite.cjs <专项名>` 运行（容器主流程使用 `smoke`）：保留原始退出码、完整 UTF-8 输出日志，并在 GitHub 上为失败输出错误注释。执行器默认限时 5 分钟，可通过 `BROWSER_SUITE_TIMEOUT_MS` 调整；超时返回 124，先终止测试，5 秒后强制结束仍未退出的进程。取消信号会转发给测试；非 Windows 系统同时处理其进程组。异常结束会记录信号和原因，容器冒烟任何非零退出都会收集日志并兜底清理本次 UUID 名称的容器，保留原退出码。冒烟脚本关闭浏览器失败时也会继续尝试删除容器。CI 浏览器步骤另有 7 分钟兜底，并预留上传日志的时间。
+浏览器专项通过 `node scripts/run-browser-suite.cjs <专项名>` 运行（容器主流程使用 `smoke`）：保留原始退出码、完整 UTF-8 输出日志，并在 GitHub 上为失败输出错误注释。执行器默认限时 5 分钟，可通过 `BROWSER_SUITE_TIMEOUT_MS` 调整；超时返回 124，先终止测试，5 秒后强制结束仍未退出的进程。取消信号会转发给测试；非 Windows 系统同时处理其进程组。异常结束会记录信号和原因，容器冒烟任何非零退出都会收集日志并兜底清理本次 UUID 名称的容器，保留原退出码。冒烟脚本关闭浏览器失败时也会继续尝试删除容器。CI 浏览器步骤另有 12 分钟兜底（`english-webkit` 运行器限时 10 分钟，其余专项 5 分钟），并预留上传日志的时间。
 
 容器主流程和 `frontend-recovery` 遇到捕获的异常时，还会在关闭失败页面前尝试保存截图与详细错误。CI 失败或取消时尝试上传对应 `test-results/` 目录，保留 7 天；执行器正常处理超时时会先保留日志，运行器被直接终止时无法保证上传或截图。这些文件仅来自隔离测试数据。直接运行原有 `npm run test:browser:*` 命令仍然可用，设置 `BROWSER_DIAGNOSTICS_DIR` 可启用上述两个专项的截图。
 
@@ -517,7 +517,7 @@ npm run test:browser:child-characters
 英语单词本与离线查词学习回归覆盖中英文词本切换、多词典查词（音标/发音真实播放/完整原词典与交叉引用跳转）、大小写与弯引号规范化、批量预览导入、缺释义拦截与双语认读/拼写计划与练习、跨孩子权限隔离，以及 320–1180px 浅暗色布局和 44px 触控尺寸（使用临时数据库与合成词典，无外部字典文件依赖）：
 
 ```bash
-BROWSER=chromium npm run test:browser:english-wordbook
+npm run test:browser:english-wordbook
 ```
 
 英语完整专项也支持 WebKit，包含真实触控点击后的鉴权音频播放、切换/关闭/延迟响应时的停止处理、原文图片解码与重试、拼写及编辑冲突、嵌套弹窗的键盘焦点和滚动锁。WebKit 必须先安装浏览器及系统依赖；Linux 的验证不能替代实际 iPad Safari 或移动输入法验收。CI 的 `english-webkit` 项使用合成词典，真实词典仍只在本地按需抽验。
@@ -525,11 +525,11 @@ BROWSER=chromium npm run test:browser:english-wordbook
 ```bash
 node node_modules/playwright/cli.js install --with-deps webkit
 npm run test:browser:english-webkit
-BROWSER=webkit npm run test:browser:english-interactions
-BROWSER=webkit DICT_DIR=/host/dicts npm run test:browser:real-dictionary
+TASKIE_BROWSER=webkit npm run test:browser:english-interactions
+TASKIE_BROWSER=webkit DICT_DIR=/host/dicts npm run test:browser:real-dictionary
 ```
 
-`english-wordbook`、`english-interactions`、`english-edit`、`dictionary-article` 与 `real-dictionary` 接受 `BROWSER=chromium` 或 `BROWSER=webkit`，默认 Chromium；其他值会明确报错，不会静默改用另一引擎。实际词典验收会核对原音频编码及服务输出类型，等待音频实际播完，并读取只读原包、在临时目录建立索引和业务数据。若已准备不包含 ffmpeg 的运行 PATH，可加 `ASSERT_NO_FFMPEG=1` 强制检查该条件。无需为生产部署安装 Playwright。
+`english-wordbook`、`english-interactions`、`english-edit`、`dictionary-article` 与 `real-dictionary` 接受 `TASKIE_BROWSER=chromium` 或 `TASKIE_BROWSER=webkit`，默认 Chromium；显式传入其他值会明确报错，不会静默改用另一引擎。为兼容原有写法也接受 `BROWSER=chromium` 或 `BROWSER=webkit`，同时忽略 Linux 桌面环境自带的系统 `BROWSER`（如 `firefox`）。实际词典验收会核对原音频编码及服务输出类型，等待音频实际播完，并读取只读原包、在临时目录建立索引和业务数据。若已准备不包含 ffmpeg 的运行 PATH，可加 `ASSERT_NO_FFMPEG=1` 强制检查该条件。无需为生产部署安装 Playwright。
 
 原词典图片专项使用生成的图片与临时词库，覆盖鉴权读取、图片解码、缺失/失败重试、切换词条取消与对象地址释放，以及 320、390、820、1024px 浅暗色和触控布局。完整英语专项也包含此检查：
 

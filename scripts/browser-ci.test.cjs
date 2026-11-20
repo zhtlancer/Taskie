@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { test } = require('node:test');
 const { errorAnnotation, reportBrowserFailure } = require('./browser-diagnostics.cjs');
+const { browserEngine } = require('./browser-engine.cjs');
 
 function directory(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-ci-tools-'));
@@ -196,4 +197,14 @@ test('failure diagnostics capture open pages before teardown and tolerate unavai
   const report = fs.readFileSync(path.join(dir, files.find(file => file.endsWith('.txt'))), 'utf8');
   assert.match(report, /expected one record, got two/);
   assert.match(report, /Screenshot unavailable: page became unavailable/);
+});
+
+test('browser engine selector ignores desktop BROWSER defaults while rejecting invalid TASKIE_BROWSER', () => {
+  assert.equal(browserEngine({}), 'chromium');
+  assert.equal(browserEngine({ BROWSER: 'firefox' }), 'chromium');
+  assert.equal(browserEngine({ BROWSER: 'webkit' }), 'webkit');
+  assert.equal(browserEngine({ BROWSER: 'chromium' }), 'chromium');
+  assert.equal(browserEngine({ BROWSER: 'webkit', TASKIE_BROWSER: 'chromium' }), 'chromium');
+  assert.equal(browserEngine({ BROWSER: 'firefox', TASKIE_BROWSER: 'webkit' }), 'webkit');
+  assert.throws(() => browserEngine({ TASKIE_BROWSER: 'firefox' }), /Unsupported TASKIE_BROWSER: firefox/);
 });
