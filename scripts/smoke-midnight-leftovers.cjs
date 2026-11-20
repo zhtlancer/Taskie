@@ -313,6 +313,30 @@ async function main() {
       await page.locator('[data-study-history] summary').getByText('最近学习记录', { exact: true }).waitFor();
     } finally { release(); }
   });
+  await check('D1 date revert cancels stale in-flight overview without leaving a refresh lock', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    await page.locator('[data-study-history] [role="status"]').waitFor({ state: 'detached' });
+    let release, arrived, held = false;
+    const gate = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { arrived = resolve; });
+    await page.route('**/api/children/*/word-study', async route => {
+      if (held) return route.fallback();
+      held = true;
+      const response = await route.fetch(); arrived(); await gate;
+      await fulfillRead(route, response);
+    });
+    try {
+      now = before + 40000;
+      await page.clock.fastForward(70000); await signal(ready);
+      await page.locator('[data-study-refresh]').waitFor();
+      await page.clock.setSystemTime(new RealDate(before));
+      await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+      await page.locator('[data-study-refresh]').waitFor({ state: 'detached' });
+      assert.equal(await page.getByRole('button', { name: '刷新安排', exact: true }).isEnabled(), true);
+      assert.equal(await page.getByRole('tab', { name: '英语单词', exact: true }).isEnabled(), true);
+    } finally { release(); }
+  });
   await check('A1 lost unaccepted request: midnight confirmation returns friendly 403 without retry', async () => {
     const page = await open();
     await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);

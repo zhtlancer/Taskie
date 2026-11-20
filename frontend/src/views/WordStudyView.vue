@@ -33,7 +33,7 @@
           </div>
           <router-link :to="`/child/${childId}/characters?lang=${language}`">{{ language === 'en' ? '英语单词本' : '生字生词本' }}</router-link>
           <router-link :to="`/child/${childId}/today`">今日看板</router-link>
-          <button :disabled="busy || loading || refreshing || active || !calendar.ready" @click="refresh">刷新安排</button>
+          <button :disabled="busy || loading || refreshing || active || !calendar.ready" @click="() => refresh()">刷新安排</button>
           <router-link v-if="asParent" :to="{ path: '/parent/word-plans', query: { child: childId } }">管理字词计划</router-link>
         </div>
       </header>
@@ -43,11 +43,11 @@
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="notice" role="status" class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
       <PageState v-if="!calendar.ready" :kind="calendar.error ? 'error' : 'loading'" :title="calendar.error ? '家庭日期未能确认' : '正在确认家庭日期…'" :description="calendar.error" :busy="calendar.loading" @retry="calendar.load({ force: true })" />
-      <PageState v-else-if="studyReadError && !hasOverview" kind="error" title="学习清单未能读取" :description="studyReadError" :busy="loading" @retry="refresh" />
+      <PageState v-else-if="studyReadError && !hasOverview" kind="error" title="学习清单未能读取" :description="studyReadError" :busy="loading" @retry="() => refresh()" />
       <p v-else-if="loading" role="status" class="text-center py-12 text-brand-600 dark:text-brand-300">正在安排学习…</p>
-      <div v-if="calendar.ready && hasOverview && (refreshing || studyReadError)" data-study-refresh :role="studyReadError ? 'alert' : 'status'" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-sm text-slate-600 dark:text-slate-300">
+      <div v-if="calendar.ready && hasOverview && (refreshing || studyReadError)" data-study-refresh :role="studyReadError ? 'alert' : 'status'" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 text-sm" :class="studyReadError ? 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'">
         <span>{{ refreshing ? '正在更新学习清单，当前显示上次读取的数据。' : `更新未成功，当前显示上次读取的数据。${studyReadError}` }}</span>
-        <button v-if="studyReadError" type="button" :disabled="refreshing || busy || Boolean(active)" class="ui-button-secondary" @click="refresh">重新读取清单</button>
+        <button v-if="studyReadError" type="button" :disabled="refreshing || busy || Boolean(active)" class="ui-button-secondary" @click="() => refresh()">重新读取清单</button>
       </div>
       <div v-if="selectedSkill" data-study-skill-filter class="rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/30 p-3 flex flex-wrap items-center justify-between gap-2 text-sm text-brand-700 dark:text-brand-300">
         <span>当前查看：{{ skillName(selectedSkill) }}</span>
@@ -83,7 +83,7 @@
         </section>
       </template>
       <div v-if="calendar.ready" data-study-history class="space-y-2">
-        <div v-if="historyLoading || historyError" :role="historyError ? 'alert' : 'status'" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-300">
+        <div v-if="historyLoading || historyError" :role="historyError ? 'alert' : 'status'" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 text-xs" :class="historyError ? 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'">
           <span>{{ historyLoading ? (hasHistory ? '正在更新学习记录，当前显示上次读取的数据。' : '正在读取学习记录…') : `${historyError}${hasHistory ? ' 当前显示上次读取的数据。' : ''}` }}</span>
           <button v-if="historyError" type="button" :disabled="historyLoading" class="ui-button-secondary" @click="refreshHistory">重新读取记录</button>
         </div>
@@ -318,6 +318,14 @@ function resetStudyScope() {
 }
 let retryTimer, retryCount = 0;
 function stopRetry() { clearTimeout(retryTimer); retryTimer = undefined; }
+function cancelOverviewRead() {
+  studySerial++;
+  studyController?.abort();
+  studyController = null;
+  pendingDate = null;
+  loading.value = false;
+  refreshing.value = false;
+}
 function retryEarlierServerDate() {
   if (retryTimer || retryCount >= 24 || !canReload()) return;
   const serial = studySerial;
@@ -325,18 +333,22 @@ function retryEarlierServerDate() {
     retryTimer = undefined;
     if (serial !== studySerial || !canReload()) return;
     retryCount++;
-    refresh({ silent: hasOverview.value });
+    refresh({ includeHistory: false });
   }, 5000);
 }
 const canReload = () => Boolean(getToken()) && calendar.ready && !active.value && !pendingAttempt.value && !busy.value;
 function reloadStudyDay() {
-  if (canReload() && (!hasOverview.value || dayChanged.value) && pendingDate !== calendar.today) refresh({ silent: hasOverview.value });
+  if (canReload() && (!hasOverview.value || dayChanged.value) && pendingDate !== calendar.today) refresh();
 }
 watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value], () => {
   stopRetry(); retryCount = 0; historySerial++;
   historyController?.abort(); historyController = null;
   historyLoading.value = false; historyError.value = '';
-  if (calendar.ready && hasOverview.value && date.value === calendar.today) refreshHistory();
+  if (calendar.ready && hasOverview.value && date.value === calendar.today) {
+    if (pendingDate && pendingDate !== calendar.today) cancelOverviewRead();
+    if (dateMismatch) { dateMismatch = false; studyReadError.value = ''; }
+    refreshHistory();
+  }
 });
 watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, scopeEpoch.value, active.value, pendingAttempt.value, busy.value], reloadStudyDay);
 watch(() => [active.value, busy.value], () => { if (!canReload()) stopRetry(); });
@@ -346,7 +358,7 @@ const skillName = skill => {
   return skill === 'write' ? '书写' : '认读';
 };
 function switchLanguage(nextLang) {
-  if (nextLang === language.value || busy.value || loading.value || active.value) return;
+  if (nextLang === language.value || busy.value || loading.value || refreshing.value || active.value) return;
   language.value = nextLang;
   router.replace({ query: { ...route.query, language: nextLang } });
   refresh();
@@ -380,14 +392,14 @@ async function refreshHistory() {
   }
 }
 
-async function load({ recoverDate = false } = {}) {
+async function load({ recoverDate = false, includeHistory = true } = {}) {
   if (!calendar.ready) return;
   stopRetry();
   const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value, lang = language.value;
   const matchesScope = capture();
   studyController?.abort();
   const controller = new AbortController(); studyController = controller;
-  refreshHistory();
+  if (includeHistory) refreshHistory();
   pendingDate = requestedDate;
   const current = () => matchesScope() && serial === studySerial && lang === language.value && calendar.ready && requestedDate === calendar.today &&
     timeZone === calendar.timeZone && id === childId.value;
@@ -407,6 +419,7 @@ async function load({ recoverDate = false } = {}) {
     date.value = overview.date;
     missingDefinitionCount.value = overview.missing_definition_count || 0;
     hasOverview.value = true;
+    if (!includeHistory) refreshHistory();
   } catch (err) {
     if (current() && err?.code !== 'ERR_CANCELED') studyReadError.value = message(err);
   } finally {
@@ -476,7 +489,7 @@ function switchToToday() {
   if (busy.value) return;
   closePractice();
   calendar.refreshToday();
-  refresh({ silent: true, recoverDate: true });
+  refresh({ recoverDate: true });
 }
 function nextItem() {
   if (busy.value || !active.value) return;
@@ -530,20 +543,24 @@ async function extra(day) {
   } catch (err) { if (matchesScope()) error.value = message(err); }
   finally { if (matchesScope()) busy.value = false; }
 }
-async function refresh({ silent = false, recoverDate = false } = {}) {
+async function refresh({ recoverDate = false, includeHistory = true } = {}) {
   if (!calendar.ready || !getToken()) { loading.value = false; return; }
   loading.value = !hasOverview.value; refreshing.value = hasOverview.value; studyReadError.value = ''; error.value = ''; dateMismatch = false;
-  await load({ recoverDate });
+  await load({ recoverDate, includeHistory });
 }
 function onResume() {
-  if (document.hidden || !canReload() || pendingDate !== null) return;
+  if (document.hidden) return;
   calendar.refreshToday();
+  if (!canReload()) return;
   // Reverting a skewed clock to the already displayed family day resolves the
-  // date mismatch; stop the future-day retry rather than starting another read.
-  if (dateMismatch && hasOverview.value && date.value === calendar.today) {
-    stopRetry(); dateMismatch = false; studyReadError.value = ''; return;
+  // date mismatch or an in-flight skewed-day read; stop rather than starting another read.
+  if (hasOverview.value && date.value === calendar.today && (dateMismatch || (pendingDate && pendingDate !== calendar.today))) {
+    stopRetry(); dateMismatch = false; studyReadError.value = '';
+    if (pendingDate && pendingDate !== calendar.today) cancelOverviewRead();
+    return;
   }
-  refresh({ silent: hasOverview.value });
+  if (pendingDate !== null) return;
+  refresh();
 }
 onMounted(() => {
   loadLearningFont(); refresh();
