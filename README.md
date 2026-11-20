@@ -524,6 +524,12 @@ npm run test:browser:english-wordbook
 npm run test:browser:dictionary-article
 ```
 
+字词学习读取状态专项覆盖英语词本首次失败与后台刷新、语文/英语清单和历史记录独立失败及重试、切换孩子/恢复数据时的旧响应隔离，以及计划与教材范围失败后的恢复（临时数据库，手机浅色与平板暗色；完整英语专项也包含）：
+
+```bash
+npm run test:browser:word-study-states
+```
+
 作业日期弹窗布局专项覆盖新建/修改、手机、平板横竖屏、分屏、浅暗色及放大文字；WebKit 模式需要先准备 Playwright 的 WebKit 浏览器和运行依赖（模拟检查不能替代真实 iPad Safari 验证）：
 
 ```bash

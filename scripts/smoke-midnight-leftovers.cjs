@@ -67,9 +67,9 @@ async function check(name, run) {
   }
   finally {
     for (const context of contexts.splice(0)) {
-      // Scores now return before background history; finish intercepted requests
-      // before disposing their request context, including under API latency.
-      await Promise.all(context.pages().map(page => page.unrouteAll({ behavior: 'wait' })));
+      // Read cancellation can leave a delayed route undeliverable. Business assertions
+      // finish above; disposal must not wait for an already-cancelled interception.
+      await Promise.all(context.pages().map(page => page.unrouteAll({ behavior: 'ignoreErrors' })));
       await context.close();
     }
     // Keep cases independent: accumulating 30 children turns the dashboard into
@@ -82,6 +82,13 @@ async function signal(promise) {
   try { return await Promise.race([promise, new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('expected intercepted request did not arrive')), 10000);
   })]); } finally { clearTimeout(timer); }
+}
+async function fulfillRead(route, response) {
+  try { await route.fulfill({ response }); }
+  catch (error) {
+    // Superseded reads are now aborted by the UI; only their transport delivery may be gone.
+    if (!/already handled|has been closed|context disposed/i.test(error.message)) throw error;
+  }
 }
 async function midnight(page, event = 'clock') {
   now = after;
@@ -155,7 +162,7 @@ async function main() {
       await page.route('**/api/children/*/word-study/history', async route => {
         const response = await route.fetch();
         await new Promise(resolve => setTimeout(resolve, delay));
-        await route.fulfill({ response });
+        await fulfillRead(route, response);
       });
       if (rollover) {
         // Accept on yesterday, deliver after midnight, before the slow history read.
@@ -231,16 +238,16 @@ async function main() {
       if (held) return route.fallback();
       held = true;
       const response = await route.fetch();
-      arrived(); await gate; await route.fulfill({ response });
+      arrived(); await gate; await fulfillRead(route, response);
     });
-    const history = page.locator('main > details');
+    const history = page.locator('[data-study-history] details');
     try {
       await grade(page); await signal(ready);
       await page.getByRole('button', { name: '下一项 / 返回清单', exact: true }).click();
       await grade(page);
       await history.getByText(/基础 2\/2 项/).waitFor();
     } finally { release(); }
-    await page.unrouteAll({ behavior: 'wait' });
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
     await page.waitForTimeout(100);
     assert.equal(await history.getByText(/基础 2\/2 项/).count(), 1);
     assert.equal(await history.getByText(/基础 1\/2 项/).count(), 0);
@@ -280,6 +287,31 @@ async function main() {
     assert.equal(reads.length, 25, 'initial read plus 24 bounded retries');
     await page.clock.runFor(120000); await page.waitForTimeout(apiDelay + 100);
     assert.equal(reads.length, 25, 'no unbounded background reads');
+  });
+  await check('D1 date revert cancels stale history without leaving a loading lock', async () => {
+    const page = await open();
+    await seedWords(); await page.goto(base + studyUrl()); await studyReady(page);
+    await page.locator('[data-study-history] [role="status"]').waitFor({ state: 'detached' });
+    let release, arrived, held = false;
+    const gate = new Promise(resolve => { release = resolve; });
+    const ready = new Promise(resolve => { arrived = resolve; });
+    await page.route('**/api/children/*/word-study/history', async route => {
+      if (held) return route.fallback();
+      held = true;
+      const response = await route.fetch(); arrived(); await gate;
+      await fulfillRead(route, response);
+    });
+    try {
+      now = before + 40000;
+      const overview = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/word-study'));
+      await page.clock.fastForward(70000); await overview; await signal(ready);
+      const freshHistory = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/word-study/history'));
+      await page.clock.setSystemTime(new RealDate(before));
+      await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
+      await freshHistory;
+      await page.locator('[data-study-history] [role="status"]').waitFor({ state: 'detached' });
+      await page.locator('[data-study-history] summary').getByText('最近学习记录', { exact: true }).waitFor();
+    } finally { release(); }
   });
   await check('A1 lost unaccepted request: midnight confirmation returns friendly 403 without retry', async () => {
     const page = await open();
@@ -410,7 +442,7 @@ async function main() {
       attempts.push(route.request().postDataJSON());
       const response = await route.fetch();
       assert.equal(response.status(), 200);
-      arrived(); await gate; await route.fulfill({ response });
+      arrived(); await gate; await fulfillRead(route, response);
     });
     try {
       await page.getByRole('button', { name: '独立完成', exact: true }).click();
@@ -452,7 +484,7 @@ async function main() {
       if (held) return route.continue();
       held = true;
       const response = await route.fetch();
-      arrived(); await gate; await route.fulfill({ response });
+      arrived(); await gate; await fulfillRead(route, response);
     });
     try {
       now = before - 86400000;
@@ -463,7 +495,7 @@ async function main() {
       if (view === 'word-study') await waitForNewStudy(page);
       else await page.getByText(/还剩 2 天，今天建议/).waitFor();
     } finally { release(); }
-    await page.unrouteAll({ behavior: 'wait' });
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
     if (view === 'word-study') await waitForNewStudy(page);
     else await page.getByText(/还剩 2 天，今天建议/).waitFor();
     assert.deepEqual(await page.evaluate(() => window.loadingFlashes), []);

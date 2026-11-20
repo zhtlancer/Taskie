@@ -11,7 +11,7 @@
             <button
               type="button"
               role="tab"
-              :disabled="busy || loading || Boolean(active)"
+              :disabled="busy || loading || refreshing || Boolean(active)"
               :aria-selected="language === 'zh'"
               class="min-h-11 min-w-11 px-3 py-1 rounded-lg text-xs font-black transition-all"
               :class="language === 'zh' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-xs' : 'text-slate-600 dark:text-slate-300'"
@@ -22,7 +22,7 @@
             <button
               type="button"
               role="tab"
-              :disabled="busy || loading || Boolean(active)"
+              :disabled="busy || loading || refreshing || Boolean(active)"
               :aria-selected="language === 'en'"
               class="min-h-11 min-w-11 px-3 py-1 rounded-lg text-xs font-black transition-all"
               :class="language === 'en' ? 'bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-300 shadow-xs' : 'text-slate-600 dark:text-slate-300'"
@@ -33,23 +33,29 @@
           </div>
           <router-link :to="`/child/${childId}/characters?lang=${language}`">{{ language === 'en' ? '英语单词本' : '生字生词本' }}</router-link>
           <router-link :to="`/child/${childId}/today`">今日看板</router-link>
-          <button :disabled="busy || loading || active" @click="refresh">刷新安排</button>
+          <button :disabled="busy || loading || refreshing || active || !calendar.ready" @click="refresh">刷新安排</button>
           <router-link v-if="asParent" :to="{ path: '/parent/word-plans', query: { child: childId } }">管理字词计划</router-link>
         </div>
       </header>
-      <p v-if="language === 'en' && missingDefinitionCount > 0" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-bold text-amber-800 dark:text-amber-200">
+      <p v-if="hasOverview && language === 'en' && missingDefinitionCount > 0" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-bold text-amber-800 dark:text-amber-200">
         有 {{ missingDefinitionCount }} 个缺少释义的单词暂未纳入英语学习池，可在“英语单词本”补充释义。
       </p>
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="notice" role="status" class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
-      <p v-if="loading" class="text-center py-12 text-brand-600 dark:text-brand-300">正在安排学习…</p>
+      <PageState v-if="!calendar.ready" :kind="calendar.error ? 'error' : 'loading'" :title="calendar.error ? '家庭日期未能确认' : '正在确认家庭日期…'" :description="calendar.error" :busy="calendar.loading" @retry="calendar.load({ force: true })" />
+      <PageState v-else-if="studyReadError && !hasOverview" kind="error" title="学习清单未能读取" :description="studyReadError" :busy="loading" @retry="refresh" />
+      <p v-else-if="loading" role="status" class="text-center py-12 text-brand-600 dark:text-brand-300">正在安排学习…</p>
+      <div v-if="calendar.ready && hasOverview && (refreshing || studyReadError)" data-study-refresh :role="studyReadError ? 'alert' : 'status'" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-sm text-slate-600 dark:text-slate-300">
+        <span>{{ refreshing ? '正在更新学习清单，当前显示上次读取的数据。' : `更新未成功，当前显示上次读取的数据。${studyReadError}` }}</span>
+        <button v-if="studyReadError" type="button" :disabled="refreshing || busy || Boolean(active)" class="ui-button-secondary" @click="refresh">重新读取清单</button>
+      </div>
       <div v-if="selectedSkill" data-study-skill-filter class="rounded-xl border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/30 p-3 flex flex-wrap items-center justify-between gap-2 text-sm text-brand-700 dark:text-brand-300">
         <span>当前查看：{{ skillName(selectedSkill) }}</span>
         <button type="button" :disabled="busy || Boolean(active)" class="ui-button-secondary" @click="showAllSkills">查看全部技能</button>
       </div>
 
-      <template v-if="!loading">
-        <section v-if="!visibleDays.length" class="bg-white dark:bg-slate-900 border rounded-2xl p-6 text-sm text-slate-500 dark:text-slate-400">
+      <template v-if="calendar.ready && hasOverview">
+        <section v-if="!visibleDays.length" data-study-empty class="bg-white dark:bg-slate-900 border rounded-2xl p-6 text-sm text-slate-500 dark:text-slate-400">
           今天没有{{ selectedSkill ? skillName(selectedSkill) : '' }}基础学习清单：可能还未开启计划、今天不是学习日，或当前没有需要新学/复习的字词。
           <p v-if="!asParent" class="mt-2">可以请家长在“学习安排 → 字词计划”中开启自动学习。</p>
         </section>
@@ -75,11 +81,18 @@
             <span class="text-xs text-slate-400">额外奖励 {{ day.extra_rewarded }}/{{ day.extra_reward_limit }} 组 · 自愿完成，不改变全勤和连续打卡</span>
           </div>
         </section>
-        <details v-if="visibleHistory.length" class="rounded-2xl bg-white dark:bg-slate-900 border p-4">
+      </template>
+      <div v-if="calendar.ready" data-study-history class="space-y-2">
+        <div v-if="historyLoading || historyError" :role="historyError ? 'alert' : 'status'" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-xs text-slate-600 dark:text-slate-300">
+          <span>{{ historyLoading ? (hasHistory ? '正在更新学习记录，当前显示上次读取的数据。' : '正在读取学习记录…') : `${historyError}${hasHistory ? ' 当前显示上次读取的数据。' : ''}` }}</span>
+          <button v-if="historyError" type="button" :disabled="historyLoading" class="ui-button-secondary" @click="refreshHistory">重新读取记录</button>
+        </div>
+        <details v-if="hasHistory && visibleHistory.length" class="rounded-2xl bg-white dark:bg-slate-900 border p-4">
           <summary class="font-bold text-slate-800 dark:text-slate-100 min-h-[44px] py-3 cursor-pointer">最近学习记录</summary>
           <ul class="space-y-2 text-xs text-slate-500 dark:text-slate-400"><li v-for="entry in visibleHistory" :key="entry.id">{{ entry.date }} · {{ skillName(entry.skill) }} · 基础 {{ entry.base_completed }}/{{ entry.base_total }} 项 · 额外 {{ entry.extra_completed }} 项 · {{ entry.needs_practice }} 项还需练习</li></ul>
         </details>
-      </template>
+        <p v-else-if="hasHistory && !historyLoading && !historyError" class="text-xs text-slate-500 dark:text-slate-400">暂无{{ selectedSkill ? skillName(selectedSkill) : '' }}学习记录。</p>
+      </div>
     </main>
 
     <UiDialog v-if="active" :title="`${skillName(active.skill)}练习 · ${active.item.is_early ? '提前巩固（不升级周期）' : active.item.kind === 'review' ? '复习' : '新学'}`" :busy="busy" close-label="关闭练习" @close="closePractice">
@@ -247,13 +260,15 @@ import ChildTabBar from '../components/ChildTabBar.vue';
 import UiDialog from '../components/UiDialog.vue';
 import HanziGrid from '../components/HanziGrid.vue';
 import { getCharPinyin, speakHanzi } from '../utils/hanzi';
-import { currentRole } from '../utils/session';
+import { currentRole, getToken } from '../utils/session';
+import { useAsyncScope } from '../composables/useAsyncScope';
+import PageState from '../components/ParentPageState.vue';
 import { loadLearningFont } from '../utils/learningFont';
 
 const route = useRoute(), router = useRouter(), childId = computed(() => route.params.id);
 const language = ref(route.query.language === 'en' ? 'en' : 'zh');
 const calendar = useCalendarStore();
-const asParent = currentRole() === 'parent';
+const asParent = ref(currentRole() === 'parent');
 const days = ref([]), history = ref([]), date = ref(''), missingDefinitionCount = ref(0);
 const selectedSkill = computed(() => ['recognize', 'write'].includes(route.query.skill) ? route.query.skill : '');
 const visibleDays = computed(() => days.value.filter(day => !selectedSkill.value || day.skill === selectedSkill.value));
@@ -264,6 +279,9 @@ function showAllSkills() {
   router.replace({ query });
 }
 const loading = ref(true), busy = ref(false), error = ref(''), notice = ref('');
+const hasOverview = ref(false), refreshing = ref(false), studyReadError = ref('');
+const hasHistory = ref(false), historyLoading = ref(false), historyError = ref('');
+const readOptions = { silentError: true, preserveError: true };
 const active = ref(null), revealed = ref(false), charIndex = ref(0), feedbackResult = ref(null);
 const typedSpelling = ref(''), spellingCheck = ref(null), englishAudio = ref([]), englishAudioError = ref('');
 const currentAudioLoading = ref(false), currentAudioMatch = ref(null);
@@ -280,7 +298,24 @@ const uncertainAttempt = computed(() => attemptUnknown.value && pendingAttempt.v
 // still lags. Trust that snapshot until the device's family date changes again.
 const recoveredDeviceDate = ref('');
 const dayChanged = computed(() => calendar.ready && Boolean(date.value) && calendar.today !== date.value && calendar.today !== recoveredDeviceDate.value);
-let studySerial = 0, historySerial = 0, pendingDate = null, loaded = false;
+let studySerial = 0, historySerial = 0, pendingDate = null, dateMismatch = false;
+let studyController, historyController;
+const scopeEpoch = ref(0);
+const { capture } = useAsyncScope(() => [childId.value, language.value], resetStudyScope);
+function resetStudyScope() {
+  asParent.value = currentRole() === 'parent';
+  studySerial++; historySerial++;
+  studyController?.abort(); historyController?.abort();
+  stopRetry(); retryCount = 0; pendingDate = null; dateMismatch = false;
+  resetEnglishAudio(); active.value = null; pendingAttempt.value = null;
+  pendingItemId.value = null; attemptUnknown.value = false; confirmedAttempt.value = false;
+  busy.value = false; error.value = ''; notice.value = '';
+  days.value = []; history.value = []; date.value = ''; missingDefinitionCount.value = 0;
+  hasOverview.value = false; hasHistory.value = false;
+  loading.value = false; refreshing.value = false; studyReadError.value = '';
+  historyLoading.value = false; historyError.value = ''; recoveredDeviceDate.value = '';
+  scopeEpoch.value++;
+}
 let retryTimer, retryCount = 0;
 function stopRetry() { clearTimeout(retryTimer); retryTimer = undefined; }
 function retryEarlierServerDate() {
@@ -290,23 +325,21 @@ function retryEarlierServerDate() {
     retryTimer = undefined;
     if (serial !== studySerial || !canReload()) return;
     retryCount++;
-    refresh({ silent: loaded });
+    refresh({ silent: hasOverview.value });
   }, 5000);
 }
-const canReload = () => calendar.ready && !active.value && !pendingAttempt.value && !busy.value;
+const canReload = () => Boolean(getToken()) && calendar.ready && !active.value && !pendingAttempt.value && !busy.value;
 function reloadStudyDay() {
-  if (canReload() && (!loaded || dayChanged.value) && pendingDate !== calendar.today) refresh({ silent: loaded });
+  if (canReload() && (!hasOverview.value || dayChanged.value) && pendingDate !== calendar.today) refresh({ silent: hasOverview.value });
 }
-watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value], () => { stopRetry(); retryCount = 0; historySerial++; });
-watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, active.value, pendingAttempt.value, busy.value], reloadStudyDay);
+watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value], () => {
+  stopRetry(); retryCount = 0; historySerial++;
+  historyController?.abort(); historyController = null;
+  historyLoading.value = false; historyError.value = '';
+  if (calendar.ready && hasOverview.value && date.value === calendar.today) refreshHistory();
+});
+watch(() => [calendar.today, calendar.ready, calendar.timeZone, childId.value, scopeEpoch.value, active.value, pendingAttempt.value, busy.value], reloadStudyDay);
 watch(() => [active.value, busy.value], () => { if (!canReload()) stopRetry(); });
-onBeforeUnmount(() => { studySerial++; historySerial++; stopRetry(); resetEnglishAudio(); });
-const closeRestoredForm = () => { resetEnglishAudio(); active.value = null; pendingAttempt.value = null; };
-onMounted(() => window.addEventListener('taskie:data-restored', closeRestoredForm));
-onBeforeUnmount(() => window.removeEventListener('taskie:data-restored', closeRestoredForm));
-onMounted(() => window.addEventListener('taskie:session-changed', resetEnglishAudio));
-onBeforeUnmount(() => window.removeEventListener('taskie:session-changed', resetEnglishAudio));
-watch(childId, resetEnglishAudio);
 const requestId = () => globalThis.crypto?.randomUUID?.() || `study-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const skillName = skill => {
   if (language.value === 'en') return skill === 'write' ? '英语默写' : '英语认读';
@@ -315,7 +348,6 @@ const skillName = skill => {
 function switchLanguage(nextLang) {
   if (nextLang === language.value || busy.value || loading.value || active.value) return;
   language.value = nextLang;
-  loaded = false;
   router.replace({ query: { ...route.query, language: nextLang } });
   refresh();
 }
@@ -323,7 +355,6 @@ watch(() => route.query.language, (val) => {
   const next = val === 'en' ? 'en' : 'zh';
   if (next !== language.value && !active.value && !busy.value) {
     language.value = next;
-    loaded = false;
     refresh();
   }
 });
@@ -332,26 +363,41 @@ const baseCount = (day, kind) => day.batches.find(batch => !batch.is_extra)?.ite
 const message = err => typeof err === 'string' ? err : err?.message || '操作失败，请重试';
 
 async function refreshHistory() {
+  if (!calendar.ready || !getToken()) return;
   const serial = ++historySerial, id = childId.value, lang = language.value, requestedDate = calendar.today, timeZone = calendar.timeZone;
+  const matchesScope = capture();
+  const current = () => matchesScope() && serial === historySerial && id === childId.value && lang === language.value && calendar.ready && requestedDate === calendar.today && timeZone === calendar.timeZone;
+  historyController?.abort();
+  const controller = new AbortController(); historyController = controller;
+  historyLoading.value = true; historyError.value = '';
   try {
-    const recent = await api.getWordStudyHistory(id, lang);
-    if (serial === historySerial && id === childId.value && lang === language.value && calendar.ready && requestedDate === calendar.today && timeZone === calendar.timeZone) history.value = recent;
-  } catch { /* The accepted score remains usable; the API reports history errors. */ }
+    const recent = await api.getWordStudyHistory(id, lang, controller.signal, readOptions);
+    if (current()) { history.value = recent; hasHistory.value = true; }
+  } catch (err) {
+    if (current() && err?.code !== 'ERR_CANCELED') historyError.value = message(err);
+  } finally {
+    if (serial === historySerial) { historyLoading.value = false; historyController = null; }
+  }
 }
 
 async function load({ recoverDate = false } = {}) {
   if (!calendar.ready) return;
   stopRetry();
   const serial = ++studySerial, requestedDate = calendar.today, timeZone = calendar.timeZone, id = childId.value, lang = language.value;
-  const recentSerial = ++historySerial;
+  const matchesScope = capture();
+  studyController?.abort();
+  const controller = new AbortController(); studyController = controller;
+  refreshHistory();
   pendingDate = requestedDate;
-  const current = () => serial === studySerial && lang === language.value && calendar.ready && requestedDate === calendar.today &&
+  const current = () => matchesScope() && serial === studySerial && lang === language.value && calendar.ready && requestedDate === calendar.today &&
     timeZone === calendar.timeZone && id === childId.value;
   try {
-    const [overview, recent] = await Promise.all([api.getWordStudy(id, lang), api.getWordStudyHistory(id, lang)]);
+    const overview = await api.getWordStudy(id, lang, controller.signal, readOptions);
     const sameRecoveredDate = recoveredDeviceDate.value === requestedDate && overview.date === date.value;
     if (!current() || active.value) return;
     if (!recoverDate && !sameRecoveredDate && overview.date !== requestedDate) {
+      dateMismatch = true;
+      studyReadError.value = '学习日期尚未与服务器同步，请稍后重试。';
       if (overview.date < requestedDate) retryEarlierServerDate();
       return;
     }
@@ -360,12 +406,11 @@ async function load({ recoverDate = false } = {}) {
     days.value = overview.days;
     date.value = overview.date;
     missingDefinitionCount.value = overview.missing_definition_count || 0;
-    if (recentSerial === historySerial) history.value = recent;
-    loaded = true;
+    hasOverview.value = true;
   } catch (err) {
-    if (current()) error.value = message(err);
+    if (current() && err?.code !== 'ERR_CANCELED') studyReadError.value = message(err);
   } finally {
-    if (serial === studySerial) { loading.value = false; pendingDate = null; }
+    if (serial === studySerial) { loading.value = false; refreshing.value = false; pendingDate = null; studyController = null; }
   }
 }
 
@@ -452,9 +497,11 @@ async function grade(result) {
   pendingAttempt.value ||= { result, request_id: requestId() };
   pendingItemId.value = active.value.item.id;
   const attempt = pendingAttempt.value;
+  const matchesScope = capture();
   attemptUnknown.value = false;
   try {
     const response = await api.gradeWordStudyItem(active.value.item.id, attempt);
+    if (!matchesScope()) return;
     days.value = days.value.map(day => day.id === response.day.id ? response.day : day);
     feedbackResult.value = attempt.result;
     confirmedAttempt.value = response.replayed === true;
@@ -462,28 +509,49 @@ async function grade(result) {
     notice.value = response.points_earned ? `本组完成，获得 ${response.points_earned} 积分。` : '本项练习已记录。';
     refreshHistory();
   } catch (err) {
+    if (!matchesScope()) return;
     attemptUnknown.value = err?.networkFailure === true;
     if (err === '只能记录今天实际进行的练习') { expiredPractice.value = true; pendingAttempt.value = null; if (confirmingUnknown) error.value = '这次练习没有记录，昨天的清单不能再记录了。'; }
     else error.value = message(err);
   }
-  finally { busy.value = false; }
+  finally { if (matchesScope()) busy.value = false; }
 }
 async function extra(day) {
   if (busy.value) return;
   busy.value = true; error.value = '';
+  const matchesScope = capture();
   try {
     const updated = await api.addWordStudyExtra(day.id, requestId());
+    if (!matchesScope()) return;
     days.value = days.value.map(entry => entry.id === updated.id ? updated : entry);
     const batch = updated.batches.find(batch => !batch.completed_at);
     if (batch) begin(updated, batch);
     else notice.value = '当前可学内容已完成，新收录字词将在后续清单安排。';
-  } catch (err) { error.value = message(err); }
-  finally { busy.value = false; }
+  } catch (err) { if (matchesScope()) error.value = message(err); }
+  finally { if (matchesScope()) busy.value = false; }
 }
 async function refresh({ silent = false, recoverDate = false } = {}) {
-  if (!calendar.ready) { loading.value = false; return; }
-  loading.value = !silent; error.value = '';
+  if (!calendar.ready || !getToken()) { loading.value = false; return; }
+  loading.value = !hasOverview.value; refreshing.value = hasOverview.value; studyReadError.value = ''; error.value = ''; dateMismatch = false;
   await load({ recoverDate });
 }
-onMounted(() => { loadLearningFont(); refresh(); });
+function onResume() {
+  if (document.hidden || !canReload() || pendingDate !== null) return;
+  calendar.refreshToday();
+  // Reverting a skewed clock to the already displayed family day resolves the
+  // date mismatch; stop the future-day retry rather than starting another read.
+  if (dateMismatch && hasOverview.value && date.value === calendar.today) {
+    stopRetry(); dateMismatch = false; studyReadError.value = ''; return;
+  }
+  refresh({ silent: hasOverview.value });
+}
+onMounted(() => {
+  loadLearningFont(); refresh();
+  window.addEventListener('pageshow', onResume);
+  document.addEventListener('visibilitychange', onResume);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('pageshow', onResume);
+  document.removeEventListener('visibilitychange', onResume);
+});
 </script>

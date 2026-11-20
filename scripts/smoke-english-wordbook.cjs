@@ -16,6 +16,7 @@ const checkDictionaryFallback = require('./dictionary-fallback-browser.cjs');
 const checkDictionaryIndexNotice = require('./dictionary-index-browser.cjs');
 const checkEnglishAudio = require('./english-audio-browser.cjs');
 const checkDictionaryArticle = require('./smoke-dictionary-article.cjs');
+const checkWordStudyStates = require('./word-study-states-browser.cjs');
 
 function makeSyntheticBglBlock(headword, gbBytes, posByte = 0x30, inflections = []) {
   const hwBuf = Buffer.from(headword, 'latin1');
@@ -521,6 +522,7 @@ async function main() {
     await checkDictionaryIndexNotice({ browser, base, api, parentToken, openContext, errors });
     await checkEnglishAudio({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService, db });
     await checkDictionaryArticle({ browser, base, api, parentToken, openContext, errors, dictionaryService: app.services.dictionaryService });
+    await checkWordStudyStates({ browser, base, api, parentToken, openContext, errors });
 
     // 4. Layout checks across 320px dark & 1180px light on English wordbook
     for (const [w, theme] of [[320, 'dark'], [1180, 'light']]) {

@@ -187,7 +187,7 @@ export const api = {
   markMistakeMastered: (id, mastered = true) => put(`/mistakes/${id}/master`, { is_mastered: mastered }),
   deleteMistake: id => remove(`/mistakes/${id}`),
   getWordStudy: (id, language = 'zh', signal, options) => get(`/children/${id}/word-study`, language === 'en' ? { language: 'en' } : undefined, signal, options),
-  getWordStudyHistory: (id, language = 'zh') => get(`/children/${id}/word-study/history`, language === 'en' ? { language: 'en' } : undefined),
+  getWordStudyHistory: (id, language = 'zh', signal, options) => get(`/children/${id}/word-study/history`, language === 'en' ? { language: 'en' } : undefined, signal, options),
   saveWordStudyPlan: (id, skill, data, language = data?.language || 'zh', options) => put(
     language === 'en' ? `/children/${id}/word-study/en/plans/${skill}` : `/children/${id}/word-study/plans/${skill}`,
     data, options

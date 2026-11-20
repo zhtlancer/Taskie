@@ -198,6 +198,7 @@ import { CATEGORIES as ZH_CATEGORIES } from '../utils/wordBook';
 import { ENGLISH_CATEGORIES } from '../utils/englishWord';
 import { useCalendarStore } from '../stores/calendar';
 import { useAsyncScope } from '../composables/useAsyncScope';
+import { getToken } from '../utils/session';
 
 const props = defineProps({
   childId: { type: String, required: true }
@@ -300,8 +301,17 @@ async function load() {
   const isCurrent = () => matchesScope() && serial === loadSerial;
   loading.value = true;
   error.value = '';
+  serverDate.value = '';
+  missingDefCount.value = 0;
+  taxonomy.value = { textbooks: [], units: [] };
   skillErrors.value = { recognize: '', write: '' };
   skillNotices.value = { recognize: '', write: '' };
+  if (!getToken()) {
+    loading.value = false;
+    error.value = '请先登录后读取学习计划';
+    emit('busy', false);
+    return;
+  }
   emit('busy', true);
   try {
     const reqs = [api.getWordStudy(targetChild, lang, controller.signal, REQUEST_OPTIONS)];

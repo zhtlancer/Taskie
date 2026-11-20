@@ -150,10 +150,16 @@
       <button type="button" class="min-h-11 min-w-11 px-3 rounded-xl border border-rose-300 dark:border-rose-700 text-xs font-bold" @click="actionError = ''">关闭</button>
     </div>
 
-    <PageState v-if="store.error" kind="error" title="英语单词本未能读取" :description="store.error" :busy="store.loading" @retry="loadWords" />
+    <PageState v-if="store.error && !isLoaded" kind="error" title="英语单词本未能读取" :description="store.error" :busy="store.loading" @retry="loadWords" />
     <PageState v-else-if="store.loading && !isLoaded" kind="loading" title="正在读取英语单词本…" />
 
     <template v-if="isLoaded">
+      <div v-if="store.loading || store.error" data-english-refresh :role="store.error ? 'alert' : 'status'"
+        class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 text-xs font-bold"
+        :class="store.error ? 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200' : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'">
+        <span>{{ store.loading ? '正在更新英语单词本，当前显示上次读取的数据。' : `更新未成功，当前显示上次读取的数据。${store.error}` }}</span>
+        <button v-if="store.error" type="button" :disabled="store.loading" class="ui-button-secondary min-h-11" @click="loadWords">重新读取</button>
+      </div>
       <div v-if="filteredWords.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         <EnglishWordCard
           v-for="item in filteredWords"
