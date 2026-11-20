@@ -40,7 +40,7 @@
         />
       </div>
 
-      <!-- Right: today's classes, stroke lookup, sound toggle & parent entrance -->
+      <!-- Right: today's classes, unified lookup, sound toggle & parent entrance -->
       <div class="flex items-center gap-2.5">
         <!-- Today's lessons and outside classes (time and place); the next outside class shows here -->
         <button
@@ -59,12 +59,13 @@
         </button>
         <button
           type="button"
-          @click="openStrokeLookup"
+          @click="openWordLookup"
           class="min-h-[44px] min-w-[44px] flex items-center gap-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 hover:bg-brand-100 dark:hover:bg-brand-900/40 text-brand-600 dark:text-brand-300 font-bold text-xs transition-all active:scale-95 shadow-xs"
-          title="实时查笔画"
+          title="查字 / 查词"
+          aria-label="查字 / 查词"
         >
           <span>🔍</span>
-          <span class="hidden sm:inline">查笔画</span>
+          <span class="hidden sm:inline">查字 / 查词</span>
         </button>
         <SoundToggle />
         <router-link
@@ -301,11 +302,9 @@
       @close="scheduleOpen = false"
     />
 
-    <!-- Stroke Lookup Modal -->
-    <StrokeLookupModal
+    <WordLookupModal
       v-model="isLookupModalOpen"
       :child-id="childId"
-      initial-char="学"
     />
     <TaskPriorityModal v-if="priorityTarget" :task="priorityTarget" @close="priorityTarget = null" @saved="priorityTarget = null; refreshBoard()" />
     <HomeworkEditModal v-if="homeworkEditId && asParent" :key="homeworkEditId" :record-id="homeworkEditId" :child-id="childId" :today="todayString"
@@ -333,7 +332,7 @@ import StudySessionsModal from '../components/StudySessionsModal.vue';
 import ProgressRing from '../components/ProgressRing.vue';
 import StreakBadge from '../components/StreakBadge.vue';
 import SoundToggle from '../components/SoundToggle.vue';
-import StrokeLookupModal from '../components/StrokeLookupModal.vue';
+import WordLookupModal from '../components/WordLookupModal.vue';
 import GoalTasksPanel from '../components/GoalTasksPanel.vue';
 import ChildTabBar from '../components/ChildTabBar.vue';
 import SkipTaskModal from '../components/SkipTaskModal.vue';
@@ -352,7 +351,7 @@ const childStore = useChildStore();
 const timerStore = useRunningTimerStore();
 const isLookupModalOpen = ref(false);
 
-function openStrokeLookup() {
+function openWordLookup() {
   playClick();
   isLookupModalOpen.value = true;
 }

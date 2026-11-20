@@ -140,12 +140,12 @@ async function main() {
   assert.equal((await api('GET', `/children/${child.id}/goals`)).find(row => row.id === goal.id).logs[0].duration_seconds, 720);
   pass('duration dialog retains failed input, protects pending saves and records the chosen time');
 
-  await page.getByTitle('实时查笔画', { exact: true }).click();
-  modal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+  await page.getByTitle('查字 / 查词', { exact: true }).click();
+  modal = page.getByRole('dialog', { name: '查字 / 查词', exact: true });
   await modal.getByRole('textbox').fill('春天'); await modal.getByRole('textbox').dispatchEvent('input');
   await keyboardCheck(page, modal);
   const clearOverlap = await modal.evaluate(el => {
-    const input = el.querySelector('input[aria-label="汉字或词语"]'), clear = el.querySelector('button[title="清空"]');
+    const input = el.querySelector('input[aria-label="汉字或英文"]'), clear = el.querySelector('button[title="清空"]');
     return input.getBoundingClientRect().right - parseFloat(getComputedStyle(input).paddingRight) - clear.getBoundingClientRect().left;
   });
   assert.ok(clearOverlap <= 0, `the clear button covers ${clearOverlap}px of the typed text`);
@@ -163,7 +163,7 @@ async function main() {
   } finally { release(); clearTimeout(timer); }
   await modal.getByText('已在生字生词本', { exact: true }).waitFor();
   await page.keyboard.press('Escape'); await modal.waitFor({ state: 'detached' });
-  assert.equal(await page.getByTitle('实时查笔画', { exact: true }).evaluate(el => el === document.activeElement), true);
+  assert.equal(await page.getByTitle('查字 / 查词', { exact: true }).evaluate(el => el === document.activeElement), true);
   pass('stroke lookup clears stale words, retains failed text, blocks closure while adding and restores its opener');
 
   await goto('characters');
@@ -249,7 +249,7 @@ async function main() {
       await page.emulateMedia({ colorScheme: theme });
       await goto('today'); modal = await openSkip(); await shot(`${device}-${theme}-skip`); await page.keyboard.press('Escape');
       modal = await openDuration(); await shot(`${device}-${theme}-duration`); await page.keyboard.press('Escape');
-      await page.getByTitle('实时查笔画', { exact: true }).click(); modal = page.getByRole('dialog');
+      await page.getByTitle('查字 / 查词', { exact: true }).click(); modal = page.getByRole('dialog');
       await emptyLookupCheck(page, modal);
       await keyboardCheck(page, modal); await shot(`${device}-${theme}-lookup`); await page.keyboard.press('Escape');
       await goto('characters'); modal = await openCharacter(); await keyboardCheck(page, modal);

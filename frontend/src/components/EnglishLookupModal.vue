@@ -1,28 +1,35 @@
 <template>
-  <UiDialog v-if="modelValue" title="查词与收录单词" wide :busy="saving" @close="close">
+  <UiDialog v-if="modelValue" :title="unified ? '查字 / 查词' : '查词与收录单词'" wide :busy="saving" @close="close">
     <div class="space-y-4">
+      <p v-if="unified" class="text-xs text-slate-500 dark:text-slate-400">输入汉字或英文后查询，会自动切换查询功能。</p>
       <!-- Lookup search bar -->
-      <form class="flex flex-wrap gap-2" @submit.prevent="runLookup(query)">
+      <form class="flex flex-wrap gap-2" @submit.prevent="submitLookup">
         <input
           v-model="query"
+          :aria-label="unified ? '汉字或英文' : undefined"
           type="text"
           autofocus
           autocapitalize="off"
           autocomplete="off"
           autocorrect="off"
           spellcheck="false"
-          placeholder="输入英文单词或短语，如 apple / May / look after"
+          :placeholder="unified ? '输入汉字或英文，如 春天 / apple' : '输入英文单词或短语，如 apple / May / look after'"
+          :disabled="saving"
           class="flex-1 min-w-[200px] min-h-11 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 text-sm font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
           @input="onQueryInput"
+          @compositionstart="composing = true"
+          @compositionend="finishComposition"
+          @keydown.enter="guardComposition"
         />
         <button
           type="submit"
-          :disabled="lookingUp || !query.trim()"
+          :disabled="lookingUp || saving || composing || !query.trim()"
           class="min-h-11 px-4 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-black disabled:opacity-50"
         >
-          {{ lookingUp ? '查询中…' : '🔍 查词' }}
+          {{ lookingUp ? '查询中…' : unified ? '查询' : '🔍 查词' }}
         </button>
       </form>
+      <p v-if="queryError" role="alert" class="text-sm text-amber-700 dark:text-amber-300">{{ queryError }}</p>
 
       <DictionaryIndexNotice v-if="lookingUp" />
 
@@ -269,6 +276,7 @@ import { currentRole } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { playDictionaryAudio, stopDictionaryAudio } from '../utils/dictionaryAudio';
 import { dictionaryLookupNotice, dictionaryErrorMessage, isDictionaryAbort } from '../utils/dictionaryState';
+import { lookupQuery } from '../utils/lookupQuery.js';
 import {
   ENGLISH_CATEGORIES,
   identityKey,
@@ -278,16 +286,18 @@ import {
 } from '../utils/englishWord';
 
 const props = defineProps({
+  unified: Boolean,
   modelValue: Boolean,
   childId: { type: String, required: true },
   initialWord: { type: String, default: '' }
 });
 
-const emit = defineEmits(['update:modelValue', 'added']);
+const emit = defineEmits(['update:modelValue', 'added', 'switch-query']);
 const store = useEnglishWordStore();
 const isParent = ref(currentRole() === 'parent');
 
 const query = ref('');
+const composing = ref(false), queryError = ref('');
 const lookingUp = ref(false);
 const lookupDone = ref(false);
 const lookupError = ref('');
@@ -345,6 +355,7 @@ function reset() {
   articleWord.value = '';
   form.value = emptyForm();
   query.value = props.initialWord || '';
+  composing.value = false; queryError.value = '';
 }
 
 const activeMatch = computed(() => matches.value[selectedMatchIndex.value] || null);
@@ -391,6 +402,8 @@ function toggleCat(key) {
 }
 
 function onQueryInput() {
+  if (composing.value || saving.value) return;
+  queryError.value = '';
   lookupSerial++;
   lookupController?.abort();
   lookingUp.value = false;
@@ -405,7 +418,7 @@ function onQueryInput() {
   clearTimeout(suggestTimer);
   suggestList.value = [];
   const text = normalizeWordDisplay(query.value);
-  if (text.length < 2) {
+  if (text.length < 2 || (props.unified && lookupQuery(text).language !== 'en')) {
     suggestList.value = [];
     return;
   }
@@ -426,6 +439,13 @@ function prepareManualWord(word) {
 }
 
 async function runLookup(raw) {
+  if (saving.value || composing.value) return;
+  queryError.value = '';
+  if (props.unified) {
+    const result = lookupQuery(raw);
+    if (result.error) { queryError.value = result.error; return; }
+    if (result.language === 'zh') { emit('switch-query', result); return; }
+  }
   const clean = normalizeWordDisplay(raw);
   if (!clean) return;
   suggestList.value = [];
@@ -521,8 +541,16 @@ async function saveWord() {
   }
 }
 
-watch(() => props.modelValue, (open) => {
+function guardComposition(event) {
+  if (composing.value || event.isComposing || event.keyCode === 229) event.preventDefault();
+}
+function finishComposition() { composing.value = false; onQueryInput(); }
+function submitLookup() { if (!composing.value) runLookup(query.value); }
+
+watch([() => props.modelValue, () => props.childId], ([open, childId]) => {
   if (open) {
+    store.setChild(childId);
+    if (!store.isLoadedFor(childId)) store.fetchWords(childId).catch(() => {});
     query.value = props.initialWord || '';
     if (query.value) runLookup(query.value);
   }

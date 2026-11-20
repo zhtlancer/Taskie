@@ -255,8 +255,8 @@ async function main() {
 
         // C) Shared StrokeLookupModal from TodayTasksView respects child scope (other vs child).
         await push(`/child/${other.id}/today`);
-        await page.getByTitle('实时查笔画', { exact: true }).click();
-        let todayModal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+        await page.getByTitle('查字 / 查词', { exact: true }).click();
+        let todayModal = page.getByRole('dialog', { name: '查字 / 查词', exact: true });
         await todayModal.getByRole('textbox').fill('山');
         await todayModal.getByRole('button', { name: /加入生字生词本/ }).waitFor();
         await todayModal.getByRole('textbox').fill('独立字');
@@ -266,8 +266,8 @@ async function main() {
 
         // Test 409 server duplicate sync when lookup submits a word already saved elsewhere.
         await push(`/child/${child.id}/today`);
-        await page.getByTitle('实时查笔画', { exact: true }).click();
-        todayModal = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+        await page.getByTitle('查字 / 查词', { exact: true }).click();
+        todayModal = page.getByRole('dialog', { name: '查字 / 查词', exact: true });
         await api('POST', '/characters', { child_id: child.id, char: '风', pinyin: 'fēng' });
         await page.route('**/api/characters', route => route.request().method() === 'POST'
           ? route.fulfill({ status: 409, json: { error: '该字词已在生字生词本中，请勿重复添加' } })

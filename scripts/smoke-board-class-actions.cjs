@@ -278,8 +278,8 @@ async function regressions(base, token, api) {
     await dialog.waitFor();
     // Simulate a business dialog opening from a background callback while the
     // confirmation is already mounted. Pointer input cannot reach its opener.
-    await page.getByTitle('实时查笔画', { exact: true }).evaluate(button => button.click());
-    const later = page.getByRole('dialog', { name: '实时查笔画', exact: true });
+    await page.getByTitle('查字 / 查词', { exact: true }).evaluate(button => button.click());
+    const later = page.getByRole('dialog', { name: '查字 / 查词', exact: true });
     await later.waitFor();
     const button = dialog.getByRole('button', { name: '确认', exact: true });
     assert.equal(await button.evaluate(el => {

@@ -1,21 +1,27 @@
 <template>
-  <UiDialog v-if="isOpen" :busy="isSubmitting" :title="'实时查笔画'" wide @close="close">
-    <template #subtitle>输入汉字或词语，查看书写动画，并加入生字生词本</template>
+  <UiDialog v-if="isOpen" :busy="isSubmitting" :title="unified ? '查字 / 查词' : '实时查笔画'" wide @close="close">
+    <template #subtitle>{{ unified ? '输入后点查询，自动识别汉字或英文；可看笔顺、查释义、听发音并收录。' : '输入汉字或词语，查看书写动画，并加入生字生词本' }}</template>
     <div class="flex flex-col items-center min-w-0">
         <!-- 1. Input Section (Large iPad friendly touch input) -->
         <div class="w-full max-w-md mb-4">
           <div class="relative flex items-center">
             <input
-              aria-label="汉字或词语"
+              :aria-label="unified ? '汉字或英文' : '汉字或词语'"
               ref="charInputRef"
               autofocus
               :disabled="isSubmitting"
               v-model="inputRaw"
               type="text"
-              maxlength="20"
-              placeholder="输入汉字或词语（如：学、春天）"
+              :maxlength="unified ? 100 : 20"
+              :placeholder="unified ? '输入汉字或英文，如 春天 / apple' : '输入汉字或词语（如：学、春天）'"
+              autocapitalize="off"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
               class="w-full h-14 pl-5 pr-14 rounded-2xl bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:bg-white dark:focus:bg-slate-900 text-xl font-black text-slate-800 dark:text-slate-100 placeholder:text-slate-300 placeholder:font-normal outline-none transition-all shadow-inner"
               @input="onInputChanged"
+              @compositionstart="composing = true"
+              @compositionend="finishComposition"
               @keydown.enter="onInputConfirm"
             />
             <button
@@ -29,6 +35,11 @@
               ✕
             </button>
           </div>
+          <div v-if="unified" class="flex flex-wrap items-center justify-between gap-2 mt-2">
+            <p class="text-xs text-slate-500 dark:text-slate-400">{{ detectedLanguage === 'en' ? '已识别英文，点击查询查看释义和发音。' : detectedLanguage === 'zh' ? '已识别汉字，可查看笔顺并收录。' : '支持汉字、英文单词和短语。' }}</p>
+            <button type="button" :disabled="isSubmitting || composing || !inputRaw.trim()" class="ui-button-primary min-h-11" @click="onInputConfirm">查询</button>
+          </div>
+          <p v-if="queryError" role="alert" class="mt-2 text-sm text-amber-700 dark:text-amber-300">{{ queryError }}</p>
 
           <!-- Quick Suggestion Character Pills for phone and tablet -->
           <div class="flex flex-wrap items-center gap-1.5 mt-2">
@@ -62,7 +73,7 @@
         </div>
 
         <!-- 2. Character Metadata Strip (Pinyin with sound, Radical, Strokes) -->
-        <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 w-full max-w-md mb-4 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700 min-w-0">
+        <div v-if="!unified || entry" class="flex flex-wrap items-center justify-center gap-2 sm:gap-3 w-full max-w-md mb-4 bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border border-slate-100 dark:border-slate-700 min-w-0">
           <!-- Pinyin & Listen -->
           <div class="flex flex-wrap items-center justify-center gap-2 max-w-full min-w-0">
             <span class="text-xs font-bold text-slate-400 shrink-0">拼音:</span>
@@ -113,7 +124,7 @@
           @ready="onGridReady"
         />
         <div v-else class="w-[256px] sm:w-[300px] max-w-full aspect-square rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 flex items-center justify-center text-sm font-bold text-slate-400">
-          请输入汉字或词语
+          {{ unified && detectedLanguage === 'en' ? '点击查询，查看单词释义与发音' : '请输入汉字或词语' }}
         </div>
 
         <!-- 4. Core Action Button: ⭐ 加入生字生词本 / ✅ 已在生字生词本 -->
@@ -177,8 +188,10 @@ import { playClick } from '../utils/sound';
 import { CATEGORIES, cleanEntry, entryChars } from '../utils/wordBook';
 import { loadLearningFont } from '../utils/learningFont';
 import { getToken } from '../utils/session.js';
+import { lookupQuery } from '../utils/lookupQuery.js';
 
 const props = defineProps({
+  unified: Boolean,
   modelValue: {
     type: Boolean,
     default: false,
@@ -193,7 +206,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue', 'added']);
+const emit = defineEmits(['update:modelValue', 'added', 'switch-query']);
 
 const characterStore = useCharacterStore();
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 390);
@@ -206,9 +219,11 @@ const isOpen = computed({
 });
 
 const charInputRef = ref(null);
-const inputRaw = ref(props.initialChar || '学');
+const inputRaw = ref(props.initialChar);
 // The entry is what gets added: the Chinese characters typed, a character or a word.
-const entry = ref(cleanEntry(props.initialChar) || '学');
+const entry = ref(cleanEntry(props.initialChar));
+const composing = ref(false), queryError = ref('');
+const detectedLanguage = computed(() => composing.value ? '' : lookupQuery(inputRaw.value).language);
 const selectedIndex = ref(0);
 const dynamicStrokes = ref(null);
 const isSubmitting = ref(false);
@@ -292,12 +307,17 @@ const isAlreadyInBook = computed(() => {
 
 // Typing shows the latest character's strokes, as before; the whole entry is what gets added.
 function onInputChanged() {
-  const clean = cleanEntry(inputRaw.value);
+  if (composing.value) return;
+  const result = props.unified ? lookupQuery(inputRaw.value) : null;
+  const clean = result ? (result.language === 'zh' ? result.text : '') : cleanEntry(inputRaw.value);
   entry.value = clean;
   selectedIndex.value = Math.max(0, entryChars(clean).length - 1);
   dynamicStrokes.value = null;
   clearToast();
+  queryError.value = '';
 }
+
+function finishComposition() { composing.value = false; onInputChanged(); }
 
 function pickChar(index) {
   playClick();
@@ -313,7 +333,14 @@ function toggleNewCategory(key) {
     : CATEGORIES.map(c => c.key).filter(k => k === key || newCategories.value.includes(k));
 }
 
-function onInputConfirm() {
+function onInputConfirm(event) {
+  if (isSubmitting.value || composing.value || event?.isComposing || event?.keyCode === 229) return;
+  event?.preventDefault?.();
+  if (props.unified) {
+    const result = lookupQuery(inputRaw.value);
+    if (result.error) { queryError.value = result.error; return; }
+    if (result.language === 'en') { emit('switch-query', result); return; }
+  }
   onInputChanged();
 }
 
@@ -321,6 +348,7 @@ function selectChar(text) {
   if (isSubmitting.value) return;
   playClick();
   inputRaw.value = text;
+  queryError.value = '';
   entry.value = text;
   selectedIndex.value = 0;
   dynamicStrokes.value = null;
