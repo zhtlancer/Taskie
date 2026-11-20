@@ -520,7 +520,7 @@ npm run test:browser:child-characters
 npm run test:browser:english-wordbook
 ```
 
-英语完整专项也支持 WebKit，包含真实触控点击后的鉴权音频播放、切换/关闭/延迟响应时的停止处理、原文图片解码与重试、拼写及编辑冲突、嵌套弹窗的键盘焦点和滚动锁。WebKit 必须先安装浏览器及系统依赖；Linux 的验证不能替代实际 iPad Safari 或移动输入法验收。CI 的 `english-webkit` 项使用合成词典，真实词典仍只在本地按需抽验。
+英语完整专项也支持 WebKit，包含真实触控点击后的鉴权音频播放、切换/关闭/延迟响应时的停止处理、原文图片解码与重试、拼写及编辑冲突、嵌套弹窗的键盘焦点和滚动锁。WebKit 必须先安装浏览器及系统依赖；Linux 的验证不能替代实际 iPad Safari 或移动输入法验收。CI 的 `english-webkit` 项使用合成词典，真实词典仍只在本地按需抽验。系统依赖安装与浏览器下载分别执行，限时 15 分钟与 5 分钟；WebKit 作业整体限时 60 分钟，给字体、依赖准备、测试和诊断上传保留预算，其余浏览器作业仍为 35 分钟。
 
 ```bash
 node node_modules/playwright/cli.js install --with-deps webkit

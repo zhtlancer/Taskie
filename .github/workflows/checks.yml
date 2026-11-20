@@ -164,8 +164,8 @@ jobs:
   browser-suites:
     needs: test
     runs-on: ubuntu-latest
-    # Passing suites take under 3 minutes. Reserve time for fonts, the bounded runner and upload.
-    timeout-minutes: 35
+    # WebKit also installs system packages; allow its setup budget without shortening tests or diagnostics.
+    timeout-minutes: ${{ matrix.suite == 'english-webkit' && 60 || 35 }}
     strategy:
       fail-fast: false
       matrix:
@@ -191,10 +191,14 @@ jobs:
         run: npm install --no-save --package-lock=false playwright@1.64.0
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-      - name: Install WebKit and system dependencies
+      - name: Install WebKit system dependencies
+        if: matrix.suite == 'english-webkit'
+        timeout-minutes: 15
+        run: node node_modules/playwright/cli.js install-deps webkit
+      - name: Download WebKit browser
         if: matrix.suite == 'english-webkit'
         timeout-minutes: 5
-        run: node node_modules/playwright/cli.js install --with-deps webkit
+        run: node node_modules/playwright/cli.js install webkit
       - name: Browser suite ${{ matrix.suite }}
         timeout-minutes: 12
         run: node scripts/run-browser-suite.cjs "${{ matrix.suite }}"
