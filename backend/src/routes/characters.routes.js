@@ -1,6 +1,19 @@
 const { generationWrite } = require('../utils/data-generation');
+const CharacterImportsService = require('../services/character-imports.service');
 async function charactersRoutes(fastify, options) {
   const { charactersService } = options;
+  const imports = new CharacterImportsService(charactersService.db, charactersService);
+
+  fastify.post('/batch-preview', async (request, reply) => {
+    try {
+      fastify.requireChildAccess(request, request.body?.child_id);
+      return imports.preview(request.body || {}, request.user);
+    } catch (err) { return reply.code(err.statusCode || err.status || 500).send({ error: err.message || '预览失败' }); }
+  });
+  fastify.post('/batch', generationWrite(fastify, request => {
+    fastify.requireChildAccess(request, request.body?.child_id);
+    return imports.commit(request.body || {}, request.user);
+  }));
 
   fastify.get('/', async (request, reply) => {
     const { child_id, is_mastered, category } = request.query || {};

@@ -9,5 +9,6 @@ const TABLES = [...REQUIRED_TABLES, 'template_children', 'reward_items', 'reward
 TABLES.push('outside_class_homework');
 TABLES.push('recurring_homework_templates', 'recurring_homework_occurrences');
 TABLES.push('word_books', 'word_book_items');
+TABLES.push('word_import_receipts');
 
 module.exports = { REQUIRED_TABLES, PERIOD_TABLES, SCHEDULE_TABLES, STUDY_TABLES, HOMEWORK_TABLES, TABLES };

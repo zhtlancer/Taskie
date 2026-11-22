@@ -22,14 +22,7 @@
     <UiDialog v-if="editor" :title="editor.id ? '编辑词本' : '新建词本'" :busy="busy" @close="editor = null">
       <form class="space-y-3" @submit.prevent="save">
         <fieldset :disabled="busy || uncertain" class="space-y-3 min-w-0">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label class="block min-w-0 text-sm font-bold">来源（选填）<input v-model="editor.source" maxlength="60" class="ui-input block mt-1 w-full" placeholder="如 人教版语文三上" @input="autoName" /></label>
-            <label class="block min-w-0 text-sm font-bold">单元/章节（选填）<input v-model="editor.unit" maxlength="60" class="ui-input block mt-1 w-full" placeholder="如 第一单元" @input="autoName" /></label>
-          </div>
-          <div v-if="sources.length" class="flex flex-wrap gap-2"><button v-for="source in sources" :key="source" type="button" class="ui-button-secondary max-w-full break-words [overflow-wrap:anywhere]" @click="editor.source = source; autoName()">{{ source }}</button></div>
-          <label class="block text-sm font-bold">词本名称<input v-model="editor.name" required maxlength="80" class="ui-input block mt-1 w-full" @input="manualName = true" /></label>
-          <label class="block text-sm font-bold">来源类型<select v-model="editor.source_type" class="ui-input block mt-1 w-full"><option v-for="type in SOURCE_TYPES" :key="type.value" :value="type.value">{{ type.label }}</option></select></label>
-          <label class="block text-sm font-bold">备注（选填）<textarea v-model="editor.note" rows="2" maxlength="200" class="ui-input block mt-1 w-full" /></label>
+          <WordBookFields v-model="editor" :sources="sources" />
         </fieldset>
         <p v-if="actionError" role="alert" class="text-sm text-rose-600 dark:text-rose-300">{{ actionError }}</p>
         <p v-if="uncertain" class="text-xs text-amber-700 dark:text-amber-300">保存结果尚未确认，请按原内容重试或关闭后核对词本列表。</p>
@@ -62,11 +55,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
+import WordBookFields from './WordBookFields.vue';
 import api from '../api/client';
 import { getDataGeneration } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { useWordBooks, BOOK_REQUEST, notifyWordBooks } from '../composables/useWordBooks';
-import { SOURCE_TYPES, groupWordBooks, formatBookDefaultName } from '../utils/wordBookSource';
+import { SOURCE_TYPES, groupWordBooks } from '../utils/wordBookSource';
 import { confirmAction } from '../utils/confirmation';
 import { newRequestId } from '../utils/requestId';
 const props = defineProps({ childId: String, language: String, entries: { type: Array, default: () => [] }, modelValue: { type: String, default: 'all' } });
@@ -75,7 +69,7 @@ const { books, loading, error, load, role } = useWordBooks(() => props.childId, 
 const groups = computed(() => groupWordBooks(books.value));
 const sources = computed(() => [...new Set(books.value.map(book => book.source).filter(Boolean))]);
 const selected = computed(() => books.value.find(book => book.id === props.modelValue));
-const editor = ref(null), managing = ref(false), busy = ref(false), uncertain = ref(false), actionError = ref(''), search = ref(''), manualName = ref(false), pinyinDrafts = ref({});
+const editor = ref(null), managing = ref(false), busy = ref(false), uncertain = ref(false), actionError = ref(''), search = ref(''), pinyinDrafts = ref({});
 let attempt = null, generation;
 const { capture } = useAsyncScope(() => [props.childId, props.language, props.modelValue], () => {
   editor.value = null; managing.value = false; busy.value = false; uncertain.value = false; actionError.value = ''; attempt = null; pinyinDrafts.value = {};
@@ -84,10 +78,9 @@ const managerEntries = computed(() => props.entries.filter(entry => (entry.char 
 const membership = entry => entry.books?.find(book => book.id === props.modelValue);
 const typeLabel = value => SOURCE_TYPES.find(type => type.value === value)?.label || '未指定';
 function openEditor(book = null) {
-  actionError.value = ''; uncertain.value = false; attempt = null; generation = getDataGeneration(); manualName.value = Boolean(book && book.name !== formatBookDefaultName(book.source, book.unit));
+  actionError.value = ''; uncertain.value = false; attempt = null; generation = getDataGeneration();
   editor.value = book ? { ...book } : { name: '', source: '', unit: '', source_type: '', note: '' };
 }
-function autoName() { if (!manualName.value) editor.value.name = formatBookDefaultName(editor.value.source, editor.value.unit); }
 function changed() { notifyWordBooks(props.childId, props.language); emit('changed'); }
 async function save() {
   if (busy.value || !editor.value) return;

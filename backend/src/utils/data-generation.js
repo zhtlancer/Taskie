@@ -22,7 +22,7 @@ function generationWrite(app, operation) {
       })());
     } catch (error) {
       return reply.code(error.statusCode || error.status || 500).send({
-        error: error.message || '操作失败', ...(['DATA_RESTORED', 'EDIT_CONFLICT', 'FORM_SUBMISSION_CONFLICT', 'FORM_SUBMISSION_GONE', 'ENGLISH_WORD_EDIT_CONFLICT', 'ENGLISH_WORD_VERSION_REQUIRED', 'ENGLISH_CASE_CONFIRMATION_REQUIRED'].includes(error.code) ? { code: error.code } : {}),
+        error: error.message || '操作失败', ...(['DATA_RESTORED', 'EDIT_CONFLICT', 'FORM_SUBMISSION_CONFLICT', 'FORM_SUBMISSION_GONE', 'ENGLISH_WORD_EDIT_CONFLICT', 'ENGLISH_WORD_VERSION_REQUIRED', 'ENGLISH_CASE_CONFIRMATION_REQUIRED', 'WORD_IMPORT_CONFLICT', 'WORD_IMPORT_GONE'].includes(error.code) ? { code: error.code } : {}),
         ...(error.code === 'ENGLISH_CASE_CONFIRMATION_REQUIRED' ? { conflicts: error.conflicts } : {})
       });
     }

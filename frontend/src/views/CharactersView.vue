@@ -130,6 +130,7 @@
             <span class="text-base">🔍</span>
             <span>查笔画 · 一键入本</span>
           </button>
+          <button type="button" class="ui-button-secondary" @click="isBatchModalOpen = true">批量导入字词</button>
         </div>
       </div>
 
@@ -314,6 +315,7 @@
       initial-char="学"
       @added="onCharacterAddedFromLookup"
     />
+    <CharacterBatchImportModal v-model="isBatchModalOpen" :child-id="childId" @imported="loadCharacters" />
     <ChildTabBar :child-id="childId" />
   </div>
 </template>
@@ -330,6 +332,7 @@ import CharacterDetailModal from '../components/CharacterDetailModal.vue';
 import EnglishWordBookPanel from '../components/EnglishWordBookPanel.vue';
 import PageState from '../components/ParentPageState.vue';
 import StrokeLookupModal from '../components/StrokeLookupModal.vue';
+import CharacterBatchImportModal from '../components/CharacterBatchImportModal.vue';
 import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
 import { loadLearningFont } from '../utils/learningFont';
@@ -354,6 +357,8 @@ const characterStore = useCharacterStore();
 
 const currentFilter = ref('all');
 const selectedBook = ref('all');
+const isBatchModalOpen = ref(false);
+watch(activeBook, () => { isBatchModalOpen.value = false; });
 const wordSearch = ref('');
 const currentCategory = ref(null);
 const globalShowPinyin = ref(false);

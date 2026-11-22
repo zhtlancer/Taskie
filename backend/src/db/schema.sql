@@ -762,3 +762,18 @@ WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_book_items WHER
 BEGIN
   SELECT RAISE(ABORT, 'word book owner is immutable');
 END;
+
+-- Historical import receipts intentionally retain deleted word/book IDs without foreign keys.
+CREATE TABLE IF NOT EXISTS word_import_receipts (
+  id TEXT PRIMARY KEY NOT NULL CHECK(length(id) BETWEEN 8 AND 100),
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  actor TEXT NOT NULL CHECK(actor IN ('parent', 'child')),
+  language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+  fingerprint TEXT NOT NULL CHECK(length(fingerprint) = 64),
+  book_id TEXT,
+  book_name TEXT,
+  result_json TEXT NOT NULL CHECK(json_valid(result_json)),
+  created_at TEXT NOT NULL,
+  CHECK((book_id IS NULL AND book_name IS NULL) OR (actor = 'parent' AND book_id IS NOT NULL AND book_name IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_word_import_receipts_child ON word_import_receipts(child_id, language, created_at);

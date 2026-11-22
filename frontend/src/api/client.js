@@ -235,6 +235,8 @@ export const api = {
   getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),
   getCharacter: (id, signal, options) => get(`/characters/${id}`, undefined, signal, options),
   createCharacter: (data, options) => post('/characters', data, options),
+  previewCharacterBatch: (data, options) => post('/characters/batch-preview', data, options),
+  importCharacterBatch: (data, options) => idempotentPost('/characters/batch', data, options),
   markCharacterMastered: (id, mastered = null, options) => put(`/characters/${id}/master`, { is_mastered: mastered }, options),
   deleteCharacter: (id, options) => remove(`/characters/${id}`, options),
   setCharacterCategories: (id, categories, options) => put(`/characters/${id}/categories`, { categories }, options),
