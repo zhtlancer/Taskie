@@ -17,6 +17,7 @@ const MistakesService = require('./services/mistakes.service');
 const StatsService = require('./services/stats.service');
 const CharactersService = require('./services/characters.service');
 const EnglishWordsService = require('./services/english-words.service');
+const WordBooksService = require('./services/word-books.service');
 const { DictionaryService } = require('./services/dictionary');
 const RedemptionsService = require('./services/redemptions.service');
 const PeriodsService = require('./services/periods.service');
@@ -81,6 +82,7 @@ function buildApp(opts = {}) {
   const statsService = new StatsService(db, tasksService);
   const charactersService = new CharactersService(db);
   const englishWordsService = new EnglishWordsService(db);
+  const wordBooksService = new WordBooksService(db);
   const dictionaryService = opts.dictionaryService || new DictionaryService({
     dictDir: opts.dictDir !== undefined ? opts.dictDir : config.dictDir,
     cacheDir: opts.dictCacheDir !== undefined ? opts.dictCacheDir : config.dictCacheDir
@@ -127,6 +129,7 @@ function buildApp(opts = {}) {
     statsService,
     charactersService,
     englishWordsService,
+    wordBooksService,
     dictionaryService,
     redemptionsService,
     periodsService,
@@ -245,6 +248,7 @@ function buildApp(opts = {}) {
   fastify.register(statsRoutes, { prefix: '/api', statsService, timeStatsService });
   fastify.register(mistakesRoutes, { prefix: '/api/mistakes', mistakesService, uploadDir: uploadDirectory });
   fastify.register(charactersRoutes, { prefix: '/api/characters', charactersService });
+  fastify.register(require('./routes/word-books.routes'), { prefix: '/api/word-books', wordBooksService });
   fastify.register(englishWordsRoutes, { prefix: '/api/english-words', englishWordsService, dictionaryService });
   fastify.register(dictionaryRoutes, { prefix: '/api/dictionary', dictionaryService });
   fastify.register(redemptionsRoutes, { prefix: '/api', redemptionsService });

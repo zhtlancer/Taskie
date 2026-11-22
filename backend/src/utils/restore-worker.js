@@ -1,6 +1,7 @@
 const { validateStoredSenses } = require('./english-senses');
 const { normalizeAudioRefs } = require('./english-audio');
 const { validateWordStudyConstraints } = require('../db/word-study-constraints');
+const { validateWordBooks } = require('../db/word-books-constraints');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -171,6 +172,9 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
         throw fail('备份中的英语词条版本无效，无法恢复');
       }
     }
+    if (schemaVersion >= 43) {
+      try { validateWordBooks(candidate); } catch { throw fail('备份词本数据或约束无效，无法恢复'); }
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     if (schemaVersion >= 40) {
       try { validateWordStudyConstraints(candidate); }
@@ -180,6 +184,7 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
     // before the candidate is serialized and copied into the live database.
     initDb(candidate);
     validateWordStudyConstraints(candidate);
+    validateWordBooks(candidate);
     for (const [name, value] of Object.entries(data.photos || {})) {
       if (!safeName(name) || typeof value !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(value)) throw fail('备份照片路径或内容无效');
     }

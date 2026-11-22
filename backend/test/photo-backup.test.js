@@ -499,7 +499,8 @@ test('v29 upgrades through v30 to the current schema, legacy manifests gain expe
     initDb(db);
     assert.ok(SCHEMA_VERSION >= 30, 'v30 remains part of the current schema');
     assert.equal(db.pragma('user_version', { simple: true }), SCHEMA_VERSION);
-    assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'trigger'").get().n, 6);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'word_book%'").get().n, 6);
+    require('../src/db/word-books-constraints').validateWordBooks(db);
     await service.restore(gzipSync(JSON.stringify(old)));
     assert.equal(service.expectations().get('upgrade.jpg').sha256, data.photo_manifest[0].sha256);
     const current = JSON.parse(gunzipSync(fs.readFileSync(service.getPath((await service.create()).name))));

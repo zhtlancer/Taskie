@@ -691,3 +691,74 @@ CREATE INDEX IF NOT EXISTS idx_english_words_child ON english_words(child_id);
 CREATE INDEX IF NOT EXISTS idx_english_words_child_mastered ON english_words(child_id, is_mastered);
 CREATE INDEX IF NOT EXISTS idx_english_words_child_canonical ON english_words(child_id, canonical_key);
 CREATE INDEX IF NOT EXISTS idx_english_words_child_unit ON english_words(child_id, textbook, unit);
+
+-- Independent source collections; membership never owns a word's learning state.
+CREATE TABLE IF NOT EXISTS word_books (
+  id TEXT PRIMARY KEY NOT NULL,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+  name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 80),
+  name_key TEXT NOT NULL CHECK(length(name_key) > 0),
+  source TEXT NOT NULL DEFAULT '' CHECK(length(source) <= 60),
+  unit TEXT NOT NULL DEFAULT '' CHECK(length(unit) <= 60),
+  source_type TEXT NOT NULL DEFAULT '' CHECK(source_type IN ('', 'textbook', 'material', 'custom')),
+  note TEXT NOT NULL DEFAULT '' CHECK(length(note) <= 200),
+  legacy_key TEXT,
+  version INTEGER NOT NULL DEFAULT 1 CHECK(typeof(version) = 'integer' AND version BETWEEN 1 AND 9007199254740991),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(child_id, language, name_key),
+  UNIQUE(child_id, language, legacy_key)
+);
+CREATE INDEX IF NOT EXISTS idx_word_books_child ON word_books(child_id, language, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_word_books_source ON word_books(child_id, language, source);
+CREATE TABLE IF NOT EXISTS word_book_items (
+  id TEXT PRIMARY KEY NOT NULL,
+  book_id TEXT NOT NULL REFERENCES word_books(id) ON DELETE CASCADE,
+  language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+  character_id TEXT REFERENCES characters(id) ON DELETE CASCADE,
+  english_word_id TEXT REFERENCES english_words(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL DEFAULT 0 CHECK(typeof(position) = 'integer' AND position BETWEEN 0 AND 9007199254740991),
+  pinyin_override TEXT CHECK(pinyin_override IS NULL OR (language = 'zh' AND length(pinyin_override) BETWEEN 1 AND 200)),
+  version INTEGER NOT NULL DEFAULT 1 CHECK(typeof(version) = 'integer' AND version BETWEEN 1 AND 9007199254740991),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK((language = 'zh' AND character_id IS NOT NULL AND english_word_id IS NULL) OR
+        (language = 'en' AND english_word_id IS NOT NULL AND character_id IS NULL)),
+  UNIQUE(book_id, character_id),
+  UNIQUE(book_id, english_word_id)
+);
+CREATE INDEX IF NOT EXISTS idx_word_book_items_order ON word_book_items(book_id, position, id);
+CREATE INDEX IF NOT EXISTS idx_word_book_items_character ON word_book_items(character_id);
+CREATE INDEX IF NOT EXISTS idx_word_book_items_english ON word_book_items(english_word_id);
+CREATE TRIGGER IF NOT EXISTS word_book_items_owner_insert BEFORE INSERT ON word_book_items
+BEGIN
+  SELECT RAISE(ABORT, 'word book owner mismatch') WHERE NOT EXISTS (
+    SELECT 1 FROM word_books b WHERE b.id = NEW.book_id AND b.language = NEW.language AND
+      ((NEW.language = 'zh' AND EXISTS (SELECT 1 FROM characters c WHERE c.id = NEW.character_id AND c.child_id = b.child_id)) OR
+       (NEW.language = 'en' AND EXISTS (SELECT 1 FROM english_words w WHERE w.id = NEW.english_word_id AND w.child_id = b.child_id)))
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS word_book_items_owner_update BEFORE UPDATE ON word_book_items
+BEGIN
+  SELECT RAISE(ABORT, 'word book owner mismatch') WHERE NOT EXISTS (
+    SELECT 1 FROM word_books b WHERE b.id = NEW.book_id AND b.language = NEW.language AND
+      ((NEW.language = 'zh' AND EXISTS (SELECT 1 FROM characters c WHERE c.id = NEW.character_id AND c.child_id = b.child_id)) OR
+       (NEW.language = 'en' AND EXISTS (SELECT 1 FROM english_words w WHERE w.id = NEW.english_word_id AND w.child_id = b.child_id)))
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS word_books_owner_immutable BEFORE UPDATE OF child_id, language ON word_books
+WHEN NEW.child_id != OLD.child_id OR NEW.language != OLD.language
+BEGIN
+  SELECT RAISE(ABORT, 'word book owner is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS word_book_character_owner BEFORE UPDATE OF child_id ON characters
+WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_book_items WHERE character_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'word book owner is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS word_book_english_owner BEFORE UPDATE OF child_id ON english_words
+WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_book_items WHERE english_word_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'word book owner is immutable');
+END;

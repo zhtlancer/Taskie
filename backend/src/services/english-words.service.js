@@ -1,6 +1,7 @@
 const { resolveSenses } = require('../utils/english-senses');
 const { keepWordAudio } = require('../utils/english-audio');
 const { generateId } = require('../utils/crypto');
+const { ensureLegacyMembership } = require('../utils/word-book');
 const { getTodayDate } = require('../utils/date');
 const { dictionaryFailure, dictionaryLookupIssue } = require('./dictionary/issues');
 const {
@@ -191,6 +192,10 @@ class EnglishWordsService {
   }
 
   createWord(payload = {}, { role } = {}) {
+    return this.db.transaction(() => this.createWordRecord(payload, { role }))();
+  }
+
+  createWordRecord(payload = {}, { role } = {}) {
     const {
       child_id,
       word,
@@ -260,7 +265,9 @@ class EnglishWordsService {
       throw err;
     }
 
-    return this.getWord(id);
+    const created = this.getWord(id);
+    ensureLegacyMembership(this.db, created);
+    return created;
   }
 
   updateWord(id, payload = {}, { role } = {}) {
@@ -305,33 +312,37 @@ class EnglishWordsService {
       ? (normalizeOptionalText(payload.phonetic, 80) || nextUk || nextUs || null)
       : (existing.phonetic || nextUk || nextUs || null);
 
-    const saved = this.db.prepare(`
-      UPDATE english_words
-      SET word = ?, identity_key = ?, canonical_key = ?,
-          phonetic = ?, phonetic_uk = ?, phonetic_us = ?,
-          pos = ?, definition_zh = ?, definition_en = ?,
-          textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?, senses = ?, primary_sense_id = ?, version = version + 1
-      WHERE id = ? AND version = ?
-    `).run(
-      nextWord,
-      nextIdKey,
-      nextCanKey,
-      nextPhonetic,
-      nextUk,
-      nextUs,
-      meanings.pos,
-      meanings.definition_zh,
-      meanings.definition_en,
-      payload.textbook !== undefined ? normalizeMetaText(payload.textbook) : existing.textbook,
-      payload.unit !== undefined ? normalizeMetaText(payload.unit) : existing.unit,
-      payload.note !== undefined ? normalizeOptionalText(payload.note, 300) : existing.note,
-      JSON.stringify(nextCategories),
-      +cleanStrictCase, JSON.stringify(meanings.senses), meanings.primary_sense_id,
-      id, payload.expected_version
-    );
-    if (!saved.changes) throw { status: 409, code: 'ENGLISH_WORD_EDIT_CONFLICT', message: '此单词又有新修改，本次未保存。请重新读取最新内容后核对。' };
+    return this.db.transaction(() => {
+      const saved = this.db.prepare(`
+        UPDATE english_words
+        SET word = ?, identity_key = ?, canonical_key = ?,
+            phonetic = ?, phonetic_uk = ?, phonetic_us = ?,
+            pos = ?, definition_zh = ?, definition_en = ?,
+            textbook = ?, unit = ?, note = ?, categories = ?, strict_case = ?, senses = ?, primary_sense_id = ?, version = version + 1
+        WHERE id = ? AND version = ?
+      `).run(
+        nextWord,
+        nextIdKey,
+        nextCanKey,
+        nextPhonetic,
+        nextUk,
+        nextUs,
+        meanings.pos,
+        meanings.definition_zh,
+        meanings.definition_en,
+        payload.textbook !== undefined ? normalizeMetaText(payload.textbook) : existing.textbook,
+        payload.unit !== undefined ? normalizeMetaText(payload.unit) : existing.unit,
+        payload.note !== undefined ? normalizeOptionalText(payload.note, 300) : existing.note,
+        JSON.stringify(nextCategories),
+        +cleanStrictCase, JSON.stringify(meanings.senses), meanings.primary_sense_id,
+        id, payload.expected_version
+      );
+      if (!saved.changes) throw { status: 409, code: 'ENGLISH_WORD_EDIT_CONFLICT', message: '此单词又有新修改，本次未保存。请重新读取最新内容后核对。' };
 
-    return this.getWord(id);
+      const updated = this.getWord(id);
+      if (payload.textbook !== undefined || payload.unit !== undefined) ensureLegacyMembership(this.db, updated);
+      return updated;
+    })();
   }
 
   markMastered(id, isMastered = null) {
@@ -547,6 +558,10 @@ class EnglishWordsService {
         const idKey = identityKey(cleanWord);
         const canKey = canonicalKey(cleanWord);
         if (existingStmt.get(childId, idKey)) {
+          if (textbook !== undefined || unit !== undefined || item.textbook !== undefined || item.unit !== undefined) {
+            ensureLegacyMembership(this.db, { id: existingStmt.get(childId, idKey).id, child_id: childId,
+              textbook: normalizeMetaText(item.textbook) ?? defaultTextbook, unit: normalizeMetaText(item.unit) ?? defaultUnit });
+          }
           skipped.push(cleanWord);
           continue;
         }
@@ -576,7 +591,9 @@ class EnglishWordsService {
           createdAt,
           +item.strict_case, JSON.stringify(item.senses), item.primary_sense_id
         );
-        added.push(this.getWord(id));
+        const created = this.getWord(id);
+        ensureLegacyMembership(this.db, created);
+        added.push(created);
       }
     });
 

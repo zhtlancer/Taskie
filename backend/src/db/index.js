@@ -6,6 +6,7 @@ const { hashPin, verifyPin } = require('../utils/crypto');
 const { formatDate } = require('../utils/date');
 const { backfillClassRevisions } = require('./class-revisions');
 const { STATE_SOURCE_CHECK, ITEM_SOURCE_CHECK } = require('./word-study-constraints');
+const { ensureLegacyMembership } = require('../utils/word-book');
 
 const defaultBadges = [
   {
@@ -113,7 +114,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 42;
+const SCHEMA_VERSION = 43;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -780,6 +781,16 @@ function initDb(db) {
         db.exec('ALTER TABLE english_words ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK (typeof(version) = \'integer\' AND version > 0)');
       }
       db.pragma('user_version = 42');
+    })();
+  }
+  // v43: preserve old word identities and progress while adding independent source memberships.
+  if (db.pragma('user_version', { simple: true }) < 43) {
+    db.transaction(() => {
+      for (const word of db.prepare('SELECT id, child_id, textbook, unit FROM english_words ORDER BY created_at, id').all()) {
+        ensureLegacyMembership(db, word);
+      }
+      if (db.pragma('foreign_key_check').length) throw new Error('Foreign key violation in v43 migration');
+      db.pragma('user_version = 43');
     })();
   }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.

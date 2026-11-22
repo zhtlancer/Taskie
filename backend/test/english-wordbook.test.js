@@ -325,6 +325,7 @@ test('backup & restore upgrades v35 backups, preserves current English words & p
   const parsed = JSON.parse(zlib.gunzipSync(archive));
   const legacyDb = new Database(Buffer.from(parsed.database, 'base64'));
   legacyDb.pragma('foreign_keys = OFF');
+  require('./legacy-word-books-fixture')(legacyDb);
   legacyDb.exec(`
     DELETE FROM point_logs;
     DELETE FROM daily_tasks;
@@ -423,6 +424,7 @@ test('v36 restores freeze effective filters; malformed v36/v37 backups are rejec
     const candidate = new Database(Buffer.from(parsed.database, 'base64'));
     try {
       candidate.pragma('foreign_keys = OFF');
+      require('./legacy-word-books-fixture')(candidate);
       mutate(candidate);
       candidate.pragma(`user_version = ${version}`);
       return zlib.gzipSync(JSON.stringify({ ...parsed, database: candidate.serialize().toString('base64') }));

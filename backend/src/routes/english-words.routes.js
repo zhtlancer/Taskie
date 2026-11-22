@@ -23,14 +23,20 @@ async function englishWordsRoutes(fastify, options) {
     return entry;
   }));
 
-  fastify.post('/', handle(request => englishWordsService.createWord(request.body || {}, { role: request.user?.role }), 201));
+  fastify.post('/', generationWrite(fastify, (request, reply) => {
+    reply.code(201);
+    fastify.requireChildAccess(request, request.body?.child_id);
+    return englishWordsService.createWord(request.body || {}, { role: request.user?.role });
+  }));
   fastify.post('/batch-preview', handle(request => (
     englishWordsService.batchPreview(request.body?.child_id, request.body?.text, { dictionaryService, useDictionary: request.body?.use_dictionary })
   )));
   // Up to 100 words × 30 senses, including examples, can exceed Fastify's 1 MiB default.
-  fastify.post('/batch', { bodyLimit: 32 * 1024 * 1024 }, handle(request => (
-    englishWordsService.batchImport(request.body?.child_id, request.body || {}, { role: request.user?.role })
-  ), 201));
+  fastify.post('/batch', { bodyLimit: 32 * 1024 * 1024 }, generationWrite(fastify, (request, reply) => {
+    reply.code(201);
+    fastify.requireChildAccess(request, request.body?.child_id);
+    return englishWordsService.batchImport(request.body?.child_id, request.body || {}, { role: request.user?.role });
+  }));
 
   fastify.put('/:id', generationWrite(fastify, request => (
     englishWordsService.updateWord(request.params.id, request.body || {}, { role: request.user?.role })
