@@ -46,7 +46,7 @@
       <article
         v-for="skill in ['recognize', 'write']"
         :key="`${language}-${skill}`"
-        class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm"
+        class="min-w-0 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm"
       >
         <fieldset :disabled="savingSkill === skill" class="space-y-4 min-w-0">
         <header class="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -85,9 +85,9 @@
             每日加练有奖次数
             <input v-model.number="forms[skill].extra_reward_limit" type="number" min="0" max="20" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100" />
           </label>
-          <label>
+          <label class="min-w-0">
             开始日期
-            <input v-model="forms[skill].start_date" type="date" :min="forms[skill].exists ? undefined : (serverDate || calendar.today || undefined)" :disabled="forms[skill].exists" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100 disabled:opacity-60" />
+            <input v-model="forms[skill].start_date" type="date" :min="forms[skill].exists ? undefined : (serverDate || calendar.today || undefined)" :disabled="forms[skill].exists" class="ui-date-time mt-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100 disabled:opacity-60" />
           </label>
         </div>
 
