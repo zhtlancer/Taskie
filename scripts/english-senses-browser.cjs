@@ -38,7 +38,7 @@ module.exports = async function checkEnglishSenses({ browser, base, api, parentT
       await page.locator('[data-english-word-card="apple"]').click();
       const detail = page.getByRole('dialog', { name: 'apple', exact: true });
       await detail.getByText('手工更正：苹果', { exact: true }).waitFor();
-      await detail.getByRole('button', { name: /编辑释义与单元/ }).click();
+      await detail.getByRole('button', { name: /编辑释义与笔记/ }).click();
       const editor = detail.locator('[data-english-senses-editor]');
       if (width === 390) {
         await editor.getByRole('button', { name: '设为学习释义', exact: true }).click();

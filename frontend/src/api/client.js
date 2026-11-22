@@ -198,6 +198,14 @@ export const api = {
     // The practice dialog provides recovery only for this specific date rejection.
     silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
   }),
+  getWordBooks: (childId, language, params = {}, signal, options) => get('/word-books', { child_id: childId, language, ...params }, signal, options),
+  getWordBookItems: (id, params = {}, signal, options) => get(`/word-books/${id}/items`, params, signal, options),
+  createWordBook: (data, options) => idempotentPost('/word-books', data, options),
+  updateWordBook: (id, data, options, generation) => put(`/word-books/${id}`, data, { ...options, headers: generationHeaders(generation) }),
+  deleteWordBook: (id, expectedVersion, options, generation) => request('delete', `/word-books/${id}`, { expected_version: expectedVersion }, undefined, undefined, { ...options, headers: generationHeaders(generation) }),
+  addWordBookItem: (id, data, options) => idempotentPost(`/word-books/${id}/items`, data, options),
+  updateWordBookItem: (id, itemId, data, options, generation) => put(`/word-books/${id}/items/${itemId}`, data, { ...options, headers: generationHeaders(generation) }),
+  deleteWordBookItem: (id, itemId, expectedVersion, options, generation) => request('delete', `/word-books/${id}/items/${itemId}`, { expected_version: expectedVersion }, undefined, undefined, { ...options, headers: generationHeaders(generation) }),
   getEnglishWords: (id, params = {}, signal, options) => get('/english-words', { child_id: id, ...params }, signal, options),
   getEnglishWord: (id, signal, options) => get(`/english-words/${id}`, undefined, signal, options),
   getEnglishWordTaxonomy: (id, signal, options) => get('/english-words/taxonomy', { child_id: id }, signal, options),
@@ -225,6 +233,7 @@ export const api = {
     return response.data;
   },
   getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),
+  getCharacter: (id, signal, options) => get(`/characters/${id}`, undefined, signal, options),
   createCharacter: (data, options) => post('/characters', data, options),
   markCharacterMastered: (id, mastered = null, options) => put(`/characters/${id}/master`, { is_mastered: mastered }, options),
   deleteCharacter: (id, options) => remove(`/characters/${id}`, options),

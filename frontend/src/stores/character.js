@@ -157,7 +157,7 @@ export const useCharacterStore = defineStore('character', {
       if (this.loading || !this.isLoadedFor(childId)) this.fetchCharacters(childId);
     },
 
-    async addCharacter({ child_id, char, pinyin, strokes, radical, categories = [] }) {
+    async addCharacter({ child_id, char, pinyin, strokes, radical, categories = [], book_id }) {
       const targetChildId = child_id || this.currentChildId;
       if (!targetChildId) throw new Error('缺少孩子账号信息');
       const token = readToken();
@@ -187,6 +187,7 @@ export const useCharacterStore = defineStore('character', {
           strokes,
           radical,
           categories,
+          ...(book_id ? { book_id } : {}),
         }, SILENT_WRITE);
 
         if (this.scopeGeneration === startGen && this.currentChildId === targetChildId && readToken() === token) {

@@ -109,6 +109,7 @@
           <p v-if="categoryMessage" role="alert" class="mt-2 text-xs font-bold text-rose-600 dark:text-rose-300">{{ categoryMessage }}</p>
         </div>
 
+        <WordEntryBooks class="w-full mt-3" :entry="character" language="zh" :disabled="props.busy || savingCategories" @busy="bookBusy = $event" @updated="$emit('updated', $event); characterStore.fetchCharacters(character.child_id).catch(() => {})" />
         <!-- Mastery Action Button -->
         <div class="flex items-center justify-between w-full max-w-md mt-6 pt-4 border-t border-slate-100 dark:border-slate-700 gap-3">
           <button
@@ -152,6 +153,7 @@ import { currentRole, getToken } from '../utils/session.js';
 import { CATEGORIES, categoryInfo, entryChars, toggleCategory } from '../utils/wordBook';
 import { useCharacterStore } from '../stores/character';
 import { loadLearningFont } from '../utils/learningFont';
+import WordEntryBooks from './WordEntryBooks.vue';
 
 const props = defineProps({
   busy: Boolean,
@@ -171,6 +173,7 @@ const showPinyin = ref(false); // Default hidden
 const dynamicStrokes = ref(null);
 const selectedIndex = ref(0);
 const savingCategories = ref(false);
+const bookBusy = ref(false);
 const categoryMessage = ref('');
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 390);
 const gridSize = computed(() => (viewportWidth.value < 380 ? 256 : 280));
@@ -194,7 +197,7 @@ watch(() => props.character.id, () => {
   dynamicStrokes.value = null;
   invalidateCategorySave();
 }, { flush: 'sync' });
-const busy = computed(() => props.busy || savingCategories.value || characterStore.isBusy(props.character.id));
+const busy = computed(() => props.busy || savingCategories.value || bookBusy.value || characterStore.isBusy(props.character.id));
 
 const chars = computed(() => entryChars(props.character.char));
 const currentChar = computed(() => chars.value[selectedIndex.value] || chars.value[0]);

@@ -33,12 +33,12 @@ module.exports = async function checkEnglishCaseRules({ browser, base, api, pare
     await lookup.waitFor({ state: 'detached' });
     await page.locator('[data-english-word-card="may"]').click();
     const detail = page.getByRole('dialog', { name: 'may', exact: true });
-    await detail.getByRole('button', { name: /编辑释义与单元/ }).click();
+    await detail.getByRole('button', { name: /编辑释义与笔记/ }).click();
     await detail.getByLabel('英文词条', { exact: true }).fill('MAY');
     assert.equal(await detail.getByRole('button', { name: '保存修改', exact: true }).isDisabled(), true);
     await detail.getByRole('checkbox', { name: confirm('MAY'), exact: true }).check();
     await detail.getByRole('button', { name: '保存修改', exact: true }).click();
-    await page.getByRole('dialog', { name: 'MAY', exact: true }).getByRole('button', { name: /编辑释义与单元/ }).waitFor();
+    await page.getByRole('dialog', { name: 'MAY', exact: true }).getByRole('button', { name: /编辑释义与笔记/ }).waitFor();
     await page.getByRole('dialog', { name: 'MAY', exact: true }).getByRole('button', { name: '关闭', exact: true }).last().click();
 
     await page.getByRole('button', { name: /批量导入/ }).click();

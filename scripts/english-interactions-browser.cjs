@@ -98,7 +98,7 @@ module.exports = async function checkEnglishInteractions({ browser, base, api, p
         await card.tap(); await detail.waitFor();
         release(); await bounded(done);
         assert.equal(await page.evaluate(() => window.__interactionAudio.length), 0, 'old fetch must not create a player in the reopened modal');
-        await detail.getByRole('button', { name: /编辑释义与单元/ }).tap();
+        await detail.getByRole('button', { name: /编辑释义与笔记/ }).tap();
         await page.keyboard.press('Tab');
         await focusCheck(page, detail);
         await detail.getByRole('button', { name: '取消', exact: true }).tap();

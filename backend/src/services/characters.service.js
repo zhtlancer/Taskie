@@ -1,4 +1,5 @@
 const { generateId } = require('../utils/crypto');
+const { attachWordBooks, attachSelectedBook } = require('../utils/word-book');
 
 // Fixed categories, in display order: 会认读, 会写, 笔画要改正, 易错字. Anyone may add a category to an
 // entry; only parents may take one away, so a correction mark stays until a parent clears it.
@@ -45,16 +46,20 @@ class CharactersService {
     query += ' ORDER BY created_at DESC';
 
     const entries = this.db.prepare(query).all(...params).map(toEntry);
-    return category ? entries.filter(entry => entry.categories.includes(category)) : entries;
+    return attachWordBooks(this.db, category ? entries.filter(entry => entry.categories.includes(category)) : entries, 'zh');
   }
 
   getCharacter(id) {
     const row = this.db.prepare(`SELECT ${COLUMNS} FROM characters WHERE id = ?`).get(id);
-    return row ? toEntry(row) : null;
+    return row ? attachWordBooks(this.db, [toEntry(row)], 'zh')[0] : null;
   }
 
   // An entry is a single character or a word of up to 8 Chinese characters.
-  createCharacter({ child_id, char, pinyin, strokes, radical, categories }) {
+  createCharacter(data, { role } = {}) {
+    return this.db.transaction(() => this.createCharacterRecord(data, { role }))();
+  }
+
+  createCharacterRecord({ child_id, char, pinyin, strokes, radical, categories, book_id }, { role } = {}) {
     if (!child_id) {
       throw { status: 400, message: '请选择孩子' };
     }
@@ -102,6 +107,8 @@ class CharactersService {
       throw err;
     }
 
+    const created = this.getCharacter(id);
+    attachSelectedBook(this.db, created, book_id, role);
     return this.getCharacter(id);
   }
 

@@ -43,4 +43,30 @@ function ensureLegacyMembership(db, word) {
   }
   return book.id;
 }
-module.exports = { cleanText, nameKey, defaultName, bookMetadata, ensureLegacyMembership };
+function attachWordBooks(db, entries, language) {
+  if (!entries.length) return entries;
+  const col = language === 'zh' ? 'character_id' : 'english_word_id';
+  const limited = entries.length <= 200;
+  const rows = db.prepare(`SELECT i.${col} AS entry_id, i.id AS item_id, i.version AS item_version, i.position AS item_position, i.pinyin_override,
+    b.id, b.name, b.source, b.unit, b.source_type, b.version AS book_version
+    FROM word_book_items i JOIN word_books b ON b.id = i.book_id WHERE b.child_id = ? AND b.language = ?
+    ${limited ? `AND i.${col} IN (${entries.map(() => '?').join(',')})` : ''} ORDER BY b.created_at, b.id`)
+    .all(entries[0].child_id, language, ...(limited ? entries.map(entry => entry.id) : []));
+  const byId = new Map();
+  for (const { entry_id, ...book } of rows) {
+    if (!byId.has(entry_id)) byId.set(entry_id, []);
+    byId.get(entry_id).push(book);
+  }
+  return entries.map(entry => ({ ...entry, books: byId.get(entry.id) || [] }));
+}
+function attachSelectedBook(db, entry, bookId, role) {
+  if (bookId === undefined || bookId === null || bookId === '') return;
+  if (typeof bookId !== 'string') throw { status: 400, message: '词本编号无效' };
+  const Books = require('../services/word-books.service');
+  const books = new Books(db), actor = { role };
+  if (role !== 'parent') throw { status: 403, message: '只有家长可以指定词本' };
+  const book = books.get(bookId, actor, true);
+  if (book.child_id !== entry.child_id) throw { status: 403, message: '不能关联其他孩子的词本' };
+  books.add(bookId, entry.char ? { character_id: entry.id } : { english_word_id: entry.id }, actor);
+}
+module.exports = { cleanText, nameKey, defaultName, bookMetadata, ensureLegacyMembership, attachWordBooks, attachSelectedBook };

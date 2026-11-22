@@ -33,7 +33,7 @@
           class="min-h-11 px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200"
           @click="startEdit"
         >
-          ✏️ {{ role === 'parent' ? '编辑释义与单元' : '编辑释义' }}
+          ✏️ {{ role === 'parent' ? '编辑释义与笔记' : '编辑释义' }}
         </button>
       </div>
 
@@ -87,10 +87,6 @@
           <p v-if="sense.example" class="text-slate-700 dark:text-slate-200">例句：{{ sense.example }}</p>
           <p v-if="sense.source" class="text-xs text-slate-500 dark:text-slate-400">来源：{{ sense.source.name || sense.source.dict_id }} · {{ sense.source.headword }}</p>
         </div>
-        <div v-if="word.textbook || word.unit" class="flex flex-wrap gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-          <span v-if="word.textbook" class="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">教材：{{ word.textbook }}</span>
-          <span v-if="word.unit" class="px-2 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">单元：{{ word.unit }}</span>
-        </div>
         <p v-if="word.strict_case" class="text-xs font-bold text-amber-700 dark:text-amber-300">默写规则：严格区分大小写</p>
         <div v-if="word.note">
           <span class="text-xs font-bold text-slate-500 dark:text-slate-400">记忆笔记：</span>
@@ -119,17 +115,6 @@
           </label>
         </div>
         <EnglishSensesEditor v-model="editForm" :candidates="dictionaryCandidates" :pronunciations="dictionaryPronunciations" :disabled="busy" />
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-            教材/分类
-            <input v-model="editForm.textbook" :disabled="role !== 'parent'" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
-          </label>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-            单元
-            <input v-model="editForm.unit" :disabled="role !== 'parent'" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
-          </label>
-        </div>
-        <p v-if="role !== 'parent'" class="text-xs font-bold text-slate-500 dark:text-slate-400">教材和单元由家长设置。</p>
         <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
           记忆笔记
           <input v-model="editForm.note" type="text" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold" />
@@ -147,6 +132,7 @@
           </button>
         </div>
       </fieldset>
+      <WordEntryBooks :entry="word" language="en" :disabled="props.busy || savingEdit || savingCategories || editing" @busy="bookBusy = $event" @updated="store.acceptWordSnapshot($event); $emit('updated', $event)" />
 
       <EnglishStudyProgress :word="word" :disabled="busy" />
       <p class="text-xs text-slate-500 dark:text-slate-400">进度按 {{ word.study_date || '最近读取的数据' }} 的记忆周期展示，与手工掌握标记独立；练习入口前往对应技能的今日清单。</p>
@@ -228,6 +214,7 @@ import { learningPhonetic } from '../utils/englishAudio';
 import EnglishPronunciations from './EnglishPronunciations.vue';
 import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import EnglishStudyProgress from './EnglishStudyProgress.vue';
+import WordEntryBooks from './WordEntryBooks.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
 import { englishEditForm, rebaseEnglishEdit } from '../utils/englishEdit';
@@ -261,6 +248,7 @@ const confirmDelete = ref(false);
 const editing = ref(false);
 const savingEdit = ref(false);
 const savingCategories = ref(false);
+const bookBusy = ref(false);
 const editConflict = ref(false), latestWord = ref(null), readingLatest = ref(false);
 const latestCategoryNames = computed(() => ENGLISH_CATEGORIES.filter(category => latestWord.value?.categories?.includes(category.key)).map(category => category.label).join('、'));
 let editBase, editVersion, editGeneration, latestController;
@@ -276,7 +264,7 @@ watch(() => editForm.value.word, () => {
   editForm.value.confirmed_case_variants = [];
   serverCaseVariants.value = [];
 }, { flush: 'sync' });
-const busy = computed(() => props.busy || savingEdit.value || savingCategories.value || readingLatest.value || store.isBusy(props.word.id));
+const busy = computed(() => props.busy || savingEdit.value || savingCategories.value || bookBusy.value || readingLatest.value || store.isBusy(props.word.id));
 let audioController = null;
 let dictionarySerial = 0;
 const { capture } = useAsyncScope(() => [props.word.id, props.word.child_id, store.scopeGeneration], () => {
@@ -389,10 +377,8 @@ async function saveEdit() {
       expected_version: editVersion,
       phonetic: editForm.value.phonetic_uk || editForm.value.phonetic_us || editForm.value.phonetic || ''
     };
-    if (role.value !== 'parent') {
-      delete payload.textbook;
-      delete payload.unit;
-    }
+    delete payload.textbook;
+    delete payload.unit;
     const updated = await store.updateWord(props.word.id, payload, editGeneration);
     if (matchesScope() && updated) {
       editing.value = false;

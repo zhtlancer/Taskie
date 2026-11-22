@@ -44,7 +44,7 @@ module.exports = async function checkDictionaryIndexNotice({ browser, base, api,
       const detail = page.getByRole('dialog', { name: 'apple', exact: true });
       await detail.locator('[data-dictionary-index-progress]').waitFor();
       await detail.getByText('已保存的释义', { exact: true }).waitFor();
-      await detail.getByRole('button', { name: /编辑释义与单元/ }).click();
+      await detail.getByRole('button', { name: /编辑释义与笔记/ }).click();
       await detail.getByLabel('中文释义', { exact: true }).fill('详情中的更正');
       release(); release = null;
       await detail.locator('[data-dictionary-index-progress]').waitFor({ state: 'detached' });

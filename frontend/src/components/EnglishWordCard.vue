@@ -53,6 +53,7 @@
     </div>
 
     <EnglishStudyProgress :word="word" :disabled="busy" />
+    <WordBookTags :books="word.books" />
 
     <div class="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
       <div v-if="word.unit || word.categories?.length" class="flex flex-wrap items-center gap-1">
@@ -94,6 +95,7 @@ import { audioClips, learningPhonetic } from '../utils/englishAudio';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { englishCategoryInfo } from '../utils/englishWord';
 import EnglishStudyProgress from './EnglishStudyProgress.vue';
+import WordBookTags from './WordBookTags.vue';
 
 const props = defineProps({
   word: { type: Object, required: true },

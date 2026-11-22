@@ -5,6 +5,7 @@
     </p>
 
     <!-- Subheader: Status Filters, Self-check Meaning Toggle, Lookup & Batch Import -->
+    <WordBooksPanel v-model="selectedBook" :child-id="childId" language="en" :entries="store.words" @changed="loadWords" />
     <div class="bg-white dark:bg-slate-900 rounded-2xl p-3 px-4 border border-slate-200/90 dark:border-slate-700/90 shadow-sm mb-4 space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-2">
@@ -72,24 +73,6 @@
           placeholder="搜索单词、释义或单元…"
           class="flex-1 min-w-[160px] min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs font-bold text-slate-800 dark:text-slate-100"
         />
-        <select
-          v-if="store.textbooks.length"
-          v-model="selectedTextbook"
-          aria-label="按教材筛选"
-          class="min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs font-bold text-slate-700 dark:text-slate-200"
-        >
-          <option value="">全部教材</option>
-          <option v-for="tb in store.textbooks" :key="tb" :value="tb">{{ tb }}</option>
-        </select>
-        <select
-          v-if="store.units.length"
-          v-model="selectedUnit"
-          aria-label="按单元筛选"
-          class="min-h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 text-xs font-bold text-slate-700 dark:text-slate-200"
-        >
-          <option value="">全部单元</option>
-          <option v-for="u in store.units" :key="u" :value="u">{{ u }}</option>
-        </select>
       </div>
 
       <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -222,6 +205,8 @@ import { ENGLISH_CATEGORIES } from '../utils/englishWord';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { matchesEnglishProgress } from '../utils/englishProgress';
 import { useCalendarStore } from '../stores/calendar';
+import WordBooksPanel from './WordBooksPanel.vue';
+import { filterBookEntries } from '../utils/wordBookSource';
 
 const props = defineProps({
   childId: { type: String, required: true }
@@ -233,8 +218,7 @@ const currentFilter = ref('all');
 const progressSkill = ref('any');
 const progressStatus = ref('all');
 const currentCategory = ref(null);
-const selectedTextbook = ref('');
-const selectedUnit = ref('');
+const selectedBook = ref('all');
 const searchQuery = ref('');
 const globalShowMeaning = ref(true);
 
@@ -262,12 +246,10 @@ const filterOptions = computed(() => [
 
 const scopedWords = computed(() => {
   if (!isLoaded.value) return [];
-  let list = store.words;
+  let list = filterBookEntries(store.words, selectedBook.value);
   if (currentFilter.value === 'mastered') list = list.filter(w => Boolean(w.is_mastered));
   if (currentFilter.value === 'learning') list = list.filter(w => !w.is_mastered);
   if (currentCategory.value) list = list.filter(w => w.categories?.includes(currentCategory.value));
-  if (selectedTextbook.value) list = list.filter(w => w.textbook === selectedTextbook.value);
-  if (selectedUnit.value) list = list.filter(w => w.unit === selectedUnit.value);
   const q = searchQuery.value.trim().toLowerCase();
   if (q) {
     list = list.filter(w =>
@@ -275,7 +257,7 @@ const scopedWords = computed(() => {
       || (w.definition_zh && w.definition_zh.toLowerCase().includes(q))
       || (w.definition_en && w.definition_en.toLowerCase().includes(q))
       || w.senses?.some(sense => [sense.definition_zh, sense.definition_en, sense.example].some(value => value && value.toLowerCase().includes(q)))
-      || (w.unit && w.unit.toLowerCase().includes(q))
+      || w.books?.some(book => [book.name, book.source, book.unit].some(value => value?.toLowerCase().includes(q)))
     );
   }
   return list;
@@ -291,8 +273,7 @@ function selectFilter(key) {
 function resetFilters() {
   currentFilter.value = 'all';
   currentCategory.value = null;
-  selectedTextbook.value = '';
-  selectedUnit.value = '';
+  selectedBook.value = 'all';
   searchQuery.value = '';
   progressSkill.value = 'any';
   progressStatus.value = 'all';
@@ -321,6 +302,7 @@ function loadWords() {
 }
 
 function resetScope() {
+  selectedBook.value = 'all';
   detailBusy.value = false;
   selectedWord.value = null;
   isLookupOpen.value = false;

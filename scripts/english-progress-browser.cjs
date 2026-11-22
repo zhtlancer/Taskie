@@ -43,8 +43,8 @@ module.exports = async function checkEnglishProgress({ browser, base, api, paren
       await skillFilter.selectOption('recognize');
       await statusFilter.selectOption('due');
       assert.deepEqual(await page.locator('[data-english-word-card]').evaluateAll(nodes => nodes.map(node => node.dataset.englishWordCard)), ['beta']);
-      await page.getByLabel('按教材筛选').selectOption('进度教材');
-      await page.getByLabel('按单元筛选').selectOption('第一单元');
+      const sourceBook = (await api('GET', `/word-books?child_id=${child.id}&language=en`)).items.find(book => book.source === '进度教材' && book.unit === '第一单元');
+      await page.getByLabel('按词本筛选', { exact: true }).selectOption(sourceBook.id);
       await page.getByPlaceholder('搜索单词、释义或单元…').fill('gamma');
       await page.locator('[data-english-empty]').getByText('当前筛选下没有单词', { exact: true }).waitFor();
       await page.getByRole('button', { name: '查看全部单词', exact: true }).click();

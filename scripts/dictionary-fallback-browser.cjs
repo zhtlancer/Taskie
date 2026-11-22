@@ -47,7 +47,7 @@ module.exports = async function checkDictionaryFallback({ browser, base, api, pa
         await article.getByRole('button', { name: '重试读取', exact: true }).click();
         await article.getByText('苹果', { exact: true }).waitFor();
         await article.getByRole('button', { name: '关闭', exact: true }).last().click();
-        await detail.getByRole('button', { name: /编辑释义与单元/ }).click();
+        await detail.getByRole('button', { name: /编辑释义与笔记/ }).click();
         await detail.getByLabel('中文释义', { exact: true }).fill('重试期间保留的更正');
         await detail.getByLabel('例句（选填）', { exact: true }).fill('An apple a day.');
         for (const [nextMode, notice] of [['not-found', /未找到该词条/], ['unready', /索引尚未就绪/], ['invalid', /资源包损坏/], ['no-audio', /暂无可用发音/]]) {

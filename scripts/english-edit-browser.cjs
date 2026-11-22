@@ -11,7 +11,7 @@ async function checkEnglishEdits({ browser, base, api, parentToken, openContext,
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       await page.locator('[data-english-word-card="bank"]').click();
       const dialog = page.getByRole('dialog', { name: 'bank', exact: true });
-      await dialog.getByRole('button', { name: /编辑释义与单元/ }).click(); return dialog;
+      await dialog.getByRole('button', { name: /编辑释义与笔记/ }).click(); return dialog;
     };
     const save = async (page, dialog) => {
       const response = page.waitForResponse(r => new URL(r.url()).pathname === `/api/english-words/${word.id}` && r.request().method() === 'PUT');
@@ -20,7 +20,7 @@ async function checkEnglishEdits({ browser, base, api, parentToken, openContext,
     try {
       const a = await openEdit(first.page), b = await openEdit(second.page);
       await a.getByLabel('记忆笔记', { exact: true }).fill('设备一的笔记');
-      await b.getByLabel('教材/分类', { exact: true }).fill('设备二的新教材');
+      await b.getByLabel('默写时严格区分大小写', { exact: true }).check();
       assert.equal((await save(second.page, b)).status(), 200);
       assert.equal((await save(first.page, a)).status(), 409);
       const conflict = a.locator('[data-english-edit-conflict]'); await conflict.waitFor();
@@ -32,9 +32,9 @@ async function checkEnglishEdits({ browser, base, api, parentToken, openContext,
       await conflict.getByRole('button', { name: '读取最新内容', exact: true }).click();
       await a.getByRole('alert').getByText('最新内容读取失败', { exact: true }).waitFor();
       await conflict.getByRole('button', { name: '读取最新内容', exact: true }).click();
-      await conflict.locator('[data-english-latest]').getByText(/设备二的新教材/).waitFor();
+      await conflict.locator('[data-english-latest]').getByText('严格区分大小写：是', { exact: true }).waitFor();
       await conflict.getByRole('button', { name: '核对完成，保留我的更改继续编辑', exact: true }).click();
-      assert.equal(await a.getByLabel('教材/分类', { exact: true }).inputValue(), '设备二的新教材');
+      assert.equal(await a.getByLabel('默写时严格区分大小写', { exact: true }).isChecked(), true);
       assert.equal(await a.getByLabel('记忆笔记', { exact: true }).inputValue(), '设备一的笔记');
 
       // A further remote edit after review must be checked again rather than forced through.
@@ -47,11 +47,11 @@ async function checkEnglishEdits({ browser, base, api, parentToken, openContext,
       await conflict.getByRole('button', { name: '核对完成，保留我的更改继续编辑', exact: true }).click();
       assert.equal((await save(first.page, a)).status(), 200);
       current = await api('GET', `/english-words/${word.id}`);
-      assert.equal(current.note, '设备一的笔记'); assert.equal(current.textbook, '设备二的新教材'); assert.equal(current.unit, '远端第二次修改');
+      assert.equal(current.note, '设备一的笔记'); assert.equal(current.strict_case, true); assert.equal(current.unit, '远端第二次修改');
       assert.equal(current.phonetic, 'baŋk', 'retaining a note draft must not clear remote generic phonetics');
 
       // Background refresh, including a remote rename, must not erase an open draft.
-      await a.getByRole('button', { name: /编辑释义与单元/ }).click();
+      await a.getByRole('button', { name: /编辑释义与笔记/ }).click();
       await a.getByLabel('记忆笔记', { exact: true }).fill('重命名前的草稿');
       await api('PUT', `/english-words/${word.id}`, { expected_version: current.version, word: 'banks', note: '最新远端笔记' });
       const refreshed = first.page.waitForResponse(r => new URL(r.url()).pathname === '/api/english-words');
@@ -87,7 +87,7 @@ async function checkEnglishEdits({ browser, base, api, parentToken, openContext,
         await first.page.evaluate(() => window.dispatchEvent(new Event('taskie:data-restored')));
         await first.page.getByRole('dialog').waitFor({ state: 'detached' });
         await first.page.locator('[data-english-word-card="banks"]').click();
-        await renamed.getByRole('button', { name: /编辑释义与单元/ }).click();
+        await renamed.getByRole('button', { name: /编辑释义与笔记/ }).click();
         await renamed.getByLabel('记忆笔记', { exact: true }).fill('恢复后新草稿');
         release(); await bounded(done);
         assert.equal(await renamed.getByLabel('记忆笔记', { exact: true }).inputValue(), '恢复后新草稿');

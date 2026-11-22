@@ -29,7 +29,10 @@ test('one word belongs to multiple sources without changing its version, mastery
   assert.equal(a.effective_pinyin, 'cháng'); assert.equal(b.effective_pinyin, 'zhǎng');
   const en = [create('课本', 'en'), create('期中', 'en')];
   for (const book of en) books.add(book.id, { english_word_id: word.id }, parent);
-  assert.deepEqual(words.getWord(word.id), before);
+  const { books: linkedBooks, ...afterWord } = words.getWord(word.id);
+  const { books: beforeBooks, ...beforeWord } = before;
+  assert.deepEqual(afterWord, beforeWord);
+  assert.equal(linkedBooks.length, 2);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM word_study_states').get().n, 0);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM daily_tasks').get().n, 0);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM point_logs').get().n, 0);
@@ -150,7 +153,10 @@ test('legacy edits and duplicate batches supplement source links without replaci
   const before = words.getWord(word.id);
   const result = words.batchImport(child.id, { textbook: '复习资料', items: [{ word: 'May' }] }, parent);
   assert.deepEqual(result.skipped, ['May']);
-  assert.deepEqual(words.getWord(word.id), before);
+  const { books: currentBooks, ...after } = words.getWord(word.id);
+  const { books: priorBooks, ...prior } = before;
+  assert.deepEqual(after, prior);
+  assert.equal(currentBooks.length, 3);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM word_book_items WHERE english_word_id = ?').get(word.id).n, 3);
 });
 
@@ -239,4 +245,25 @@ test('a session revoked while waiting for the restore lock cannot write a word b
   release(); await hold;
   assert.equal((await pending).statusCode, 401);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM word_books').get().n, 0);
+});
+
+test('single-entry collection with a selected book is atomic and forbidden for children', async t => {
+  const c = await fixture(t), { app, create, child, sibling, auth, chars, words, books } = c;
+  const zh = create('收录语文'), en = create('收录英语', 'en');
+  for (const [path, text, target, wrong] of [['characters', '河', zh, en], ['english-words', 'river', en, zh]]) {
+    const payload = { child_id: child.id, [path === 'characters' ? 'char' : 'word']: text, book_id: target.id };
+    const added = await app.inject({ method: 'POST', url: `/api/${path}`, payload });
+    assert.equal(added.statusCode, 201, added.body);
+    assert.equal(added.json().books[0].id, target.id);
+    assert.equal(books.items(target.id, {}, parent).total, 1);
+    const otherText = path === 'characters' ? '海' : 'sea';
+    for (const [bookId, actor, status] of [[target.id, { role: 'child', child_id: child.id }, 403], [wrong.id, parent, 400], ['deleted-book', parent, 404]]) {
+      const rejected = await app.inject({ method: 'POST', url: `/api/${path}`, payload: { ...payload, [path === 'characters' ? 'char' : 'word']: otherText, book_id: bookId }, headers: auth(actor) });
+      assert.equal(rejected.statusCode, status, rejected.body);
+    }
+    assert.equal((path === 'characters' ? chars.listCharacters({ child_id: child.id }) : words.listWords({ child_id: child.id })).some(entry => (entry.char || entry.word) === otherText), false);
+    const alien = books.create({ child_id: sibling.id, language: path === 'characters' ? 'zh' : 'en', name: '异主词本' }, parent);
+    const rejected = await app.inject({ method: 'POST', url: `/api/${path}`, payload: { ...payload, [path === 'characters' ? 'char' : 'word']: otherText, book_id: alien.id } });
+    assert.equal(rejected.statusCode, 403);
+  }
 });

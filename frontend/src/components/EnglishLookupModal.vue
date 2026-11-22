@@ -172,30 +172,7 @@
 
         <EnglishSensesEditor v-model="form" :candidates="dictionaryCandidates" :pronunciations="dictionaryPronunciations" :disabled="saving" />
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-            教材/分类（选填）
-            <input
-              v-model="form.textbook"
-              :disabled="!isParent"
-              type="text"
-              placeholder="如 人教版三年级"
-              class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-            />
-          </label>
-          <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-            单元（选填）
-            <input
-              v-model="form.unit"
-              :disabled="!isParent"
-              type="text"
-              placeholder="如 Unit 1"
-              class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-            />
-          </label>
-        </div>
-
-        <p v-if="!isParent" class="text-xs font-bold text-slate-500 dark:text-slate-400">教材和单元由家长设置，其他内容可以自行填写。</p>
+        <WordBookSelect v-if="!alreadyInBook" v-model="form.book_id" :child-id="childId" language="en" :disabled="saving" />
 
         <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
           记忆笔记（选填）
@@ -264,6 +241,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import UiDialog from './UiDialog.vue';
+import WordBookSelect from './WordBookSelect.vue';
 import EnglishPronunciations from './EnglishPronunciations.vue';
 import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import DictionaryArticleDrawer from './DictionaryArticleDrawer.vue';
@@ -319,8 +297,7 @@ const emptyForm = () => withEnglishSenses({
   pos: '',
   definition_zh: '',
   definition_en: '',
-  textbook: '',
-  unit: '',
+  book_id: '',
   note: '',
   categories: ['recognize', 'write'],
   strict_case: false, confirmed_case_variants: []
@@ -435,7 +412,7 @@ function onQueryInput() {
 function prepareManualWord(word) {
   if (identityKey(form.value.word) === identityKey(word)) return;
   form.value = { ...emptyForm(), word,
-    textbook: form.value.textbook, unit: form.value.unit, categories: form.value.categories };
+    book_id: form.value.book_id, categories: form.value.categories };
 }
 
 async function runLookup(raw) {

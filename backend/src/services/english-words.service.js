@@ -1,7 +1,7 @@
 const { resolveSenses } = require('../utils/english-senses');
 const { keepWordAudio } = require('../utils/english-audio');
 const { generateId } = require('../utils/crypto');
-const { ensureLegacyMembership } = require('../utils/word-book');
+const { ensureLegacyMembership, attachWordBooks, attachSelectedBook } = require('../utils/word-book');
 const { getTodayDate } = require('../utils/date');
 const { dictionaryFailure, dictionaryLookupIssue } = require('./dictionary/issues');
 const {
@@ -148,7 +148,7 @@ class EnglishWordsService {
       if (!byWord.has(state.english_word_id)) byWord.set(state.english_word_id, {});
       byWord.get(state.english_word_id)[state.skill] = state;
     }
-    return entries.map(entry => {
+    return attachWordBooks(this.db, entries.map(entry => {
       const progress = {};
       for (const skill of ['recognize', 'write']) {
         const state = byWord.get(entry.id)?.[skill];
@@ -160,7 +160,7 @@ class EnglishWordsService {
         };
       }
       return { ...entry, study_date: date, study_progress: progress };
-    });
+    }), 'en');
   }
 
   listTaxonomy(childId) {
@@ -267,7 +267,8 @@ class EnglishWordsService {
 
     const created = this.getWord(id);
     ensureLegacyMembership(this.db, created);
-    return created;
+    attachSelectedBook(this.db, created, payload.book_id, role);
+    return this.getWord(id);
   }
 
   updateWord(id, payload = {}, { role } = {}) {
@@ -341,7 +342,7 @@ class EnglishWordsService {
 
       const updated = this.getWord(id);
       if (payload.textbook !== undefined || payload.unit !== undefined) ensureLegacyMembership(this.db, updated);
-      return updated;
+      return this.getWord(id);
     })();
   }
 
@@ -593,7 +594,7 @@ class EnglishWordsService {
         );
         const created = this.getWord(id);
         ensureLegacyMembership(this.db, created);
-        added.push(created);
+        added.push(this.getWord(id));
       }
     });
 

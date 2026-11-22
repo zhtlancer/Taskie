@@ -28,7 +28,7 @@ module.exports = async function checkEnglishAudio({ browser, base, api, parentTo
         await page.locator('[data-english-word-card="record"]').click();
         const detail = page.getByRole('dialog',{name:'record',exact:true});
         await detail.locator('[data-english-pronunciations]').getByText(/noun.*rekɔːd/).waitFor();
-        await detail.getByRole('button',{name:/编辑释义与单元/}).click();
+        await detail.getByRole('button',{name:/编辑释义与笔记/}).click();
         await detail.getByRole('button',{name:'设为学习释义',exact:true}).click();
         await detail.getByRole('combobox',{name:'学习发音',exact:true}).waitFor();
         await detail.getByRole('button',{name:'保存修改',exact:true}).click();

@@ -61,6 +61,7 @@
     "test:browser:period-dates": "node scripts/smoke-period-dates.cjs",
     "test:browser:input-dates": "node scripts/smoke-input-dates.cjs",
     "test:browser:word-plan-dates": "node scripts/smoke-word-plan-dates.cjs",
+    "test:browser:word-books": "node scripts/smoke-word-books.cjs",
     "test:browser:running-timer": "node scripts/smoke-running-timer.cjs",
     "test:browser:rest": "node scripts/smoke-rest.cjs",
     "test:browser:photo-backup": "node scripts/smoke-photo-backup.cjs",

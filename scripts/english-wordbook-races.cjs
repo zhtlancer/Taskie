@@ -82,7 +82,8 @@ module.exports = async function checkEnglishModalRaces({ page, base, child, chil
       await definition.fill('竞态释义');
       assert.equal(await wordInput.inputValue(), word, 'lookup word field keeps the filled word');
       assert.equal(await definition.inputValue(), '竞态释义');
-      assert.equal(await dialog.getByPlaceholder('如 Unit 1').isEnabled(), true);
+      // Offline collection can proceed as an unassigned word even if the optional book list failed.
+      assert.equal(await dialog.getByLabel('收录到词本', { exact: true }).count(), 1);
       return { dialog, button: dialog.locator('button.ui-button-primary'), action: 'addWord', method: 'POST', pathname: '/api/english-words' };
     }
     if (type === 'batch') {
@@ -98,11 +99,10 @@ module.exports = async function checkEnglishModalRaces({ page, base, child, chil
     await page.locator('[data-english-word-card="scopeword"]').click();
     const dialog = page.getByRole('dialog', { name: 'scopeword', exact: true });
     if (type === 'edit') {
-      await dialog.getByRole('button', { name: /编辑释义与单元/ }).click();
+      await dialog.getByRole('button', { name: /编辑释义与笔记/ }).click();
       await dialog.getByLabel('记忆笔记', { exact: true }).fill(note);
-      assert.equal(await dialog.getByLabel('单元', { exact: true }).isEnabled(), true);
-      await dialog.getByLabel('教材/分类', { exact: true }).fill('家长教材');
-      await dialog.getByLabel('单元', { exact: true }).fill('Unit 3');
+      assert.equal(await dialog.getByLabel('英式音标', { exact: true }).isEnabled(), true);
+      await dialog.getByLabel('英式音标', { exact: true }).fill('test');
       return { dialog, button: dialog.locator('button.ui-button-primary'), action: 'updateWord', method: 'PUT', pathname: `/api/english-words/${entry.id}` };
     }
     if (type === 'category') return { dialog, button: dialog.getByRole('button', { name: /会认读/ }), action: 'setCategories', method: 'PUT', pathname: `/api/english-words/${entry.id}/categories` };
@@ -161,8 +161,7 @@ module.exports = async function checkEnglishModalRaces({ page, base, child, chil
         if (type === 'edit') {
           await fresh.dialog.getByText('新笔记', { exact: true }).waitFor();
           const updated = await api('GET', `/english-words/${entries.get(owner.id).id}`);
-          assert.equal(updated.textbook, '家长教材');
-          assert.equal(updated.unit, 'Unit 3');
+          assert.equal(updated.phonetic_uk, 'test');
         }
         await fresh.dialog.getByRole('button', { name: '关闭', exact: true }).last().click();
       }

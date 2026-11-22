@@ -66,7 +66,7 @@ async function main() {
         input = dialog.getByLabel('汉字或英文', { exact: true });
         await dialog.getByText('英 /ˈrekɔːd/', { exact: true }).waitFor();
         assert.equal(await input.inputValue(), 'record');
-        assert.equal(await dialog.getByLabel('教材/分类（选填）', { exact: true }).isDisabled(), role === 'child');
+        assert.equal(await dialog.getByLabel('收录到词本', { exact: true }).count(), role === 'child' ? 0 : 1);
         await dialog.getByPlaceholder('例如：n. 苹果').fill('课堂记录');
         let arrived, finished;
         let gate = new Promise(resolve => { release = resolve; });

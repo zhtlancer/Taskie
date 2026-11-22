@@ -1,3 +1,4 @@
+const { generationWrite } = require('../utils/data-generation');
 async function charactersRoutes(fastify, options) {
   const { charactersService } = options;
 
@@ -19,15 +20,11 @@ async function charactersRoutes(fastify, options) {
     return reply.send(character);
   });
 
-  fastify.post('/', async (request, reply) => {
-    try {
-      const body = request.body || {};
-      const created = charactersService.createCharacter(body);
-      return reply.code(201).send(created);
-    } catch (err) {
-      return reply.code(err.status || 500).send({ error: err.message || '服务器处理失败，请稍后重试' });
-    }
-  });
+  fastify.post('/', generationWrite(fastify, (request, reply) => {
+    fastify.requireChildAccess(request, request.body?.child_id);
+    reply.code(201);
+    return charactersService.createCharacter(request.body || {}, { role: request.user?.role });
+  }));
 
   fastify.put('/:id/master', async (request, reply) => {
     try {

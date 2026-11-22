@@ -148,6 +148,7 @@
             </div>
           </div>
           <!-- Add to Character Book Button -->
+          <WordBookSelect v-if="!isAlreadyInBook && entry" v-model="selectedBook" class="w-full mb-3" :child-id="childId" language="zh" :disabled="isSubmitting" />
           <button
             v-if="!isAlreadyInBook"
             type="button"
@@ -180,6 +181,7 @@
 
 <script setup>
 import UiDialog from './UiDialog.vue';
+import WordBookSelect from './WordBookSelect.vue';
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import HanziGrid from './HanziGrid.vue';
 import { getCharPinyin, getCharRadical, getCharStrokes, speakHanzi } from '../utils/hanzi';
@@ -220,6 +222,7 @@ const isOpen = computed({
 
 const charInputRef = ref(null);
 const inputRaw = ref(props.initialChar);
+const selectedBook = ref('');
 // The entry is what gets added: the Chinese characters typed, a character or a word.
 const entry = ref(cleanEntry(props.initialChar));
 const composing = ref(false), queryError = ref('');
@@ -266,6 +269,7 @@ onBeforeUnmount(() => {
 });
 
 watch([isOpen, () => props.childId], ([open, id], [, prevId]) => {
+  selectedBook.value = '';
   if (id !== prevId) {
     invalidateSubmission();
     newCategories.value = [];
@@ -393,6 +397,7 @@ async function onAddToBook() {
       strokes: single && strokesCount.value !== '—' ? Number(strokesCount.value) : null,
       radical: single ? radicalInfo.value.radical : null,
       categories: newCategories.value,
+      ...(selectedBook.value ? { book_id: selectedBook.value } : {}),
     });
 
     if (!matches()) return;

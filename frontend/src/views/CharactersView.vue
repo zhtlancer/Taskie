@@ -72,6 +72,8 @@
       <EnglishWordBookPanel v-if="activeBook === 'en'" :child-id="childId" />
 
       <template v-else>
+      <WordBooksPanel v-model="selectedBook" :child-id="childId" language="zh" :entries="characterStore.characters" @changed="loadCharacters" />
+      <input v-model="wordSearch" type="search" aria-label="搜索字词" placeholder="搜索字词、拼音或来源…" class="ui-input block w-full min-w-0 mb-4" />
       <!-- Subheader: Filters & Quick Search Entry -->
       <div class="bg-white dark:bg-slate-900 rounded-2xl p-3 px-4 border border-slate-200/90 dark:border-slate-700/90 shadow-sm mb-4 sm:mb-6 flex flex-wrap items-center justify-between gap-3">
         <!-- Left: Status Filter Capsules -->
@@ -225,6 +227,7 @@
           >
             <span class="min-w-0 flex-1">
               <span class="block text-2xl font-reading text-slate-800 dark:text-slate-100 break-words [overflow-wrap:anywhere]">{{ item.char }}</span>
+              <WordBookTags :books="item.books" />
               <span v-if="globalShowPinyin" class="block text-xs text-brand-600 dark:text-brand-300 break-words [overflow-wrap:anywhere]">
                 {{ item.pinyin || getCharPinyin(item.char) || '—' }}
               </span>
@@ -301,7 +304,7 @@
       @close="closeDetailModal"
       @toggle-master="handleToggleMaster($event, 'detail')"
       @delete="handleDeleteCharacter"
-      @updated="selectedCharacter = { ...$event }"
+      @updated="selectedCharacter = bookEntry($event, selectedBook)"
     />
 
     <!-- 2. Real-time Stroke Lookup & Add Modal -->
@@ -331,6 +334,9 @@ import SoundToggle from '../components/SoundToggle.vue';
 import { playClick } from '../utils/sound';
 import { loadLearningFont } from '../utils/learningFont';
 import { CATEGORIES } from '../utils/wordBook';
+import WordBooksPanel from '../components/WordBooksPanel.vue';
+import WordBookTags from '../components/WordBookTags.vue';
+import { filterBookEntries, bookEntry } from '../utils/wordBookSource';
 
 const route = useRoute();
 const router = useRouter();
@@ -347,6 +353,8 @@ function switchBook(lang) {
 const characterStore = useCharacterStore();
 
 const currentFilter = ref('all');
+const selectedBook = ref('all');
+const wordSearch = ref('');
 const currentCategory = ref(null);
 const globalShowPinyin = ref(false);
 const compact = ref(true);
@@ -374,10 +382,12 @@ const filterOptions = computed(() => [
 
 const filteredCharacters = computed(() => {
   if (!isLoaded.value) return [];
-  let list = characterStore.characters;
+  let list = filterBookEntries(characterStore.characters, selectedBook.value).map(entry => bookEntry(entry, selectedBook.value));
   if (currentFilter.value === 'mastered') list = list.filter((c) => Boolean(c.is_mastered));
   if (currentFilter.value === 'learning') list = list.filter((c) => !c.is_mastered);
   if (currentCategory.value) list = list.filter((c) => c.categories?.includes(currentCategory.value));
+  const query = wordSearch.value.trim().toLowerCase();
+  if (query) list = list.filter(entry => [entry.char, entry.pinyin, ...(entry.books || []).flatMap(book => [book.name, book.source, book.unit])].some(value => value?.toLowerCase().includes(query)));
   return list;
 });
 
@@ -387,6 +397,8 @@ function loadCharacters() {
 }
 
 function resetScope(closeModals = true) {
+  selectedBook.value = 'all';
+  wordSearch.value = '';
   invalidateActions();
   if (closeModals) {
     selectedCharacter.value = null;
@@ -410,7 +422,7 @@ watch(childId, (next, prev) => {
 watch(() => characterStore.characters, (list) => {
   if (!selectedCharacter.value) return;
   const fresh = list.find((c) => c.id === selectedCharacter.value.id);
-  if (fresh) selectedCharacter.value = { ...fresh };
+  if (fresh) selectedCharacter.value = { ...bookEntry(fresh, selectedBook.value) };
 });
 
 onMounted(() => {
@@ -445,6 +457,8 @@ function selectFilter(filterKey) {
 }
 
 function resetFilters() {
+  selectedBook.value = 'all';
+  wordSearch.value = '';
   playClick();
   currentFilter.value = 'all';
   currentCategory.value = null;

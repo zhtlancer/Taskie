@@ -288,8 +288,7 @@ async function main() {
         await page.getByRole('button', { name: '关闭' }).last().click();
 
         // Children may collect words; textbook/unit configuration belongs to parents.
-        assert.equal(await modal.getByPlaceholder('如 Unit 1').isDisabled(), true);
-        assert.equal(await modal.getByPlaceholder('如 人教版三年级').isDisabled(), true);
+        assert.equal(await modal.getByLabel('收录到词本', { exact: true }).count(), 0);
         await modal.getByRole('button', { name: '加入单词本' }).click();
         await page.locator('[data-english-word-card="apple"]').waitFor();
 
@@ -311,8 +310,7 @@ async function main() {
         await page.locator('[data-english-word-card="apple"]').click();
         const childDetail = page.getByRole('dialog', { name: 'apple', exact: true });
         await childDetail.getByRole('button', { name: /编辑释义/ }).click();
-        assert.equal(await childDetail.getByLabel('教材/分类', { exact: true }).isDisabled(), true);
-        assert.equal(await childDetail.getByLabel('单元', { exact: true }).isDisabled(), true);
+        assert.equal(await childDetail.getByLabel('加入已有词本', { exact: true }).count(), 0);
         const apple = (await api('GET', `/english-words?child_id=${child.id}`)).find(word => word.word === 'apple');
         await api('PUT', `/english-words/${apple.id}`, { textbook: '家长新教材', unit: 'Unit 2', expected_version: apple.version });
         await childDetail.getByLabel('记忆笔记', { exact: true }).fill('孩子补充笔记');
@@ -498,7 +496,7 @@ async function main() {
           assert.equal(await detail.getByRole('button', { name: /会认读/ }).getAttribute('aria-pressed'), 'false');
         });
         await raceRead(async () => {
-          await detail.getByRole('button', { name: /编辑释义与单元/ }).click();
+          await detail.getByRole('button', { name: /编辑释义与笔记/ }).click();
           await detail.getByLabel('中文释义', { exact: true }).fill('更正后的释义');
           await detail.getByRole('button', { name: '保存修改', exact: true }).click();
           await detail.getByText('更正后的释义', { exact: true }).waitFor();

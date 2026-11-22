@@ -80,6 +80,7 @@
       </span>
     </button>
 
+    <WordBookTags :books="character.books" />
     <!-- Categories -->
     <div v-if="categories.length" class="flex flex-wrap justify-center gap-1 mt-1">
       <span v-for="category in categories" :key="category.key" class="px-1.5 py-0.5 rounded-md border text-xs font-black" :class="category.chip">
@@ -106,6 +107,7 @@ import { ref, computed, watch } from 'vue';
 import { getCharPinyin, speakHanzi } from '../utils/hanzi';
 import { playClick } from '../utils/sound';
 import { categoryInfo, entryChars } from '../utils/wordBook';
+import WordBookTags from './WordBookTags.vue';
 
 const props = defineProps({
   character: {
