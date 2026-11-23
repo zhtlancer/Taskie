@@ -114,7 +114,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 44;
+const SCHEMA_VERSION = 45;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -124,7 +124,14 @@ function initDb(db) {
   console.log('    [SQLite] 正在执行 schema.sql 初始化/校验数据表结构...');
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-  db.exec(schemaSql);
+  // These guards reference bilingual day columns that do not exist until older upgrades finish.
+  const scopeTriggers = [];
+  const startupSchema = schemaSql.replace(/CREATE TRIGGER IF NOT EXISTS word_study_day_scope\w+[\s\S]*?\nEND;/g, sql => { scopeTriggers.push(sql); return ''; });
+  if (found < 45) for (const sql of scopeTriggers) {
+    const name = sql.match(/CREATE TRIGGER IF NOT EXISTS (\w+)/)[1];
+    db.exec(`DROP TRIGGER IF EXISTS ${name}`);
+  }
+  db.exec(startupSchema);
   // Versioned, idempotent upgrades preserve existing NAS data. They add columns to existing tables;
   // new tables belong in schema.sql (see its header).
   if (db.pragma('user_version', { simple: true }) < 1) {
@@ -800,6 +807,21 @@ function initDb(db) {
       db.pragma('user_version = 44');
     })();
   }
+  // v45: keep legacy filters explicit; book-scoped days freeze their full candidate membership.
+  if (db.pragma('user_version', { simple: true }) < 45) {
+    db.transaction(() => {
+      const { SCOPE_COLUMNS, DAY_SCOPE_COLUMNS, validateWordStudyScopes } = require('./word-study-scope-constraints');
+      for (const [table, definitions] of [['word_study_plans', SCOPE_COLUMNS], ['word_study_days', DAY_SCOPE_COLUMNS]]) {
+        const columns = db.pragma(`table_info(${table})`).map(column => column.name);
+        for (const [name, definition] of Object.entries(definitions)) if (!columns.includes(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
+        db.exec(`UPDATE ${table} SET scope_mode = 'legacy' WHERE language = 'en' AND (COALESCE(trim(textbook), '') != '' OR json_array_length(units) > 0)`);
+      }
+      for (const sql of scopeTriggers) db.exec(sql);
+      validateWordStudyScopes(db);
+      db.pragma('user_version = 45');
+    })();
+  }
+  if (found >= 45) for (const sql of scopeTriggers) db.exec(sql);
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new

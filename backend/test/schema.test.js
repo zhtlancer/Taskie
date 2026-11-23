@@ -20,6 +20,7 @@ function describeSchema(db) {
 test('a database upgraded from v14 ends with the same schema as a fresh one', () => {
   const fresh = getDb(':memory:');
   const legacy = getDb(':memory:');
+  require('./legacy-word-study-scope-fixture')(legacy);
   // Undo what later migrations and their schema.sql tables add, as a v14 database would look.
   legacy.exec('DROP TABLE study_completion_requests');
   legacy.exec(`DROP TABLE outside_class_changes; ALTER TABLE children DROP COLUMN session_epoch; DROP TABLE outside_class_fees; DROP TABLE outside_class_attendance; DROP INDEX idx_point_logs_study_batch; DROP INDEX idx_daily_tasks_study_day; DROP INDEX idx_point_logs_daily_task;

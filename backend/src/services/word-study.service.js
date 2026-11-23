@@ -3,6 +3,7 @@ const { getTodayDate, formatDate, parseDate, shiftDate, getDayOfWeek } = require
 const { CATEGORIES: ZH_CATEGORIES } = require('./characters.service');
 const { ENGLISH_CATEGORIES, normalizeMetaText } = require('../utils/english-word');
 const { cancelPendingSkips } = require('../utils/skips');
+const { scopeConfig, currentBookScope, frozenBookScope, bookIds } = require('../utils/word-study-scope');
 
 const LANGUAGES = ['zh', 'en'];
 const INTERVALS = [1, 3, 7, 14, 30];
@@ -53,7 +54,9 @@ class WordStudyService {
         days_of_week: parseList(plan.days_of_week),
         categories: parseList(plan.categories),
         textbook: plan.textbook || null,
-        units: parseList(plan.units)
+        units: parseList(plan.units),
+        book_ids: parseList(plan.book_ids),
+        scope_invalid: plan.scope_mode === 'books' && !parseList(plan.book_ids).length
       }));
   }
 
@@ -102,6 +105,7 @@ class WordStudyService {
       if (!Array.isArray(plan.units)) throw fail(400, '单元筛选格式无效');
       cleanUnits = [...new Set(plan.units.map(u => normalizeMetaText(u)).filter(Boolean))];
     }
+    const scope = scopeConfig(this.db, childId, lang, data, previous, cleanTextbook, cleanUnits);
 
     parseDate(plan.start_date);
     if (!previous && (plan.start_date < getTodayDate() || plan.start_date > shiftDate(getTodayDate(), 366))) {
@@ -117,8 +121,8 @@ class WordStudyService {
       this.db.prepare(`
         INSERT INTO word_study_plans
           (id, child_id, language, skill, enabled, start_date, days_of_week, categories, include_mastered,
-           new_target, review_target, required, points, extra_points, extra_reward_limit, textbook, units, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           new_target, review_target, required, points, extra_points, extra_reward_limit, textbook, units, created_at, scope_mode, book_ids)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(child_id, language, skill) DO UPDATE SET
           enabled = excluded.enabled,
           days_of_week = excluded.days_of_week,
@@ -131,7 +135,9 @@ class WordStudyService {
           extra_points = excluded.extra_points,
           extra_reward_limit = excluded.extra_reward_limit,
           textbook = excluded.textbook,
-          units = excluded.units
+          units = excluded.units,
+          scope_mode = excluded.scope_mode,
+          book_ids = excluded.book_ids
       `).run(
         previous?.id || generateId(),
         childId,
@@ -148,9 +154,9 @@ class WordStudyService {
         plan.points,
         plan.extra_points,
         plan.extra_reward_limit,
-        cleanTextbook,
-        JSON.stringify(cleanUnits),
-        new Date().toISOString()
+        scope.textbook,
+        JSON.stringify(scope.units),
+        new Date().toISOString(), scope.scope_mode, JSON.stringify(scope.book_ids)
       );
       this.ensureScheduled(childId);
     })();
@@ -160,10 +166,19 @@ class WordStudyService {
   pool(planOrDay, date, cutoff = null) {
     const lang = planOrDay.language || 'zh';
     const selectedCategories = parseList(planOrDay.categories);
+    const scoped = planOrDay.scope_mode === 'books', frozen = scoped && Boolean(planOrDay.plan_id);
+    const currentScope = scoped && !frozen ? currentBookScope(this.db, planOrDay.child_id, lang, planOrDay.book_ids) : null;
+    const members = frozen ? frozenBookScope(this.db, planOrDay) : currentScope?.members;
+    const included = row => !scoped || (members.has(row.id) && !members.get(row.id).error);
+    const withSource = row => scoped ? { ...row,
+      ...(lang === 'zh' ? { pinyin: members.get(row.id).pinyin } : {}),
+      source_book_id: members.get(row.id).source_book_id, source_book_name: members.get(row.id).source_book_name } : row;
+    const books = currentScope?.books || (frozen ? parseList(planOrDay.scope_books) : []);
 
     if (lang === 'en') {
-      const cleanTextbook = normalizeMetaText(planOrDay.textbook);
-      const selectedUnits = parseList(planOrDay.units);
+      const legacy = !planOrDay.scope_mode || planOrDay.scope_mode === 'legacy';
+      const cleanTextbook = legacy ? normalizeMetaText(planOrDay.textbook) : null;
+      const selectedUnits = legacy ? parseList(planOrDay.units) : [];
 
       const rows = this.db.prepare(`
         SELECT w.*, s.id AS state_id, s.stage, s.next_due_date, s.last_review_date, COALESCE(s.failures, 0) AS failures
@@ -176,13 +191,13 @@ class WordStudyService {
       const baseFiltered = rows.filter(row =>
         formatDate(new Date(row.created_at)) <= date &&
         (!cutoff || row.created_at <= cutoff) &&
-        (row.state_id || planOrDay.include_mastered || !row.is_mastered) &&
-        (!selectedCategories.length || selectedCategories.some(cat => parseList(row.categories).includes(cat))) &&
+        (frozen || row.state_id || planOrDay.include_mastered || !row.is_mastered) &&
+        (frozen || !selectedCategories.length || selectedCategories.some(cat => parseList(row.categories).includes(cat))) &&
         (!cleanTextbook || row.textbook === cleanTextbook) &&
-        (!selectedUnits.length || selectedUnits.includes(row.unit))
-      );
+        (!selectedUnits.length || selectedUnits.includes(row.unit)) && included(row)
+      ).map(withSource);
 
-      let excludedNoDef = 0;
+      let excludedNoDef = frozen ? planOrDay.scope_excluded_no_definition : 0;
       const eligible = [];
       for (const row of baseFiltered) {
         const hasDef = Boolean((row.definition_zh && row.definition_zh.trim()) || (row.definition_en && row.definition_en.trim()));
@@ -200,7 +215,9 @@ class WordStudyService {
         fresh: eligible.filter(row => !row.state_id).sort((a, b) => priority(b) - priority(a)),
         early: eligible.filter(row => row.state_id && row.next_due_date > date && row.last_review_date !== date)
           .sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)),
-        excluded_no_definition: excludedNoDef
+        excluded_no_definition: excludedNoDef,
+        excluded_invalid_pinyin: 0,
+        scope_items: eligible, scope_books: books
       };
     }
 
@@ -209,12 +226,13 @@ class WordStudyService {
       FROM characters c LEFT JOIN word_study_states s ON s.character_id = c.id AND s.skill = ?
       WHERE c.child_id = ? ORDER BY c.created_at, c.id
     `).all(planOrDay.skill, planOrDay.child_id);
-    const eligible = rows.filter(row =>
+    const baseFiltered = rows.filter(row =>
       formatDate(new Date(row.created_at)) <= date &&
       (!cutoff || row.created_at <= cutoff) &&
-      (row.state_id || planOrDay.include_mastered || !row.is_mastered) &&
-      (!selectedCategories.length || selectedCategories.some(category => parseList(row.categories).includes(category)))
+      (frozen || row.state_id || planOrDay.include_mastered || !row.is_mastered) &&
+      (frozen || !selectedCategories.length || selectedCategories.some(category => parseList(row.categories).includes(category)))
     );
+    const eligible = baseFiltered.filter(included).map(withSource);
     const priority = row => row.failures * 4 + (parseList(row.categories).includes('error_prone') ? 2 : 0) +
       (planOrDay.skill === 'write' && parseList(row.categories).includes('fix_strokes') ? 1 : 0);
     return {
@@ -223,7 +241,9 @@ class WordStudyService {
       fresh: eligible.filter(row => !row.state_id).sort((a, b) => priority(b) - priority(a)),
       early: eligible.filter(row => row.state_id && row.next_due_date > date && row.last_review_date !== date)
         .sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)),
-      excluded_no_definition: 0
+      excluded_no_definition: 0,
+      excluded_invalid_pinyin: frozen ? planOrDay.scope_excluded_pinyin : scoped ? baseFiltered.filter(row => members.get(row.id)?.error).length : 0,
+      scope_items: eligible, scope_books: books
     };
   }
 
@@ -264,7 +284,7 @@ class WordStudyService {
         let from = plan.last_scheduled_date ? shiftDate(plan.last_scheduled_date, 1) : plan.start_date;
         if (from > today) from = today;
         for (let date = from; date <= today; date = shiftDate(date, 1)) {
-          if (!plan.enabled || date < plan.start_date || !parseList(plan.days_of_week).includes(getDayOfWeek(date)) ||
+          if (!plan.enabled || (plan.scope_mode === 'books' && !parseList(plan.book_ids).length) || date < plan.start_date || !parseList(plan.days_of_week).includes(getDayOfWeek(date)) ||
             this.db.prepare('SELECT id FROM word_study_days WHERE plan_id = ? AND date = ?').get(plan.id, date)) continue;
           const pool = this.pool(plan, date);
           const candidates = [...pool.review.slice(0, plan.review_target), ...pool.fresh.slice(0, plan.new_target)];
@@ -272,8 +292,9 @@ class WordStudyService {
           const day = { ...plan, language: lang, id: generateId(), date };
           this.db.prepare(`
             INSERT INTO word_study_days
-              (id, plan_id, child_id, language, date, skill, categories, include_mastered, required, points, extra_points, extra_reward_limit, textbook, units, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              (id, plan_id, child_id, language, date, skill, categories, include_mastered, required, points, extra_points, extra_reward_limit, textbook, units, created_at,
+               scope_mode, book_ids, scope_books, scope_excluded_no_definition, scope_excluded_pinyin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             day.id,
             plan.id,
@@ -289,8 +310,15 @@ class WordStudyService {
             plan.extra_reward_limit,
             plan.textbook,
             plan.units,
-            new Date().toISOString()
+            new Date().toISOString(), plan.scope_mode, plan.book_ids, JSON.stringify(pool.scope_books), pool.excluded_no_definition, pool.excluded_invalid_pinyin
           );
+          if (plan.scope_mode === 'books') {
+            const snapshot = this.db.prepare(`INSERT INTO word_study_day_scope_items
+              (id, day_id, language, source_id, character_id, english_word_id, text, pinyin, source_book_id, source_book_name, position)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+            pool.scope_items.forEach((row, position) => snapshot.run(generateId(), day.id, lang, row.id, lang === 'zh' ? row.id : null, lang === 'en' ? row.id : null,
+              row.char || row.word, lang === 'zh' ? row.pinyin : null, row.source_book_id, row.source_book_name, position));
+          }
           this.insertBatch(day, candidates, false);
           if (candidates.length) {
             this.db.prepare(`
@@ -342,6 +370,7 @@ class WordStudyService {
       ...day,
       language: lang,
       required: Boolean(day.required),
+      book_ids: parseList(day.book_ids), scope_books: parseList(day.scope_books),
       title: title(day.skill, lang),
       batches,
       base_done: Boolean(base?.completed_at),
@@ -351,6 +380,7 @@ class WordStudyService {
       remaining_new: remainingNew,
       remaining_early: remainingEarly,
       excluded_no_definition: pool.excluded_no_definition,
+      excluded_invalid_pinyin: pool.excluded_invalid_pinyin,
       extra_rewarded: batches.filter(batch => batch.is_extra && batch.points > 0).length
     };
   }
@@ -360,10 +390,10 @@ class WordStudyService {
     this.plans(childId, lang);
     this.ensureScheduled(childId);
     const todayDate = getTodayDate();
-    const plans = this.plans(childId, lang).map(plan => ({
-      ...plan,
-      excluded_no_definition: lang === 'en' ? this.pool(plan, todayDate).excluded_no_definition : 0
-    }));
+    const plans = this.plans(childId, lang).map(plan => {
+      const pool = this.pool(plan, todayDate);
+      return { ...plan, excluded_no_definition: pool.excluded_no_definition, excluded_invalid_pinyin: pool.excluded_invalid_pinyin };
+    });
     const missingDefCount = lang === 'en'
       ? this.db.prepare(`
           SELECT COUNT(*) AS n FROM english_words
@@ -381,6 +411,14 @@ class WordStudyService {
         .all(childId, lang, todayDate)
         .map(day => this.describeDay(day.id))
     };
+  }
+
+  previewScope(childId, language, ids) {
+    const lang = normalizeLanguage(language);
+    if (!this.db.prepare('SELECT 1 FROM children WHERE id = ?').get(childId)) throw fail(404, '孩子不存在');
+    const scope = currentBookScope(this.db, childId, lang, bookIds(ids));
+    return { books: scope.books, total_count: scope.members.size, conflict_count: scope.conflicts.length,
+      conflicts: scope.conflicts.slice(0, 200), invalid_count: scope.invalid.length, invalid: scope.invalid.slice(0, 200) };
   }
 
   extra(id, requestId) {

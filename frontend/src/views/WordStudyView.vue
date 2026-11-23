@@ -40,6 +40,9 @@
       <p v-if="hasOverview && language === 'en' && missingDefinitionCount > 0" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-bold text-amber-800 dark:text-amber-200">
         有 {{ missingDefinitionCount }} 个缺少释义的单词暂未纳入英语学习池，可在“英语单词本”补充释义。
       </p>
+      <p v-for="plan in scopeNotices" v-show="hasOverview" :key="plan.skill" class="rounded-xl bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-amber-800 dark:text-amber-200">
+        {{ skillName(plan.skill) }}：{{ plan.scope_invalid ? '所选词本已不可用，等待家长重新配置范围；当天已有清单仍可继续。' : `有 ${plan.excluded_invalid_pinyin} 项拼音需补全，暂不进入新清单。` }}
+      </p>
       <p v-if="error" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ error }}</p>
       <p v-if="notice" role="status" class="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ notice }}</p>
       <PageState v-if="!calendar.ready" :kind="calendar.error ? 'error' : 'loading'" :title="calendar.error ? '家庭日期未能确认' : '正在确认家庭日期…'" :description="calendar.error" :busy="calendar.loading" @retry="calendar.load({ force: true })" />
@@ -62,6 +65,7 @@
         <section v-for="day in visibleDays" :key="day.id" :data-study-day-skill="day.skill" class="bg-white dark:bg-slate-900 border rounded-2xl p-4 space-y-3">
           <div class="flex justify-between gap-3"><h2 class="font-black text-slate-800 dark:text-slate-100">{{ day.title }}</h2><span class="text-xs font-bold" :class="day.base_done ? 'text-emerald-600 dark:text-emerald-300' : 'text-brand-600 dark:text-brand-300'">{{ day.base_done ? '基础目标已完成 ✓' : `基础目标 ${day.base_completed}/${day.base_total}` }}</span></div>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ day.date }} · {{ skillName(day.skill) }}</p>
+          <p v-if="day.scope_mode === 'books'" class="text-xs text-slate-500 dark:text-slate-400 [overflow-wrap:anywhere]">当天词本：{{ day.scope_books.map(book => book.name).join('、') }}；加练使用当天已固定的字词范围。</p>
           <p class="text-xs text-slate-500 dark:text-slate-400">{{ day.required ? '每日必做' : '可选学习' }} · 新学 {{ baseCount(day, 'new') }} 项，复习 {{ baseCount(day, 'review') }} 项 · 基础完成 +{{ day.points }} 分</p>
           <p class="text-xs text-amber-700 dark:text-amber-300">基础清单以外：还有 {{ day.remaining_due }} 项到期复习、{{ day.remaining_new }} 项待新学。达标不代表已复习完全部内容。</p>
           <button v-if="day.batches.some(batch => !batch.completed_at)" :disabled="busy" class="w-full min-h-[48px] rounded-xl bg-brand-500 text-white font-bold disabled:opacity-50" @click="begin(day, day.batches.find(batch => !batch.completed_at))">开始 / 继续学习 →</button>
@@ -270,6 +274,7 @@ const language = ref(route.query.language === 'en' ? 'en' : 'zh');
 const calendar = useCalendarStore();
 const asParent = ref(currentRole() === 'parent');
 const days = ref([]), history = ref([]), date = ref(''), missingDefinitionCount = ref(0);
+const scopeNotices = ref([]);
 const selectedSkill = computed(() => ['recognize', 'write'].includes(route.query.skill) ? route.query.skill : '');
 const visibleDays = computed(() => days.value.filter(day => !selectedSkill.value || day.skill === selectedSkill.value));
 const visibleHistory = computed(() => history.value.filter(entry => !selectedSkill.value || entry.skill === selectedSkill.value));
@@ -310,7 +315,7 @@ function resetStudyScope() {
   resetEnglishAudio(); active.value = null; pendingAttempt.value = null;
   pendingItemId.value = null; attemptUnknown.value = false; confirmedAttempt.value = false;
   busy.value = false; error.value = ''; notice.value = '';
-  days.value = []; history.value = []; date.value = ''; missingDefinitionCount.value = 0;
+  days.value = []; history.value = []; date.value = ''; missingDefinitionCount.value = 0; scopeNotices.value = [];
   hasOverview.value = false; hasHistory.value = false;
   loading.value = false; refreshing.value = false; studyReadError.value = '';
   historyLoading.value = false; historyError.value = ''; recoveredDeviceDate.value = '';
@@ -418,6 +423,7 @@ async function load({ recoverDate = false, includeHistory = true } = {}) {
     days.value = overview.days;
     date.value = overview.date;
     missingDefinitionCount.value = overview.missing_definition_count || 0;
+    scopeNotices.value = (overview.plans || []).filter(plan => plan.scope_invalid || plan.excluded_invalid_pinyin);
     hasOverview.value = true;
     if (!includeHistory) refreshHistory();
   } catch (err) {

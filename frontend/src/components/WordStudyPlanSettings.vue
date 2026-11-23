@@ -141,8 +141,11 @@
           </div>
         </div>
 
-        <!-- English Textbook & Unit scope -->
-        <div v-if="language === 'en'" class="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <WordStudyScopeSelector :child-id="childId" :language="language" :allow-legacy="forms[skill].legacy_available"
+          :model-value="{ scope_mode: forms[skill].scope_mode, book_ids: forms[skill].book_ids }" @update:model-value="Object.assign(forms[skill], $event)" />
+        <p v-if="forms[skill].excluded_invalid_pinyin" class="text-xs text-amber-700 dark:text-amber-300">当前范围有 {{ forms[skill].excluded_invalid_pinyin }} 项拼音需补全，暂不进入新清单。</p>
+        <!-- Existing textbook/unit scopes remain explicit until a parent chooses a new range. -->
+        <div v-if="language === 'en' && forms[skill].scope_mode === 'legacy'" class="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
           <label class="block text-xs font-bold text-slate-500 dark:text-slate-400">
             限定教材（选填，留空为不限）：
             <select
@@ -193,6 +196,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import PageState from './ParentPageState.vue';
+import WordStudyScopeSelector from './WordStudyScopeSelector.vue';
 import api from '../api/client';
 import { CATEGORIES as ZH_CATEGORIES } from '../utils/wordBook';
 import { ENGLISH_CATEGORIES } from '../utils/englishWord';
@@ -242,6 +246,7 @@ const defaultForm = (lang, skill, dateFallback = '') => ({
   categories: lang === 'en' ? [skill] : [],
   textbook: '',
   units: [],
+  scope_mode: 'all', book_ids: [], legacy_available: false, excluded_invalid_pinyin: 0,
   start_date: dateFallback || serverDate.value || calendar.today || ''
 });
 
@@ -341,6 +346,8 @@ async function load() {
         categories: [...(plan.categories || [])],
         textbook: plan.textbook || '',
         units: [...(plan.units || [])],
+        scope_mode: plan.scope_mode || 'all', book_ids: [...(plan.book_ids || [])], legacy_available: plan.scope_mode === 'legacy',
+        excluded_invalid_pinyin: plan.excluded_invalid_pinyin || 0,
         start_date: plan.start_date
       };
     }
@@ -379,13 +386,17 @@ async function save(skill) {
       extra_reward_limit: Number(f.extra_reward_limit) || 0,
       days_of_week: f.days_of_week,
       categories: f.categories,
-      textbook: targetLang === 'en' ? f.textbook || null : null,
-      units: targetLang === 'en' ? f.units : [],
+      scope_mode: f.scope_mode, book_ids: [...f.book_ids],
+      textbook: targetLang === 'en' && f.scope_mode === 'legacy' ? f.textbook || null : null,
+      units: targetLang === 'en' && f.scope_mode === 'legacy' ? f.units : [],
       start_date: f.start_date
     }, targetLang, REQUEST_OPTIONS);
     if (matchesScope()) {
       forms.value[skill].exists = true;
       forms.value[skill].start_date = saved.start_date;
+      forms.value[skill].scope_mode = saved.scope_mode;
+      forms.value[skill].book_ids = [...saved.book_ids];
+      forms.value[skill].legacy_available = saved.scope_mode === 'legacy';
       skillNotices.value[skill] = '计划已保存，并按约定生效。';
     }
   } catch (err) {

@@ -777,3 +777,56 @@ CREATE TABLE IF NOT EXISTS word_import_receipts (
   CHECK((book_id IS NULL AND book_name IS NULL) OR (actor = 'parent' AND book_id IS NOT NULL AND book_name IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS idx_word_import_receipts_child ON word_import_receipts(child_id, language, created_at);
+
+CREATE TABLE IF NOT EXISTS word_study_day_scope_items (
+  id TEXT PRIMARY KEY NOT NULL,
+  day_id TEXT NOT NULL REFERENCES word_study_days(id) ON DELETE CASCADE,
+  language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+  source_id TEXT NOT NULL,
+  character_id TEXT REFERENCES characters(id) ON DELETE SET NULL,
+  english_word_id TEXT REFERENCES english_words(id) ON DELETE SET NULL,
+  text TEXT NOT NULL,
+  pinyin TEXT,
+  source_book_id TEXT NOT NULL,
+  source_book_name TEXT NOT NULL,
+  position INTEGER NOT NULL CHECK(typeof(position) = 'integer' AND position >= 0),
+  CHECK((language = 'zh' AND english_word_id IS NULL AND pinyin IS NOT NULL AND (character_id IS NULL OR character_id = source_id)) OR
+        (language = 'en' AND character_id IS NULL AND pinyin IS NULL AND (english_word_id IS NULL OR english_word_id = source_id))),
+  UNIQUE(day_id, source_id),
+  UNIQUE(day_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_word_study_day_scope_character ON word_study_day_scope_items(character_id);
+CREATE INDEX IF NOT EXISTS idx_word_study_day_scope_english ON word_study_day_scope_items(english_word_id);
+CREATE TRIGGER IF NOT EXISTS word_study_day_scope_insert BEFORE INSERT ON word_study_day_scope_items
+BEGIN
+  SELECT RAISE(ABORT, 'study scope owner mismatch') WHERE NOT EXISTS (
+    SELECT 1 FROM word_study_days d WHERE d.id = NEW.day_id AND d.language = NEW.language AND
+      ((NEW.character_id IS NULL AND NEW.english_word_id IS NULL) OR
+       (NEW.language = 'zh' AND EXISTS (SELECT 1 FROM characters c WHERE c.id = NEW.character_id AND c.child_id = d.child_id)) OR
+       (NEW.language = 'en' AND EXISTS (SELECT 1 FROM english_words w WHERE w.id = NEW.english_word_id AND w.child_id = d.child_id)))
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS word_study_day_scope_update BEFORE UPDATE ON word_study_day_scope_items
+BEGIN
+  SELECT RAISE(ABORT, 'study scope owner mismatch') WHERE NOT EXISTS (
+    SELECT 1 FROM word_study_days d WHERE d.id = NEW.day_id AND d.language = NEW.language AND
+      ((NEW.character_id IS NULL AND NEW.english_word_id IS NULL) OR
+       (NEW.language = 'zh' AND EXISTS (SELECT 1 FROM characters c WHERE c.id = NEW.character_id AND c.child_id = d.child_id)) OR
+       (NEW.language = 'en' AND EXISTS (SELECT 1 FROM english_words w WHERE w.id = NEW.english_word_id AND w.child_id = d.child_id)))
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS word_study_day_scope_owner BEFORE UPDATE OF child_id, language ON word_study_days
+WHEN (NEW.child_id != OLD.child_id OR NEW.language != OLD.language) AND EXISTS (SELECT 1 FROM word_study_day_scope_items WHERE day_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'study scope owner is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS word_study_day_scope_character_owner BEFORE UPDATE OF child_id ON characters
+WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_study_day_scope_items WHERE character_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'study scope source owner is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS word_study_day_scope_english_owner BEFORE UPDATE OF child_id ON english_words
+WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_study_day_scope_items WHERE english_word_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'study scope source owner is immutable');
+END;

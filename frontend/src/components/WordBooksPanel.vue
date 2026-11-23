@@ -99,9 +99,17 @@ async function save() {
 async function removeBook() {
   if (busy.value || !editor.value?.id) return;
   const matches = capture(), target = { ...editor.value };
-  if (!await confirmAction('删除词本只移除归属，字词与学习记录会保留，确定删除吗？') || !matches()) return;
   busy.value = true; actionError.value = '';
-  try { await api.deleteWordBook(target.id, target.version, BOOK_REQUEST, generation); if (matches()) { editor.value = null; changed(); emit('update:modelValue', 'all'); } }
+  try {
+    const latest = await api.getWordBook(target.id, undefined, BOOK_REQUEST);
+    if (!matches()) return;
+    if (latest.version !== target.version) throw new Error('词本已被修改，请关闭后重新读取，再核对是否删除。');
+    busy.value = false;
+    if (!await confirmAction(`删除词本只移除归属，字词与学习记录会保留。${latest.plan_count ? `有 ${latest.plan_count} 个学习计划引用本词本；删除后会移除该范围，选本为空的计划等待重新配置。` : ''}当天已有清单不变，确定删除吗？`) || !matches()) return;
+    busy.value = true;
+    await api.deleteWordBook(target.id, target.version, BOOK_REQUEST, generation);
+    if (matches()) { editor.value = null; changed(); emit('update:modelValue', 'all'); }
+  }
   catch (err) { if (matches()) actionError.value = err?.message || String(err); }
   finally { if (matches()) busy.value = false; }
 }

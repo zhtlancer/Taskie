@@ -5,10 +5,22 @@ async function wordStudyRoutes(app, { wordStudyService: study }) {
     try { return fn(request); }
     catch (error) { return reply.code(error.status || error.statusCode || 500).send({ error: error.message || '学习操作失败' }); }
   };
-  app.get('/children/:id/word-study', handle(request => study.today(request.params.id, request.query?.language)));
+  app.get('/children/:id/word-study', generationWrite(app, request => {
+    app.requireChildAccess(request, request.params.id);
+    return study.today(request.params.id, request.query?.language);
+  }));
   app.get('/children/:id/word-study/history', handle(request => study.history(request.params.id, request.query?.language)));
-  app.put('/children/:id/word-study/plans/:skill', handle(request => study.savePlan(request.params.id, request.params.skill, request.body || {}, request.query?.language)));
-  app.put('/children/:id/word-study/:language/plans/:skill', handle(request => study.savePlan(request.params.id, request.params.skill, request.body || {}, request.params.language)));
+  const savePlan = generationWrite(app, request => {
+    if (request.user.role !== 'parent') throw { status: 403, message: '需要家长权限' };
+    app.requireChildAccess(request, request.params.id);
+    return study.savePlan(request.params.id, request.params.skill, request.body || {}, request.params.language ?? request.query?.language);
+  });
+  app.put('/children/:id/word-study/plans/:skill', savePlan);
+  app.put('/children/:id/word-study/:language/plans/:skill', savePlan);
+  app.post('/children/:id/word-study/:language/book-scope', handle(request => {
+    app.requireChildAccess(request, request.params.id);
+    return study.previewScope(request.params.id, request.params.language, request.body?.book_ids);
+  }));
   app.post('/word-study/days/:id/extra', generationWrite(app, request => {
     app.requireChildAccess(request, study.getDay(request.params.id).child_id);
     return study.extra(request.params.id, request.body?.request_id);

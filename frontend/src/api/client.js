@@ -190,7 +190,7 @@ export const api = {
   getWordStudyHistory: (id, language = 'zh', signal, options) => get(`/children/${id}/word-study/history`, language === 'en' ? { language: 'en' } : undefined, signal, options),
   saveWordStudyPlan: (id, skill, data, language = data?.language || 'zh', options) => put(
     language === 'en' ? `/children/${id}/word-study/en/plans/${skill}` : `/children/${id}/word-study/plans/${skill}`,
-    data, options
+    data, { ...options, headers: generationHeaders(getDataGeneration()) }
   ),
   addWordStudyExtra: (id, requestId) => idempotentPost(`/word-study/days/${id}/extra`, { request_id: requestId }),
   gradeWordStudyItem: (id, data) => idempotentPost(`/word-study/items/${id}/attempts`, data, {
@@ -199,6 +199,7 @@ export const api = {
     silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
   }),
   getWordBooks: (childId, language, params = {}, signal, options) => get('/word-books', { child_id: childId, language, ...params }, signal, options),
+  getWordBook: (id, signal, options) => get(`/word-books/${id}`, undefined, signal, options),
   getWordBookItems: (id, params = {}, signal, options) => get(`/word-books/${id}/items`, params, signal, options),
   createWordBook: (data, options) => idempotentPost('/word-books', data, options),
   updateWordBook: (id, data, options, generation) => put(`/word-books/${id}`, data, { ...options, headers: generationHeaders(generation) }),
@@ -232,6 +233,7 @@ export const api = {
     const response = await client.get(apiPath, { responseType: 'blob', signal, silentError: true, preserveError: true, timeout: requestTimeout(apiPath) });
     return response.data;
   },
+  previewWordStudyScope: (childId, language, bookIds, options) => post(`/children/${childId}/word-study/${language}/book-scope`, { book_ids: bookIds }, options),
   getCharacters: (id, mastered = null, signal, options) => get('/characters', { child_id: id, is_mastered: mastered === null ? undefined : Number(Boolean(mastered)) }, signal, options),
   getCharacter: (id, signal, options) => get(`/characters/${id}`, undefined, signal, options),
   createCharacter: (data, options) => post('/characters', data, options),

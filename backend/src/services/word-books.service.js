@@ -28,7 +28,9 @@ class WordBooksService {
     const book = this.db.prepare('SELECT * FROM word_books WHERE id = ?').get(id);
     if (!book) throw fail(404, '词本不存在，可能已被删除');
     access(actor, book.child_id, write);
-    return publicBook(book);
+    const plan_count = this.db.prepare(`SELECT COUNT(*) n FROM word_study_plans p WHERE p.child_id = ? AND p.language = ? AND p.scope_mode = 'books'
+      AND EXISTS (SELECT 1 FROM json_each(p.book_ids) WHERE value = ?)`).get(book.child_id, book.language, book.id).n;
+    return { ...publicBook(book), plan_count };
   }
   list(query, actor) {
     const { child_id, language } = query;
@@ -39,6 +41,8 @@ class WordBooksService {
       (SELECT COUNT(*) FROM word_book_items i WHERE i.book_id = b.id) AS item_count,
       (SELECT COUNT(*) FROM word_book_items i LEFT JOIN characters c ON c.id = i.character_id
         LEFT JOIN english_words w ON w.id = i.english_word_id WHERE i.book_id = b.id AND COALESCE(c.is_mastered, w.is_mastered, 0) = 0) AS unmastered_count
+      , (SELECT COUNT(*) FROM word_study_plans p WHERE p.child_id = b.child_id AND p.language = b.language AND p.scope_mode = 'books'
+        AND EXISTS (SELECT 1 FROM json_each(p.book_ids) WHERE value = b.id)) AS plan_count
       FROM word_books b WHERE b.child_id = ? AND b.language = ? ORDER BY b.created_at, b.id LIMIT ? OFFSET ?`)
       .all(child_id, language, size, start).map(publicBook);
     return { items, total, next_offset: start + items.length < total ? start + items.length : null };
@@ -64,9 +68,15 @@ class WordBooksService {
     return this.get(id, actor);
   }
   remove(id, data, actor) {
-    const book = this.get(id, actor, true); version(data.expected_version, book.version);
-    this.db.prepare('DELETE FROM word_books WHERE id = ?').run(id);
-    return { success: true };
+    return this.db.transaction(() => {
+      const book = this.get(id, actor, true); version(data.expected_version, book.version);
+      for (const plan of this.db.prepare("SELECT id, book_ids FROM word_study_plans WHERE child_id = ? AND language = ? AND scope_mode = 'books'").all(book.child_id, book.language)) {
+        const ids = JSON.parse(plan.book_ids);
+        if (ids.includes(id)) this.db.prepare('UPDATE word_study_plans SET book_ids = ? WHERE id = ?').run(JSON.stringify(ids.filter(value => value !== id)), plan.id);
+      }
+      this.db.prepare('DELETE FROM word_books WHERE id = ?').run(id);
+      return { success: true };
+    })();
   }
   item(bookId, itemId, actor, write = false) {
     const book = this.get(bookId, actor, write);
