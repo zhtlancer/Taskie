@@ -41,6 +41,15 @@ test('duplicate validation wins over an old preview; failed retries keep selecte
   assert.equal(duplicate[0].existing_id, 'new-id');
 });
 
+test('link-only preview keeps deselection, current identity and existing validation without restoring old word content', () => {
+  const previous = mergeEnglishBatchPreview([], [{ word: 'May', status: 'manual', definition_zh: '不应写回' }]);
+  const linked = mergeEnglishBatchPreview(previous, [{ word: 'May', status: 'link', existing_id: 'current-id' }]);
+  assert.equal(linked[0].include, true); assert.notEqual(linked[0].definition_zh, '不应写回');
+  linked[0].include = false;
+  assert.equal(mergeEnglishBatchPreview(linked, [{ word: 'May', status: 'link', existing_id: 'new-id' }])[0].include, false);
+  assert.equal(mergeEnglishBatchPreview(linked, [{ word: 'May', status: 'in_book', existing_id: 'current-id' }])[0].include, false);
+});
+
 test('dictionary read states distinguish missing resources, unready indexes, misses and missing audio', () => {
   assert.equal(dictionaryLookupNotice({ available: false }, null).code, 'DICTIONARY_UNCONFIGURED');
   assert.equal(dictionaryLookupNotice({ available: true, index_ready: false }, null).code, 'DICTIONARY_NOT_READY');

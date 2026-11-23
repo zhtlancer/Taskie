@@ -298,8 +298,7 @@ async function main() {
         // Open Batch Import Modal & preview book + apple (dup) + customword (manual)
         await page.getByRole('button', { name: /批量导入/ }).click();
         const batchDlg = page.getByRole('dialog', { name: '批量导入英语单词' });
-        assert.equal(await batchDlg.getByPlaceholder('如 Unit 2').isDisabled(), true);
-        assert.equal(await batchDlg.getByPlaceholder('如 人教版四年级').isDisabled(), true);
+        assert.equal(await batchDlg.getByLabel('导入到词本', { exact: true }).count(), 0);
         await batchDlg.getByPlaceholder(/apple/).fill('book\napple\ndon’t');
         await batchDlg.getByRole('button', { name: '解析预览' }).click();
         await batchDlg.getByText('已在单词本中（跳过）').waitFor();

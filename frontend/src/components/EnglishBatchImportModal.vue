@@ -5,30 +5,9 @@
         每行输入一个单词或短语，也可从表格粘贴“英文＋制表符＋中文释义”两列（最多 100 个）。纯英文列表也支持逗号分隔；填写的释义会优先保留。
       </p>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-          统一教材/分类（选填）
-          <input
-            v-model="textbook"
-            :disabled="!isParent"
-            type="text"
-            placeholder="如 人教版四年级"
-            class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-          />
-        </label>
-        <label class="block text-xs font-bold text-slate-600 dark:text-slate-300">
-          统一单元（选填）
-          <input
-            v-model="unit"
-            :disabled="!isParent"
-            type="text"
-            placeholder="如 Unit 2"
-            class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100"
-          />
-        </label>
-      </div>
-
-      <p v-if="!isParent" class="text-xs font-bold text-slate-500 dark:text-slate-400">教材和单元由家长设置，单词仍可自行导入。</p>
+      <fieldset :disabled="importing || uncertain" class="space-y-4 min-w-0">
+      <WordImportTarget v-model="target" :child-id="childId" language="en" />
+      <p v-if="!isParent" class="text-xs font-bold text-slate-500 dark:text-slate-400">词本和来源由家长设置，单词仍可自行导入。</p>
 
       <div>
         <span class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">默认分类：</span>
@@ -96,7 +75,7 @@
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2 min-w-0">
-              <label v-if="item.status === 'matched' || item.status === 'manual'" class="inline-flex items-center min-h-11 min-w-11 max-w-full gap-2 cursor-pointer [overflow-wrap:anywhere]">
+              <label v-if="['matched', 'manual', 'link'].includes(item.status)" class="inline-flex items-center min-h-11 min-w-11 max-w-full gap-2 cursor-pointer [overflow-wrap:anywhere]">
                 <input v-model="item.include" type="checkbox" :disabled="busy" class="w-5 h-5 shrink-0 accent-brand-500" />
                 <span class="min-w-0 text-sm font-black text-slate-900 dark:text-slate-100">{{ item.word }}</span>
               </label>
@@ -141,17 +120,20 @@
           </template>
         </div>
       </div>
+      </fieldset>
+      <p v-if="needsPreview && previewItems.length" class="text-xs text-amber-700 dark:text-amber-300">词本范围已改变，请重新解析核对。更正内容会保留。</p>
+      <p v-if="uncertain" role="status" class="text-xs text-amber-700 dark:text-amber-300">导入结果尚未确认，请按原内容重试。</p>
     </div>
 
     <template #footer>
       <button type="button" :disabled="busy" class="ui-button-secondary" @click="close">取消</button>
       <button
         type="button"
-        :disabled="busy || selectedItems.length === 0 || !caseConfirmed"
+        :disabled="busy || (!uncertain && (selectedItems.length === 0 || !caseConfirmed || needsPreview))"
         class="ui-button-primary"
         @click="commitImport"
       >
-        {{ importing ? '导入中…' : `确认导入 (${selectedItems.length})` }}
+        {{ importing ? '导入中…' : uncertain ? '重试确认导入' : `确认导入 (${selectedItems.length})` }}
       </button>
     </template>
   </UiDialog>
@@ -162,6 +144,7 @@ import { ref, computed, watch } from 'vue';
 import EnglishSensesEditor from './EnglishSensesEditor.vue';
 import { mergeEnglishBatchPreview } from '../utils/englishBatchPreview';
 import UiDialog from './UiDialog.vue';
+import WordImportTarget from './WordImportTarget.vue';
 import DictionaryIndexNotice from './DictionaryIndexNotice.vue';
 import EnglishCaseConfirmation from './EnglishCaseConfirmation.vue';
 import api from '../api/client';
@@ -169,6 +152,8 @@ import { useEnglishWordStore } from '../stores/englishWord';
 import { ENGLISH_CATEGORIES, englishCaseVariants, hasEnglishDefinition } from '../utils/englishWord';
 import { currentRole } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
+import { newRequestId } from '../utils/requestId';
+import { notifyWordBooks } from '../composables/useWordBooks';
 
 const props = defineProps({
   modelValue: Boolean,
@@ -180,8 +165,8 @@ const store = useEnglishWordStore();
 const isParent = ref(currentRole() === 'parent');
 
 const rawText = ref('');
-const textbook = ref('');
-const unit = ref('');
+const target = ref({}), uncertain = ref(false), needsPreview = ref(false);
+let attempt;
 const categories = ref(['recognize', 'write']);
 const previewItems = ref([]);
 const previewing = ref(false);
@@ -199,24 +184,25 @@ const { capture } = useAsyncScope(() => [props.modelValue, props.childId, store.
   error.value = '';
   dictionaryWarnings.value = [];
   rawText.value = '';
-  textbook.value = '';
-  unit.value = '';
+  uncertain.value = false; attempt = null; needsPreview.value = false; target.value = {};
   categories.value = ['recognize', 'write'];
 });
 
 watch(rawText, () => {
+  if (uncertain.value) return;
   previewSerial++;
   previewing.value = false;
   previewItems.value = [];
   error.value = '';
   dictionaryWarnings.value = [];
 }, { flush: 'sync' });
+watch(target, () => { if (!uncertain.value) { previewSerial++; previewing.value = false; needsPreview.value = true; attempt = null; } }, { deep: true, flush: 'sync' });
 
 const busy = computed(() => previewing.value || importing.value);
-const selectedItems = computed(() => previewItems.value.filter(i => i.include && (i.status === 'matched' || i.status === 'manual')));
-const duplicateCount = computed(() => previewItems.value.filter(i => i.status === 'duplicate').length);
-const manualCount = computed(() => selectedItems.value.filter(item => !hasEnglishDefinition(item)).length);
-const caseConfirmed = computed(() => selectedItems.value.every(item => caseVariantsForItem(item).every(word => item.confirmed_case_variants.includes(word))));
+const selectedItems = computed(() => previewItems.value.filter(i => i.include && ['matched', 'manual', 'link'].includes(i.status)));
+const duplicateCount = computed(() => previewItems.value.filter(i => ['duplicate', 'in_book'].includes(i.status)).length);
+const manualCount = computed(() => selectedItems.value.filter(item => item.status !== 'link' && !hasEnglishDefinition(item)).length);
+const caseConfirmed = computed(() => selectedItems.value.filter(item => item.status !== 'link').every(item => caseVariantsForItem(item).every(word => item.confirmed_case_variants.includes(word))));
 
 function caseVariantsForItem(item) {
   return englishCaseVariants(item.word, [...(item.existing_case_variants || []),
@@ -239,13 +225,15 @@ function statusLabel(item) {
   if (status === 'manual') return ({ DICTIONARY_UNCONFIGURED: '未配置词典（可手填）', DICTIONARY_NOT_READY: '词典未就绪（可手填）',
     DICTIONARY_NOT_FOUND: '词典未收录（可手填）', DICTIONARY_MANUAL: '手工填写' }[notice?.code] || '查词不可用（可手填）');
   if (status === 'duplicate') return '已在单词本中（跳过）';
+  if (status === 'link') return '已有单词，仅加入词本';
+  if (status === 'in_book') return '已在目标词本（跳过）';
   return errMsg || '格式无效';
 }
 
 function badgeStyle(status) {
   if (status === 'matched') return 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300';
   if (status === 'manual') return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-200';
-  if (status === 'duplicate') return 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+  if (['duplicate', 'in_book', 'link'].includes(status)) return 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
   return 'bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300';
 }
 
@@ -257,17 +245,18 @@ function rowStyle(status) {
 }
 
 async function runPreview(useDictionary = true) {
-  if (busy.value || !rawText.value.trim()) return;
+  if (busy.value || uncertain.value || !rawText.value.trim()) return;
   previewing.value = true;
   previewUsesDictionary.value = useDictionary;
   error.value = '';
   const serial = ++previewSerial;
   const matchesScope = capture();
   try {
-    const res = await api.previewEnglishBatch(props.childId, rawText.value, { silentError: true, preserveError: true }, useDictionary);
+    const res = await api.previewEnglishBatch(props.childId, rawText.value, { silentError: true, preserveError: true }, useDictionary, isParent.value ? target.value : {});
     if (!matchesScope() || serial !== previewSerial) return;
     previewItems.value = mergeEnglishBatchPreview(previewItems.value, res.items || []);
     dictionaryWarnings.value = Array.isArray(res.dictionary_warnings) ? res.dictionary_warnings : [];
+    needsPreview.value = false;
   } catch (err) {
     if (matchesScope() && serial === previewSerial) error.value = err?.message || '解析预览失败';
   } finally {
@@ -282,16 +271,16 @@ function syncPrimary(item, key, value) {
 }
 
 async function commitImport() {
-  if (busy.value || !selectedItems.value.length) return;
+  if (busy.value || (!uncertain.value && (!selectedItems.value.length || needsPreview.value || !caseConfirmed.value))) return;
   importing.value = true;
   error.value = '';
   const matchesScope = capture();
   try {
-    const res = await store.batchImportWords({
+    if (!attempt) attempt = {
       child_id: props.childId,
-      ...(isParent.value ? { textbook: textbook.value, unit: unit.value } : {}),
-      categories: categories.value,
-      items: selectedItems.value.map(i => ({
+      ...(isParent.value ? JSON.parse(JSON.stringify(target.value)) : {}),
+      request_id: newRequestId(), categories: [...categories.value],
+      items: selectedItems.value.map(i => i.status === 'link' ? { word: i.word, existing_id: i.existing_id, existing_only: true } : ({
         word: i.word,
         phonetic: i.phonetic,
         phonetic_uk: i.phonetic_uk,
@@ -302,8 +291,10 @@ async function commitImport() {
         senses: i.senses, primary_sense_id: i.primary_sense_id,
         strict_case: i.strict_case, confirmed_case_variants: i.confirmed_case_variants
       }))
-    });
+    };
+    const res = await store.batchImportWords(attempt);
     if (matchesScope() && res) {
+      uncertain.value = false; attempt = null; notifyWordBooks(props.childId, 'en');
       emit('imported', res);
       emit('update:modelValue', false);
     }
@@ -313,7 +304,7 @@ async function commitImport() {
         item.server_case_variants = err.conflicts?.find(conflict => conflict.word === item.word)?.variants || [];
       }
     }
-    if (matchesScope()) error.value = err?.message || '导入失败，请重试';
+    if (matchesScope()) { error.value = err?.message || '导入失败，请重试'; uncertain.value = Boolean(err?.networkFailure); if (!uncertain.value) attempt = null; }
   } finally {
     if (matchesScope()) importing.value = false;
   }

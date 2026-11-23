@@ -6,6 +6,7 @@
 
     <!-- Subheader: Status Filters, Self-check Meaning Toggle, Lookup & Batch Import -->
     <WordBooksPanel v-model="selectedBook" :child-id="childId" language="en" :entries="store.words" @changed="loadWords" />
+    <p v-if="importSummary" role="status" class="text-sm mb-3 text-emerald-700 dark:text-emerald-300">{{ importSummary }}</p>
     <div class="bg-white dark:bg-slate-900 rounded-2xl p-3 px-4 border border-slate-200/90 dark:border-slate-700/90 shadow-sm mb-4 space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-2">
@@ -178,7 +179,7 @@
     </template>
 
     <EnglishLookupModal v-model="isLookupOpen" :child-id="childId" :initial-word="lookupInitialWord" />
-    <EnglishBatchImportModal v-model="isBatchOpen" :child-id="childId" />
+    <EnglishBatchImportModal v-model="isBatchOpen" :child-id="childId" @imported="importSummary = `导入完成：新增 ${$event.added_count} 项，已有单词加入词本 ${$event.linked_count} 项，跳过 ${$event.skipped_count} 项。`" />
     <EnglishWordDetailModal
       v-if="selectedWord"
       :word="selectedWord"
@@ -229,12 +230,14 @@ const selectedWord = ref(null);
 const detailBusy = ref(false);
 const detailError = ref('');
 const actionError = ref('');
+const importSummary = ref('');
 
 let alive = true;
 const { capture } = useAsyncScope(() => [props.childId, selectedWord.value?.id, store.scopeGeneration], () => {
   detailBusy.value = false;
   detailError.value = '';
   actionError.value = '';
+  importSummary.value = '';
 });
 const isLoaded = computed(() => store.isLoadedFor(props.childId));
 

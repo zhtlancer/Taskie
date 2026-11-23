@@ -10,10 +10,15 @@ async function bounded(promise, label) {
   finally { clearTimeout(timer); }
 }
 async function main() {
-  let heldCreate;
+  let heldCreate, heldImport;
+  const importAttempts = [];
   c.app.addHook('onSend', async (request, reply, payload) => {
     if (heldCreate && request.method === 'POST' && request.url.replace(/\/$/, '') === '/api/word-books') {
       heldCreate.reached(); await heldCreate.gate;
+    }
+    if (request.method === 'POST' && request.url === '/api/english-words/batch') {
+      importAttempts.push(request.body);
+      if (heldImport) { const current = heldImport; heldImport = null; current.reached(); await current.gate; }
     }
     return payload;
   });
@@ -99,6 +104,44 @@ async function main() {
         await page.getByRole('dialog').waitFor({ state: 'detached' });
         assert.equal((await api('GET', `/word-books?child_id=${child.id}&language=${lang}`)).items.length, 0);
         assert.equal((await api('GET', `/${lang === 'zh' ? 'characters' : 'english-words'}?child_id=${child.id}`)).length, 3, 'deleting the source preserves the newly collected word too');
+        if (lang === 'en') {
+          await page.getByRole('button', { name: /批量导入/ }).click();
+          const batch = page.getByRole('dialog', { name: '批量导入英语单词', exact: true });
+          await batch.getByLabel('导入到词本', { exact: true }).selectOption('new');
+          await batch.getByLabel('来源（选填）', { exact: true }).fill('英语课外');
+          await batch.getByLabel('单元/章节（选填）', { exact: true }).fill('U2');
+          await batch.getByRole('textbox', { name: '单词列表', exact: true }).fill('apple\nMay\t五月\nmay\t可以');
+          await batch.getByRole('button', { name: '不查词，手工预览', exact: true }).click();
+          await batch.getByText('已有单词，仅加入词本', { exact: true }).waitFor();
+          for (const word of ['May', 'may']) await batch.locator(`[data-english-import-word="${word}"]`).getByLabel(`确认将“${word}”作为独立词条保留`, { exact: true }).check();
+          let imported;
+          const waitForImport = () => page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/english-words/batch');
+          if (width === 320) {
+            let release, reached;
+            const gate = new Promise(resolve => { release = resolve; }), ready = new Promise(resolve => { reached = resolve; });
+            heldImport = { gate, reached };
+            try {
+              await batch.getByRole('button', { name: '确认导入 (3)', exact: true }).click(); await bounded(ready, 'held English import response');
+              await page.keyboard.press('Escape'); assert.equal(await batch.isVisible(), true);
+              await batch.getByRole('button', { name: '重试确认导入', exact: true }).waitFor({ timeout: 30000 });
+              assert.equal(await batch.getByRole('textbox', { name: '单词列表', exact: true }).isDisabled(), true);
+              release(); imported = waitForImport();
+              await batch.getByRole('button', { name: '重试确认导入', exact: true }).click();
+            } finally { release(); heldImport = null; }
+            const attempts = importAttempts.filter(body => body.child_id === child.id);
+            // The second body is checked after its HTTP response below.
+            assert.ok(attempts.length >= 1);
+          } else {
+            imported = waitForImport(); await batch.getByRole('button', { name: '确认导入 (3)', exact: true }).click();
+          }
+          const saved = await imported; assert.equal(saved.status(), 201);
+          const receipt = await saved.json(); assert.equal(receipt.added_count, 2); assert.equal(receipt.linked_count, 1);
+          if (width === 320) { const attempts = importAttempts.filter(body => body.child_id === child.id); assert.equal(attempts.length, 2); assert.deepEqual(attempts[1], attempts[0]); }
+          await batch.waitFor({ state: 'detached' });
+          await page.getByRole('status').filter({ hasText: '导入完成：新增 2 项，已有单词加入词本 1 项，跳过 0 项。' }).waitFor();
+          assert.equal((await api('GET', `/word-books/${receipt.book.id}/items`)).total, 3);
+          assert.equal((await api('GET', `/english-words?child_id=${child.id}`)).length, 5);
+        }
         await page.evaluate(() => { document.documentElement.style.fontSize = '24px'; });
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'page fits enlarged text');
         await page.evaluate(() => { document.documentElement.style.fontSize = ''; });

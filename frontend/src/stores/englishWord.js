@@ -179,7 +179,8 @@ export const useEnglishWordStore = defineStore('englishWord', {
       const targetChildId = payload?.child_id || this.currentChildId;
       const scope = scopeFor(targetChildId);
       const generation = this.scopeGeneration;
-      const result = await api.commitEnglishBatch({ ...payload, child_id: targetChildId }, SILENT_WRITE);
+      const body = payload.child_id === targetChildId ? payload : { ...payload, child_id: targetChildId };
+      const result = await api.commitEnglishBatch(body, { ...SILENT_WRITE, preserveNetworkError: true });
       if (generation !== this.scopeGeneration || this.currentChildId !== targetChildId || scopeFor(targetChildId) !== scope) return null;
       if (Array.isArray(result.added)) {
         const addedIds = new Set(result.added.map((w) => w.id));
@@ -187,7 +188,8 @@ export const useEnglishWordStore = defineStore('englishWord', {
         this.syncTaxonomy();
         this.refreshAfterMutation(targetChildId);
       }
-      if (result.added?.length) playStarAdded();
+      if (Array.isArray(result.items)) this.fetchWords(targetChildId).catch(() => {});
+      if (result.added?.length || result.added_count) playStarAdded();
       return result;
     },
 

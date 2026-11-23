@@ -89,7 +89,7 @@ module.exports = async function checkEnglishModalRaces({ page, base, child, chil
     if (type === 'batch') {
       await page.getByRole('button', { name: /批量导入/ }).click();
       const dialog = page.getByRole('dialog', { name: '批量导入英语单词' });
-      assert.equal(await dialog.getByPlaceholder('如 Unit 2').isEnabled(), true);
+      assert.equal(await dialog.getByLabel('导入到词本', { exact: true }).count(), 1);
       await dialog.getByPlaceholder(/apple/).fill(`${word}\t竞态释义`);
       await dialog.getByRole('button', { name: '解析预览', exact: true }).click();
       await dialog.getByPlaceholder('中文释义（如：苹果；也可导入后补填）').waitFor();

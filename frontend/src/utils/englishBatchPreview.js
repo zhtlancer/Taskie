@@ -10,10 +10,11 @@ export function mergeEnglishBatchPreview(previous, incoming) {
       ...withEnglishSenses(item, sensesFromEntry(item), item.primary_sense_id),
       strict_case: false, confirmed_case_variants: [], server_case_variants: [],
       dictionary_candidates: item.status === 'matched' ? (item.senses || []).filter(sense => sense.source) : [],
-      include: ['matched', 'manual'].includes(item.status)
+      include: ['matched', 'manual', 'link'].includes(item.status)
     };
     const old = byWord.get(identityKey(item.word));
-    if (!old || !['matched', 'manual'].includes(old.status) || !row.include) return row;
+    if (old?.status === 'link' && row.status === 'link') row.include = old.include;
+    if (!old || !['matched', 'manual'].includes(old.status) || !['matched', 'manual'].includes(row.status)) return row;
     return {
       ...row,
       ...withEnglishSenses({}, sensesFromEntry(old), old.primary_sense_id),

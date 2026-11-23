@@ -1,7 +1,10 @@
 const { generationWrite } = require('../utils/data-generation');
+const EnglishImportsService = require('../services/english-imports.service');
+const { checkImportActor } = require('../utils/word-import');
 
 async function englishWordsRoutes(fastify, options) {
   const { englishWordsService, dictionaryService } = options;
+  const imports = new EnglishImportsService(englishWordsService.db, englishWordsService);
   const handle = (fn, status = 200) => async (request, reply) => {
     try {
       const result = await fn(request);
@@ -28,13 +31,18 @@ async function englishWordsRoutes(fastify, options) {
     fastify.requireChildAccess(request, request.body?.child_id);
     return englishWordsService.createWord(request.body || {}, { role: request.user?.role });
   }));
-  fastify.post('/batch-preview', handle(request => (
-    englishWordsService.batchPreview(request.body?.child_id, request.body?.text, { dictionaryService, useDictionary: request.body?.use_dictionary })
-  )));
+  fastify.post('/batch-preview', handle(async request => {
+    const result = await imports.preview(request.body || {}, request.user, dictionaryService);
+    fastify.requireCurrentSession(request);
+    fastify.requireChildAccess(request, request.body?.child_id);
+    return result;
+  }));
   // Up to 100 words × 30 senses, including examples, can exceed Fastify's 1 MiB default.
   fastify.post('/batch', { bodyLimit: 32 * 1024 * 1024 }, generationWrite(fastify, (request, reply) => {
     reply.code(201);
     fastify.requireChildAccess(request, request.body?.child_id);
+    if (request.body?.request_id !== undefined || request.body?.book_id !== undefined || request.body?.book_meta !== undefined) return imports.commit(request.body, request.user);
+    checkImportActor(englishWordsService.db, request.body || {}, request.user, { allowWordNotes: true });
     return englishWordsService.batchImport(request.body?.child_id, request.body || {}, { role: request.user?.role });
   }));
 
