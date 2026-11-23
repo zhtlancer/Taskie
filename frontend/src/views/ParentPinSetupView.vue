@@ -11,7 +11,7 @@
         <h2 class="text-2xl font-black text-slate-800 dark:text-slate-100 tracking-tight mb-1">{{ steps[step].title }}</h2>
         <p class="text-xs text-slate-400 mb-4">{{ steps[step].hint }}</p>
 
-        <PinInput :key="step" ref="pinInput" :max-length="4" :error-message="errorMessage" @complete="handleComplete" />
+        <PinInput :key="step" ref="pinInput" :max-length="4" :disabled="busy" :error-message="errorMessage" @complete="handleComplete" />
         <p v-if="busy" class="mt-3 text-xs font-bold text-brand-500 dark:text-brand-400">正在保存…</p>
       </div>
     </main>
@@ -54,6 +54,7 @@ function retry(message, nextStep = step.value) {
 }
 
 async function handleComplete(pin) {
+  if (busy.value) return;
   errorMessage.value = '';
   if (step.value === 'current') {
     currentPin.value = pin;

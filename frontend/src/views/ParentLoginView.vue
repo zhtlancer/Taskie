@@ -28,6 +28,7 @@
       <!-- Pin Input (Key size >= 64px for touch friendliness) -->
       <PinInput
         :max-length="4"
+        :disabled="busy"
         :error-message="errorMessage"
         @complete="handlePinComplete"
       />
@@ -59,6 +60,7 @@ const parentStore = useParentStore();
 
 const errorMessage = ref('');
 const defaultPinActive = ref(false);
+const busy = ref(false);
 
 onMounted(async () => {
   try {
@@ -69,6 +71,8 @@ onMounted(async () => {
 });
 
 async function handlePinComplete(pin) {
+  if (busy.value) return;
+  busy.value = true;
   try {
     errorMessage.value = '';
     const success = await parentStore.login(pin);
@@ -78,6 +82,8 @@ async function handlePinComplete(pin) {
     }
   } catch (err) {
     errorMessage.value = typeof err === 'string' ? err : 'PIN 码错误，请重新输入';
+  } finally {
+    busy.value = false;
   }
 }
 </script>

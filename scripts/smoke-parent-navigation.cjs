@@ -126,6 +126,17 @@ async function main() {
       await page.goto(`${base}${route}`, { waitUntil: 'networkidle' }); assert.equal(new URL(page.url()).pathname, '/parent/login');
     }
     console.log('PASS child session cannot open parent management pages');
+    await page.keyboard.type('9999');
+    await page.getByRole('main').getByText('家长 PIN 码不正确', { exact: true }).waitFor();
+    await page.waitForFunction(() => !document.querySelector('button[aria-label="退格"]')?.disabled);
+    await page.keyboard.type('129');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type('5');
+    await page.keyboard.press('Delete');
+    await page.keyboard.type('1234');
+    await page.waitForURL(url => url.pathname === '/parent/dashboard');
+    assert.ok(await page.evaluate(() => sessionStorage.getItem('taskie_parent_token')));
+    console.log('PASS parent login supports physical keyboard digits, Backspace, Delete and error lock');
   } finally { await context.close(); }
   assert.deepEqual(errors, [], 'no browser rendering errors');
 }

@@ -80,7 +80,7 @@
     <div
       v-if="activePinChild"
       class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-pop-in"
-      @click.self="activePinChild = null"
+      @click.self="!verifying && (activePinChild = null)"
     >
       <div class="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border-2 border-brand-100 dark:border-brand-800">
         <div class="w-20 h-20 mx-auto rounded-full bg-brand-50 dark:bg-brand-900/40 flex items-center justify-center text-4xl mb-3">
@@ -93,6 +93,7 @@
 
         <PinInput
           :max-length="4"
+          :disabled="verifying"
           :error-message="pinError"
           @complete="verifyChildPin"
         />
@@ -100,8 +101,9 @@
         <div class="mt-4">
           <button
             type="button"
+            :disabled="verifying"
             @click="activePinChild = null"
-            class="text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 py-2"
+            class="text-sm font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 py-2 disabled:opacity-50"
           >
             取消返回
           </button>
@@ -132,6 +134,7 @@ const children = ref([]);
 const loading = ref(true);
 const activePinChild = ref(null);
 const pinError = ref('');
+const verifying = ref(false);
 
 onMounted(async () => {
   try {
@@ -167,14 +170,18 @@ async function selectChild(child) {
 }
 
 async function verifyChildPin(pin) {
-  if (!activePinChild.value) return;
+  if (!activePinChild.value || verifying.value) return;
+  verifying.value = true;
   try {
+    pinError.value = '';
     const res = await api.loginChild({ child_id: activePinChild.value.id, pin });
     if (res.success) {
       enterChild(res.child || activePinChild.value);
     }
   } catch (err) {
     pinError.value = typeof err === 'string' ? err : 'PIN 码错误，请重试';
+  } finally {
+    verifying.value = false;
   }
 }
 
