@@ -30,7 +30,7 @@ class WordBooksService {
     access(actor, book.child_id, write);
     const plan_count = this.db.prepare(`SELECT COUNT(*) n FROM word_study_plans p WHERE p.child_id = ? AND p.language = ? AND p.scope_mode = 'books'
       AND EXISTS (SELECT 1 FROM json_each(p.book_ids) WHERE value = ?)`).get(book.child_id, book.language, book.id).n;
-    return { ...publicBook(book), plan_count };
+    return { ...publicBook(book), plan_count, recent_test: this.recentTest(book) };
   }
   list(query, actor) {
     const { child_id, language } = query;
@@ -44,8 +44,16 @@ class WordBooksService {
       , (SELECT COUNT(*) FROM word_study_plans p WHERE p.child_id = b.child_id AND p.language = b.language AND p.scope_mode = 'books'
         AND EXISTS (SELECT 1 FROM json_each(p.book_ids) WHERE value = b.id)) AS plan_count
       FROM word_books b WHERE b.child_id = ? AND b.language = ? ORDER BY b.created_at, b.id LIMIT ? OFFSET ?`)
-      .all(child_id, language, size, start).map(publicBook);
+      .all(child_id, language, size, start).map(book => ({ ...publicBook(book), recent_test: this.recentTest(book) }));
     return { items, total, next_offset: start + items.length < total ? start + items.length : null };
+  }
+  recentTest(book) {
+    return this.db.prepare(`SELECT t.id, t.title, t.completed_at, COUNT(*) AS total_count,
+      COALESCE(SUM(i.result = 'correct'), 0) AS correct_count FROM word_tests t JOIN word_test_items i ON i.test_id = t.id
+      WHERE t.child_id = ? AND t.language = ? AND t.status = 'completed'
+      AND EXISTS (SELECT 1 FROM json_each(t.book_ids_json) WHERE value = ?)
+      AND EXISTS (SELECT 1 FROM json_each(i.source_books_json) WHERE json_extract(value, '$.id') = ?)
+      GROUP BY t.id ORDER BY t.completed_at DESC, t.id DESC LIMIT 1`).get(book.child_id, book.language, book.id, book.id) || null;
   }
   create(data, actor) {
     this.child(data.child_id, data.language, actor, true);

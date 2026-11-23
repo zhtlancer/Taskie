@@ -114,7 +114,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 45;
+const SCHEMA_VERSION = 46;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -822,6 +822,13 @@ function initDb(db) {
     })();
   }
   if (found >= 45) for (const sql of scopeTriggers) db.exec(sql);
+  // v46: independent self-tests with immutable questions and first-answer receipts.
+  if (db.pragma('user_version', { simple: true }) < 46) {
+    db.transaction(() => {
+      require('./word-tests-constraints').validateWordTests(db);
+      db.pragma('user_version = 46');
+    })();
+  }
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new

@@ -830,3 +830,92 @@ WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_study_day_scope
 BEGIN
   SELECT RAISE(ABORT, 'study scope source owner is immutable');
 END;
+
+-- Independent self-tests never write daily study state, points or elapsed study time.
+CREATE TABLE IF NOT EXISTS word_tests (
+  id TEXT PRIMARY KEY NOT NULL,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+  skill TEXT NOT NULL CHECK(skill IN ('recognize', 'write')),
+  title TEXT NOT NULL,
+  book_ids_json TEXT NOT NULL CHECK(json_valid(book_ids_json) AND json_type(book_ids_json) = 'array'),
+  book_names_json TEXT NOT NULL CHECK(json_valid(book_names_json) AND json_type(book_names_json) = 'array'),
+  scope_filter TEXT NOT NULL CHECK(scope_filter IN ('all', 'unmastered', 'error_prone')),
+  order_mode TEXT NOT NULL CHECK(order_mode IN ('ordered', 'shuffle')),
+  total_count INTEGER NOT NULL CHECK(typeof(total_count) = 'integer' AND total_count BETWEEN 1 AND 200),
+  answered_count INTEGER NOT NULL DEFAULT 0 CHECK(typeof(answered_count) = 'integer' AND answered_count BETWEEN 0 AND total_count),
+  correct_count INTEGER NOT NULL DEFAULT 0 CHECK(typeof(correct_count) = 'integer' AND correct_count BETWEEN 0 AND answered_count),
+  excluded_no_definition INTEGER NOT NULL DEFAULT 0 CHECK(typeof(excluded_no_definition) = 'integer' AND excluded_no_definition >= 0),
+  excluded_invalid_pinyin INTEGER NOT NULL DEFAULT 0 CHECK(typeof(excluded_invalid_pinyin) = 'integer' AND excluded_invalid_pinyin >= 0),
+  status TEXT NOT NULL DEFAULT 'in_progress' CHECK(status IN ('in_progress', 'completed')),
+  created_by TEXT NOT NULL CHECK(created_by IN ('parent', 'child')),
+  parent_test_id TEXT REFERENCES word_tests(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  CHECK((status = 'in_progress' AND answered_count < total_count AND completed_at IS NULL) OR
+        (status = 'completed' AND answered_count = total_count AND completed_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_word_tests_history ON word_tests(child_id, language, created_at DESC, id DESC);
+CREATE TABLE IF NOT EXISTS word_test_items (
+  id TEXT PRIMARY KEY NOT NULL,
+  test_id TEXT NOT NULL REFERENCES word_tests(id) ON DELETE CASCADE,
+  language TEXT NOT NULL CHECK(language IN ('zh', 'en')),
+  position INTEGER NOT NULL CHECK(typeof(position) = 'integer' AND position BETWEEN 0 AND 199),
+  source_id TEXT NOT NULL,
+  character_id TEXT REFERENCES characters(id) ON DELETE SET NULL,
+  english_word_id TEXT REFERENCES english_words(id) ON DELETE SET NULL,
+  text TEXT NOT NULL,
+  pinyin TEXT,
+  phonetic TEXT,
+  meaning_zh TEXT,
+  meaning_en TEXT,
+  strict_case INTEGER NOT NULL DEFAULT 0 CHECK(strict_case IN (0, 1)),
+  audio_refs TEXT CHECK(audio_refs IS NULL OR (language = 'en' AND json_valid(audio_refs) AND json_type(audio_refs) = 'array')),
+  source_books_json TEXT NOT NULL CHECK(json_valid(source_books_json) AND json_type(source_books_json) = 'array'),
+  typed_answer TEXT,
+  result TEXT CHECK(result IN ('correct', 'wrong')),
+  answer_request_id TEXT UNIQUE,
+  answered_by TEXT CHECK(answered_by IN ('parent', 'child')),
+  answered_at TEXT,
+  CHECK((language = 'zh' AND english_word_id IS NULL AND pinyin IS NOT NULL AND strict_case = 0 AND (character_id IS NULL OR character_id = source_id)) OR
+        (language = 'en' AND character_id IS NULL AND pinyin IS NULL AND (english_word_id IS NULL OR english_word_id = source_id))),
+  CHECK((result IS NULL AND typed_answer IS NULL AND answer_request_id IS NULL AND answered_by IS NULL AND answered_at IS NULL) OR
+        (result IS NOT NULL AND answer_request_id IS NOT NULL AND answered_by IS NOT NULL AND answered_at IS NOT NULL)),
+  UNIQUE(test_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_word_test_items_result ON word_test_items(test_id, result, position);
+CREATE INDEX IF NOT EXISTS idx_word_test_items_character ON word_test_items(character_id);
+CREATE INDEX IF NOT EXISTS idx_word_test_items_english ON word_test_items(english_word_id);
+CREATE TRIGGER IF NOT EXISTS word_test_items_insert BEFORE INSERT ON word_test_items
+BEGIN
+  SELECT RAISE(ABORT, 'word test owner mismatch') WHERE NOT EXISTS (
+    SELECT 1 FROM word_tests t WHERE t.id = NEW.test_id AND t.language = NEW.language AND
+      ((NEW.character_id IS NULL AND NEW.english_word_id IS NULL) OR
+       (NEW.language = 'zh' AND EXISTS (SELECT 1 FROM characters c WHERE c.id = NEW.character_id AND c.child_id = t.child_id)) OR
+       (NEW.language = 'en' AND EXISTS (SELECT 1 FROM english_words w WHERE w.id = NEW.english_word_id AND w.child_id = t.child_id)))
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS word_test_items_update BEFORE UPDATE ON word_test_items
+BEGIN
+  SELECT RAISE(ABORT, 'word test owner mismatch') WHERE NOT EXISTS (
+    SELECT 1 FROM word_tests t WHERE t.id = NEW.test_id AND t.language = NEW.language AND
+      ((NEW.character_id IS NULL AND NEW.english_word_id IS NULL) OR
+       (NEW.language = 'zh' AND EXISTS (SELECT 1 FROM characters c WHERE c.id = NEW.character_id AND c.child_id = t.child_id)) OR
+       (NEW.language = 'en' AND EXISTS (SELECT 1 FROM english_words w WHERE w.id = NEW.english_word_id AND w.child_id = t.child_id)))
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS word_test_owner BEFORE UPDATE OF child_id, language ON word_tests
+WHEN NEW.child_id != OLD.child_id OR NEW.language != OLD.language
+BEGIN
+  SELECT RAISE(ABORT, 'word test owner is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS word_test_character_owner BEFORE UPDATE OF child_id ON characters
+WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_test_items WHERE character_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'word test source owner is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS word_test_english_owner BEFORE UPDATE OF child_id ON english_words
+WHEN NEW.child_id != OLD.child_id AND EXISTS (SELECT 1 FROM word_test_items WHERE english_word_id = OLD.id)
+BEGIN
+  SELECT RAISE(ABORT, 'word test source owner is immutable');
+END;
