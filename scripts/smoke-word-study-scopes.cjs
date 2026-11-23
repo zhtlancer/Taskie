@@ -1,3 +1,4 @@
+const { useLocalLearningFont } = require('./word-book-fonts.cjs');
 const assert = require('node:assert/strict');
 const { launchBrowser, smokePort } = require('./browser-env.cjs');
 const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
@@ -29,6 +30,7 @@ async function main() {
     const context = await browser.newContext({viewport:{width,height:width<500?844:1024},colorScheme:theme,locale:'zh-CN',hasTouch:true,isMobile:true,reducedMotion:'reduce'});
     try {
       const token=c.app.jwt.sign({...actor,epoch:c.app.sessionEpoch()});
+      await useLocalLearningFont(context);
       await context.addInitScript(token=>sessionStorage.setItem('taskie_parent_token',token),token);
       const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(error.message));
       await page.goto(`${base}/parent/word-plans?child=${child.id}`,{waitUntil:'domcontentloaded'});

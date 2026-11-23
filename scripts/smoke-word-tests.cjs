@@ -1,3 +1,4 @@
+const { useLocalLearningFont } = require('./word-book-fonts.cjs');
 const assert = require('node:assert/strict');
 const { launchBrowser, smokePort } = require('./browser-env.cjs');
 const { reportBrowserFailure } = require('./browser-diagnostics.cjs');
@@ -6,7 +7,8 @@ const c = createTestApp({ dictDir: null }),
   parent = { role: 'parent' };
 let browser,
   hold,
-  serial = 0;
+  serial = 0,
+  failNextDetail = null;
 const requestId = () => `browser_test_${++serial}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function eventually(fn) {
@@ -41,6 +43,12 @@ async function bounded(promise) {
   }
 }
 async function main() {
+  c.app.addHook('onRequest', async (request, reply) => {
+    if (request.method === 'GET' && request.url === failNextDetail) {
+      failNextDetail = null;
+      return reply.code(503).send({ error: '模拟完整答案暂时无法读取' });
+    }
+  });
   c.app.addHook('onSend', async (request, reply, payload) => {
     if (hold && request.method === hold.method && hold.path(request.url)) {
       const h = hold;
@@ -102,6 +110,7 @@ async function main() {
     });
     let release;
     try {
+      await useLocalLearningFont(context);
       const token = c.app.jwt.sign({ ...parent, epoch: c.app.sessionEpoch() });
       await context.addInitScript((token) => {
         if (!sessionStorage.getItem('taskie_child_token'))
@@ -143,7 +152,12 @@ async function main() {
       } else await start.click();
       const question = page.locator('[data-word-test-question]');
       await question.getByRole('button', { name: '核对字形', exact: true }).waitFor();
-      assert.ok(await question.getByRole('button', {name:'核对字形',exact:true}).evaluate(el=>el.getBoundingClientRect().height>=44), 'touch controls are at least 44px');
+      assert.ok(
+        await question
+          .getByRole('button', { name: '核对字形', exact: true })
+          .evaluate((el) => el.getBoundingClientRect().height >= 44),
+        'touch controls are at least 44px',
+      );
       const testId = new URL(page.url()).searchParams.get('test');
       assert.ok(testId);
       assert.equal(tests.get(testId, parent).total_count, 2);
@@ -162,7 +176,7 @@ async function main() {
       } else {
         await question.getByRole('button', { name: '还不熟', exact: true }).click();
         await page.getByRole('button', { name: '下一题', exact: true }).click();
-        await eventually(()=>question.evaluate(el=>document.activeElement===el.parentElement));
+        await eventually(() => question.evaluate((el) => document.activeElement === el.parentElement));
       }
       await question.getByRole('button', { name: '核对字形', exact: true }).waitFor();
       await question.getByRole('button', { name: '核对字形', exact: true }).click();
@@ -251,6 +265,47 @@ async function main() {
         await tab.getByRole('heading', { name: '自测已完成 · 100%', exact: true }).waitFor();
         assert.equal(tests.get(concurrent.id, parent).items[0].typed_answer, 'May');
         await tab.close();
+        // Another page answers a different item before this page submits the last answer.
+        for (const failRead of [false, true]) {
+          const shared = tests.create(
+            {
+              child_id: child.id,
+              language: 'en',
+              skill: 'write',
+              book_ids: [en.id],
+              request_id: requestId(),
+            },
+            parent,
+          );
+          await page.goto(`${base}/child/${child.id}/word-test?language=en&test=${shared.id}`, {
+            waitUntil: 'domcontentloaded',
+          });
+          await page.getByLabel('输入拼写', { exact: true }).fill('May');
+          tests.answer(
+            shared.id,
+            shared.items[1].id,
+            { typed_answer: 'wrong', request_id: requestId() },
+            parent,
+          );
+          if (failRead) failNextDetail = `/api/word-tests/${shared.id}`;
+          await page.getByRole('button', { name: '确认拼写', exact: true }).click();
+          if (failRead) {
+            await page.getByText('模拟完整答案暂时无法读取', { exact: true }).first().waitFor();
+            assert.equal(
+              await page.locator('[data-word-test-result]').count(),
+              0,
+              'incomplete remote answers must not appear as a complete result',
+            );
+            await page.getByRole('button', { name: '重新读取', exact: true }).click();
+          }
+          const result = page.getByRole('region', { name: '自测结果', exact: true });
+          await result.getByText(/需复习\s+1\s+题/).waitFor();
+          assert.equal(
+            await result.getByRole('button', { name: '只复测错题', exact: true }).isEnabled(),
+            true,
+          );
+          assert.equal(tests.get(shared.id, parent).correct_count, 1);
+        }
         // Simulated network loss before sending retains the immutable answer across reload.
         const offline = tests.create(
           {
@@ -355,8 +410,8 @@ async function main() {
       console.log(
         `PASS ${width}/${theme}: book entrance, polyphones, paper grid, history, restore, English spelling and ${width === 320 ? 'lost responses/network/concurrent tabs/child role' : 'layout'}`,
       );
-    } catch(error) {
-      await reportBrowserFailure(`word-tests-${width}`,error,context);
+    } catch (error) {
+      await reportBrowserFailure(`word-tests-${width}`, error, context);
       throw error;
     } finally {
       release?.();

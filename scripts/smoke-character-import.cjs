@@ -1,3 +1,4 @@
+const { useLocalLearningFont } = require('./word-book-fonts.cjs');
 const assert = require('node:assert/strict');
 const { launchBrowser, smokePort } = require('./browser-env.cjs');
 const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
@@ -27,6 +28,7 @@ async function main() {
     const context = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1024 }, colorScheme: theme, locale: 'zh-CN', hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
     try {
       const token = c.app.jwt.sign({ role: 'parent', epoch: c.app.sessionEpoch() });
+      await useLocalLearningFont(context);
       await context.addInitScript(token => sessionStorage.setItem('taskie_parent_token', token), token);
       const page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message));
       await page.goto(`${base}/child/${child.id}/characters`, { waitUntil: 'domcontentloaded' });
@@ -75,6 +77,7 @@ async function main() {
     const ownContext = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: theme });
     try {
       const token = c.app.jwt.sign({ role: 'child', child_id: child.id, epoch: c.app.sessionEpoch() });
+      await useLocalLearningFont(ownContext);
       await ownContext.addInitScript(token => sessionStorage.setItem('taskie_child_token', token), token);
       const page = await ownContext.newPage(); page.setDefaultTimeout(15000);
       await page.goto(`${base}/child/${child.id}/characters`, { waitUntil: 'domcontentloaded' });

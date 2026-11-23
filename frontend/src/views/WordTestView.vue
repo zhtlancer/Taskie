@@ -181,8 +181,16 @@
               下一题
             </button>
           </template>
+          <PageState
+            v-if="activeTest.status === 'completed' && !answersConsistent"
+            :kind="detailError ? 'error' : 'loading'"
+            title="本场已完成，正在核对全部答案"
+            :description="detailError || '其他页面也确认了题目，读取完整明细后显示结果。'"
+            :busy="busy"
+            @retry="() => loadDetail()"
+          />
           <section
-            v-if="activeTest.status === 'completed'"
+            v-if="activeTest.status === 'completed' && answersConsistent"
             data-word-test-result
             class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-4 space-y-4"
             aria-label="自测结果"
@@ -235,7 +243,10 @@
               </li>
             </ul>
           </section>
-          <details class="rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+          <details
+            v-if="answersConsistent"
+            class="rounded-xl border border-slate-200 dark:border-slate-700 p-3"
+          >
             <summary class="min-h-11 cursor-pointer font-bold">查看本场题目与首次答案</summary>
             <ol class="space-y-2">
               <li
@@ -261,7 +272,7 @@
               </li>
             </ol>
           </details>
-          <div v-if="reviewItem" class="space-y-2">
+          <div v-if="reviewItem && answersConsistent" class="space-y-2">
             <button type="button" :disabled="busy" class="ui-button-secondary" @click="reviewItemId = ''">
               收起题目详情</button
             ><WordTestQuestion
@@ -387,6 +398,15 @@ const busy = computed(() => writing.value || detailLoading.value),
   currentItem = computed(() => activeTest.value?.items.find((item) => item.id === currentItemId.value));
 const reviewItem = computed(() => activeTest.value?.items.find((item) => item.id === reviewItemId.value));
 const wrongItems = computed(() => activeTest.value?.items.filter((item) => item.result === 'wrong') || []);
+const answersConsistent = computed(() => {
+  const test = activeTest.value;
+  return Boolean(
+    test &&
+    test.items.length === test.total_count &&
+    test.items.filter((item) => item.result).length === test.answered_count &&
+    test.items.filter((item) => item.result === 'correct').length === test.correct_count,
+  );
+});
 const accuracy = computed(() =>
   Math.round((100 * activeTest.value.correct_count) / activeTest.value.total_count),
 );
@@ -728,6 +748,10 @@ async function answer(result) {
       items: activeTest.value.items.map((item) => (item.id === itemId ? response.item : item)),
     };
     restoreQuestion();
+    if (!answersConsistent.value) {
+      await loadDetail();
+      if (!matches()) return;
+    }
     if (activeTest.value.status === 'completed') {
       notice.value = '本场自测已完成。';
       notifyWordBooks(childId.value, language.value);

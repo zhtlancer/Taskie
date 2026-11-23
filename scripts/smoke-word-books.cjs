@@ -1,3 +1,4 @@
+const { useLocalLearningFont } = require('./word-book-fonts.cjs');
 // Build first. Temporary SQLite, real HTTP writes; TASKIE_BROWSER also supports WebKit.
 const assert = require('node:assert/strict');
 const { launchBrowser, smokePort } = require('./browser-env.cjs');
@@ -36,6 +37,7 @@ async function main() {
     for (const word of ['apple', 'book']) await api('POST', '/english-words', { child_id: child.id, word, definition_zh: word });
     const context = await browser.newContext({ viewport: { width, height: width < 500 ? 844 : 1024 }, colorScheme: theme, locale: 'zh-CN', hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
     try {
+      await useLocalLearningFont(context);
       await context.addInitScript(({ token, theme }) => {
         sessionStorage.setItem('taskie_parent_token', token); localStorage.setItem('taskie_theme', theme);
         // NAS deployments also work over plain HTTP, where randomUUID is unavailable.
@@ -155,6 +157,7 @@ async function main() {
     const childToken = c.app.jwt.sign({ role: 'child', child_id: child.id, epoch: c.app.sessionEpoch() });
     const childContext = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: theme });
     try {
+      await useLocalLearningFont(childContext);
       await childContext.addInitScript(token => sessionStorage.setItem('taskie_child_token', token), childToken);
       const page = await childContext.newPage();
       await page.goto(`${base}/child/${child.id}/characters?lang=en`, { waitUntil: 'domcontentloaded' });
