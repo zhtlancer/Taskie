@@ -246,7 +246,7 @@ function getSpeedValue() {
 
 async function initWriter() {
   if (!writerContainer.value) return;
-  const char = (props.character || '').trim()[0];
+  const char = Array.from((props.character || '').trim())[0];
   if (!char) return;
 
   clearLoopTimer();

@@ -12,12 +12,14 @@
         <button v-if="selected" type="button" :disabled="busy" class="ui-button-secondary" @click="openEditor(selected)">编辑词本</button>
         <button v-if="selected" type="button" :disabled="busy" class="ui-button-secondary" @click="managing = true">管理词条</button>
       </template>
+      <router-link v-if="selected && !busy" :to="{ path: `/child/${childId}/word-test`, query: { language, book: selected.id } }" class="ui-button-secondary">按此词本自测</router-link>
     </div>
     <p v-if="error" role="alert" class="text-xs text-rose-600 dark:text-rose-300">{{ error }} <button type="button" class="min-h-11 underline" @click="load">重试读取词本</button></p>
     <p v-if="!loading && !error && modelValue !== 'all' && modelValue !== 'unassigned' && !selected" role="alert" class="text-xs text-amber-700 dark:text-amber-300">所选词本已不可用，请重新选择范围。</p>
     <div v-if="selected" class="text-xs text-slate-500 dark:text-slate-400 space-y-1 [overflow-wrap:anywhere]">
       <p>{{ typeLabel(selected.source_type) }} · {{ selected.source || '未填写来源' }}<span v-if="selected.unit"> · {{ selected.unit }}</span> · {{ selected.item_count }} 项，未掌握 {{ selected.unmastered_count }} 项</p>
       <p v-if="selected.note">{{ selected.note }}</p>
+      <router-link v-if="selected.recent_test && !busy" :to="{ path: `/child/${childId}/word-test`, query: { language, test: selected.recent_test.id } }" class="inline-flex items-center min-h-11 underline">最近自测：本词本正确 {{ selected.recent_test.correct_count }}/{{ selected.recent_test.total_count }} 题</router-link>
     </div>
     <UiDialog v-if="editor" :title="editor.id ? '编辑词本' : '新建词本'" :busy="busy" @close="editor = null">
       <form class="space-y-3" @submit.prevent="save">

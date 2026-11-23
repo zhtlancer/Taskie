@@ -32,6 +32,7 @@
             </button>
           </div>
           <router-link :to="`/child/${childId}/characters?lang=${language}`">{{ language === 'en' ? '英语单词本' : '生字生词本' }}</router-link>
+          <router-link :to="{ path: `/child/${childId}/word-test`, query: { language } }">按词本自测</router-link>
           <router-link :to="`/child/${childId}/today`">今日看板</router-link>
           <button :disabled="busy || loading || refreshing || active || !calendar.ready" @click="() => refresh()">刷新安排</button>
           <router-link v-if="asParent" :to="{ path: '/parent/word-plans', query: { child: childId } }">管理字词计划</router-link>

@@ -26,6 +26,7 @@ import { hasSession, mustChangePin } from '../utils/session.js';
 const routes = [
   // Child Routes
   { path: "/child/:id/word-study", component: WordStudyView },
+  { path: '/child/:id/word-test', component: () => import('../views/WordTestView.vue') },
   {
     path: '/',
     name: 'ChildSelect',

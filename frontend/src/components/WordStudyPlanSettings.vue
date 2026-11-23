@@ -27,6 +27,7 @@
         </button>
       </div>
 
+      <router-link :to="{ path: `/child/${childId}/word-test`, query: { language, view: 'history' } }" class="ui-button-secondary">自测记录</router-link>
       <router-link
         :to="`/child/${childId}/word-study?language=${language}`"
         class="min-h-11 inline-flex items-center px-3.5 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-300 text-xs font-black border border-brand-200 dark:border-brand-800"

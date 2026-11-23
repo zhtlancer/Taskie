@@ -198,6 +198,12 @@ export const api = {
     // The practice dialog provides recovery only for this specific date rejection.
     silentError: error => error.response?.status === 403 && error.response?.data?.error === '只能记录今天实际进行的练习'
   }),
+  getWordTests: (childId, language, params = {}, signal, options) => get('/word-tests', { child_id: childId, language, ...params }, signal, options),
+  getWordTest: (id, signal, options) => get(`/word-tests/${id}`, undefined, signal, options),
+  createWordTest: (data, options) => idempotentPost('/word-tests', data, options),
+  answerWordTest: (id, itemId, data, options) => idempotentPost(`/word-tests/${id}/items/${itemId}/answer`, data, options),
+  retryWordTestWrong: (id, data, options) => idempotentPost(`/word-tests/${id}/retry-wrong`, data, options),
+  markWordTestWrong: (id, options) => idempotentPost(`/word-tests/${id}/mark-wrong`, {}, options),
   getWordBooks: (childId, language, params = {}, signal, options) => get('/word-books', { child_id: childId, language, ...params }, signal, options),
   getWordBook: (id, signal, options) => get(`/word-books/${id}`, undefined, signal, options),
   getWordBookItems: (id, params = {}, signal, options) => get(`/word-books/${id}/items`, params, signal, options),

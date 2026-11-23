@@ -71,6 +71,7 @@
     "test:backup-performance": "node scripts/smoke-backup-performance.cjs",
     "test:browser:frontend-recovery": "node scripts/smoke-review2-frontend.cjs",
     "check:repo": "node scripts/check-repo-content.cjs",
-    "test:browser:midnight-leftovers": "node scripts/smoke-midnight-leftovers.cjs"
+    "test:browser:midnight-leftovers": "node scripts/smoke-midnight-leftovers.cjs",
+    "test:browser:word-tests": "node scripts/smoke-word-tests.cjs"
   }
 }

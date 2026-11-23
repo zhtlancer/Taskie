@@ -1,4 +1,5 @@
 import { pendingWriteStore } from './requestId.js';
+import { clearWordTestDrafts } from './wordTestDrafts.js';
 
 const key = role => `taskie_${role}_token`;
 const sessionChanged = () => { if (typeof window !== 'undefined') window.dispatchEvent(new Event('taskie:session-changed')); };
@@ -28,6 +29,7 @@ export function saveToken(role, token, generation) {
   sessionChanged();
 }
 export function clearTokens() {
+  clearWordTestDrafts();
   for (const role of ['parent', 'child']) sessionStorage.removeItem(key(role));
   sessionStorage.removeItem('parent_auth');
   clearDataGeneration();
