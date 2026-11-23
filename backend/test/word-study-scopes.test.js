@@ -75,6 +75,8 @@ test('English book scope excludes missing definitions and additions cannot widen
   const item = day.batches[0].items[0]; c.study.grade(item.id,{result:'good',request_id:'english-scope-base-0001'},'child');
   const extra = c.study.extra(day.id,'english-scope-extra-0001').batches.find(batch=>batch.is_extra);
   assert.equal(extra.items.length,1); assert.notEqual(extra.items[0].english_word_id,empty.id);
+  c.words.updateWord(two.id,{definition_zh:'',definition_en:'',expected_version:1},parent);
+  assert.equal(c.study.describeDay(day.id).excluded_no_definition,1);
   validateWordStudyScopes(c.db);
 });
 test('all, books and legacy are exclusive; invalid readings, scope IDs, roles and restore queues are guarded', async t => {

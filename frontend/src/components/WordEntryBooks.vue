@@ -22,25 +22,24 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue';
 import api from '../api/client';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { useWordBooks, BOOK_REQUEST, notifyWordBooks } from '../composables/useWordBooks';
-import { groupWordBooks } from '../utils/wordBookSource';
+import { groupWordBooks, createPendingBookLinks } from '../utils/wordBookSource';
 import { getDataGeneration } from '../utils/session';
-import { newRequestId } from '../utils/requestId';
 const props = defineProps({ entry: Object, language: String, disabled: Boolean });
 const emit = defineEmits(['updated', 'busy']);
 const current = ref(props.entry), target = ref(''), busy = ref(false), localError = ref('');
 const { books, role, loading, error, load } = useWordBooks(() => props.entry.child_id, () => props.language);
 const groups = computed(() => groupWordBooks(books.value));
+const attempts = createPendingBookLinks();
 const { capture } = useAsyncScope(() => [props.entry.id, props.entry.child_id, props.language], () => {
   busy.value = false; emit('busy', false); localError.value = ''; target.value = ''; attempts.clear();
 });
-const attempts = new Map();
 watch(() => props.entry, value => { current.value = value; });
 async function change(operation) {
   if (busy.value || props.disabled) return;
   const matches = capture(), id = props.entry.id, childId = props.entry.child_id, lang = props.language;
   busy.value = true; emit('busy', true); localError.value = '';
   try {
-    await operation();
+    await operation(matches);
     if (!matches()) return;
     notifyWordBooks(childId, lang);
     const fresh = lang === 'zh' ? await api.getCharacter(id, undefined, BOOK_REQUEST) : await api.getEnglishWord(id, undefined, BOOK_REQUEST);
@@ -49,9 +48,14 @@ async function change(operation) {
   finally { if (matches()) { busy.value = false; emit('busy', false); } }
 }
 function add() {
+  if (busy.value || props.disabled || !target.value) return;
   const bookId = target.value;
-  if (!attempts.has(bookId)) attempts.set(bookId, { [props.language === 'zh' ? 'character_id' : 'english_word_id']: props.entry.id, request_id: newRequestId() });
-  return change(async () => { await api.addWordBookItem(bookId, attempts.get(bookId), BOOK_REQUEST); attempts.delete(bookId); });
+  return change(matches => attempts.run(
+    bookId,
+    () => ({ [props.language === 'zh' ? 'character_id' : 'english_word_id']: props.entry.id }),
+    payload => api.addWordBookItem(bookId, payload, BOOK_REQUEST),
+    matches
+  ));
 }
 const remove = book => change(() => api.deleteWordBookItem(book.id, book.item_id, book.item_version, BOOK_REQUEST, getDataGeneration()));
 onBeforeUnmount(() => emit('busy', false));

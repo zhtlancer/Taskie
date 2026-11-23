@@ -1,3 +1,5 @@
+import { newRequestId } from './requestId.js';
+
 export const SOURCE_TYPES = [
   { value: '', label: '未指定' }, { value: 'textbook', label: '教材' },
   { value: 'material', label: '资料' }, { value: 'custom', label: '自主整理' }
@@ -22,3 +24,29 @@ export const bookEntry = (entry, scope) => {
   const book = entry.books?.find(item => item.id === scope);
   return book?.pinyin_override ? { ...entry, pinyin: book.pinyin_override } : entry;
 };
+
+/**
+ * Retain one receipt-keyed link payload across uncertain failures (network drop or 5xx)
+ * and clear it on success or a definitive non-5xx rejection only when the owning scope still matches.
+ */
+export function createPendingBookLinks(makeId = newRequestId) {
+  const pending = new Map();
+  return {
+    clear: () => pending.clear(),
+    async run(key, createPayload, send, matches) {
+      if (!pending.has(key)) pending.set(key, { ...createPayload(), request_id: makeId() });
+      const attempt = pending.get(key);
+      const clearIfCurrent = () => {
+        if (matches() && pending.get(key) === attempt) pending.delete(key);
+      };
+      try {
+        const result = await send(attempt);
+        clearIfCurrent();
+        return result;
+      } catch (err) {
+        if (!err?.networkFailure && !(err?.status >= 500)) clearIfCurrent();
+        throw err;
+      }
+    }
+  };
+}

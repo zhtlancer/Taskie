@@ -197,12 +197,12 @@ class WordStudyService {
         (!selectedUnits.length || selectedUnits.includes(row.unit)) && included(row)
       ).map(withSource);
 
-      let excludedNoDef = frozen ? planOrDay.scope_excluded_no_definition : 0;
+      let excludedNoDef = 0;
       const eligible = [];
       for (const row of baseFiltered) {
         const hasDef = Boolean((row.definition_zh && row.definition_zh.trim()) || (row.definition_en && row.definition_en.trim()));
         if (!hasDef) {
-          excludedNoDef += 1;
+          if (!frozen) excludedNoDef += 1;
           continue;
         }
         eligible.push(row);
@@ -215,7 +215,7 @@ class WordStudyService {
         fresh: eligible.filter(row => !row.state_id).sort((a, b) => priority(b) - priority(a)),
         early: eligible.filter(row => row.state_id && row.next_due_date > date && row.last_review_date !== date)
           .sort((a, b) => a.next_due_date.localeCompare(b.next_due_date)),
-        excluded_no_definition: excludedNoDef,
+        excluded_no_definition: frozen ? planOrDay.scope_excluded_no_definition : excludedNoDef,
         excluded_invalid_pinyin: 0,
         scope_items: eligible, scope_books: books
       };

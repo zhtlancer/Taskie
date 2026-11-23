@@ -3,6 +3,7 @@ const { useLocalLearningFont } = require('./word-book-fonts.cjs');
 const assert = require('node:assert/strict');
 const { launchBrowser, smokePort } = require('./browser-env.cjs');
 const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
+const { installWordBookLinkRetryChecks } = require('./word-book-link-retries.cjs');
 const c = createTestApp({ dictDir: null });
 let browser;
 async function bounded(promise, label) {
@@ -23,6 +24,7 @@ async function main() {
     }
     return payload;
   });
+  const checkLinkRetries = installWordBookLinkRetryChecks(c.app);
   await c.app.ready();
   const base = await c.app.listen({ host: '127.0.0.1', port: smokePort() });
   const parentToken = c.app.jwt.sign({ role: 'parent', epoch: c.app.sessionEpoch() }), errors = [];
@@ -144,6 +146,7 @@ async function main() {
           assert.equal((await api('GET', `/word-books/${receipt.book.id}/items`)).total, 3);
           assert.equal((await api('GET', `/english-words?child_id=${child.id}`)).length, 5);
         }
+        if (width === 320 && lang === 'zh') await checkLinkRetries(page, child.id, api);
         await page.evaluate(() => { document.documentElement.style.fontSize = '24px'; });
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'page fits enlarged text');
         await page.evaluate(() => { document.documentElement.style.fontSize = ''; });

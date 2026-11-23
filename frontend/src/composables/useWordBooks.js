@@ -7,11 +7,13 @@ export function useWordBooks(childId, language) {
   const books = ref([]), loading = ref(false), error = ref('');
   const role = ref(currentRole());
   let serial = 0, controller;
-  const { capture } = useAsyncScope(() => [childId(), language()], () => {
+  function reset() {
     serial++; controller?.abort(); books.value = []; error.value = ''; loading.value = false; role.value = currentRole();
-  });
+  }
+  const { capture } = useAsyncScope(() => [childId(), language()], reset);
   async function load() {
-    if (!childId() || !getToken()) return;
+    role.value = currentRole();
+    if (!childId() || !getToken()) { reset(); return; }
     const matches = capture(), request = ++serial;
     controller?.abort(); controller = new AbortController();
     const signal = controller.signal, target = childId(), lang = language();

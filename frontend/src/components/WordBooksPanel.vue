@@ -62,7 +62,7 @@ import api from '../api/client';
 import { getDataGeneration } from '../utils/session';
 import { useAsyncScope } from '../composables/useAsyncScope';
 import { useWordBooks, BOOK_REQUEST, notifyWordBooks } from '../composables/useWordBooks';
-import { SOURCE_TYPES, groupWordBooks } from '../utils/wordBookSource';
+import { SOURCE_TYPES, groupWordBooks, createPendingBookLinks } from '../utils/wordBookSource';
 import { confirmAction } from '../utils/confirmation';
 import { newRequestId } from '../utils/requestId';
 const props = defineProps({ childId: String, language: String, entries: { type: Array, default: () => [] }, modelValue: { type: String, default: 'all' } });
@@ -73,8 +73,9 @@ const sources = computed(() => [...new Set(books.value.map(book => book.source).
 const selected = computed(() => books.value.find(book => book.id === props.modelValue));
 const editor = ref(null), managing = ref(false), busy = ref(false), uncertain = ref(false), actionError = ref(''), search = ref(''), pinyinDrafts = ref({});
 let attempt = null, generation;
+const pendingLinks = createPendingBookLinks();
 const { capture } = useAsyncScope(() => [props.childId, props.language, props.modelValue], () => {
-  editor.value = null; managing.value = false; busy.value = false; uncertain.value = false; actionError.value = ''; attempt = null; pinyinDrafts.value = {};
+  editor.value = null; managing.value = false; busy.value = false; uncertain.value = false; actionError.value = ''; attempt = null; pinyinDrafts.value = {}; pendingLinks.clear();
 });
 const managerEntries = computed(() => props.entries.filter(entry => (entry.char || entry.word).toLowerCase().includes(search.value.trim().toLowerCase())));
 const membership = entry => entry.books?.find(book => book.id === props.modelValue);
@@ -118,24 +119,26 @@ async function removeBook() {
 async function mutateEntry(operation) {
   if (busy.value) return;
   const matches = capture(); busy.value = true; actionError.value = '';
-  try { await operation(); if (matches()) { changed(); pinyinDrafts.value = {}; } }
+  try { await operation(matches); if (matches()) { changed(); pinyinDrafts.value = {}; } }
   catch (err) { if (matches()) actionError.value = err?.message || String(err); }
   finally { if (matches()) busy.value = false; }
 }
-const pendingLinks = new Map();
 async function toggleEntry(entry) {
+  if (busy.value) return;
   const member = membership(entry), target = props.modelValue;
   const key = target + ':' + entry.id;
-  if (!pendingLinks.has(key)) pendingLinks.set(key, { [props.language === 'zh' ? 'character_id' : 'english_word_id']: entry.id, request_id: newRequestId() });
-  return mutateEntry(async () => {
-    if (member) await api.deleteWordBookItem(target, member.item_id, member.item_version, BOOK_REQUEST, getDataGeneration());
-    else await api.addWordBookItem(target, pendingLinks.get(key), BOOK_REQUEST);
-    pendingLinks.delete(key);
-  });
+  return mutateEntry(matches => member
+    ? api.deleteWordBookItem(target, member.item_id, member.item_version, BOOK_REQUEST, getDataGeneration())
+    : pendingLinks.run(
+      key,
+      () => ({ [props.language === 'zh' ? 'character_id' : 'english_word_id']: entry.id }),
+      payload => api.addWordBookItem(target, payload, BOOK_REQUEST),
+      matches
+    ));
 }
 function savePinyin(entry) {
   const member = membership(entry);
   return mutateEntry(() => api.updateWordBookItem(props.modelValue, member.item_id, { expected_version: member.item_version, pinyin_override: pinyinDrafts.value[entry.id] ?? member.pinyin_override ?? '' }, BOOK_REQUEST, getDataGeneration()));
 }
-watch(managing, () => { actionError.value = ''; search.value = ''; pinyinDrafts.value = {}; });
+watch(managing, open => { actionError.value = ''; search.value = ''; pinyinDrafts.value = {}; if (!open) pendingLinks.clear(); });
 </script>
