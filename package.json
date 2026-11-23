@@ -72,6 +72,8 @@
     "test:browser:frontend-recovery": "node scripts/smoke-review2-frontend.cjs",
     "check:repo": "node scripts/check-repo-content.cjs",
     "test:browser:midnight-leftovers": "node scripts/smoke-midnight-leftovers.cjs",
-    "test:browser:word-tests": "node scripts/smoke-word-tests.cjs"
+    "test:browser:word-tests": "node scripts/smoke-word-tests.cjs",
+    "test:browser:word-books-webkit": "node scripts/smoke-word-books-webkit.cjs",
+    "test:docker-word-books": "node scripts/smoke-docker-word-books.cjs"
   }
 }

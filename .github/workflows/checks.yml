@@ -128,13 +128,22 @@ jobs:
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
           BROWSER_DIAGNOSTICS_DIR: test-results/container-smoke
+      - name: Container word-book and self-test acceptance
+        if: ${{ !cancelled() && steps.image.outcome == 'success' && steps.fonts.outcome == 'success' && steps.playwright.outcome == 'success' }}
+        timeout-minutes: 5
+        run: npm run test:docker-word-books
+        env:
+          CHROMIUM_PATH: /usr/bin/google-chrome
+          BROWSER_DIAGNOSTICS_DIR: test-results/container-word-books
       - name: Upload container browser diagnostics
         if: ${{ failure() || cancelled() }}
         timeout-minutes: 2
         uses: actions/upload-artifact@v7
         with:
           name: container-browser-diagnostics
-          path: test-results/container-smoke/
+          path: |
+            test-results/container-smoke/
+            test-results/container-word-books/
           if-no-files-found: ignore
           retention-days: 7
 
@@ -165,11 +174,11 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     # WebKit also installs system packages; allow its setup budget without shortening tests or diagnostics.
-    timeout-minutes: ${{ matrix.suite == 'english-webkit' && 60 || 35 }}
+    timeout-minutes: ${{ (matrix.suite == 'english-webkit' || matrix.suite == 'word-books-webkit') && 60 || 35 }}
     strategy:
       fail-fast: false
       matrix:
-        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-refine, homework-dates, period-dates, input-dates, word-plan-dates, completion-duration, task-priority, board-workflow, record-editing, refunds-drafts, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-homework, recurring-homework, parent-navigation, parent-forms, parent-schedule, child-schedule, child-rewards, child-history, child-characters, english-wordbook, english-webkit, unified-lookup, parent-settings, parent-backfill, parent-dashboard, class-count, class-move-dates, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
+        suite: [ family-time-zone, family-time-zone-shanghai, time-stats, carry-over, homework, homework-refine, homework-dates, period-dates, input-dates, word-plan-dates, word-books, character-import, word-study-scopes, word-tests, word-books-webkit, completion-duration, task-priority, board-workflow, record-editing, refunds-drafts, ui-refine, midnight, dashboard-midnight, midnight-leftovers, legacy, dialogs, board-class-actions, class-stats, class-homework, recurring-homework, parent-navigation, parent-forms, parent-schedule, child-schedule, child-rewards, child-history, child-characters, english-wordbook, english-webkit, unified-lookup, parent-settings, parent-backfill, parent-dashboard, class-count, class-move-dates, running-timer, rest, photo-backup, photo-export, frontend-recovery ]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -192,11 +201,11 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       - name: Install WebKit system dependencies
-        if: matrix.suite == 'english-webkit'
+        if: (matrix.suite == 'english-webkit' || matrix.suite == 'word-books-webkit')
         timeout-minutes: 15
         run: node node_modules/playwright/cli.js install-deps webkit
       - name: Download WebKit browser
-        if: matrix.suite == 'english-webkit'
+        if: (matrix.suite == 'english-webkit' || matrix.suite == 'word-books-webkit')
         timeout-minutes: 5
         run: node node_modules/playwright/cli.js install webkit
       - name: Browser suite ${{ matrix.suite }}
@@ -205,7 +214,7 @@ jobs:
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
           BROWSER_DIAGNOSTICS_DIR: test-results/${{ matrix.suite }}
-          BROWSER_SUITE_TIMEOUT_MS: ${{ matrix.suite == 'english-webkit' && '600000' || '300000' }}
+          BROWSER_SUITE_TIMEOUT_MS: ${{ (matrix.suite == 'english-webkit' || matrix.suite == 'word-books-webkit') && '600000' || '300000' }}
       - name: Upload browser diagnostics
         if: ${{ failure() || cancelled() }}
         timeout-minutes: 2
