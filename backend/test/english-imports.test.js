@@ -3,6 +3,40 @@ const assert = require('node:assert/strict');
 const { createTestApp, cleanupTestApp } = require('./helper');
 const { validateWordImports } = require('../src/db/word-import-constraints');
 const parent = { role: 'parent' };
+const classroomWords = `to （用于动词、名词或形容词后，使意思完整）；向，到，往
+school 学校
+hi 嘿，喂，你好
+I 我
+be 是
+am 是
+is 是
+are 是
+what 什么
+you 你的；你们的
+name 名字
+hello 喂，哈啰，你好
+my 我的
+goodbye 再见
+have 有，拥有
+a 一（个）
+an 一（个）
+nice 令人愉快的
+day 一天
+good 好的
+morning 早晨，上午
+Ms 女士
+stand 站立
+stand up 站起来
+sit 坐
+sit down 坐下
+open 打开
+book 书
+close 合上
+point 指
+say 说
+read 阅读
+listen 听
+write 写`;
 async function fixture(t) {
   const c = createTestApp({ dictDir: null }); await c.app.ready();
   t.after(async () => { await c.app.close(); cleanupTestApp(c); c.db.close(); });
@@ -82,4 +116,56 @@ test('deleted targets cannot be resurrected and legacy request/response remains 
   assert.equal(legacy.statusCode, 201); assert.equal(legacy.json().added.length, 1); assert.deepEqual(legacy.json().skipped, []);
   assert.equal(c.app.services.englishWordsService.getWord(legacy.json().added[0].id).books[0].source, '旧客户端');
   validateWordImports(c.db);
+});
+
+test('classroom paste imports all 34 space-separated rows, preserving phrases, meanings and case defaults', async t => {
+  const c = await fixture(t);
+  const preview = await c.call('batch-preview', { text: classroomWords, use_dictionary: false });
+  assert.equal(preview.statusCode, 200, preview.body);
+  const rows = preview.json().items;
+  assert.equal(rows.length, 34);
+  assert.ok(rows.every(row => row.status === 'manual'));
+  assert.equal(rows.find(row => row.word === 'to').definition_zh, '（用于动词、名词或形容词后，使意思完整）；向，到，往');
+  assert.equal(rows.find(row => row.word === 'hi').definition_zh, '嘿，喂，你好');
+  assert.equal(rows.find(row => row.word === 'stand up').definition_zh, '站起来');
+  assert.equal(rows.find(row => row.word === 'sit down').definition_zh, '坐下');
+  assert.deepEqual(rows.filter(row => row.strict_case).map(row => row.word), ['I', 'Ms']);
+  const saved = await c.call('batch', { request_id: 'space-classroom-import-0001', book_meta: { name: '课堂单词' }, items: rows });
+  assert.equal(saved.statusCode, 201, saved.body);
+  assert.equal(saved.json().added_count, 34);
+  const words = c.app.services.englishWordsService.listWords({ child_id: c.child.id });
+  assert.deepEqual(words.filter(word => word.strict_case).map(word => word.word).sort(), ['I', 'Ms']);
+});
+
+test('space import preserves explicit TSV columns and mixed punctuation while invalid rows stay whole', async t => {
+  const c = await fixture(t);
+  const dictionaryService = { lookup: async () => ({ exact_matches: [{ definition_zh: '词典释义' }] }) };
+  const text = "\n  look   after　　照顾,照料；看护\r\nstand　up   （站起来）；起立\rcat\t猫，宠物;教材释义\nread\tto read, study; learn\npear,book；desk、chair\napple,苹果\n\t缺英文\ndog\t狗\t多余列\ndon’t  不要";
+  const { items } = await c.app.services.englishWordsService.batchPreview(c.child.id, text, { dictionaryService });
+  assert.equal(items.find(row => row.word === 'look after').definition_zh, '照顾,照料；看护');
+  assert.equal(items.find(row => row.word === 'stand up').definition_zh, '（站起来）；起立');
+  assert.equal(items.find(row => row.word === 'read').definition_zh, 'to read, study; learn');
+  assert.equal(items.find(row => row.word === 'cat').definition_zh, '猫，宠物;教材释义');
+  assert.equal(items.find(row => row.word === "don't").definition_zh, '不要');
+  assert.ok(items.filter(row => row.status !== 'invalid').every(row => row.status === 'matched'));
+  for (const word of ['pear', 'book', 'desk', 'chair']) assert.ok(items.some(row => row.word === word));
+  assert.deepEqual(items.filter(row => row.status === 'invalid').map(row => [row.raw, row.line_number]), [
+    ['apple,苹果', 7], ['\t缺英文', 8], ['dog\t狗\t多余列', 9]
+  ]);
+  assert.equal(items.some(row => row.word === 'apple'), false, 'mixed invalid rows must not silently import their English fragment');
+  const tooMany = await c.call('batch-preview', { text: Array.from({ length: 101 }, (_, i) => `word${i} 中文释义`).join('\n'), use_dictionary: false });
+  assert.equal(tooMany.statusCode, 400);
+});
+
+test('batch case defaults apply only to new imports and respect explicit true or false', async t => {
+  const c = await fixture(t), existing = c.word({ word: 'I', definition_zh: '我', strict_case: false });
+  const saved = await c.call('batch', { request_id: 'default-import-case-0001', book_meta: { name: '大小写默认值' }, items: [
+    { word: 'I', existing_id: existing.id, existing_only: true },
+    { word: 'Ms' }, { word: 'iPhone' }, { word: 'USA', strict_case: false }, { word: 'book', strict_case: true }, { word: 'school' }
+  ] });
+  assert.equal(saved.statusCode, 201, saved.body);
+  const words = c.app.services.englishWordsService.listWords({ child_id: c.child.id });
+  for (const [word, expected] of [['I', false], ['Ms', true], ['iPhone', true], ['USA', false], ['book', true], ['school', false]]) {
+    assert.equal(words.find(row => row.word === word).strict_case, expected, word);
+  }
 });

@@ -4,6 +4,7 @@ const { generateId } = require('../utils/crypto');
 const { ensureLegacyMembership, attachWordBooks, attachSelectedBook } = require('../utils/word-book');
 const { getTodayDate } = require('../utils/date');
 const { dictionaryFailure, dictionaryLookupIssue } = require('./dictionary/issues');
+const { parseEnglishImportText } = require('../utils/english-import');
 const {
   ENGLISH_CATEGORIES,
   identityKey,
@@ -379,14 +380,10 @@ class EnglishWordsService {
     this.ensureChildExists(childId);
     if (typeof useDictionary !== 'boolean') throw { status: 400, message: '查词设置无效' };
     if (typeof rawText !== 'string' || !rawText.trim()) {
-      throw { status: 400, message: '请输入单词列表，每行可用制表符分隔英文和中文释义' };
+      throw { status: 400, message: '请输入单词列表，每行可用空格或制表符分隔英文和中文释义' };
     }
 
-    const tokens = rawText
-      .split(/\r?\n|\r/)
-      .filter(line => line.trim())
-      // A TSV row is one entry; commas and semicolons in its meaning are content.
-      .flatMap(line => line.includes('\t') ? [line] : line.split(/[,;，；、]+/).map(s => s.trim()).filter(Boolean));
+    const tokens = parseEnglishImportText(rawText);
 
     if (tokens.length > MAX_BATCH_WORDS) {
       throw { status: 400, message: `单次最多预览 ${MAX_BATCH_WORDS} 个单词，请分批导入` };
@@ -400,15 +397,14 @@ class EnglishWordsService {
     let unavailableIssue = !useDictionary ? { code: 'DICTIONARY_MANUAL', message: '已跳过词典查询，可手动填写释义后导入。' }
       : !dictionaryService ? dictionaryLookupIssue({ available: false }) : null;
 
-    for (const raw of tokens) {
-      const columns = raw.split('\t');
+    for (const { raw, columns, line_number } of tokens) {
       const suppliedMeaning = columns.length === 2 ? normalizeOptionalText(columns[1], 400) : null;
       let validWord;
       try {
         if (columns.length > 2) throw { message: '每行仅支持英文和中文释义两列，请用制表符分隔' };
         validWord = validateEnglishWord(columns[0]);
       } catch (err) {
-        items.push({ raw, word: raw, status: 'invalid', error: err.message });
+        items.push({ raw, word: raw, line_number, status: 'invalid', error: err.message });
         continue;
       }
 
@@ -494,6 +490,7 @@ class EnglishWordsService {
     const words = [...existingRows.map(row => row.word), ...items.filter(item => ['matched', 'manual'].includes(item.status)).map(item => item.word)];
     for (const item of items) {
       if (['matched', 'manual'].includes(item.status)) {
+        item.strict_case = /[A-Z]/.test(item.word);
         item.case_variants = variantsFor(item.word, words);
         item.existing_case_variants = variantsFor(item.word, existingRows.map(row => row.word));
       }
@@ -523,7 +520,8 @@ class EnglishWordsService {
       checkMetadataPermission(item, role);
     }
     const prepared = items.map(item => {
-      const row = { ...item, word: validateEnglishWord(item.word), strict_case: strictCase(item.strict_case), ...resolveSenses(item) };
+      const word = validateEnglishWord(item.word);
+      const row = { ...item, word, strict_case: strictCase(item.strict_case, /[A-Z]/.test(word)), ...resolveSenses(item) };
       keepWordAudio(row.senses, row.word);
       return row;
     });

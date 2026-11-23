@@ -3,6 +3,15 @@ import assert from 'node:assert/strict';
 import { mergeEnglishBatchPreview } from '../src/utils/englishBatchPreview.js';
 import { dictionaryLookupNotice, dictionaryErrorMessage, isDictionaryAbort } from '../src/utils/dictionaryState.js';
 
+test('uppercase imports default to strict case while retries retain an explicit cancellation', () => {
+  const first = mergeEnglishBatchPreview([], ['I', 'Ms', 'iPhone', 'New York', 'school', 'stand up'].map(word => ({ word, status: 'manual' })));
+  assert.deepEqual(first.map(row => row.strict_case), [true, true, true, true, false, false]);
+  first[0].strict_case = false;
+  const retried = mergeEnglishBatchPreview(first, first.map(row => ({ word: row.word, status: 'matched', strict_case: /[A-Z]/.test(row.word) })));
+  assert.equal(retried[0].strict_case, false, 'requery must not re-enable a manually cancelled default');
+  assert.deepEqual(retried.slice(1).map(row => row.strict_case), [true, true, true, false, false]);
+});
+
 test('requery preserves corrected meanings, primary choice, phonetics, strict rules and unchecked rows', () => {
   const first = mergeEnglishBatchPreview([], [{ word: 'book', status: 'manual', definition_zh: '书', phonetic: '' }]);
   first[0].senses[0].definition_zh = '用户更正';

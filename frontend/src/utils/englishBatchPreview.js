@@ -8,7 +8,7 @@ export function mergeEnglishBatchPreview(previous, incoming) {
   return incoming.map(item => {
     const row = {
       ...withEnglishSenses(item, sensesFromEntry(item), item.primary_sense_id),
-      strict_case: false, confirmed_case_variants: [], server_case_variants: [],
+      strict_case: item.strict_case ?? /[A-Z]/.test(item.word), confirmed_case_variants: [], server_case_variants: [],
       dictionary_candidates: item.status === 'matched' ? (item.senses || []).filter(sense => sense.source) : [],
       include: ['matched', 'manual', 'link'].includes(item.status)
     };

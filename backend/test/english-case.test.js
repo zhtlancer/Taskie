@@ -67,6 +67,7 @@ test('batch preview preserves input case and distinguishes existing and within-b
   const dictionaryService = { lookup: async () => ({ exact_matches: [{ word: 'May', definition_zh: '词典释义' }] }) };
   const preview = await book.batchPreview(child.id, 'MAY\nmay\nUS\nus', { dictionaryService });
   assert.deepEqual(preview.items.map(item => item.word), ['MAY', 'may', 'US', 'us']);
+  assert.deepEqual(preview.items.map(item => item.strict_case), [true, false, true, false]);
   assert.deepEqual(preview.items[0].existing_case_variants, ['May']);
   assert.deepEqual(preview.items[0].case_variants, ['May', 'may']);
   assert.deepEqual(preview.items[2].existing_case_variants, []);

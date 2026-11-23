@@ -114,9 +114,19 @@ async function main() {
           await batch.getByLabel('导入到词本', { exact: true }).selectOption('new');
           await batch.getByLabel('来源（选填）', { exact: true }).fill('英语课外');
           await batch.getByLabel('单元/章节（选填）', { exact: true }).fill('U2');
-          await batch.getByRole('textbox', { name: '单词列表', exact: true }).fill('apple\nMay\t五月\nmay\t可以');
+          await batch.getByRole('textbox', { name: '单词列表', exact: true }).fill('apple\nMay 五月，月份；教材释义\nmay\t可以');
           await batch.getByRole('button', { name: '不查词，手工预览', exact: true }).click();
           await batch.getByText('已有单词，仅加入词本', { exact: true }).waitFor();
+          const mayRow = batch.locator('[data-english-import-word="May"]');
+          const strictCase = mayRow.getByLabel('默写时严格区分大小写', { exact: true });
+          assert.equal(await strictCase.isChecked(), true);
+          assert.equal(await mayRow.getByPlaceholder('中文释义（如：苹果；也可导入后补填）', { exact: true }).inputValue(), '五月，月份；教材释义');
+          assert.equal(await batch.locator('[data-english-import-word="may"]').getByLabel('默写时严格区分大小写', { exact: true }).isChecked(), false);
+          await strictCase.uncheck();
+          await batch.getByRole('button', { name: '不查词，手工预览', exact: true }).click();
+          await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.trim() === '不查词，手工预览' && !button.matches(':disabled')));
+          assert.equal(await strictCase.isChecked(), false, 're-parsing preserves a cancelled case default');
+          await strictCase.check();
           for (const word of ['May', 'may']) await batch.locator(`[data-english-import-word="${word}"]`).getByLabel(`确认将“${word}”作为独立词条保留`, { exact: true }).check();
           let imported;
           const waitForImport = () => page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/english-words/batch');
@@ -145,6 +155,7 @@ async function main() {
           await page.getByRole('status').filter({ hasText: '导入完成：新增 2 项，已有单词加入词本 1 项，跳过 0 项。' }).waitFor();
           assert.equal((await api('GET', `/word-books/${receipt.book.id}/items`)).total, 3);
           assert.equal((await api('GET', `/english-words?child_id=${child.id}`)).length, 5);
+          assert.equal((await api('GET', `/english-words?child_id=${child.id}`)).find(row => row.word === 'May').strict_case, true);
         }
         if (width === 320 && lang === 'zh') await checkLinkRetries(page, child.id, api);
         await page.evaluate(() => { document.documentElement.style.fontSize = '24px'; });

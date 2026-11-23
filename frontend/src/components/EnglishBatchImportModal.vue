@@ -2,7 +2,7 @@
   <UiDialog v-if="modelValue" title="批量导入英语单词" wide :busy="busy" @close="close">
     <div class="space-y-4">
       <p class="text-xs font-bold text-slate-500 dark:text-slate-400">
-        每行输入一个单词或短语，也可从表格粘贴“英文＋制表符＋中文释义”两列（最多 100 个）。纯英文列表也支持逗号分隔；填写的释义会优先保留。
+        每行输入一个单词或短语，可用空格分隔中文释义，也可从表格粘贴英文和释义两列（最多 100 个）。纯英文列表也支持逗号分隔；填写的释义会优先保留。含大写字母的词默认严格区分大小写，可在预览中取消。
       </p>
 
       <fieldset :disabled="importing || uncertain" class="space-y-4 min-w-0">
@@ -37,7 +37,7 @@
           autocomplete="off"
           autocorrect="off"
           spellcheck="false"
-          placeholder="apple&#10;book&#10;look after"
+          placeholder="apple 苹果&#10;stand up 站起来&#10;I 我"
           class="mt-1 w-full rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-sm font-bold text-slate-800 dark:text-slate-100"
         />
       </label>
@@ -85,7 +85,7 @@
             </div>
 
             <span class="text-xs font-bold px-2 py-0.5 rounded-full" :class="badgeStyle(item.status)">
-              {{ statusLabel(item) }}
+              {{ item.status === 'invalid' && item.line_number ? `第 ${item.line_number} 行：` : '' }}{{ statusLabel(item) }}
             </span>
           </div>
 
