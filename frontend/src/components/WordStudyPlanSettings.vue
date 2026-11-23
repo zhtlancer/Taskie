@@ -66,29 +66,29 @@
         </header>
 
         <div class="grid grid-cols-2 gap-3 text-xs font-bold text-slate-600 dark:text-slate-300">
-          <label>
+          <label class="flex min-w-0 flex-col justify-between">
             每日新学目标
             <input v-model.number="forms[skill].new_target" type="number" min="0" :max="50" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100" />
           </label>
-          <label>
+          <label class="flex min-w-0 flex-col justify-between">
             每日复习上限
             <input v-model.number="forms[skill].review_target" type="number" min="0" max="100" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100" />
           </label>
-          <label>
+          <label class="flex min-w-0 flex-col justify-between">
             完成奖励积分
             <input v-model.number="forms[skill].points" type="number" min="0" max="10000" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100" />
           </label>
-          <label>
+          <label class="flex min-w-0 flex-col justify-between">
             额外练习单次积分
             <input v-model.number="forms[skill].extra_points" type="number" min="0" max="10000" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100" />
           </label>
-          <label>
+          <label class="flex min-w-0 flex-col justify-between">
             每日加练有奖次数
             <input v-model.number="forms[skill].extra_reward_limit" type="number" min="0" max="20" class="mt-1 w-full min-h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100" />
           </label>
-          <label class="min-w-0">
+          <label class="flex min-w-0 flex-col justify-between">
             开始日期
-            <input v-model="forms[skill].start_date" type="date" :min="forms[skill].exists ? undefined : (serverDate || calendar.today || undefined)" :disabled="forms[skill].exists" class="ui-date-time mt-1 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-bold text-slate-800 dark:text-slate-100 disabled:opacity-60" />
+            <input v-model="forms[skill].start_date" type="date" :min="forms[skill].exists ? undefined : (serverDate || calendar.today || undefined)" :disabled="forms[skill].exists" class="word-plan-date ui-date-time mt-1 h-11 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-bold text-slate-800 dark:text-slate-100 disabled:opacity-60" />
           </label>
         </div>
 
@@ -424,3 +424,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('taskie:session-changed', load);
 });
 </script>
+
+<style scoped>
+/* iOS renders the value in its own box; center it inside the padded field. */
+.word-plan-date::-webkit-date-and-time-value {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+}
+</style>

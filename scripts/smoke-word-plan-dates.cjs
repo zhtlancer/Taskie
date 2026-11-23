@@ -1,6 +1,9 @@
 // Build first. TASKIE_BROWSER=webkit checks Safari-engine layouts with an isolated database.
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { launchBrowser, smokePort } = require('./browser-env.cjs');
+const { useLocalLearningFont } = require('./word-book-fonts.cjs');
 const { createTestApp, cleanupTestApp } = require('../backend/test/helper');
 const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
 const c = createTestApp({ dictDir: null });
@@ -23,6 +26,9 @@ async function checkLayout(page, card) {
       }));
     });
     assert.equal(boxes.length, 6);
+    const pair = JSON.stringify({ fontSize, number: boxes[4].field, date: boxes[5].field });
+    assert.ok(Math.abs(boxes[5].field.height - boxes[4].field.height) <= 1, `date and adjacent number fields have equal heights: ${pair}`);
+    assert.ok(Math.abs(boxes[5].field.top - boxes[4].field.top) <= 1, `date and adjacent number fields share a row: ${pair}`);
     for (const { field, column, left, right } of boxes) {
       assert.ok(field.left >= column.left - 1 && field.right <= column.right + 1, `input fits its column: ${JSON.stringify({ field, column })}`);
       assert.ok(field.left >= left - 1 && field.right <= right + 1, 'input fits within card padding');
@@ -44,6 +50,7 @@ async function main() {
     const context = await browser.newContext({ viewport: { width, height }, locale: 'zh-CN', colorScheme: theme,
       hasTouch: true, isMobile: true, deviceScaleFactor: 2, reducedMotion: 'reduce' });
     try {
+      await useLocalLearningFont(context);
       await context.addInitScript(({ token, theme }) => {
         sessionStorage.setItem('taskie_parent_token', token); localStorage.setItem('taskie_theme', theme);
       }, { token, theme });
@@ -59,12 +66,20 @@ async function main() {
           await date.waitFor();
           assert.equal(await date.isDisabled(), false);
           await date.fill(startDate);
+          await date.blur();
           await checkLayout(page, card);
+          const screenshot = async state => {
+            if (!process.env.SCREENSHOT_DIR || language !== 'zh' || title !== titles[0]) return;
+            fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true });
+            await card.locator('fieldset > .grid').first().screenshot({ path: path.join(process.env.SCREENSHOT_DIR, `word-plan-fields-${width}-${theme}-${state}.png`) });
+          };
+          await screenshot('editable');
           await card.getByRole('button', { name: `保存${title}计划`, exact: true }).click();
           await card.getByRole('status').filter({ hasText: '计划已保存，并按约定生效。' }).waitFor();
           assert.equal(await date.isDisabled(), true, 'saved plans lock the start date');
           assert.equal(await date.inputValue(), startDate, 'chosen date survives saving');
           await checkLayout(page, card);
+          await screenshot('disabled');
         }
       }
       console.log(`PASS ${width}x${height}/${theme}: four word-plan cards fit before/after saving, including enlarged text`);
