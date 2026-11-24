@@ -21,16 +21,16 @@
       <p v-else-if="loadedDate !== today" role="status" class="mb-4 text-sm text-amber-700 dark:text-amber-300">当前显示 {{ loadedDate }} 的进展，请重新读取今日数据后操作。</p>
 
       <ClassHomeworkNotice v-if="attendanceResult?.result" class="mb-4" :result="attendanceResult.result" :child-id="attendanceResult.child_id" :disabled="actionLocked" />
-      <section v-if="pendingAttendance.total || attendanceError" aria-label="待消课确认" class="mb-4 rounded-2xl border-2 border-violet-200 dark:border-violet-800 bg-white dark:bg-slate-900 p-4 shadow-card">
-        <h3 class="mb-2 flex flex-wrap items-center gap-2 text-base font-bold text-slate-700 dark:text-slate-200">
-          <span>📚 待消课确认</span><span v-if="pendingAttendance.total" class="rounded-lg bg-violet-600 px-2 py-0.5 text-xs text-white">{{ pendingAttendance.total }}</span>
-        </h3>
-        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">汇总截至今天未确认的课次，调课按实际上课日期显示。今天尚未结束的课，请核实上课后再确认。</p>
-        <div v-if="attendanceError" role="alert" class="mb-3 flex flex-wrap items-center gap-2 text-sm text-rose-700 dark:text-rose-300">
-          <span>{{ attendanceError }}</span><button type="button" :disabled="refreshing || actionLocked" class="ui-button-secondary" @click="loadDashboard()">重新读取待消课</button>
-        </div>
+      <div v-if="childrenStats.length || todoCount || todoReadErrors" role="region" aria-label="家长待办" class="mb-6 space-y-3 rounded-3xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 p-3 sm:p-4">
+        <header class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-base font-bold text-slate-800 dark:text-slate-100">家长待办</h2>
+          <span data-todo-count class="text-sm font-bold text-brand-700 dark:text-brand-300">{{ todoReadErrors ? '已读取' : '当前' }} {{ todoCount }} 项</span>
+        </header>
+        <p v-if="todoReadErrors" role="status" class="text-xs text-amber-700 dark:text-amber-300">部分待办未能更新，请在对应分类重新读取；其它分类仍可处理。</p>
+        <p v-else-if="!todoCount" class="py-2 text-sm text-slate-500 dark:text-slate-400">暂时没有待处理事项。</p>
+      <ParentTodoGroup v-if="pendingAttendance.total || attendanceError" kind="attendance" title="待消课确认" icon="📚" :items="pendingAttendance.items" :total="pendingAttendance.total" :error="attendanceError" :busy="refreshing || actionLocked" retry-label="重新读取待消课" description="汇总截至今天未确认的课次，调课按实际上课日期显示。今天尚未结束的课，请核实上课后再确认。" @retry="loadDashboard()" v-slot="{ items }">
         <ul class="space-y-2">
-          <li v-for="lesson in pendingAttendance.items" :key="attendanceKey(lesson)" :data-pending-lesson="attendanceKey(lesson)" class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-violet-100 dark:border-violet-800 bg-violet-50/60 dark:bg-violet-950/40 p-3">
+          <li v-for="lesson in items" :key="attendanceKey(lesson)" :data-pending-lesson="attendanceKey(lesson)" class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3">
             <span class="text-2xl">{{ lesson.child_avatar_emoji }}</span>
             <div class="min-w-0 flex-1 basis-48 break-words">
               <p class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ lesson.child_name }} · {{ lesson.title }}</p>
@@ -44,18 +44,12 @@
             </div>
           </li>
         </ul>
-        <p v-if="pendingAttendance.total > pendingAttendance.items.length" class="mt-3 text-xs text-slate-500 dark:text-slate-400">当前显示最早的 {{ pendingAttendance.items.length }} 条，共 {{ pendingAttendance.total }} 条；处理后会自动显示后续课次。</p>
-      </section>
+      </ParentTodoGroup>
 
       <!-- Children's requests to skip a task, waiting for a parent -->
-      <section v-if="skipRequests.length" class="mb-4 bg-white dark:bg-slate-900 rounded-2xl p-4 border-2 border-amber-200 dark:border-amber-800 shadow-card">
-        <h3 class="text-base font-bold text-slate-700 dark:text-slate-200 mb-3 flex flex-wrap items-center gap-2">
-          <span>🙋</span>
-          <span>跳过任务申请</span>
-          <span class="px-2 py-0.5 rounded-lg bg-rose-500 text-white text-xs">{{ skipRequests.length }}</span>
-        </h3>
+      <ParentTodoGroup v-if="skipRequests.length || todoErrors.skip" kind="skip" title="跳过任务申请" icon="🙋" :items="skipRequests" :error="todoErrors.skip" :busy="refreshing || actionLocked" @retry="loadDashboard()" v-slot="{ items }">
         <ul class="space-y-2">
-          <li v-for="r in skipRequests" :key="r.id" class="p-3 rounded-2xl bg-amber-50/60 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-800 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <li v-for="r in items" :key="r.id" class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 flex flex-wrap items-center gap-x-3 gap-y-2">
             <span class="text-2xl">{{ r.child_avatar_emoji }}</span>
             <div class="flex-1 basis-48 min-w-0 break-words">
               <div class="text-sm font-bold text-slate-800 dark:text-slate-100 font-chinese">
@@ -64,22 +58,17 @@
               <div class="text-xs font-bold text-amber-700 dark:text-amber-300 font-chinese">理由：{{ r.reason }}</div>
             </div>
             <div class="flex flex-wrap gap-2">
-              <button type="button" :disabled="!canMutate" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50" @click="resolveSkip(r, 'approve')">同意跳过</button>
-              <button type="button" :disabled="!canMutate" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold disabled:opacity-50" @click="resolveSkip(r, 'reject')">不同意</button>
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.skip)" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50" @click="resolveSkip(r, 'approve')">同意跳过</button>
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.skip)" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold disabled:opacity-50" @click="resolveSkip(r, 'reject')">不同意</button>
             </div>
           </li>
         </ul>
-      </section>
+      </ParentTodoGroup>
 
       <!-- Homework children recorded, waiting for a parent to create its task -->
-      <section v-if="homeworkRequests.length" class="mb-4 bg-white dark:bg-slate-900 rounded-2xl p-4 border-2 border-orange-200 dark:border-orange-800 shadow-card">
-        <h3 class="text-base font-bold text-slate-700 dark:text-slate-200 mb-3 flex flex-wrap items-center gap-2">
-          <span>📒</span>
-          <span>孩子记的作业，等你确认生成任务</span>
-          <span class="px-2 py-0.5 rounded-lg bg-rose-500 text-white text-xs">{{ homeworkRequests.length }}</span>
-        </h3>
+      <ParentTodoGroup v-if="homeworkRequests.length || todoErrors.homework" kind="homework" title="作业生成申请" icon="📒" :items="homeworkRequests" :error="todoErrors.homework" :busy="refreshing || actionLocked" @retry="loadDashboard()" v-slot="{ items }">
         <ul class="space-y-2">
-          <li v-for="r in homeworkRequests" :key="r.id" class="p-3 rounded-2xl bg-orange-50/60 dark:bg-orange-950/40 border border-orange-100 dark:border-orange-800 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <li v-for="r in items" :key="r.id" class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700 flex flex-wrap items-center gap-x-3 gap-y-2">
             <span class="text-2xl">{{ r.child_avatar_emoji }}</span>
             <div class="flex-1 basis-48 min-w-0 break-words">
               <div class="text-sm font-bold text-slate-800 dark:text-slate-100 font-chinese">{{ r.child_name }} · {{ courseLabel(r) }} · {{ dayLabel(r.assigned_date) }}布置</div>
@@ -87,25 +76,42 @@
               <div class="text-xs font-bold text-orange-700 dark:text-orange-300">{{ r.due_date ? `截止 ${dayLabel(r.due_date)}` : '没有截止日期' }} · ★{{ r.points }}</div>
             </div>
             <div class="flex flex-wrap gap-2">
-              <button type="button" :disabled="!canMutate || !r.can_create_task" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50" @click="resolveHomework(r, 'create')">生成任务</button>
-              <button type="button" :disabled="!canMutate" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold disabled:opacity-50" @click="resolveHomework(r, 'reject')">不需要</button>
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.homework) || !r.can_create_task" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50" @click="resolveHomework(r, 'create')">生成任务</button>
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.homework)" class="min-h-11 min-w-11 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold disabled:opacity-50" @click="resolveHomework(r, 'reject')">不需要</button>
               <router-link :to="`/child/${r.child_id}/homework`" class="inline-flex items-center min-h-11 min-w-11 px-3 py-2 rounded-xl text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">改积分</router-link>
             </div>
           </li>
         </ul>
-      </section>
+      </ParentTodoGroup>
 
-      <section v-if="completionRequests.length" class="mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-800 p-4 space-y-3">
-        <h3 class="font-bold text-slate-800 dark:text-slate-100">📒 超期作业全部完成申请</h3>
-        <div v-for="record in completionRequests" :key="record.id" class="rounded-2xl border border-amber-100 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/40 p-3 space-y-2 text-sm">
-          <p class="min-w-0 break-words text-slate-700 dark:text-slate-200">{{ record.child_name }} · {{ courseLabel(record) }}：{{ record.content }}</p>
-          <div class="flex flex-wrap items-center gap-2">
-          <button :disabled="!canMutate" type="button" class="min-h-11 min-w-11 bg-emerald-600 text-white rounded-xl px-3 py-2 disabled:opacity-50" @click="resolveCompletion(record, true)">确认完成</button>
-          <button :disabled="!canMutate" type="button" class="ui-button-secondary" @click="resolveCompletion(record, false)">暂不确认</button>
-          <router-link :to="`/child/${record.child_id}/homework`" class="inline-flex items-center min-h-11 px-3 text-indigo-600 dark:text-indigo-300">查看学习记录</router-link>
+      <ParentTodoGroup v-if="completionRequests.length || todoErrors.completion" kind="completion" title="超期作业全部完成申请" icon="📒" :items="completionRequests" :error="todoErrors.completion" :busy="refreshing || actionLocked" @retry="loadDashboard()" v-slot="{ items }">
+        <div class="space-y-2">
+          <div v-for="record in items" :key="record.id" class="rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 space-y-2 text-sm">
+            <p class="min-w-0 break-words text-slate-700 dark:text-slate-200">{{ record.child_name }} · {{ courseLabel(record) }}：{{ record.content }}</p>
+            <div class="flex flex-wrap items-center gap-2">
+            <button :disabled="!canMutate || Boolean(todoErrors.completion)" type="button" class="min-h-11 min-w-11 bg-emerald-600 text-white rounded-xl px-3 py-2 disabled:opacity-50" @click="resolveCompletion(record, true)">确认完成</button>
+            <button :disabled="!canMutate || Boolean(todoErrors.completion)" type="button" class="ui-button-secondary" @click="resolveCompletion(record, false)">暂不确认</button>
+            <router-link :to="`/child/${record.child_id}/homework`" class="inline-flex items-center min-h-11 px-3 text-indigo-600 dark:text-indigo-300">查看学习记录</router-link>
+            </div>
           </div>
         </div>
-      </section>
+      </ParentTodoGroup>
+      <ParentTodoGroup v-if="redemptionRequests.length || todoErrors.rewards" kind="rewards" title="奖励兑换申请" icon="🎁" :items="redemptionRequests" :error="todoErrors.rewards" :busy="refreshing || actionLocked" @retry="loadDashboard()" v-slot="{ items }">
+        <ul class="space-y-2">
+          <li v-for="request in items" :key="request.id" :data-todo-redemption="request.id" class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3">
+            <span class="text-2xl">{{ request.child_avatar_emoji }}</span>
+            <div class="min-w-0 flex-1 basis-48 break-words">
+              <p class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ request.child_name }} · {{ request.icon_emoji }} {{ request.title }}</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">兑换需 {{ request.cost }} 积分，已预留；拒绝后释放。</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.rewards)" class="min-h-11 min-w-11 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50" @click="resolveRedemption(request, 'approve')">确认兑换</button>
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.rewards)" class="ui-button-secondary text-xs" @click="resolveRedemption(request, 'reject')">拒绝并释放积分</button>
+            </div>
+          </li>
+        </ul>
+      </ParentTodoGroup>
+      </div>
       <div class="grid grid-cols-3 gap-2 mb-5" aria-label="今日摘要">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">小朋友</p><p class="text-xl font-black text-slate-800 dark:text-slate-100">{{ childrenStats.length }} <span class="text-xs">位</span></p></div>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-3"><p class="text-xs text-slate-500 dark:text-slate-400">今日完成</p><p class="text-xl font-black text-emerald-600 dark:text-emerald-300">{{ overallCompletionRate }}%</p></div>
@@ -337,6 +343,8 @@ import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentPageState from '../components/ParentPageState.vue';
 import UiDialog from '../components/UiDialog.vue';
 import ClassHomeworkNotice from '../components/ClassHomeworkNotice.vue';
+import ParentTodoGroup from '../components/ParentTodoGroup.vue';
+import { getPendingRedemptions } from '../api/redemptions';
 import { formatMinutes } from '../utils/timeStats.js';
 import AdhocTaskDialog from '../components/AdhocTaskDialog.vue';
 import PriorityBadge from '../components/PriorityBadge.vue';
@@ -347,6 +355,9 @@ import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerT
 const calendar = useCalendarStore();
 const childrenStats = ref([]), skipRequests = ref([]), homeworkRequests = ref([]), completionRequests = ref([]);
 const pendingAttendance = ref({ items: [], total: 0 }), attendanceError = ref(''), attendanceDraft = ref(null), attendanceResult = ref(null);
+const redemptionRequests = ref([]), todoErrors = ref({});
+const todoCount = computed(() => skipRequests.value.length + homeworkRequests.value.length + completionRequests.value.length + pendingAttendance.value.total + redemptionRequests.value.length);
+const todoReadErrors = computed(() => Boolean(attendanceError.value || Object.values(todoErrors.value).some(Boolean)));
 const loading = ref(true), refreshing = ref(false), dashboardError = ref('');
 const loadedDate = ref(null), loadedZone = ref(null), dashboardLoaded = computed(() => loadedDate.value !== null);
 const adhocForm = ref(null), writeBusy = ref(false), confirming = ref(false);
@@ -418,19 +429,25 @@ async function perform(work, accept, success, fromAttendance = false) {
   }
 }
 function resolveSkip(request, action) {
-  if (!skipRequests.value.some(row => row.id === request.id)) return;
+  if (todoErrors.value.skip || !skipRequests.value.some(row => row.id === request.id)) return;
   return perform(options => action === 'approve' ? api.approveSkipRequest(request.id, options) : api.rejectSkipRequest(request.id, options),
     () => { skipRequests.value = skipRequests.value.filter(row => row.id !== request.id); }, action === 'approve' ? '已同意跳过任务。' : '已拒绝跳过申请。');
 }
 function resolveHomework(record, action) {
-  if (!homeworkRequests.value.some(row => row.id === record.id) || (action === 'create' && !record.can_create_task)) return;
+  if (todoErrors.value.homework || !homeworkRequests.value.some(row => row.id === record.id) || (action === 'create' && !record.can_create_task)) return;
   return perform(options => action === 'create' ? api.createHomeworkTask(record.id, {}, options) : api.rejectHomeworkTask(record.id, options),
     () => { homeworkRequests.value = homeworkRequests.value.filter(row => row.id !== record.id); }, action === 'create' ? '作业任务已生成。' : '已处理这条作业申请。');
 }
 function resolveCompletion(record, approve) {
-  if (!completionRequests.value.some(row => row.id === record.id)) return;
+  if (todoErrors.value.completion || !completionRequests.value.some(row => row.id === record.id)) return;
   return perform(options => approve ? api.completeHomework(record.id, {}, options) : api.rejectHomeworkCompletion(record.id, options),
     () => { completionRequests.value = completionRequests.value.filter(row => row.id !== record.id); }, approve ? '已确认作业全部完成。' : '已暂不确认这次完成申请。');
+}
+function resolveRedemption(request, action) {
+  if (todoErrors.value.rewards || !redemptionRequests.value.some(row => row.id === request.id)) return;
+  return perform(options => action === 'approve' ? api.approveRedemption(request.id, options) : api.rejectRedemption(request.id, options),
+    () => { redemptionRequests.value = redemptionRequests.value.filter(row => row.id !== request.id); },
+    action === 'approve' ? '已确认奖励兑换。' : '已拒绝兑换，预留积分已释放。');
 }
 const attendanceKey = lesson => `${lesson.class_id}:${lesson.child_id}:${lesson.lesson_date}`;
 function closeAttendance() {
@@ -523,14 +540,21 @@ async function loadDashboard({ afterWrite = false } = {}) {
       return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer: timer?.timer ? withClock(timer.timer) : null,
         classOverview: classes ? classOverview(classes) : null, attention: tasks ? taskAttention(tasks, goals, date) : null, unavailable };
     });
-    const attendanceUnavailable = [];
-    const result = await Promise.all([Promise.all(statsPromises), api.getSkipRequests('pending', { limit: 200 }, signal, silent),
-      api.getHomeworkRequests(signal, silent), api.getHomeworkCompletionRequests(signal, silent),
-      optional('待消课确认', () => api.getPendingClassAttendance(signal, silent), attendanceUnavailable)]);
+    const unavailable = [];
+    const result = await Promise.all([Promise.all(statsPromises),
+      optional('skip', () => api.getSkipRequests('pending', { limit: 200 }, signal, silent), unavailable),
+      optional('homework', () => api.getHomeworkRequests(signal, silent), unavailable),
+      optional('completion', () => api.getHomeworkCompletionRequests(signal, silent), unavailable),
+      optional('attendance', () => api.getPendingClassAttendance(signal, silent), unavailable),
+      optional('rewards', () => getPendingRedemptions(params => api.getRedemptions(params.status, params, signal, silent)), unavailable)]);
     if (!current()) return;
-    [childrenStats.value, skipRequests.value, homeworkRequests.value, completionRequests.value] = result;
-    if (result[4]) pendingAttendance.value = result[4];
-    attendanceError.value = attendanceUnavailable.length ? '待消课记录未能读取，请重试。' : '';
+    childrenStats.value = result[0];
+    for (const [index, target] of [[1, skipRequests], [2, homeworkRequests], [3, completionRequests], [4, pendingAttendance], [5, redemptionRequests]]) {
+      if (result[index]) target.value = result[index];
+    }
+    todoErrors.value = Object.fromEntries(['skip', 'homework', 'completion', 'rewards'].map(kind => [kind,
+      unavailable.includes(kind) ? '这类待办未能读取，请重试。' : '']));
+    attendanceError.value = unavailable.includes('attendance') ? '待消课记录未能读取，请重试。' : '';
     loadedDate.value = date; loadedZone.value = timeZone;
   } catch (err) {
     if (!current() || signal.aborted) return;
@@ -551,6 +575,7 @@ function restored() {
   epoch++; dashboardSerial++; reader?.abort(); pendingDate = null;
   childrenStats.value = []; skipRequests.value = []; homeworkRequests.value = []; completionRequests.value = [];
   pendingAttendance.value = { items: [], total: 0 }; attendanceError.value = ''; attendanceDraft.value = null; attendanceResult.value = null;
+  redemptionRequests.value = []; todoErrors.value = {};
   loadedDate.value = null; loadedZone.value = null; dashboardError.value = ''; actionError.value = ''; notice.value = ''; adhocForm.value = null;
   refreshing.value = false;
   loadDashboard();

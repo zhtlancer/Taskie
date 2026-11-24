@@ -22,6 +22,27 @@ async function fixture(t) {
   return { ctx, createChild, childHeaders, earn, stats };
 }
 
+test('parent approvals and rejections reject stale data generations without changing held points', async t => {
+  const { ctx, createChild, earn, stats } = await fixture(t);
+  const child = await createChild('家长待办');
+  await earn(child, 25);
+  const item = (await ctx.app.inject({ method: 'POST', url: '/api/reward-items', payload: { title: '待办奖励', cost: 5 } })).json();
+  for (const action of ['approve', 'reject']) {
+    const request = (await ctx.app.inject({ method: 'POST', url: `/api/children/${child.id}/redemptions`, payload: { reward_id: item.id } })).json();
+    const before = (await stats(child)).available_points;
+    const response = await ctx.app.inject({ method: 'POST', url: `/api/redemptions/${request.id}/${action}`,
+      headers: { 'X-Taskie-Data-Generation': 'stale' } });
+    assert.equal(response.statusCode, 409, response.body);
+    assert.equal(response.json().code, 'DATA_RESTORED');
+    assert.equal(ctx.app.services.redemptionsService.getRedemption(request.id).status, 'pending');
+    assert.equal((await stats(child)).available_points, before);
+    const accepted = await ctx.app.inject({ method: 'POST', url: `/api/redemptions/${request.id}/${action}` });
+    assert.equal(accepted.statusCode, 200, accepted.body);
+    assert.equal((await stats(child)).available_points, action === 'reject' ? before + 5 : before);
+    assert.equal((await ctx.app.inject({ method: 'POST', url: `/api/redemptions/${request.id}/${action}` })).statusCode, 409);
+  }
+});
+
 test('parents manage reward items; children only see rewards on offer', async t => {
   const { ctx, createChild, childHeaders } = await fixture(t);
   const headers = await childHeaders(await createChild('小明'));

@@ -31,6 +31,11 @@ async function main() {
     const late = await api('POST', `/children/${child.id}/homework`, { subject: '语文', content: '超期作业' + '完整内容'.repeat(16), due_date: today, create_task: true, points: 11 });
     db.prepare('UPDATE daily_tasks SET date=?, due_date=NULL WHERE id=?').run(shiftDate(today, -1), late.task.id);
     db.prepare('UPDATE homework_records SET assigned_date=?, due_date=?, completion_requested_at=? WHERE id=?').run(shiftDate(today, -1), shiftDate(today, -1), new Date().toISOString(), late.id);
+    const rewardPoints = await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '赚取兑换积分', subject: '其他', points: 30 });
+    await api('POST', `/daily-tasks/${rewardPoints.id}/complete`);
+    const reward = await api('POST', '/reward-items', { title: '家长待办兑换奖励', cost: 5 });
+    const redemptions = [];
+    for (let i = 0; i < 4; i++) redemptions.push(await api('POST', `/children/${child.id}/redemptions`, { reward_id: reward.id }));
     const context = await browser.newContext({ viewport: { width, height: 1100 }, hasTouch: true, colorScheme: theme, timezoneId: 'Pacific/Honolulu', locale: 'zh-CN', reducedMotion: 'reduce' });
     try {
       await context.addInitScript(({ token, theme }) => { sessionStorage.setItem('taskie_parent_token', token); localStorage.setItem('taskie_theme', theme); localStorage.setItem('app_sound_muted', 'true'); }, { token, theme });
@@ -58,6 +63,62 @@ async function main() {
       for (const control of controls) assert.ok(control.height >= 44 && control.left >= 0 && control.right <= width + 1, JSON.stringify(control));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       if (process.env.SCREENSHOT_DIR) { fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, `dashboard-${width}-${theme}.png`), fullPage: true }); }
+
+      const inbox = page.getByRole('region', { name: '家长待办', exact: true });
+      const rewards = inbox.locator('[data-todo-group="rewards"]');
+      assert.equal(await inbox.locator('[data-todo-group]').count(), 5);
+      assert.match(await inbox.locator('[data-todo-count]').innerText(), /当前 8 项/);
+      assert.equal(await rewards.locator('[data-todo-redemption]').count(), 3);
+      await rewards.getByRole('button', { name: '展开奖励兑换申请', exact: true }).click();
+      assert.equal(await rewards.locator('[data-todo-redemption]').count(), 4);
+      const inboxPoll = page.waitForResponse(response => response.url().endsWith('/api/children'));
+      await page.clock.fastForward(60000); await inboxPoll; await page.waitForLoadState('networkidle');
+      assert.equal(await rewards.locator('[data-todo-redemption]').count(), 4, 'polling preserves expansion');
+      await rewards.getByRole('button', { name: '收起奖励兑换申请', exact: true }).click();
+      assert.equal(await rewards.locator('[data-todo-redemption]').count(), 3);
+      await rewards.getByRole('button', { name: '展开奖励兑换申请', exact: true }).click();
+      if (width === 390 && theme === 'light') {
+        const rewardUrl = '**/api/redemptions?*';
+        await page.route(rewardUrl, fail); await reload(); await rewards.getByRole('alert').waitFor();
+        assert.equal(await rewards.getByRole('button', { name: '确认兑换', exact: true }).first().isDisabled(), true);
+        assert.equal(await skipRow.getByRole('button', { name: '同意跳过', exact: true }).isEnabled(), true);
+        assert.equal(await state.count(), 0);
+        await page.unroute(rewardUrl, fail);
+        await rewards.getByRole('button', { name: '重新读取奖励兑换申请', exact: true }).click();
+        await rewards.getByRole('alert').waitFor({ state: 'detached' });
+        const approvalUrl = `**/api/redemptions/${redemptions[0].id}/approve`;
+        await page.route(approvalUrl, route => route.fulfill({ status: 503, json: { error: '兑换审批暂时失败' } }));
+        await rewards.locator(`[data-todo-redemption="${redemptions[0].id}"]`).getByRole('button', { name: '确认兑换', exact: true }).click();
+        await page.getByRole('alert').filter({ hasText: '兑换审批暂时失败' }).waitFor();
+        assert.equal(db.prepare('SELECT status FROM reward_redemptions WHERE id=?').get(redemptions[0].id).status, 'pending');
+        await page.unroute(approvalUrl);
+      }
+      const availableBefore = (await api('GET', `/children/${child.id}/stats`)).available_points;
+      const approvedReward = rewards.locator(`[data-todo-redemption="${redemptions[0].id}"]`);
+      await approvedReward.getByRole('button', { name: '确认兑换', exact: true }).click(); await approvedReward.waitFor({ state: 'detached' });
+      assert.equal(db.prepare('SELECT status FROM reward_redemptions WHERE id=?').get(redemptions[0].id).status, 'approved');
+      assert.equal((await api('GET', `/children/${child.id}/stats`)).available_points, availableBefore);
+      const rejectedReward = rewards.locator(`[data-todo-redemption="${redemptions[1].id}"]`);
+      await rejectedReward.getByRole('button', { name: '拒绝并释放积分', exact: true }).click(); await rejectedReward.waitFor({ state: 'detached' });
+      assert.equal((await api('GET', `/children/${child.id}/stats`)).available_points, availableBefore + 5);
+      for (const request of redemptions.slice(2)) await api('POST', `/redemptions/${request.id}/reject`);
+      await reload(); await rewards.waitFor({ state: 'detached' });
+      assert.match(await inbox.locator('[data-todo-count]').innerText(), /当前 4 项/);
+      if (width === 390 && theme === 'light') {
+        for (const [kind, url, action, retry] of [
+          ['skip', '**/api/skip-requests?*', '同意跳过', '重新读取跳过任务申请'],
+          ['homework', '**/api/homework-requests', '生成任务', '重新读取作业生成申请'],
+          ['completion', '**/api/homework-completion-requests', '确认完成', '重新读取超期作业全部完成申请']
+        ]) {
+          const group = inbox.locator(`[data-todo-group="${kind}"]`);
+          await page.route(url, fail); await reload(); await group.getByRole('alert').waitFor();
+          assert.equal(await group.getByRole('button', { name: action, exact: true }).isDisabled(), true);
+          assert.equal(await lesson.getByRole('button', { name: '确认消课', exact: true }).isEnabled(), true);
+          assert.equal(await state.count(), 0);
+          await page.unroute(url, fail); await group.getByRole('button', { name: retry, exact: true }).click();
+          await group.getByRole('alert').waitFor({ state: 'detached' });
+        }
+      }
 
       // Pending attendance is independently recoverable; accepting it uses the existing class flow.
       await lesson.waitFor();

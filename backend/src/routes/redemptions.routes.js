@@ -29,9 +29,9 @@ async function redemptionsRoutes(fastify, options) {
 
   fastify.get('/redemptions', handle(async request =>
     redemptionsService.listRedemptions({ status: request.query.status, limit: request.query.limit, offset: request.query.offset })));
-  fastify.post('/redemptions/:id/approve', handle(async request =>
+  fastify.post('/redemptions/:id/approve', generationWrite(fastify, request =>
     redemptionsService.resolveRedemption(request.params.id, 'approved')));
-  fastify.post('/redemptions/:id/reject', handle(async request =>
+  fastify.post('/redemptions/:id/reject', generationWrite(fastify, request =>
     redemptionsService.resolveRedemption(request.params.id, 'rejected')));
   fastify.post('/redemptions/:id/cancel', handle(async request =>
     redemptionsService.resolveRedemption(request.params.id, 'cancelled')));
