@@ -23,6 +23,7 @@ async function scheduleRoutes(fastify, options) {
 
   fastify.get('/outside-classes', handle(async () => scheduleService.listClasses()));
   fastify.get('/outside-classes/stats', handle(async request => classStatsService.list(request.query.child_id)));
+  fastify.get('/outside-classes/pending-attendance', handle(async request => classStatsService.pendingAttendance(request.query)));
   fastify.get('/outside-classes/:id/stats', handle(async request => classStatsService.details(request.params.id, request.query.child_id, request.query.from, request.query.to)));
   const saveAttendance = generationWrite(fastify, request => classStatsService.setAttendance(request.params.id, request.body?.child_id, request.body?.lesson_date, request.body || {}));
   fastify.put('/outside-classes/:id/attendance', handle(async (request, reply) => {

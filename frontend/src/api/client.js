@@ -318,6 +318,7 @@ export const api = {
   deleteTimetable: id => remove(`/timetables/${id}`),
   getOutsideClasses: () => get('/outside-classes'),
   getOutsideClassStats: (childId, signal, options) => get('/outside-classes/stats', { child_id: childId }, signal, options),
+  getPendingClassAttendance: (signal, options) => get('/outside-classes/pending-attendance', undefined, signal, options),
   getOutsideClassDetails: (id, childId, from, to) => get(`/outside-classes/${id}/stats`, { child_id: childId, from, to }),
   async setClassAttendance(id, data, options = {}) {
     requireFamilyDate();

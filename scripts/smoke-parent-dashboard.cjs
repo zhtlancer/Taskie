@@ -22,6 +22,8 @@ async function main() {
   browser = await chromium.launch(launchOptions());
   for (const width of [390, 820, 1180]) for (const theme of ['light', 'dark']) {
     const child = await api('POST', '/children', { name: '需要查看完整名字的小朋友' });
+    const cls = await api('POST', '/outside-classes', { title: '家长首页确认消课'.repeat(2), child_ids: [child.id],
+      start_date: today, days_of_week: [0,1,2,3,4,5,6], start_time: '23:00', end_time: '23:59', total_lessons: 2, auto_homework: true });
     const task = await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '删除练习' + '长名称'.repeat(12), subject: '数学', points: 7 });
     const skipTask = await api('POST', `/children/${child.id}/adhoc-tasks`, { title: '申请跳过的练习', subject: '数学', points: 3 });
     const skip = app.services.skipsService.requestSkip(skipTask.id, '请假' + '长原因'.repeat(12), { role: 'child' }).request;
@@ -42,6 +44,7 @@ async function main() {
       const skipRow = page.locator('li').filter({ hasText: skipTask.title });
       const homeworkRow = page.locator('li').filter({ hasText: homework.content });
       const lateRow = page.locator('section').filter({ has: page.getByRole('heading', { name: '📒 超期作业全部完成申请', exact: true }) });
+      const lesson = page.locator(`[data-pending-lesson="${cls.id}:${child.id}:${today}"]`);
       const fail = route => route.fulfill({ status: 503, json: { error: '本轮模拟读取失败' } });
       const childrenUrl = '**/api/children';
       await page.route(childrenUrl, fail); await go(); await state.waitFor();
@@ -55,6 +58,46 @@ async function main() {
       for (const control of controls) assert.ok(control.height >= 44 && control.left >= 0 && control.right <= width + 1, JSON.stringify(control));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       if (process.env.SCREENSHOT_DIR) { fs.mkdirSync(process.env.SCREENSHOT_DIR, { recursive: true }); await page.screenshot({ path: path.join(process.env.SCREENSHOT_DIR, `dashboard-${width}-${theme}.png`), fullPage: true }); }
+
+      // Pending attendance is independently recoverable; accepting it uses the existing class flow.
+      await lesson.waitFor();
+      if (width === 390 && theme === 'light') {
+        const pendingUrl = '**/api/outside-classes/pending-attendance';
+        await page.route(pendingUrl, fail); await reload();
+        await page.getByRole('alert').filter({ hasText: '待消课记录未能读取' }).waitFor();
+        assert.equal(await lesson.getByRole('button', { name: '确认消课', exact: true }).isDisabled(), true);
+        assert.equal(await skipRow.getByRole('button', { name: '同意跳过', exact: true }).isEnabled(), true);
+        await page.unroute(pendingUrl, fail);
+        await page.getByRole('button', { name: '重新读取待消课', exact: true }).click();
+        await lesson.getByRole('button', { name: '确认消课', exact: true }).click();
+        await lesson.waitFor({ state: 'detached' });
+        await page.getByRole('status').filter({ hasText: '已确认上课并消课 1 次。' }).waitFor();
+        await page.locator('[data-class-homework]').getByRole('link', { name: '查看作业', exact: true }).waitFor();
+      } else {
+        await lesson.getByRole('button', { name: '其它处理', exact: true }).click();
+        const dialog = page.getByRole('dialog', { name: '处理待消课', exact: true });
+        if (width === 820 && theme === 'light') {
+          const rejectSave = route => route.fulfill({ status: 409, json: { error: '模拟出勤冲突' } });
+          await page.route('**/api/outside-classes/*/attendance', rejectSave);
+          await dialog.getByRole('button', { name: '保存出勤', exact: true }).click();
+          await dialog.getByRole('alert').filter({ hasText: '模拟出勤冲突' }).waitFor();
+          await page.unroute('**/api/outside-classes/*/attendance', rejectSave);
+          await dialog.getByRole('button', { name: '暂不处理', exact: true }).click();
+          await dialog.waitFor({ state: 'detached' });
+          assert.equal(await page.getByRole('alert').filter({ hasText: '模拟出勤冲突' }).count(), 0);
+          await lesson.getByRole('button', { name: '其它处理', exact: true }).click();
+          await dialog.waitFor();
+        }
+        const status = theme === 'dark' ? 'leave' : 'absent';
+        await dialog.getByLabel('出勤状态', { exact: true }).selectOption(status);
+        assert.equal(await dialog.getByLabel('本次消课（扣 1 次）', { exact: true }).isChecked(), false);
+        await dialog.getByLabel('备注（选填）', { exact: true }).fill('家长首页核实');
+        await dialog.getByRole('button', { name: '保存出勤', exact: true }).click();
+        await dialog.waitFor({ state: 'detached' }); await lesson.waitFor({ state: 'detached' });
+      }
+      const attendance = db.prepare('SELECT status, charged FROM outside_class_attendance WHERE class_id=? AND child_id=? AND lesson_date=?').get(cls.id, child.id, today);
+      assert.equal(attendance.status, width === 390 && theme === 'light' ? 'attended' : theme === 'dark' ? 'leave' : 'absent');
+      assert.equal(attendance.charged, width === 390 && theme === 'light' ? 1 : 0);
 
       // The four optional endpoints fail independently of the core cards and approvals.
       const optionalUrls = [`**/api/children/${child.id}/current-timer`, `**/api/children/${child.id}/time-stats?*`, '**/api/outside-classes/stats?*', '**/api/daily-tasks?*'];

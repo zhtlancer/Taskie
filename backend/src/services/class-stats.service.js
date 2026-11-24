@@ -83,9 +83,8 @@ class ClassStatsService {
   now() {
     return { today: getTodayDate(), clock: new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()) };
   }
-  summary(ctx) {
+  summary(ctx, { today, clock } = this.now()) {
     const { cls, childId, records, exceptions, since } = ctx;
-    const { today, clock } = this.now();
     let due = Math.max(0, this.countThrough(cls, shiftDate(today, -1)) - this.countThrough(cls, shiftDate(since, -1)));
     if (this.validSource(cls, today) && today >= since && cls.end_time <= clock) due++;
     let confirmedDue = 0, attended = 0, absent = 0, leave = 0, charged = 0, knownMinutes = 0, unknownDuration = 0, monthAttended = 0;
@@ -139,6 +138,48 @@ class ClassStatsService {
       this.db.prepare('SELECT 1 FROM outside_class_attendance WHERE class_id = ? AND child_id = ? UNION SELECT 1 FROM outside_class_fees WHERE class_id = ? AND child_id = ?').get(cls.id, childId, cls.id, childId))
       .map(cls => this.summary(this.context(cls.id, childId)));
   }
+  pendingAttendance({ limit = 50 } = {}) {
+    limit = Number(limit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw fail(400, '每次最多查看 200 条待消课记录');
+    const { today, clock } = this.now();
+    const classes = this.schedule.listClasses();
+    const items = [];
+    let total = 0;
+    for (const child of this.db.prepare('SELECT id, name, avatar_emoji FROM children ORDER BY created_at, id').all()) {
+      for (const cls of classes) {
+        if (cls.child_ids !== null && !cls.child_ids.includes(child.id)) continue;
+        const ctx = this.context(cls.id, child.id);
+        // The homepage includes all of today's lessons, including those ending later today.
+        total += this.summary(ctx, { today, clock: '23:59' }).pending;
+        const add = source => {
+          const lesson = this.lesson(ctx, source);
+          if (lesson.status !== 'pending' || lesson.actual_date < ctx.since || lesson.actual_date > today) return false;
+          items.push({ ...lesson, class_id: cls.id, title: cls.title, child_id: child.id,
+            child_name: child.name, child_avatar_emoji: child.avatar_emoji,
+            ended: isDue(lesson.actual_date, lesson.end_time, today, clock) });
+          return true;
+        };
+        // Moves can bring a future source date into the past, or cross the tracking-start date.
+        for (const [source, exception] of ctx.exceptions) if (exception.kind === 'moved') add(source);
+        // Walk only until this course has enough ordinary pending lessons for the first page.
+        // Confirmed lessons/exceptions are finite; unlimited courses never materialize their full history.
+        const first = ctx.since, last = cls.end_date && cls.end_date < today ? cls.end_date : today;
+        const offsets = cls.days_of_week.map(day => (day - getDayOfWeek(first) + 7) % 7).sort((a, b) => a - b);
+        let count = 0;
+        for (let week = first; week <= last && count < limit; week = shiftDate(week, 7)) {
+          for (const offset of offsets) {
+            const source = shiftDate(week, offset);
+            if (source > last || count >= limit) break;
+            if (ctx.exceptions.get(source)?.kind === 'moved') continue;
+            if (add(source)) count++;
+          }
+        }
+      }
+    }
+    items.sort((a, b) => a.actual_date.localeCompare(b.actual_date) || (a.start_time ?? '').localeCompare(b.start_time ?? '')
+      || a.child_id.localeCompare(b.child_id) || a.class_id.localeCompare(b.class_id) || a.lesson_date.localeCompare(b.lesson_date));
+    return { items: items.slice(0, limit), total, limit, today, time_zone: timeZone };
+  }
   details(classId, childId, from, to) {
     const ctx = this.context(classId, childId), summary = this.summary(ctx);
     from = from ?? shiftDate(summary.today, -30); to = to ?? shiftDate(summary.today, 30);
@@ -186,6 +227,16 @@ class ClassStatsService {
     this.db.transaction(() => {
       const before = this.db.prepare('SELECT * FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').get(classId, childId, source);
       this.checkVersion(this.revision(classId, childId, 'attendance', source), body.expected_revision, '这节课的出勤刚被其他设备修改过，请看最新记录后再改');
+      if (body.expected_lesson !== undefined) {
+        const expected = body.expected_lesson;
+        if (!expected || typeof expected !== 'object' || Array.isArray(expected) ||
+            !['actual_date', 'start_time', 'end_time'].every(key => typeof expected[key] === 'string' || expected[key] === null)) {
+          throw fail(400, '请刷新待消课记录后再确认');
+        }
+        if (lesson.status !== 'pending' || ['actual_date', 'start_time', 'end_time'].some(key => lesson[key] !== expected[key])) {
+          throw fail(409, '这节课的安排或出勤已变化，请刷新后重新确认');
+        }
+      }
       if (body.status === 'pending') this.db.prepare('DELETE FROM outside_class_attendance WHERE class_id = ? AND child_id = ? AND lesson_date = ?').run(classId, childId, source);
       else this.db.prepare(`INSERT INTO outside_class_attendance
         (class_id, child_id, lesson_date, actual_date, start_time, end_time, duration_minutes, status, charged, source, note, updated_at)

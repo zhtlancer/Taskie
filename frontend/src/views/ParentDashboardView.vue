@@ -3,7 +3,7 @@
     <ParentNavBar />
 
     <main class="max-w-6xl w-full mx-auto p-4 sm:p-6 flex-1">
-      <ParentPageHeader icon="📊" title="今日作业完成概览" description="查看所有孩子的任务进展，处理作业与跳过申请。">
+      <ParentPageHeader icon="📊" title="今日作业完成概览" description="查看所有孩子的任务进展，处理待消课、作业与跳过申请。">
         <template #actions>
           <button type="button" :disabled="refreshing || actionLocked || !calendar.ready" class="ui-button-secondary" @click="loadDashboard()">{{ refreshing ? '刷新中…' : '刷新总览' }}</button>
           <router-link to="/parent/time-stats" class="ui-button-secondary inline-flex items-center">⏱ 用时统计</router-link>
@@ -19,6 +19,33 @@
       <template v-if="calendar.ready && dashboardLoaded">
       <p v-if="refreshing" role="status" class="mb-4 text-xs text-slate-500 dark:text-slate-400">正在刷新，当前显示上次读取的数据。</p>
       <p v-else-if="loadedDate !== today" role="status" class="mb-4 text-sm text-amber-700 dark:text-amber-300">当前显示 {{ loadedDate }} 的进展，请重新读取今日数据后操作。</p>
+
+      <ClassHomeworkNotice v-if="attendanceResult?.result" class="mb-4" :result="attendanceResult.result" :child-id="attendanceResult.child_id" :disabled="actionLocked" />
+      <section v-if="pendingAttendance.total || attendanceError" aria-label="待消课确认" class="mb-4 rounded-2xl border-2 border-violet-200 dark:border-violet-800 bg-white dark:bg-slate-900 p-4 shadow-card">
+        <h3 class="mb-2 flex flex-wrap items-center gap-2 text-base font-bold text-slate-700 dark:text-slate-200">
+          <span>📚 待消课确认</span><span v-if="pendingAttendance.total" class="rounded-lg bg-violet-600 px-2 py-0.5 text-xs text-white">{{ pendingAttendance.total }}</span>
+        </h3>
+        <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">汇总截至今天未确认的课次，调课按实际上课日期显示。今天尚未结束的课，请核实上课后再确认。</p>
+        <div v-if="attendanceError" role="alert" class="mb-3 flex flex-wrap items-center gap-2 text-sm text-rose-700 dark:text-rose-300">
+          <span>{{ attendanceError }}</span><button type="button" :disabled="refreshing || actionLocked" class="ui-button-secondary" @click="loadDashboard()">重新读取待消课</button>
+        </div>
+        <ul class="space-y-2">
+          <li v-for="lesson in pendingAttendance.items" :key="attendanceKey(lesson)" :data-pending-lesson="attendanceKey(lesson)" class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-violet-100 dark:border-violet-800 bg-violet-50/60 dark:bg-violet-950/40 p-3">
+            <span class="text-2xl">{{ lesson.child_avatar_emoji }}</span>
+            <div class="min-w-0 flex-1 basis-48 break-words">
+              <p class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ lesson.child_name }} · {{ lesson.title }}</p>
+              <p class="text-xs text-slate-600 dark:text-slate-300">{{ lesson.actual_date }} · {{ lesson.start_time }}–{{ lesson.end_time }}<span v-if="lesson.lesson_number"> · 第 {{ lesson.lesson_number }} 次</span></p>
+              <p v-if="lesson.actual_date !== lesson.lesson_date" class="text-xs text-slate-500 dark:text-slate-400">原定 {{ lesson.lesson_date }}，已调课</p>
+              <p v-if="!lesson.ended" class="text-xs font-bold text-violet-700 dark:text-violet-300">今天尚未结束</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" :disabled="!canMutate || Boolean(attendanceError)" class="min-h-11 min-w-11 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50" @click="resolveAttendance(lesson)">确认消课</button>
+              <button type="button" :disabled="!canMutate || Boolean(attendanceError)" class="ui-button-secondary text-xs" @click="openAttendance(lesson)">其它处理</button>
+            </div>
+          </li>
+        </ul>
+        <p v-if="pendingAttendance.total > pendingAttendance.items.length" class="mt-3 text-xs text-slate-500 dark:text-slate-400">当前显示最早的 {{ pendingAttendance.items.length }} 条，共 {{ pendingAttendance.total }} 条；处理后会自动显示后续课次。</p>
+      </section>
 
       <!-- Children's requests to skip a task, waiting for a parent -->
       <section v-if="skipRequests.length" class="mb-4 bg-white dark:bg-slate-900 rounded-2xl p-4 border-2 border-amber-200 dark:border-amber-800 shadow-card">
@@ -278,6 +305,23 @@
     </main>
 
     <AdhocTaskDialog v-if="adhocForm" :child="adhocForm.child" :task="adhocForm.task" @close="adhocForm = null" @saved="afterAdhocSaved" />
+    <UiDialog v-if="attendanceDraft" title="处理待消课" :busy="writeBusy" @close="closeAttendance">
+      <form class="space-y-4" @submit.prevent="resolveAttendance(attendanceDraft.lesson, attendanceDraft)">
+        <p class="break-words text-sm font-bold">{{ attendanceDraft.lesson.child_name }} · {{ attendanceDraft.lesson.title }}<br />{{ attendanceDraft.lesson.actual_date }} {{ attendanceDraft.lesson.start_time }}–{{ attendanceDraft.lesson.end_time }}</p>
+        <p v-if="actionError || attendanceError" role="alert" class="rounded-xl bg-rose-50 dark:bg-rose-950/40 p-3 text-sm text-rose-700 dark:text-rose-300">{{ actionError || attendanceError }}</p>
+        <label class="block text-sm font-bold">出勤状态
+          <select v-model="attendanceDraft.status" aria-label="出勤状态" :disabled="writeBusy" class="ui-input mt-2 w-full" @change="attendanceDraft.charged = attendanceDraft.status === 'attended'">
+            <option value="attended">已上课</option><option value="leave">请假</option><option value="absent">缺席</option>
+          </select>
+        </label>
+        <label class="flex min-h-11 items-center gap-2 text-sm"><input v-model="attendanceDraft.charged" :disabled="writeBusy" type="checkbox" class="h-5 w-5 accent-violet-600" />本次消课（扣 1 次）</label>
+        <label class="block text-sm font-bold">备注（选填）<textarea v-model="attendanceDraft.note" :disabled="writeBusy" maxlength="200" rows="3" class="ui-input mt-2 w-full" /></label>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button type="button" :disabled="writeBusy" class="ui-button-secondary" @click="closeAttendance">暂不处理</button>
+          <button type="submit" :disabled="!canWrite || Boolean(attendanceError)" class="ui-button-primary">{{ writeBusy ? '保存中…' : '保存出勤' }}</button>
+        </div>
+      </form>
+    </UiDialog>
   </div>
 </template>
 
@@ -291,6 +335,8 @@ import { getToken, getDataGeneration, hasSession } from '../utils/session';
 import ParentNavBar from '../components/ParentNavBar.vue';
 import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentPageState from '../components/ParentPageState.vue';
+import UiDialog from '../components/UiDialog.vue';
+import ClassHomeworkNotice from '../components/ClassHomeworkNotice.vue';
 import { formatMinutes } from '../utils/timeStats.js';
 import AdhocTaskDialog from '../components/AdhocTaskDialog.vue';
 import PriorityBadge from '../components/PriorityBadge.vue';
@@ -300,14 +346,16 @@ import { addDays } from '../utils/schedule';
 import { LONG_TIMER_SECONDS, MAX_TIMER_SECONDS, formatClock, liveSeconds, timerTarget, withClock } from '../utils/taskTimer.js';
 const calendar = useCalendarStore();
 const childrenStats = ref([]), skipRequests = ref([]), homeworkRequests = ref([]), completionRequests = ref([]);
+const pendingAttendance = ref({ items: [], total: 0 }), attendanceError = ref(''), attendanceDraft = ref(null), attendanceResult = ref(null);
 const loading = ref(true), refreshing = ref(false), dashboardError = ref('');
 const loadedDate = ref(null), loadedZone = ref(null), dashboardLoaded = computed(() => loadedDate.value !== null);
 const adhocForm = ref(null), writeBusy = ref(false), confirming = ref(false);
 const actionError = ref(''), notice = ref('');
 const actionLocked = computed(() => writeBusy.value || confirming.value);
 const today = computed(() => calendar.today);
-const canMutate = computed(() => calendar.ready && dashboardLoaded.value && loadedDate.value === today.value
+const canWrite = computed(() => calendar.ready && dashboardLoaded.value && loadedDate.value === today.value
   && loadedZone.value === calendar.timeZone && !loading.value && !refreshing.value && !dashboardError.value && !actionLocked.value && !adhocForm.value);
+const canMutate = computed(() => canWrite.value && !attendanceDraft.value);
 const silent = { silentError: true, preserveError: true };
 let alive = true, epoch = 0, dashboardSerial = 0, pendingDate = null, reader;
 const message = err => typeof err === 'string' ? err : err?.message || '操作失败，请在原处重试';
@@ -351,8 +399,8 @@ async function afterAdhocSaved() {
 }
 
 // Stop an older read before a write; periodic reads resume only after its reconciliation.
-async function perform(work, accept, success) {
-  if (!canMutate.value) return;
+async function perform(work, accept, success, fromAttendance = false) {
+  if (!(fromAttendance ? canWrite.value : canMutate.value)) return;
   const captured = scope();
   writeBusy.value = true; actionError.value = ''; notice.value = '';
   dashboardSerial++; reader?.abort(); pendingDate = null;
@@ -383,6 +431,43 @@ function resolveCompletion(record, approve) {
   if (!completionRequests.value.some(row => row.id === record.id)) return;
   return perform(options => approve ? api.completeHomework(record.id, {}, options) : api.rejectHomeworkCompletion(record.id, options),
     () => { completionRequests.value = completionRequests.value.filter(row => row.id !== record.id); }, approve ? '已确认作业全部完成。' : '已暂不确认这次完成申请。');
+}
+const attendanceKey = lesson => `${lesson.class_id}:${lesson.child_id}:${lesson.lesson_date}`;
+function closeAttendance() {
+  if (writeBusy.value) return;
+  attendanceDraft.value = null;
+  actionError.value = '';
+}
+function openAttendance(lesson) {
+  if (!canMutate.value || attendanceError.value) return;
+  actionError.value = '';
+  attendanceDraft.value = { lesson: { ...lesson }, status: 'attended', charged: true, note: '',
+    scope: scope(), date: today.value, timeZone: calendar.timeZone };
+}
+function resolveAttendance(lesson, draft = null) {
+  if (attendanceError.value || !(draft ? canWrite.value : canMutate.value)) return;
+  if (draft && (!currentScope(draft.scope) || draft.scope.generation !== getDataGeneration()
+      || draft.date !== today.value || draft.timeZone !== calendar.timeZone)) {
+    actionError.value = '家庭日期或数据已变化，请关闭窗口并重新核对这节课。';
+    return;
+  }
+  if (!pendingAttendance.value.items.some(row => attendanceKey(row) === attendanceKey(lesson))) {
+    actionError.value = '这节课已被处理，请关闭窗口后查看最新记录。';
+    return;
+  }
+  let result;
+  const status = draft?.status ?? 'attended', charged = draft?.charged ?? true;
+  return perform(async options => {
+    result = await api.setClassAttendance(lesson.class_id, { child_id: lesson.child_id, lesson_date: lesson.lesson_date,
+      status, charged, note: draft?.note ?? '', expected_revision: lesson.revision ?? null,
+      expected_lesson: { actual_date: lesson.actual_date, start_time: lesson.start_time, end_time: lesson.end_time } }, options);
+  }, () => {
+    pendingAttendance.value.items = pendingAttendance.value.items.filter(row => attendanceKey(row) !== attendanceKey(lesson));
+    pendingAttendance.value.total = Math.max(0, pendingAttendance.value.total - 1);
+    attendanceResult.value = { child_id: lesson.child_id, result: result.auto_homework };
+    attendanceDraft.value = null;
+  }, status === 'attended' ? charged ? '已确认上课并消课 1 次。' : '已确认上课，本次不消课。'
+    : `${status === 'leave' ? '已记录请假' : '已记录缺席'}，${charged ? '本次消课 1 次' : '本次不消课'}。`, Boolean(draft));
 }
 async function removeAdhoc(item, task) {
   if (!canMutate.value) return;
@@ -438,10 +523,14 @@ async function loadDashboard({ afterWrite = false } = {}) {
       return { child, stats, week, adhoc, goals: activeGoals(goals), time, timer: timer?.timer ? withClock(timer.timer) : null,
         classOverview: classes ? classOverview(classes) : null, attention: tasks ? taskAttention(tasks, goals, date) : null, unavailable };
     });
+    const attendanceUnavailable = [];
     const result = await Promise.all([Promise.all(statsPromises), api.getSkipRequests('pending', { limit: 200 }, signal, silent),
-      api.getHomeworkRequests(signal, silent), api.getHomeworkCompletionRequests(signal, silent)]);
+      api.getHomeworkRequests(signal, silent), api.getHomeworkCompletionRequests(signal, silent),
+      optional('待消课确认', () => api.getPendingClassAttendance(signal, silent), attendanceUnavailable)]);
     if (!current()) return;
     [childrenStats.value, skipRequests.value, homeworkRequests.value, completionRequests.value] = result;
+    if (result[4]) pendingAttendance.value = result[4];
+    attendanceError.value = attendanceUnavailable.length ? '待消课记录未能读取，请重试。' : '';
     loadedDate.value = date; loadedZone.value = timeZone;
   } catch (err) {
     if (!current() || signal.aborted) return;
@@ -461,11 +550,12 @@ function reloadDashboardDay() {
 function restored() {
   epoch++; dashboardSerial++; reader?.abort(); pendingDate = null;
   childrenStats.value = []; skipRequests.value = []; homeworkRequests.value = []; completionRequests.value = [];
+  pendingAttendance.value = { items: [], total: 0 }; attendanceError.value = ''; attendanceDraft.value = null; attendanceResult.value = null;
   loadedDate.value = null; loadedZone.value = null; dashboardError.value = ''; actionError.value = ''; notice.value = ''; adhocForm.value = null;
   refreshing.value = false;
   loadDashboard();
 }
-onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || (!writeBusy.value && !adhocForm.value));
+onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || (!writeBusy.value && !adhocForm.value && !attendanceDraft.value));
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 const poll = setInterval(reloadLive, 60000);
 watch(() => [calendar.today, calendar.ready, calendar.timeZone], reloadDashboardDay);
