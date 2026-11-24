@@ -90,6 +90,7 @@ class StudySessionsService {
     this.db.transaction(() => {
       const { task } = this.task(recordId);
       this.checkStart(task);
+      if (task.failure_id) throw fail(409, '家长已确认未完成，请先恢复为待完成');
       if (task.is_completed || task.skipped_at) throw fail(409, '已完成或已跳过的作业不能开始学习');
       if (task.date > getTodayDate()) throw fail(409, '作业尚未开始');
       this.timers.remember(task.child_id, 'task', task.id);
@@ -180,6 +181,7 @@ class StudySessionsService {
   completeWithDuration(recordId, body, actor) {
     this.db.transaction(() => {
       const { record, task } = this.task(recordId);
+      if (task.failure_id) throw fail(409, '家长已确认未完成，请先恢复为待完成');
       const requestId = body.request_id;
       if (requestId !== undefined && (typeof requestId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw fail(400, '记录标识无效');
       if (body.duration_seconds !== undefined && body.duration_seconds !== null && (!Number.isSafeInteger(body.duration_seconds) || body.duration_seconds <= 0)) throw fail(400, '累计用时须为大于 0 的整数秒');
@@ -255,6 +257,7 @@ class StudySessionsService {
         if (existing.task_id !== task.id) throw fail(409, '记录标识已使用');
         return;
       }
+      if (task.failure_id && actor !== 'parent') throw fail(409, '家长已确认未完成，请先恢复为待完成');
       this.db.prepare(`INSERT INTO homework_sessions(id, task_id, child_id, started_at, ended_at, note, duration_seconds, duration_source)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')`).run(body.request_id, task.id, task.child_id, `${date}T00:00:00Z`, new Date().toISOString(), note, seconds);
       this.db.prepare('INSERT INTO homework_session_days(session_id, date, seconds) VALUES (?, ?, ?)').run(body.request_id, date, seconds);

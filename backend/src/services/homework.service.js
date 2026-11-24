@@ -179,14 +179,15 @@ class HomeworkService {
   // --- Records ---
 
   describe(row) {
-    const { task_id, task_date, task_completed, task_skipped_at, task_points, task_due_date, task_priority, task_default_priority, task_priority_override, ...record } = row;
+    const { task_id, task_date, task_completed, task_skipped_at, task_failure_id, task_failure_reason, task_failure_penalty, task_points, task_due_date, task_priority, task_default_priority, task_priority_override, ...record } = row;
     const today = getTodayDate();
     const task = task_id ? {
       priority: task_priority, default_priority: task_default_priority, priority_override: task_priority_override, id: task_id, date: task_date, points: task_points, due_date: task_due_date ?? task_date,
-      is_completed: Boolean(task_completed), is_skipped: Boolean(task_skipped_at) && !task_completed
+      is_completed: Boolean(task_completed), is_skipped: Boolean(task_skipped_at) && !task_completed,
+      is_failed: Boolean(task_failure_id), failure_id: task_failure_id, failure_reason: task_failure_reason, failure_penalty: task_failure_penalty
     } : null;
     // pending: a child asked for a task; open, done, skipped or missed: the task's state; none: record only.
-    const taskState = task ? (task.is_completed ? 'done' : task.is_skipped ? 'skipped' : task.due_date < today ? 'missed' : 'open')
+    const taskState = task ? (task.is_completed ? 'done' : task.is_failed ? 'failed' : task.is_skipped ? 'skipped' : task.due_date < today ? 'missed' : 'open')
       : record.task_requested ? 'pending' : 'none';
     return { ...record, edit_version: editVersion([record.content, record.assigned_date, record.due_date, record.points,
       record.priority, record.daily_task_id, record.task_requested, task_priority_override]), task_requested: Boolean(record.task_requested),
@@ -195,7 +196,7 @@ class HomeworkService {
 
   query(where, params) {
     return this.db.prepare(`SELECT r.*, d.id AS task_id, d.date AS task_date, d.is_completed AS task_completed, d.skipped_at AS task_skipped_at,
-      d.points AS task_points, d.due_date AS task_due_date,
+      d.points AS task_points, d.due_date AS task_due_date, d.failure_id AS task_failure_id, d.failure_reason AS task_failure_reason, d.failure_penalty AS task_failure_penalty,
       COALESCE(d.priority_override, d.priority) AS task_priority, d.priority AS task_default_priority, d.priority_override AS task_priority_override,
       COALESCE(d.homework_legacy_seconds, 0) + COALESCE((SELECT SUM(duration_seconds) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL), 0) AS study_seconds,
       (SELECT COUNT(*) FROM homework_sessions s WHERE s.task_id = d.id AND s.ended_at IS NOT NULL) AS study_count,
@@ -241,16 +242,16 @@ class HomeworkService {
     for (const record of records) {
       if (!courses.has(record.course_key)) {
         courses.set(record.course_key, { course_key: record.course_key, kind: record.course_kind, subject: record.subject, class_id: record.class_id,
-          total: 0, done: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0, latest_assigned_date: record.assigned_date });
+          total: 0, done: 0, failed: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0, latest_assigned_date: record.assigned_date });
       }
       const course = courses.get(record.course_key);
       course.total += 1;
       course[record.task_state] += 1;
     }
-    const rate = row => (row.done + row.missed ? row.done / (row.done + row.missed) : null);
+    const rate = row => (row.done + row.missed + row.failed ? row.done / (row.done + row.missed + row.failed) : null);
     const rows = [...courses.values()].sort((a, b) => b.total - a.total || a.subject.localeCompare(b.subject, 'zh-Hans-CN'))
       .map(row => ({ ...row, completion_rate: rate(row) }));
-    const totals = { total: 0, done: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0 };
+    const totals = { total: 0, done: 0, failed: 0, missed: 0, skipped: 0, open: 0, pending: 0, none: 0 };
     for (const row of rows) for (const key of Object.keys(totals)) totals[key] += row[key];
     const today = getTodayDate();
     const term = this.db.prepare('SELECT name, start_date, end_date FROM timetables WHERE child_id = ? AND start_date <= ? AND end_date >= ?').get(childId, today, today) ?? null;

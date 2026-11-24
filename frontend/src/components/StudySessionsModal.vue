@@ -28,10 +28,11 @@
         </div>
         <p v-if="study.record.completion_requested_at && !study.record.task.is_completed" class="bg-amber-50 dark:bg-amber-950/40 rounded-xl p-3 text-sm text-amber-700 dark:text-amber-300">已申请全部完成，等待家长确认。仍可继续学习、记录用时。</p>
         <p v-if="study.record.task.is_completed" class="text-emerald-600 dark:text-emerald-300 font-bold">✓ {{ taskId ? '任务已完成' : '作业已全部完成' }}</p>
+        <p v-else-if="study.record.task.is_failed" class="text-rose-700 dark:text-rose-300 font-bold">确认未完成 · {{ study.record.task.failure_reason }}。请由家长在看板恢复为待完成。</p>
         <p v-else-if="overdue && !taskId" class="text-amber-700 dark:text-amber-300 text-xs">已过截止日期，可以继续学习；全部完成需家长确认。</p>
 
         <p v-if="taskId && overdue && !asParent" class="text-amber-700 dark:text-amber-300 text-xs">任务已超期，请由家长补卡。已有学习记录和用时保留。</p>
-        <div v-if="!study.record.task.is_completed && !study.record.task.is_skipped" class="rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 p-4 space-y-3">
+        <div v-if="!study.record.task.is_completed && !study.record.task.is_skipped && !study.record.task.is_failed" class="rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 p-4 space-y-3">
           <div class="text-2xl font-black tabular-nums">{{ formatClock(elapsed) }} <span class="text-xs font-normal">{{ study.active ? (study.active.timer_started_at ? '正在计时' : '已暂停') : '本次学习' }}</span></div>
           <div class="flex flex-wrap gap-2">
             <button v-if="!study.active?.timer_started_at && canStart" :disabled="busy" class="rounded-xl px-4 py-3 bg-indigo-600 text-white disabled:opacity-50" @click="act(() => studyApi.start())">{{ study.active ? '继续本次' : '开始本次' }}</button>
@@ -43,7 +44,7 @@
           <p class="text-xs text-slate-500 dark:text-slate-400">暂停后继续属于同一次；结束后再开始是新的一次。同一天可记录多次，完成奖励只结算一次。关闭此窗口后，正在进行的计时仍继续。</p>
         </div>
         <div class="flex flex-wrap gap-3">
-          <button :disabled="busy" class="text-sm text-indigo-600 dark:text-indigo-300 py-2" @click="manualOpen = !manualOpen">＋ 手动补记学习</button>
+          <button v-if="!study.record.task.is_failed || asParent" :disabled="busy" class="text-sm text-indigo-600 dark:text-indigo-300 py-2" @click="manualOpen = !manualOpen">＋ 手动补记学习</button>
           <button v-if="study.record.task.is_completed && (asParent || !overdue)" :disabled="busy" class="text-sm text-slate-500 dark:text-slate-400 py-2" @click="undo">撤销全部完成</button>
           <template v-if="asParent && study.record.completion_requested_at && !study.record.task.is_completed">
             <button :disabled="busy || Boolean(study.active)" class="text-sm text-emerald-700 dark:text-emerald-300 py-2" @click="act(() => api.completeHomework(recordId))">确认全部完成</button>

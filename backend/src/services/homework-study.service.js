@@ -14,6 +14,7 @@ class HomeworkStudyService extends StudySessionsService {
 
   complete(recordId, actor) {
     const { task } = this.task(recordId);
+    if (task.failure_id) throw fail(409, '家长已确认未完成，请先恢复为待完成');
     if (task.is_completed) return;
     if (task.skipped_at || task.date > getTodayDate()) throw fail(409, '作业已跳过或尚未开始');
     if (this.db.prepare('SELECT 1 FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(task.id)) throw fail(409, '请先结束本次学习');

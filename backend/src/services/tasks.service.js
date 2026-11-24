@@ -56,7 +56,7 @@ function validateExtraPolicy(schedule, { allow_extra = false, extra_points = 0, 
 const isSkippedRow = row => Boolean(row.skipped_at) && !row.is_completed;
 
 // The fields every described task carries, before weekly and deadline details.
-const describeRow = row => ({ ...row, ...describePriority(row), is_completed: Boolean(row.is_completed), is_skipped: isSkippedRow(row), allow_extra: Boolean(row.allow_extra), is_extra_completion: Boolean(row.is_extra_completion), ...describeTimer(row) });
+const describeRow = row => ({ ...row, ...describePriority(row), is_completed: Boolean(row.is_completed), is_failed: Boolean(row.failure_id), is_skipped: isSkippedRow(row), allow_extra: Boolean(row.allow_extra), is_extra_completion: Boolean(row.is_extra_completion), ...describeTimer(row) });
 
 // Only tasks on fixed weekdays may wait out a break; weekly tasks are flexible already.
 function validateCarryOver(carryOver, scheduleType) {
@@ -67,7 +67,7 @@ function validateCarryOver(carryOver, scheduleType) {
 // Weekly tasks whose target is met stay visible only when extra completions are enabled,
 // or when already completed or skipped that day.
 function isActiveTask(task) {
-  return task.schedule_type !== 'weekly_times' || task.allow_extra || task.is_completed || task.is_skipped ||
+  return task.schedule_type !== 'weekly_times' || task.allow_extra || task.is_completed || task.is_skipped || task.is_failed ||
     (task.weekly_target_completed_times ?? task.weekly_completed_times) + (task.weekly_skipped_times || 0) < task.weekly_target_times;
 }
 
@@ -132,7 +132,7 @@ class TasksService {
     // Assignment edits revoke pending tasks today, while completed and historical
     // snapshots (and their point logs) remain intact.
     const revoked = this.db.prepare(`SELECT id FROM daily_tasks
-      WHERE date = ? AND is_completed = 0 AND (? IS NULL OR template_id = ?)
+      WHERE date = ? AND is_completed = 0 AND failure_id IS NULL AND (? IS NULL OR template_id = ?)
         AND EXISTS (SELECT 1 FROM task_templates WHERE id = daily_tasks.template_id AND assign_all = 0)
         AND NOT EXISTS (SELECT 1 FROM template_children
           WHERE template_id = daily_tasks.template_id AND child_id = daily_tasks.child_id)`)
@@ -143,6 +143,7 @@ class TasksService {
   // Revoking a task must not erase learning time, including after undoing completion: a task with
   // any is kept, marked revoked, and no longer counts as a task on any day.
   revokeTask(row) {
+    if (this.db.prepare('SELECT failure_id FROM daily_tasks WHERE id = ?').get(row.id)?.failure_id) return;
     this.db.transaction(() => {
       this.taskStudyService?.preserveTime(row.id, { endActive: true });
       const saved = this.studyRetention(row.id);
@@ -263,16 +264,16 @@ class TasksService {
       // Keep pending cards in sync while retaining their ids, timers and settled snapshots.
       this.db.prepare(`UPDATE daily_tasks SET title = ?, subject = ?, points = ?, schedule_type = ?, weekly_target_times = ?, priority = ?
         WHERE COALESCE(source_template_id, template_id) = ? AND origin = 'template'
-          AND date >= ? AND is_completed = 0 AND skipped_at IS NULL`)
+          AND date >= ? AND is_completed = 0 AND failure_id IS NULL AND skipped_at IS NULL`)
         .run(newTitle, newSubject, newPoints, schedule, schedule === 'weekly_times' ? target : null, newPriority, id, getTodayDate());
       // New policy affects only pending tasks from today onwards, never past snapshots or awards.
       this.db.prepare(`UPDATE daily_tasks SET allow_extra = ?, extra_points = ?, extra_reward_limit = ?
-        WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0 AND schedule_type = 'weekly_times'`)
+        WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0 AND failure_id IS NULL AND schedule_type = 'weekly_times'`)
         .run(extra.allow_extra, extra.extra_points, extra.extra_reward_limit, id, getTodayDate());
       // Tasks still to do follow the carry-over setting, so a break that has begun is covered too.
       // Turning it off also drops a deadline pinned by a calendar change.
       this.db.prepare(`UPDATE daily_tasks SET carry_over = ?, due_date = CASE WHEN ? THEN due_date END
-        WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0`)
+        WHERE COALESCE(source_template_id, template_id) = ? AND is_completed = 0 AND failure_id IS NULL`)
         .run(carry ? 1 : 0, carry ? 1 : 0, id);
       if (childIds !== undefined) this.setTemplateChildren(id, childIds);
       // Today's unfinished tasks follow timing settings, after saving any old or new timer.
@@ -283,7 +284,7 @@ class TasksService {
       }
       this.db.prepare(`UPDATE daily_tasks SET track_time = ?, expected_minutes = ?,
           timer_started_at = CASE WHEN ? THEN timer_started_at END, timer_elapsed_seconds = CASE WHEN ? THEN timer_elapsed_seconds ELSE 0 END
-        WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0`)
+        WHERE COALESCE(source_template_id, template_id) = ? AND date >= ? AND is_completed = 0 AND failure_id IS NULL`)
         .run(timing.track_time ? 1 : 0, timing.expected_minutes, timing.track_time ? 1 : 0, timing.track_time ? 1 : 0, id, getTodayDate());
     })();
 
@@ -422,7 +423,7 @@ class TasksService {
       })();
     }
     const carried = carriedRows
-      .filter(({ row }) => row.is_completed ? row.completion_source !== 'parent_backfill' && doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
+      .filter(({ row }) => row.failure_id ? doneOn(row.failed_at) : row.is_completed ? row.completion_source !== 'parent_backfill' && doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
       .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, sort_due_date: due, is_optional: due > date }));
     // A one-off task made from a homework record shows what the homework is.
     const homeworkOf = this.homeworkService ? this.homeworkService.homeworkByTask(childId) : new Map();
@@ -503,7 +504,7 @@ class TasksService {
     // Match ordinary history: a pause excuses unfinished saved rows too. Keep completed
     // snapshots visible, and keep the saved rows intact so removing the pause restores them.
     return rows.filter(row => (row.carry_over || row.due_date) && !row.revoked_at &&
-      (row.is_completed || !schedule.isPaused(row.source_template_id ?? row.template_id, row.date)))
+      (row.is_completed || row.failure_id || !schedule.isPaused(row.source_template_id ?? row.template_id, row.date)))
       .map(row => ({ row, due: dueDateOf(row, calendar) }))
       .filter(({ row, due }) => due >= from && due > row.date);
   }
@@ -539,7 +540,7 @@ class TasksService {
   // task done in time counts on its own day only.
   summaryTasksBetween(childId, fromDate, toDate, { schedule = this.scheduleFor(childId), ...options } = {}) {
     const missed = this.carriedBetween(childId, fromDate, toDate, schedule)
-      .filter(({ row, due }) => due <= toDate && !row.is_completed && !row.skipped_at)
+      .filter(({ row, due }) => due <= toDate && !row.is_completed && !row.skipped_at && !row.failure_id)
       .map(({ row, due }) => ({ ...describeRow(row), date: due, carried_from: row.date, due_date: due, is_optional: false }));
     return [...this.describeTasksBetween(childId, fromDate, toDate, { ...options, schedule, includeStudy: false }), ...missed];
   }
@@ -629,20 +630,20 @@ class TasksService {
     }
 
     return rows.filter(row => row.date >= fromDate && row.date <= toDate &&
-      (includePaused || row.is_completed || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
+      (includePaused || row.is_completed || row.failure_id || !schedule.isPaused(sourceOf(row), row.date))).map(row => {
       const task = studyOf ? this.describeStudy(describeRow(row), studyOf) : describeRow(row);
       // A task that may wait out a break (or a one-off task due later) is optional until its deadline.
       if (row.schedule_type !== 'weekly_times') {
         if (row.origin === 'study') return { ...task, sort_due_date: row.date, is_optional: !row.study_required };
         const due = dueDateOf(row, schedule.calendar);
-        return { ...task, due_date: due > row.date ? due : null, sort_due_date: due, is_optional: due > row.date };
+        return { ...task, due_date: due > row.date ? due : null, sort_due_date: due, is_optional: !row.failure_id && due > row.date };
       }
       const done = completions.get(keyOf(row)) || [];
       const skipped = skips.get(keyOf(row)) || [];
       const extraDone = extras.get(keyOf(row)) || [];
       const rewardedExtras = paidExtras.get(keyOf(row)) || 0;
       const target = row.weekly_target_times || 1;
-      const isExtra = row.is_completed ? Boolean(row.is_extra_completion) : !row.skipped_at && done.length + skipped.length >= target;
+      const isExtra = row.is_completed ? Boolean(row.is_extra_completion) : !row.skipped_at && !row.failure_id && done.length + skipped.length >= target;
       const award = isExtra ? (rewardedExtras < row.extra_reward_limit ? row.extra_points : 0) : row.points;
       const usedBefore = [...done, ...skipped].filter(date => date < row.date).length;
       // The task's own day plus the remaining days this week it may still be done.
@@ -802,7 +803,7 @@ class TasksService {
     if (this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(id)) {
       throw { status: 400, message: '课程作业的优先级请在作业记录中调整' };
     }
-    if (row.is_completed || row.skipped_at || (row.date < getTodayDate() && !this.childMayActOn(row))) {
+    if (row.is_completed || row.skipped_at || row.failure_id || (row.date < getTodayDate() && !this.childMayActOn(row))) {
       throw { status: 409, message: '已完成、已跳过或已过期的任务保留原有优先级' };
     }
     if (priority === undefined) throw { status: 400, message: '请选择优先级' };
@@ -820,7 +821,7 @@ class TasksService {
   describeAdhocTask(row) {
     const homework = this.db.prepare('SELECT id FROM homework_records WHERE daily_task_id = ?').get(row.id);
     return { ...describeRow(row), homework_id: homework?.id ?? null,
-      can_edit: !homework && !row.is_completed && !row.skipped_at && (row.due_date || row.date) >= getTodayDate(),
+      can_edit: !homework && !row.is_completed && !row.skipped_at && !row.failure_id && (row.due_date || row.date) >= getTodayDate(),
       edit_version: editVersion([row.title, row.subject, row.points, row.date, row.due_date,
         row.track_time, row.expected_minutes, row.priority, row.priority_override]) };
   }
@@ -998,6 +999,7 @@ class TasksService {
     }
 
     const courseHomework = this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(taskId);
+    if (task.failure_id) throw { status: 409, message: '家长已确认未完成，请先恢复为待完成' };
     if (courseHomework && this.db.prepare('SELECT 1 FROM homework_sessions WHERE task_id = ? AND ended_at IS NULL').get(taskId)) {
       throw { status: 409, message: '请先结束本次学习，再完成作业' };
     }
@@ -1093,6 +1095,7 @@ class TasksService {
     if (!task) {
       throw { status: 404, message: '任务不存在' };
     }
+    if (task.failure_id) throw { status: 409, message: '请由家长恢复为待完成' };
     if (task.origin === 'study') throw { status: 409, message: '请在字词学习中逐项练习，不能直接打卡或撤销' };
     if (task.origin === 'goal') throw { status: 409, message: '请在长期任务里撤销今天的进度' };
 

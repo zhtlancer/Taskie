@@ -1,6 +1,6 @@
 // The server supplies a normalized sorting deadline; null on a long-term goal means none.
 // Sorting copies the list, retaining API order for ties, including across timer refreshes.
-const group = task => task.is_completed || task.is_skipped ? 2 : task.is_optional ? 1 : 0;
+const group = task => task.is_completed || task.is_skipped || task.is_failed ? 2 : task.is_optional ? 1 : 0;
 const deadline = task => task.sort_due_date ?? task.due_date ?? task.date ?? '9999-12-31';
 export function sortTasks(tasks) {
   return [...tasks].sort((a, b) => group(a) - group(b) ||
@@ -22,7 +22,7 @@ export function goalBoardTask(goal, dailyRow) {
 
 export function matchesTaskFilters(task, { subject = '全部', unfinishedOnly = false, highPriorityOnly = false } = {}) {
   return (subject === '全部' || task.subject === subject) &&
-    (!unfinishedOnly || !task.is_completed && !task.is_skipped) &&
+    (!unfinishedOnly || !task.is_completed && !task.is_skipped && !task.is_failed) &&
     (!highPriorityOnly || task.priority === 2);
 }
 

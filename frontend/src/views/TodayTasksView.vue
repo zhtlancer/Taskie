@@ -246,6 +246,9 @@
             <span class="text-sm font-bold text-slate-600 dark:text-slate-300">今天的任务都跳过啦，好好休息～</span>
           </div>
 
+          <div v-else-if="failedCount > 0" class="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-sm font-bold text-rose-700 dark:text-rose-300">
+            今日 {{ failedCount }} 项已确认未完成<span v-if="totalCount - completedCount - requiredFailedCount > 0">，另有 {{ totalCount - completedCount - requiredFailedCount }} 项待完成</span>。如需继续，请家长先恢复任务。
+          </div>
           <!-- When in progress -->
           <div
             v-else
@@ -276,6 +279,9 @@
       @close="skipTarget = null"
       @submit="submitSkip"
     />
+
+    <TaskFailureModal v-if="failureTarget && asParent" :key="`${failureTarget.id}:${failureTarget.failure_id || ''}`" :task="failureTarget"
+      @close="failureTarget = null" @saved="failureTarget = null; refreshStudy()" />
 
     <DurationModal
       v-if="durationAsk"
@@ -323,6 +329,7 @@ import api from '../api/client';
 import { useChildStore } from '../stores/child';
 import { useRunningTimerStore } from '../stores/runningTimer.js';
 import TaskCard from '../components/TaskCard.vue';
+import TaskFailureModal from '../components/TaskFailureModal.vue';
 import ClassHomeworkNotice from '../components/ClassHomeworkNotice.vue';
 import TaskPriorityModal from '../components/TaskPriorityModal.vue';
 import HomeworkEditModal from '../components/HomeworkEditModal.vue';
@@ -366,6 +373,8 @@ const tasks = ref([]);
 const classHomeworkNotice = ref(null);
 const priorityTarget = ref(null);
 const homeworkEditId = ref(null);
+const failureTarget = ref(null);
+watch([childId, asParent, () => calendar.today], () => { failureTarget.value = null; });
 watch(childId, () => { priorityTarget.value = null; homeworkEditId.value = null; });
 watch(asParent, parent => { if (!parent) homeworkEditId.value = null; });
 // The placeholder only covers a board that has nothing to show yet. Later refreshes update the
@@ -476,10 +485,12 @@ const visibleTaskCount = computed(() => activeGoals.value.length + filteredTasks
 // the all-done celebration.
 const countedTasks = computed(() => tasks.value.filter(t => !t.is_extra && !t.is_skipped && (!t.is_optional || t.is_completed)));
 const skippedCount = computed(() => tasks.value.filter(t => t.is_skipped).length);
+const failedCount = computed(() => tasks.value.filter(t => t.is_failed).length);
+const requiredFailedCount = computed(() => countedTasks.value.filter(t => t.is_failed).length);
 const totalCount = computed(() => countedTasks.value.length);
 const completedCount = computed(() => countedTasks.value.filter(t => t.is_completed).length);
 const allDone = computed(() => completedCount.value > 0 && completedCount.value === totalCount.value);
-const optionalPendingCount = computed(() => tasks.value.filter(t => !t.is_extra && t.is_optional && !t.is_completed).length);
+const optionalPendingCount = computed(() => tasks.value.filter(t => !t.is_extra && t.is_optional && !t.is_completed && !t.is_failed).length);
 const completionRate = computed(() => {
   if (totalCount.value === 0) return 0;
   return Math.round((completedCount.value / totalCount.value) * 100);
@@ -541,7 +552,7 @@ function openUnfinished(item) {
   else studyTask.value = item.task_id;
 }
 async function refreshBoard() { await Promise.all([loadTasks(), loadGoals(), loadSchedule()]); }
-async function refreshStudy() { await Promise.all([loadTasks(), loadGoals()]); }
+async function refreshStudy() { await Promise.all([loadTasks(), loadGoals(), loadUnfinished(), childStore.fetchStats(), timerStore.refresh()]); }
 function onResume() {
   if (document.hidden) return;
   const date = todayString.value;
@@ -762,6 +773,7 @@ async function submitSkip(reason) {
 }
 
 const skipHandlers = {
+  failure: task => { if (asParent.value) failureTarget.value = { ...task }; },
   skip(task) {
     playClick();
     skipError.value = '';

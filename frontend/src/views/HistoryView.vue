@@ -257,7 +257,7 @@
                         {{ Math.round((item.completion_rate || 0) * 100) }}%
                       </span>
                       <div class="text-xs font-bold text-amber-600 dark:text-amber-300 mt-1">
-                        +{{ item.points_earned || 0 }}分
+                        {{ (item.points_earned || 0) >= 0 ? '+' : '' }}{{ item.points_earned || 0 }}分
                       </div>
                     </div>
                   </div>

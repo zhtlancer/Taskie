@@ -27,6 +27,7 @@
     "test:browser:record-editing": "node scripts/smoke-record-editing.cjs",
     "test:browser:refunds-drafts": "node scripts/smoke-refunds-drafts.cjs",
     "test:browser:task-priority": "node scripts/smoke-task-priority.cjs",
+    "test:browser:task-failures": "node scripts/smoke-task-failures.cjs",
     "test:browser:completion-duration": "node scripts/smoke-completion-duration.cjs",
     "test:browser:ui-refine": "node scripts/smoke-ui-refine.cjs",
     "seed:backend": "npm --prefix backend run seed",

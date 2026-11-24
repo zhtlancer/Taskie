@@ -75,6 +75,19 @@ CREATE TABLE IF NOT EXISTS point_logs (
 CREATE INDEX IF NOT EXISTS idx_point_logs_child ON point_logs(child_id);
 CREATE INDEX IF NOT EXISTS idx_point_logs_daily_task ON point_logs(daily_task_id);
 
+-- One receipt per parent confirmation; restoring never makes an old request executable again.
+CREATE TABLE IF NOT EXISTS task_failures (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES daily_tasks(id) ON DELETE CASCADE,
+  child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL CHECK(length(trim(reason)) BETWEEN 1 AND 150),
+  penalty INTEGER NOT NULL CHECK(typeof(penalty) = 'integer' AND penalty BETWEEN 0 AND 10000),
+  fingerprint TEXT NOT NULL,
+  confirmed_at TEXT NOT NULL,
+  restored_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_failures_active ON task_failures(task_id) WHERE restored_at IS NULL;
+
 -- Badge definitions
 CREATE TABLE IF NOT EXISTS badge_definitions (
   id TEXT PRIMARY KEY,

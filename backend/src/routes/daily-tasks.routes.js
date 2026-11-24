@@ -3,6 +3,13 @@ const { getTodayDate } = require('../utils/date');
 
 async function dailyTasksRoutes(fastify, options) {
   const { tasksService } = options;
+  const failures = new (require('../services/task-failures.service'))(fastify.db, tasksService);
+  for (const [path, method] of [['confirm-failure', 'confirm'], ['restore-failure', 'restore']]) {
+    fastify.post(`/:id/${path}`, generationWrite(fastify, request => {
+      if (request.user.role !== 'parent') throw { status: 403, message: '需要家长权限' };
+      return failures[method](request.params.id, request.body || {});
+    }));
+  }
 
   // Children may only view and check off today's tasks; past dates would let them
   // generate and complete back-dated tasks for extra points, streaks and badges.

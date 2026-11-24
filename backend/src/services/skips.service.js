@@ -56,6 +56,7 @@ class SkipsService {
   skippableTask(taskId) {
     const row = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(taskId);
     if (!row) throw { status: 404, message: '任务不存在' };
+    if (row.failure_id) throw { status: 409, message: '家长已确认未完成，请先恢复为待完成' };
     if (row.is_completed) throw { status: 409, message: '这项任务已经完成了' };
     if (row.skipped_at) throw { status: 409, message: '这项任务已经跳过了' };
     if (row.date > getTodayDate()) throw { status: 400, message: '不能跳过以后的任务' };

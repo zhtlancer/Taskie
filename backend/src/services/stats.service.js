@@ -81,6 +81,9 @@ class StatsService {
           subject: t.subject,
           points: t.points,
           is_completed: t.is_completed,
+          is_failed: t.is_failed,
+          failure_reason: t.failure_reason,
+          failure_penalty: t.failure_penalty,
           is_optional: t.is_optional,
           is_extra: Boolean(t.is_extra),
           earned_points: t.earned_points,
@@ -180,10 +183,10 @@ class StatsService {
     const goalsOn = this.tasksService.dailyGoalSchedule(childId);
     const classTasksOn = this.tasksService.classTasksOn(childId);
     const isSkipped = row => Boolean(row.skipped_at) && !row.is_completed;
-    const notYetDue = row => !row.is_completed && dueDateOf(row, schedule.calendar) > asOf;
+    const notYetDue = row => !row.is_completed && !row.failure_id && dueDateOf(row, schedule.calendar) > asOf;
     const rows = this.db.prepare('SELECT d.*, (SELECT required FROM word_study_days WHERE id = d.study_day_id) AS study_required, (SELECT plan_id FROM word_study_days WHERE id = d.study_day_id) AS study_plan_id FROM daily_tasks d WHERE child_id = ? AND date BETWEEN ? AND ? AND revoked_at IS NULL ORDER BY date, rowid')
       .all(childId, weekStart, cutoff)
-      .filter(row => (row.origin !== 'study' || row.study_required || row.is_completed) && (row.is_completed || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
+      .filter(row => (row.origin !== 'study' || row.study_required || row.is_completed) && (row.is_completed || row.failure_id || ((!row.goal_id || goalsOn(row.date).some(goal => goal.id === row.goal_id)) &&
         !schedule.isPaused(row.source_template_id ?? row.template_id, row.date))));
     const allTemplates = this.tasksService.listTemplates().map(t => ({ ...t, since: sinceDate(t.created_at) }));
     const templatesById = new Map(allTemplates.map(t => [t.id, t]));

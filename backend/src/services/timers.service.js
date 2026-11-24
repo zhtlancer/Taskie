@@ -25,6 +25,7 @@ class TimersService {
   dailyTaskForTimer(id) {
     const row = this.db.prepare('SELECT * FROM daily_tasks WHERE id = ?').get(id);
     if (!row) throw { status: 404, message: '任务不存在' };
+    if (row.failure_id) throw { status: 409, message: '家长已确认未完成，请先恢复为待完成' };
     if (this.db.prepare('SELECT 1 FROM homework_records WHERE daily_task_id = ?').get(id)) throw { status: 409, message: '请在作业学习记录中计时' };
     if (!row.track_time) throw { status: 409, message: '这项任务不记录用时' };
     if (row.is_completed) throw { status: 409, message: '这项任务已经完成了' };

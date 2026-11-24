@@ -26,7 +26,7 @@
             <div class="min-w-0 flex-1 basis-48">
               <h3 class="font-bold text-slate-800 dark:text-slate-100 break-words">{{ task.subject }} · {{ task.title }}</h3>
               <p class="text-xs leading-relaxed text-slate-500 dark:text-slate-400 mt-1">
-                {{ task.is_completed ? (task.completion_source === 'parent_backfill' ? '已完成 · 家长补记' : '已完成') : task.is_skipped ? '已跳过，请先撤销跳过再补卡' : '未完成' }}
+                {{ task.is_failed ? '确认未完成' : task.is_completed ? (task.completion_source === 'parent_backfill' ? '已完成 · 家长补记' : '已完成') : task.is_skipped ? '已跳过，请先撤销跳过再补卡' : '未完成' }}
                 · {{ task.is_completed ? task.earned_points ?? task.points : task.award_points ?? task.points }} 积分
                 <span v-if="task.is_extra" class="text-violet-600 dark:text-violet-300"> · 额外挑战（不影响考核）</span>
                 <template v-if="task.schedule_type === 'weekly_times'"> · 每周目标 {{ task.weekly_target_times }} 次</template>
@@ -39,6 +39,8 @@
             <button v-else-if="canAct(task, 'skip')" type="button" :disabled="actionsDisabled" class="min-h-11 min-w-11 px-3 shrink-0 text-sm font-bold text-slate-500 dark:text-slate-400 disabled:opacity-50" @click="act(task, 'skip')">标记跳过</button>
           </div>
           <p v-if="!task.is_completed && task.is_extra && !task.allow_extra" class="text-xs text-slate-500 dark:text-slate-400">本周目标已完成，该任务未开启额外完成。</p>
+          <p v-if="task.is_failed" class="text-sm text-rose-700 dark:text-rose-300 break-words">{{ task.failure_reason }} · 额外扣分 {{ task.failure_penalty }}。</p>
+          <button v-if="!task.projected && ['template', 'adhoc'].includes(task.origin) && !task.is_skipped && !task.is_extra" type="button" :disabled="actionsDisabled" class="ui-button-secondary" @click="failureTarget = { ...task }">{{ task.is_failed ? '恢复为待完成' : '确认未完成' }}</button>
           <p v-if="task.origin === 'study' && !task.is_completed && !task.is_skipped" class="text-xs text-slate-500 dark:text-slate-400">字词学习需当天逐项练习，不能补记；确实没学可标记跳过，不影响全勤和连续打卡。</p>
           <button v-if="!task.projected && task.origin !== 'study' && (task.track_time || task.study_sessions)" type="button" :disabled="actionsDisabled" class="min-h-11 px-3 text-sm font-bold text-indigo-600 dark:text-indigo-300 disabled:opacity-50" @click="openStudy(task)">学习记录 / 补记用时</button>
           <p v-if="task.study_sessions?.managed" class="text-xs text-slate-500 dark:text-slate-400">已保存 {{ task.study_sessions.count }} 次学习 · 累计 {{ Math.round(task.study_sessions.seconds / 60) }} 分钟，补卡保留已有记录。</p>
@@ -61,6 +63,7 @@
       </template>
     </main>
     <StudySessionsModal v-if="studyTask" :key="studyTask.id" :task-id="studyTask.homework ? undefined : studyTask.id" :record-id="studyTask.homework?.id" as-parent @close="closeStudy" @saved="load" />
+    <TaskFailureModal v-if="failureTarget" :key="failureTarget.id" :task="failureTarget" @close="failureTarget = null" @saved="failureTarget = null; load()" />
   </div>
 </template>
 
@@ -76,6 +79,7 @@ import ParentNavBar from '../components/ParentNavBar.vue';
 import ParentPageHeader from '../components/ParentPageHeader.vue';
 import ParentPageState from '../components/ParentPageState.vue';
 import StudySessionsModal from '../components/StudySessionsModal.vue';
+import TaskFailureModal from '../components/TaskFailureModal.vue';
 const calendar = useCalendarStore(), route = useRoute();
 const childId = computed(() => route.params.id);
 const yesterday = computed(() => addDays(calendar.today, -1));
@@ -83,8 +87,9 @@ const date = ref(yesterday.value), childName = ref('孩子');
 const contextKey = computed(() => `${childId.value}/${date.value}`);
 const tasks = ref([]), events = ref([]), minutes = ref({}), loadedContext = ref('');
 const studyTask = ref(null), loading = ref(true), busy = ref(false), confirming = ref(false);
+const failureTarget = ref(null);
 const loadError = ref(''), actionError = ref(''), notice = ref('');
-const locked = computed(() => busy.value || confirming.value);
+const locked = computed(() => busy.value || confirming.value || Boolean(failureTarget.value));
 const actionsDisabled = computed(() => locked.value || loading.value || Boolean(loadError.value) || loadedContext.value !== contextKey.value || Boolean(studyTask.value));
 let alive = true, requestId = 0, contextVersion = 0, nameRequest = 0, controller;
 const errorText = err => typeof err === 'string' ? err : err?.message || '操作失败，请重试';
@@ -94,6 +99,7 @@ const silent = { silentError: true };
 const draftKey = task => task.class_id ? `class:${task.class_id}:${task.class_lesson_date}` : task.template_id ? `template:${task.template_id}` : task.id;
 
 function canAct(task, action) {
+  if (task.is_failed) return false;
   if (action === 'complete') return task.origin !== 'study' && task.origin !== 'goal' && !task.is_completed && !task.is_skipped && (!task.is_extra || task.allow_extra);
   if (action === 'undo') return Boolean(task.is_completed && task.completion_source === 'parent_backfill');
   if (action === 'skip') return !task.is_completed && !task.is_skipped && !task.is_extra;
@@ -132,6 +138,7 @@ function changeDate(event) {
   date.value = event.target.value;
 }
 function resetContext() {
+  failureTarget.value = null;
   ++contextVersion; ++requestId; controller?.abort();
   tasks.value = []; events.value = []; minutes.value = {}; loadedContext.value = '';
   studyTask.value = null; loadError.value = ''; actionError.value = ''; notice.value = '';

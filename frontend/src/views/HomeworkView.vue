@@ -201,7 +201,7 @@
               </button>
             </li>
           </ul>
-          <p class="mt-3 text-xs font-bold text-slate-400">按布置日期统计。完成率 = 已完成 ÷（已完成 + 没按时完成），跳过、还没到截止日期和只记录没生成任务的作业不计入。点某门课可以查看这些作业。</p>
+          <p class="mt-3 text-xs font-bold text-slate-400">按布置日期统计。完成率 = 已完成 ÷（已完成 + 没按时完成 + 确认未完成），跳过、还没到截止日期和只记录没生成任务的作业不计入。点某门课可以查看这些作业。</p>
         </template>
       </template>
     </div>
@@ -283,6 +283,7 @@ const STATE = {
   pending: { label: '等家长确认', class: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' },
   open: { label: '待完成', class: 'bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300' },
   done: { label: '已完成', class: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' },
+  failed: { label: '确认未完成', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300' },
   skipped: { label: '已跳过', class: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400' },
   missed: { label: '没按时完成', class: 'bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300' }
 };
@@ -290,6 +291,7 @@ const STATE = {
 // The counts of a course in the summary, in the order shown.
 const COUNTS = [
   { key: 'done', label: '已完成' },
+  { key: 'failed', label: '确认未完成' },
   { key: 'missed', label: '没按时完成' },
   { key: 'skipped', label: '已跳过' },
   { key: 'open', label: '待完成' },

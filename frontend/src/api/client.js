@@ -158,6 +158,8 @@ export const api = {
   goalTimer: (id, action) => post(`/period-tasks/${id}/timer/${action}`),
   setGoalLogDuration: (id, seconds) => put(`/period-task-logs/${id}/duration`, { duration_seconds: seconds }),
   uncompleteDailyTask: id => post(`/daily-tasks/${id}/uncomplete`),
+  confirmTaskFailure: (id, data, generation) => post(`/daily-tasks/${id}/confirm-failure`, data, { ...formOptions(generation), preserveNetworkError: true }),
+  restoreTaskFailure: (id, data, generation) => post(`/daily-tasks/${id}/restore-failure`, data, { ...formOptions(generation), preserveNetworkError: true }),
   skipDailyTask: (id, reason, options) => post(`/daily-tasks/${id}/skip`, { reason }, options),
   unskipDailyTask: (id, options) => post(`/daily-tasks/${id}/unskip`, undefined, options),
   getSkipRequests: (status, params = {}, signal, options) => get('/skip-requests', { ...params, status }, signal, options),

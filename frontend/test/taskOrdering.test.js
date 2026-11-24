@@ -2,6 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sortTasks, sortGoals, goalBoardTask, matchesTaskFilters, taskAttention } from '../src/utils/taskOrdering.js';
 
+test('confirmed failures are settled and no longer appear as actionable reminders', () => {
+  const failed = { id: 'failed', date: '2026-10-20', subject: '语文', priority: 2, is_failed: true };
+  const pending = { id: 'pending', date: '2026-10-21', subject: '语文' };
+  assert.deepEqual(sortTasks([failed, pending]).map(row => row.id), ['pending', 'failed']);
+  assert.equal(matchesTaskFilters(failed, { unfinishedOnly: true }), false);
+  assert.equal(matchesTaskFilters(failed, { subject: '语文' }), true);
+  assert.deepEqual(taskAttention([failed], [], failed.date), { due_today: 0, high_priority_pending: 0 });
+});
+
 test('required, optional, and settled groups precede deadline then priority ordering', () => {
   const tasks = [
     { id: 'completed', is_completed: true, date: '2026-10-20', priority: 2 },

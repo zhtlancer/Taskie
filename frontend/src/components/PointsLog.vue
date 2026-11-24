@@ -3,7 +3,7 @@
     <div class="flex flex-wrap items-baseline justify-between gap-2 mb-4">
       <h3 class="text-lg font-black text-slate-800 dark:text-slate-100 flex items-center gap-2">
         <span>💰</span>
-        <span>积分获取记录</span>
+        <span>积分变动记录</span>
       </h3>
       <span class="text-xs text-slate-400 font-bold">最近明细</span>
     </div>
@@ -35,9 +35,9 @@
           </div>
         </div>
 
-        <div class="shrink-0 text-base font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
-          <span>+{{ log.points }}</span>
-          <span class="text-xs font-bold text-amber-500 dark:text-amber-400">积分</span>
+        <div class="shrink-0 text-base font-black flex items-center gap-1" :class="log.points < 0 ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'">
+          <span>{{ log.points >= 0 ? '+' : '' }}{{ log.points }}</span>
+          <span class="text-xs font-bold">积分</span>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 <template>
   <div ref="card" data-task-card
     class="relative select-none rounded-2xl border-2 p-4 transition-all duration-200 cursor-pointer flex flex-col gap-3 min-w-0 h-full shadow-sm"
-    :class="[task.is_completed ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700' : task.is_skipped ? 'bg-slate-50 dark:bg-slate-800 border-dashed border-slate-300 dark:border-slate-600 cursor-default' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-card', { 'z-40': menuOpen }]"
+    :class="[task.is_failed ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 cursor-default' : task.is_completed ? 'bg-emerald-50/90 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700' : task.is_skipped ? 'bg-slate-50 dark:bg-slate-800 border-dashed border-slate-300 dark:border-slate-600 cursor-default' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-brand-700 hover:shadow-card', { 'z-40': menuOpen }]"
     @click="handleClick" @keydown.esc="menuOpen && ($event.stopPropagation(), closeMenu())">
     <header class="flex items-center justify-between gap-2">
       <div class="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -40,14 +40,15 @@
       </div>
       <p class="text-xs text-slate-500 dark:text-slate-400">已学 {{ studyCount }} 次 · {{ task.is_completed ? '累计用时' : '已保存' }} {{ savedSeconds ? formatDuration(savedSeconds) : '0 分钟' }}</p>
     </div>
-    <TaskTimer v-else-if="task.track_time && !task.is_completed && !task.is_skipped" :item="task" :now="now"
+    <TaskTimer v-else-if="task.track_time && !task.is_completed && !task.is_skipped && !task.is_failed" :item="task" :now="now"
       @start="emit('timer', task, 'start')" @pause="emit('timer', task, 'pause')" @reset="emit('timer', task, 'reset')" />
     <div v-else-if="task.track_time && task.is_completed" class="flex items-center gap-2 text-xs text-violet-600 dark:text-violet-300">
       <span>⏱ {{ task.duration_seconds ? `用时 ${formatDuration(task.duration_seconds)}` : '没有记录用时' }}</span>
       <button type="button" class="min-h-[44px] rounded-lg px-2 py-2 bg-violet-50 dark:bg-violet-950/40" @click.stop="emit('edit-duration', task)">更正用时</button>
     </div>
 
-    <p v-if="task.is_skipped" class="text-xs text-slate-500 dark:text-slate-400 break-words">⏭ 今天已跳过 · {{ task.skip_reason }}</p>
+    <p v-if="task.is_failed" class="text-sm text-rose-700 dark:text-rose-300 break-words">确认未完成 · {{ task.failure_reason }}</p>
+    <p v-else-if="task.is_skipped" class="text-xs text-slate-500 dark:text-slate-400 break-words">⏭ 今天已跳过 · {{ task.skip_reason }}</p>
     <div v-else-if="skipPending" class="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-2.5 text-xs text-amber-700 dark:text-amber-300 space-y-2">
       <p class="break-words">⏳ 申请跳过：{{ task.skip_request.reason }} · 等家长确认</p>
       <div v-if="asParent" class="flex gap-2">
@@ -59,10 +60,10 @@
 
     <footer class="mt-auto pt-3 border-t flex items-center justify-between gap-3" :class="task.is_completed ? 'border-emerald-200/60 dark:border-emerald-800/60' : 'border-slate-100 dark:border-slate-700'">
       <div class="min-w-0">
-        <p class="text-sm font-extrabold" :class="task.is_completed ? 'text-emerald-700 dark:text-emerald-300' : task.is_skipped ? 'text-slate-400' : 'text-amber-600 dark:text-amber-300'">★ {{ task.is_completed ? `已得 ${displayPoints} 分` : task.is_skipped ? '跳过不得分' : displayPoints ? `完成得 ${displayPoints} 分` : '记录完成 · 不加分' }}</p>
+        <p class="text-sm font-extrabold" :class="task.is_completed ? 'text-emerald-700 dark:text-emerald-300' : task.is_skipped ? 'text-slate-400' : 'text-amber-600 dark:text-amber-300'">★ {{ task.is_failed ? (task.failure_penalty ? `已扣 ${task.failure_penalty} 分` : '未完成 · 未额外扣分') : task.is_completed ? `已得 ${displayPoints} 分` : task.is_skipped ? '跳过不得分' : displayPoints ? `完成得 ${displayPoints} 分` : '记录完成 · 不加分' }}</p>
         <p v-if="task.completion_source === 'parent_backfill'" class="text-xs text-sky-600 dark:text-sky-300 mt-0.5">家长补记</p>
       </div>
-      <button v-if="!task.is_skipped || usesStudySessions(task)" type="button"
+      <button v-if="(!task.is_skipped && !task.is_failed) || usesStudySessions(task)" type="button"
         class="shrink-0 rounded-xl min-h-[44px] px-4 py-2.5 text-sm font-bold transition-colors focus-visible:ring-2 focus-visible:ring-indigo-400"
         :class="task.is_completed ? 'bg-white/80 dark:bg-slate-900/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-950/40'"
         @click.stop="primaryClick">{{ primaryLabel }}</button>
@@ -107,7 +108,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration', 'edit-priority', 'edit-homework']);
+const emit = defineEmits(['toggle', 'skip', 'unskip', 'cancel-skip', 'approve-skip', 'reject-skip', 'timer', 'edit-duration', 'edit-priority', 'edit-homework', 'failure']);
 
 const activeParticles = ref([]);
 const card = ref(null), menuOpen = ref(false), menuTrigger = ref(null), menuPanel = ref(null);
@@ -116,10 +117,10 @@ const studyCount = computed(() => props.task.homework?.study_count ?? props.task
 // A timed task not yet moved to sessions has saved nothing until it is done; its running timer is only 本次.
 const savedSeconds = computed(() => props.task.homework?.study_seconds ??
   (props.task.study_sessions?.managed === false && !props.task.is_completed ? 0 : props.task.study_sessions?.seconds ?? 0));
-const statusLabel = computed(() => props.task.is_completed ? '✓ 已完成' : props.task.is_skipped ? '已跳过'
+const statusLabel = computed(() => props.task.is_failed ? '确认未完成' : props.task.is_completed ? '✓ 已完成' : props.task.is_skipped ? '已跳过'
   : studyCount.value || props.task.timer_running || currentSeconds.value ? '进行中' : '待完成');
 const primaryLabel = computed(() => usesStudySessions(props.task)
-  ? props.task.is_completed || props.task.is_skipped ? '查看记录' : '学习 / 记录'
+  ? props.task.is_completed || props.task.is_skipped || props.task.is_failed ? '查看记录' : '学习 / 记录'
   : props.task.origin === 'study' ? props.task.is_completed ? '继续学习 →' : '开始学习 →'
   : props.task.is_completed ? '撤销完成' : '完成任务');
 const displayPoints = computed(() => props.task.is_completed
@@ -148,15 +149,17 @@ const isWeeklyTargetMet = computed(() => {
 const deadlineLabel = computed(() => props.task.is_completed && !props.task.carried_from ? '' : deadlineText(props.task, calendar.today));
 const deadlineToday = computed(() => !props.task.is_completed && props.task.carried_from && !props.task.is_optional);
 
-const skipPending = computed(() => !props.task.is_completed && props.task.skip_request?.status === 'pending');
+const skipPending = computed(() => !props.task.is_completed && !props.task.is_failed && props.task.skip_request?.status === 'pending');
 const skipTurnedDown = computed(() => !props.task.is_completed && ['rejected', 'revoked'].includes(props.task.skip_request?.status));
 // Once a parent turned a request down, only the parent can still skip the task.
-const canSkip = computed(() => !props.task.is_extra && !props.task.is_completed && !props.task.is_skipped && !skipPending.value &&
+const canSkip = computed(() => !props.task.is_extra && !props.task.is_completed && !props.task.is_skipped && !props.task.is_failed && !skipPending.value &&
   (props.asParent || !skipTurnedDown.value));
 const menuActions = computed(() => {
+  if (props.task.is_failed) return props.asParent ? [{ label: '恢复为待完成', event: 'failure' }] : [];
   const actions = props.task.is_skipped ? (props.asParent ? [{ label: '撤销跳过', event: 'unskip' }] : []) : skipPending.value
     ? (props.asParent ? [] : [{ label: '撤回申请', event: 'cancel-skip' }])
     : canSkip.value ? [{ label: props.asParent ? '跳过任务' : '今天没有？', event: 'skip' }] : [];
+  if (props.asParent && ['template', 'adhoc'].includes(props.task.origin) && !props.task.is_skipped && !props.task.is_extra) actions.push({ label: '确认未完成', event: 'failure' });
   // A live homework record owns priority; a detached task can be edited on its card.
   if (props.asParent && props.task.homework) actions.push({ label: '修改作业', event: 'edit-homework' });
   if (props.asParent && !props.task.is_completed && !props.task.is_skipped && ['template', 'adhoc'].includes(props.task.origin) && !props.task.homework) {
@@ -191,6 +194,7 @@ function subjectBadgeClass(subject) {
 }
 
 function handleClick(event) {
+  if (props.task.is_failed) { if (usesStudySessions(props.task)) emit('toggle', props.task); return; }
   // A skipped task cannot be checked off until a parent takes the skip back.
   if (props.task.is_skipped) return;
   // A timed task that still needs its time asks first; the celebration waits for the answer.

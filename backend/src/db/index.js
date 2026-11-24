@@ -114,7 +114,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 46;
+const SCHEMA_VERSION = 47;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -829,6 +829,18 @@ function initDb(db) {
       db.pragma('user_version = 46');
     })();
   }
+  // v47: parent-confirmed failures, optional deductions and durable retry receipts.
+  if (db.pragma('user_version', { simple: true }) < 47) {
+    db.transaction(() => {
+      const { FAILURE_COLUMNS } = require('./task-failure-constraints');
+      const columns = db.pragma('table_info(daily_tasks)').map(c => c.name);
+      for (const [name, definition] of Object.entries(FAILURE_COLUMNS)) {
+        if (!columns.includes(name)) db.exec(`ALTER TABLE daily_tasks ADD COLUMN ${name} ${definition}`);
+      }
+      db.pragma('user_version = 47');
+    })();
+  }
+  require('./task-failure-constraints').validateTaskFailures(db);
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);
   // Pending outside-class attendance counts from the day tracking began (this upgrade, a new

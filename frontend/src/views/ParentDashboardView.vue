@@ -111,7 +111,7 @@
                   </span>
                   <span class="text-slate-300">·</span>
                   <span class="text-xs text-slate-500 dark:text-slate-400 font-bold">
-                    今日积分 +{{ item.stats.today_points || 0 }}
+                    今日积分 {{ (item.stats.today_points || 0) >= 0 ? '+' : '' }}{{ item.stats.today_points || 0 }}
                   </span>
                 </div>
               </div>
