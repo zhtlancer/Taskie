@@ -101,7 +101,7 @@ class RecurringHomeworkService {
           const record = this.homework.createRecord(childId, {
             content: '', assigned_date: date, due_date: shiftDate(date, 7), create_task: true,
             points: template.points, priority: template.priority, track_time: Boolean(template.track_time), expected_minutes: template.expected_minutes
-          }, 'parent', { kind: 'school', subject: template.subject, class_id: null }, { recurringTitle: title });
+          }, 'parent', { kind: 'school', subject: template.subject, class_id: null }, { recurringTitle: title, contentPending: true });
           homeworkId = record.id;
         }
         this.db.prepare(`INSERT INTO recurring_homework_occurrences (template_id, child_id, cycle_start, scheduled_date, title, homework_id, skipped, created_at)

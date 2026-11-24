@@ -298,6 +298,8 @@ export const api = {
   createHomeworkTask: (id, data = {}, options) => post(`/homework/${id}/task`, data, options),
   rejectHomeworkTask: (id, options) => post(`/homework/${id}/reject-task`, undefined, options),
   getHomeworkRequests: (signal, options) => get('/homework-requests', undefined, signal, options),
+  getHomeworkContentRequests: (signal, options) => get('/homework-content-requests', undefined, signal, options),
+  confirmHomeworkContent: (id, version, options) => post(`/homework/${id}/confirm-content`, { expected_version: version }, options),
   setHomeworkCoursePoints: (courseKey, points, options) => put('/homework-course-points', { course_key: courseKey, points }, options),
   getChildPeriods: id => get(`/children/${id}/periods`),
   getChildGoals: (id, signal, options) => get(`/children/${id}/goals`, undefined, signal, options),

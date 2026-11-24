@@ -36,6 +36,7 @@ async function homeworkRoutes(fastify, options) {
   fastify.get('/children/:id/homework/suggest', handle(async request => homeworkService.suggest(request.params.id, request.query)));
 
   fastify.get('/homework/:id', handle(async request => homeworkService.get(request.params.id)));
+  fastify.post('/homework/:id/confirm-content', generationWrite(fastify, request => homeworkService.confirmContent(request.params.id, request.body || {})));
   fastify.put('/homework/:id', generationWrite(fastify, request => homeworkService.update(request.params.id, request.body || {}, actor(request))));
   fastify.delete('/homework/:id', handle(async request =>
     homeworkService.delete(request.params.id, { delete_task: request.query.delete_task === '1' }, actor(request))));
@@ -54,6 +55,7 @@ async function homeworkRoutes(fastify, options) {
   fastify.get('/homework-completion-requests', handle(async () => homeworkService.query('r.completion_requested_at IS NOT NULL AND d.is_completed = 0', [])));
 
   fastify.get('/homework-requests', handle(async () => homeworkService.listTaskRequests()));
+  fastify.get('/homework-content-requests', handle(async () => homeworkService.listContentRequests()));
   fastify.put('/homework-course-points', handle(async request =>
     homeworkService.setCoursePoints(request.body?.course_key, request.body?.points)));
 }

@@ -84,6 +84,22 @@
         </ul>
       </ParentTodoGroup>
 
+      <ParentTodoGroup v-if="contentRequests.length || todoErrors.content" kind="content" title="自动作业待补充" icon="✏️" :items="contentRequests" :error="todoErrors.content" :busy="refreshing || actionLocked" description="自动生成的作业需核对具体内容。补充内容后移除提醒；无需修改时，可确认保持当前内容。" @retry="loadDashboard()" v-slot="{ items }">
+        <ul class="space-y-2">
+          <li v-for="record in items" :key="record.id" :data-todo-content="record.id" class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3">
+            <span class="text-2xl">{{ record.child_avatar_emoji }}</span>
+            <div class="min-w-0 flex-1 basis-48 break-words">
+              <p class="text-sm font-bold text-slate-800 dark:text-slate-100">{{ record.child_name }} · {{ courseLabel(record) }}</p>
+              <p class="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{{ record.content || record.recurring_title }}</p>
+              <p class="text-xs text-amber-700 dark:text-amber-300">内容待补充 · {{ record.assigned_date }} 布置<span v-if="record.due_date"> · 截止 {{ record.due_date }}</span></p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.content)" class="min-h-11 min-w-11 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50" @click="openContent(record)">补充内容</button>
+              <button type="button" :disabled="!canMutate || Boolean(todoErrors.content)" class="ui-button-secondary text-xs" @click="confirmContent(record)">保持当前内容</button>
+            </div>
+          </li>
+        </ul>
+      </ParentTodoGroup>
       <ParentTodoGroup v-if="completionRequests.length || todoErrors.completion" kind="completion" title="超期作业全部完成申请" icon="📒" :items="completionRequests" :error="todoErrors.completion" :busy="refreshing || actionLocked" @retry="loadDashboard()" v-slot="{ items }">
         <div class="space-y-2">
           <div v-for="record in items" :key="record.id" class="rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 space-y-2 text-sm">
@@ -311,6 +327,7 @@
     </main>
 
     <AdhocTaskDialog v-if="adhocForm" :child="adhocForm.child" :task="adhocForm.task" @close="adhocForm = null" @saved="afterAdhocSaved" />
+    <HomeworkEditModal v-if="contentEdit" :key="contentEdit.id" :record-id="contentEdit.id" :child-id="contentEdit.child_id" :today="today" @close="contentEdit = null" @saved="afterContentSaved" />
     <UiDialog v-if="attendanceDraft" title="处理待消课" :busy="writeBusy" @close="closeAttendance">
       <form class="space-y-4" @submit.prevent="resolveAttendance(attendanceDraft.lesson, attendanceDraft)">
         <p class="break-words text-sm font-bold">{{ attendanceDraft.lesson.child_name }} · {{ attendanceDraft.lesson.title }}<br />{{ attendanceDraft.lesson.actual_date }} {{ attendanceDraft.lesson.start_time }}–{{ attendanceDraft.lesson.end_time }}</p>
@@ -344,6 +361,7 @@ import ParentPageState from '../components/ParentPageState.vue';
 import UiDialog from '../components/UiDialog.vue';
 import ClassHomeworkNotice from '../components/ClassHomeworkNotice.vue';
 import ParentTodoGroup from '../components/ParentTodoGroup.vue';
+import HomeworkEditModal from '../components/HomeworkEditModal.vue';
 import { getPendingRedemptions } from '../api/redemptions';
 import { formatMinutes } from '../utils/timeStats.js';
 import AdhocTaskDialog from '../components/AdhocTaskDialog.vue';
@@ -356,7 +374,8 @@ const calendar = useCalendarStore();
 const childrenStats = ref([]), skipRequests = ref([]), homeworkRequests = ref([]), completionRequests = ref([]);
 const pendingAttendance = ref({ items: [], total: 0 }), attendanceError = ref(''), attendanceDraft = ref(null), attendanceResult = ref(null);
 const redemptionRequests = ref([]), todoErrors = ref({});
-const todoCount = computed(() => skipRequests.value.length + homeworkRequests.value.length + completionRequests.value.length + pendingAttendance.value.total + redemptionRequests.value.length);
+const contentRequests = ref([]), contentEdit = ref(null);
+const todoCount = computed(() => skipRequests.value.length + homeworkRequests.value.length + completionRequests.value.length + pendingAttendance.value.total + redemptionRequests.value.length + contentRequests.value.length);
 const todoReadErrors = computed(() => Boolean(attendanceError.value || Object.values(todoErrors.value).some(Boolean)));
 const loading = ref(true), refreshing = ref(false), dashboardError = ref('');
 const loadedDate = ref(null), loadedZone = ref(null), dashboardLoaded = computed(() => loadedDate.value !== null);
@@ -366,7 +385,7 @@ const actionLocked = computed(() => writeBusy.value || confirming.value);
 const today = computed(() => calendar.today);
 const canWrite = computed(() => calendar.ready && dashboardLoaded.value && loadedDate.value === today.value
   && loadedZone.value === calendar.timeZone && !loading.value && !refreshing.value && !dashboardError.value && !actionLocked.value && !adhocForm.value);
-const canMutate = computed(() => canWrite.value && !attendanceDraft.value);
+const canMutate = computed(() => canWrite.value && !attendanceDraft.value && !contentEdit.value);
 const silent = { silentError: true, preserveError: true };
 let alive = true, epoch = 0, dashboardSerial = 0, pendingDate = null, reader;
 const message = err => typeof err === 'string' ? err : err?.message || '操作失败，请在原处重试';
@@ -448,6 +467,20 @@ function resolveRedemption(request, action) {
   return perform(options => action === 'approve' ? api.approveRedemption(request.id, options) : api.rejectRedemption(request.id, options),
     () => { redemptionRequests.value = redemptionRequests.value.filter(row => row.id !== request.id); },
     action === 'approve' ? '已确认奖励兑换。' : '已拒绝兑换，预留积分已释放。');
+}
+function openContent(record) {
+  if (!canMutate.value || todoErrors.value.content) return;
+  contentEdit.value = { id: record.id, child_id: record.child_id };
+}
+async function afterContentSaved() {
+  contentEdit.value = null;
+  notice.value = '作业已保存。修改具体内容后会移除提醒；无需修改时请选择“保持当前内容”。';
+  await loadDashboard();
+}
+function confirmContent(record) {
+  if (todoErrors.value.content || !contentRequests.value.some(row => row.id === record.id)) return;
+  return perform(options => api.confirmHomeworkContent(record.id, record.edit_version, options),
+    () => { contentRequests.value = contentRequests.value.filter(row => row.id !== record.id); }, '已确认保持当前作业内容。');
 }
 const attendanceKey = lesson => `${lesson.class_id}:${lesson.child_id}:${lesson.lesson_date}`;
 function closeAttendance() {
@@ -546,13 +579,14 @@ async function loadDashboard({ afterWrite = false } = {}) {
       optional('homework', () => api.getHomeworkRequests(signal, silent), unavailable),
       optional('completion', () => api.getHomeworkCompletionRequests(signal, silent), unavailable),
       optional('attendance', () => api.getPendingClassAttendance(signal, silent), unavailable),
-      optional('rewards', () => getPendingRedemptions(params => api.getRedemptions(params.status, params, signal, silent)), unavailable)]);
+      optional('rewards', () => getPendingRedemptions(params => api.getRedemptions(params.status, params, signal, silent)), unavailable),
+      optional('content', () => api.getHomeworkContentRequests(signal, silent), unavailable)]);
     if (!current()) return;
     childrenStats.value = result[0];
-    for (const [index, target] of [[1, skipRequests], [2, homeworkRequests], [3, completionRequests], [4, pendingAttendance], [5, redemptionRequests]]) {
+    for (const [index, target] of [[1, skipRequests], [2, homeworkRequests], [3, completionRequests], [4, pendingAttendance], [5, redemptionRequests], [6, contentRequests]]) {
       if (result[index]) target.value = result[index];
     }
-    todoErrors.value = Object.fromEntries(['skip', 'homework', 'completion', 'rewards'].map(kind => [kind,
+    todoErrors.value = Object.fromEntries(['skip', 'homework', 'completion', 'rewards', 'content'].map(kind => [kind,
       unavailable.includes(kind) ? '这类待办未能读取，请重试。' : '']));
     attendanceError.value = unavailable.includes('attendance') ? '待消课记录未能读取，请重试。' : '';
     loadedDate.value = date; loadedZone.value = timeZone;
@@ -576,11 +610,12 @@ function restored() {
   childrenStats.value = []; skipRequests.value = []; homeworkRequests.value = []; completionRequests.value = [];
   pendingAttendance.value = { items: [], total: 0 }; attendanceError.value = ''; attendanceDraft.value = null; attendanceResult.value = null;
   redemptionRequests.value = []; todoErrors.value = {};
+  contentRequests.value = []; contentEdit.value = null;
   loadedDate.value = null; loadedZone.value = null; dashboardError.value = ''; actionError.value = ''; notice.value = ''; adhocForm.value = null;
   refreshing.value = false;
   loadDashboard();
 }
-onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || (!writeBusy.value && !adhocForm.value && !attendanceDraft.value));
+onBeforeRouteLeave(to => !hasSession('parent') || ['/parent/login', '/parent/setup-pin'].includes(to.path) || (!writeBusy.value && !adhocForm.value && !attendanceDraft.value && !contentEdit.value));
 const clock = setInterval(() => { now.value = Date.now(); }, 1000);
 const poll = setInterval(reloadLive, 60000);
 watch(() => [calendar.today, calendar.ready, calendar.timeZone], reloadDashboardDay);

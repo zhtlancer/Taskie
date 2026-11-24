@@ -45,7 +45,7 @@ class ClassHomeworkService {
         assigned_date: date, due_date: due,
         content: `${Number(date.slice(5, 7))}月${Number(date.slice(8))}日“${cls.title}”作业`,
         create_task: Boolean(due && due >= today)
-      }, 'parent', { kind: 'class', subject: cls.title, class_id: classId });
+      }, 'parent', { kind: 'class', subject: cls.title, class_id: classId }, { contentPending: true });
       this.db.prepare(`INSERT INTO outside_class_homework(class_id, child_id, lesson_date, actual_date, homework_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?)`).run(classId, childId, source, date, record.id, new Date().toISOString());
       return this.result({ homework_id: record.id, daily_task_id: record.daily_task_id, due_date: record.due_date }, true);

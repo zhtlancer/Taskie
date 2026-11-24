@@ -191,6 +191,10 @@ function prepare({ archive, saved, staging, maxSize, currentSchemaVersion }) {
     if (schemaVersion >= 47) {
       try { validateTaskFailures(candidate); } catch { throw fail('备份未完成确认数据或扣分无效，无法恢复'); }
     }
+    if (schemaVersion >= 48) {
+      try { require('../db/homework-content').validateHomeworkContent(candidate); }
+      catch { throw fail('备份作业内容待补充标记无效，无法恢复'); }
+    }
     if (!candidate.prepare("SELECT value FROM settings WHERE key = 'parent_pin_hash'").get()) throw fail('备份缺少家长账号');
     if (schemaVersion >= 40) {
       try { validateWordStudyConstraints(candidate); }

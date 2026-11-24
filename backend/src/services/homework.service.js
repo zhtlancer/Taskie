@@ -190,7 +190,8 @@ class HomeworkService {
     const taskState = task ? (task.is_completed ? 'done' : task.is_failed ? 'failed' : task.is_skipped ? 'skipped' : task.due_date < today ? 'missed' : 'open')
       : record.task_requested ? 'pending' : 'none';
     return { ...record, edit_version: editVersion([record.content, record.assigned_date, record.due_date, record.points,
-      record.priority, record.daily_task_id, record.task_requested, task_priority_override]), task_requested: Boolean(record.task_requested),
+      record.priority, record.daily_task_id, record.task_requested, task_priority_override, record.content_pending]),
+      content_pending: Boolean(record.content_pending), task_requested: Boolean(record.task_requested),
       task, task_state: taskState, can_create_task: !task && Boolean(record.due_date) && record.due_date >= today };
   }
 
@@ -213,6 +214,19 @@ class HomeworkService {
     const [record] = this.query('r.id = ?', [id]);
     if (!record) throw fail(404, '作业记录不存在');
     return record;
+  }
+
+  listContentRequests() {
+    for (const { id } of this.db.prepare('SELECT id FROM children').all()) this.recurringService?.ensure(id);
+    return this.query('r.content_pending = 1', []);
+  }
+
+  confirmContent(id, body) {
+    const record = this.get(id);
+    requireEditVersion(body.expected_version, record.edit_version);
+    this.db.prepare('UPDATE homework_records SET content_pending = 0, updated_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), id);
+    return this.get(id);
   }
 
   // A child's records, newest first: by course, by assigned dates, or by words in the content.
@@ -281,7 +295,7 @@ class HomeworkService {
 
   // Internal callers may supply a confirmed historical class snapshot, even after reassignment.
   // HTTP creation always resolves the course through create() above.
-  createRecord(childId, body, actor, course, { recurringTitle } = {}) {
+  createRecord(childId, body, actor, course, { recurringTitle, contentPending = false } = {}) {
     this.requireChild(childId);
     if (actor !== 'parent' && Object.hasOwn(body, 'priority')) throw fail(403, '只有家长可以设置优先级');
     const priority = validatePriority(body.priority);
@@ -305,6 +319,7 @@ class HomeworkService {
         created_by, task_requested, daily_task_id, created_at, updated_at, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`)
         .run(id, childId, course.kind, courseKey(course), course.subject, course.class_id, assigned, due, content, points, actor,
           body.create_task && actor !== 'parent' ? 1 : 0, now, now, priority);
+      if (contentPending) this.db.prepare('UPDATE homework_records SET content_pending = 1 WHERE id = ?').run(id);
       if (timing) this.attachTask(id, timing, recurringTitle);
     })();
     return this.get(id);
@@ -380,8 +395,9 @@ class HomeworkService {
       if (due < task.date) throw fail(400, `截止日期不能早于任务开始的日子（${task.date}）`);
     }
     this.db.transaction(() => {
-      this.db.prepare('UPDATE homework_records SET content = ?, assigned_date = ?, due_date = ?, points = ?, priority = ?, updated_at = ? WHERE id = ?')
-        .run(content, assigned, due, points, priority, new Date().toISOString(), id);
+      const contentPending = record.content_pending && !(actor === 'parent' && content && content !== record.content);
+      this.db.prepare('UPDATE homework_records SET content = ?, assigned_date = ?, due_date = ?, points = ?, priority = ?, content_pending = ?, updated_at = ? WHERE id = ?')
+        .run(content, assigned, due, points, priority, Number(contentPending), new Date().toISOString(), id);
       if (taskOpen) {
         const title = taskTitle({ ...record, content });
         this.db.prepare('UPDATE daily_tasks SET title = ?, points = ?, due_date = ?, priority = ?, priority_override = NULL WHERE id = ? AND is_completed = 0')

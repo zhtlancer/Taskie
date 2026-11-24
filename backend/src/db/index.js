@@ -114,7 +114,7 @@ let globalDb = null;
 
 // The newest database version this code knows. A rollback must not run an older image on a data
 // directory that a newer one already upgraded: refuse to start instead of misreading it.
-const SCHEMA_VERSION = 47;
+const SCHEMA_VERSION = 48;
 
 function initDb(db) {
   const found = db.pragma('user_version', { simple: true });
@@ -840,6 +840,17 @@ function initDb(db) {
       db.pragma('user_version = 47');
     })();
   }
+  // v48: explicit content review for newly generated homework; old records remain confirmed.
+  if (db.pragma('user_version', { simple: true }) < 48) {
+    db.transaction(() => {
+      if (!db.pragma('table_info(homework_records)').some(column => column.name === 'content_pending')) {
+        db.exec('ALTER TABLE homework_records ADD COLUMN content_pending INTEGER NOT NULL DEFAULT 0 CHECK (typeof(content_pending) = \'integer\' AND content_pending IN (0, 1))');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_homework_content_pending ON homework_records(content_pending, assigned_date)');
+      db.pragma('user_version = 48');
+    })();
+  }
+  require('./homework-content').validateHomeworkContent(db);
   require('./task-failure-constraints').validateTaskFailures(db);
   // Run on every startup and on the restore worker's candidate, even for current-schema data.
   backfillClassRevisions(db);

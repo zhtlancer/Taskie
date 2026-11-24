@@ -4,7 +4,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
 const { chromium, launchOptions, smokePort } = require('./browser-env.cjs');
 const { getDb } = require('../backend/src/db');
 const buildApp = require('../backend/src/app');
-const { getTodayDate, shiftDate } = require('../backend/src/utils/date');
+const { getTodayDate, shiftDate, getDayOfWeek } = require('../backend/src/utils/date');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskie-parent-dashboard-')), db = getDb(':memory:');
 db.prepare("UPDATE settings SET value='0' WHERE key='parent_pin_is_default'").run();
 const app = buildApp({ db, logger: false, deviceAuth: false, backupIntervalHours: 0,
@@ -159,6 +159,43 @@ async function main() {
       const attendance = db.prepare('SELECT status, charged FROM outside_class_attendance WHERE class_id=? AND child_id=? AND lesson_date=?').get(cls.id, child.id, today);
       assert.equal(attendance.status, width === 390 && theme === 'light' ? 'attended' : theme === 'dark' ? 'leave' : 'absent');
       assert.equal(attendance.charged, width === 390 && theme === 'light' ? 1 : 0);
+
+      if (width === 390 && theme === 'light') {
+        // Confirming a class creates an explicit content reminder. Editing only content clears it.
+        const generated = db.prepare('SELECT homework_id FROM outside_class_homework WHERE class_id=? AND child_id=?').get(cls.id, child.id).homework_id;
+        const contentRow = page.locator(`[data-todo-content="${generated}"]`);
+        await contentRow.getByRole('button', { name: '补充内容', exact: true }).click();
+        const edit = page.getByRole('dialog', { name: '✏️ 修改作业记录', exact: true });
+        await edit.getByLabel('作业内容', { exact: true }).fill('练习第一首钢琴曲三遍');
+        await edit.getByRole('button', { name: '保存', exact: true }).click();
+        await edit.waitFor({ state: 'detached' }); await contentRow.waitFor({ state: 'detached' });
+        assert.equal(db.prepare('SELECT content_pending FROM homework_records WHERE id=?').get(generated).content_pending, 0);
+
+        // Empty weekly homework can also be intentionally kept; stale confirmations never overwrite edits.
+        await api('POST', `/children/${child.id}/recurring-homework`, { subject: '托管', weekday: getDayOfWeek(today), start_date: today, points: 3 });
+        const pendingContent = await api('GET', '/homework-content-requests');
+        const weekly = pendingContent.find(record => record.child_id === child.id && record.recurring_title);
+        assert.ok(weekly);
+        await reload();
+        const group = inbox.locator('[data-todo-group="content"]');
+        const weeklyRow = page.locator(`[data-todo-content="${weekly.id}"]`);
+        await weeklyRow.waitFor();
+        const contentUrl = '**/api/homework-content-requests';
+        await page.route(contentUrl, fail); await reload(); await group.getByRole('alert').waitFor();
+        assert.equal(await weeklyRow.getByRole('button', { name: '保持当前内容', exact: true }).isDisabled(), true);
+        assert.equal(await skipRow.getByRole('button', { name: '同意跳过', exact: true }).isEnabled(), true);
+        await page.unroute(contentUrl, fail);
+        await group.getByRole('button', { name: '重新读取自动作业待补充', exact: true }).click();
+        await group.getByRole('alert').waitFor({ state: 'detached' });
+        await api('PUT', `/homework/${weekly.id}`, { points: 4 });
+        await weeklyRow.getByRole('button', { name: '保持当前内容', exact: true }).click();
+        await page.getByRole('alert').filter({ hasText: '记录刚被其他设备修改过' }).waitFor();
+        assert.equal(db.prepare('SELECT content_pending FROM homework_records WHERE id=?').get(weekly.id).content_pending, 1);
+        await weeklyRow.getByRole('button', { name: '保持当前内容', exact: true }).click();
+        await weeklyRow.waitFor({ state: 'detached' });
+        assert.equal(db.prepare('SELECT content_pending FROM homework_records WHERE id=?').get(weekly.id).content_pending, 0);
+        assert.equal((await api('GET', '/homework-content-requests')).length, 0);
+      }
 
       // The four optional endpoints fail independently of the core cards and approvals.
       const optionalUrls = [`**/api/children/${child.id}/current-timer`, `**/api/children/${child.id}/time-stats?*`, '**/api/outside-classes/stats?*', '**/api/daily-tasks?*'];

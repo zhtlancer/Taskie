@@ -123,6 +123,7 @@
                 <div class="mt-3 space-y-3 text-xs font-bold">
                   <div class="flex flex-wrap items-center gap-x-3 gap-y-2 text-slate-500 dark:text-slate-400">
                   <span>{{ record.recurring_title ? '周期自动生成' : record.auto_lesson_date ? '确认上课后自动生成' : record.created_by === 'child' ? '孩子记录' : '家长记录' }}<template v-if="record.task || record.task_requested"> · ★{{ record.task ? record.task.points : record.points }}</template></span>
+                  <span v-if="record.content_pending" class="text-amber-700 dark:text-amber-300">内容待补充</span>
                   <span v-if="record.study_running" class="text-indigo-600 dark:text-indigo-300">⏱ 正在计时</span>
                   <span v-if="record.task" class="text-indigo-600 dark:text-indigo-300">已学 {{ record.study_count || 0 }} 次 · 累计 {{ Math.round((record.study_seconds || 0) / 60) }} 分钟</span>
                   <span v-if="record.completion_requested_at && !record.task?.is_completed" class="text-amber-600 dark:text-amber-300">全部完成待家长确认</span>

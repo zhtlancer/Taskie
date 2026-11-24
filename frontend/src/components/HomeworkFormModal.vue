@@ -39,6 +39,7 @@
       </div>
 
       <p v-if="record?.recurring_title" class="text-xs font-bold text-slate-500 dark:text-slate-400">{{ record.recurring_title }} · 内容可稍后补充</p>
+      <p v-if="record?.content_pending" class="text-sm text-amber-700 dark:text-amber-300">内容待补充：修改作业内容后会自动清除此提醒；只修改日期或积分会保留。</p>
       <div>
         <label for="homework-content" class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1.5">作业内容</label>
         <textarea
