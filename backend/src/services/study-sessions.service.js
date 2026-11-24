@@ -269,6 +269,7 @@ class StudySessionsService {
     this.db.transaction(() => {
       const { record, task } = this.task(recordId);
       this.checkActor(task, actor, 'edit');
+      if (task.failure_id && actor !== 'parent') throw fail(409, '家长已确认未完成，请先恢复为待完成');
       const row = this.session(task.id, id);
       if (!row.ended_at) throw fail(409, '请先结束本次学习');
       const dates = this.db.prepare('SELECT date FROM homework_session_days WHERE session_id = ?').all(id).map(r => r.date);

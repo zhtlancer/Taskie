@@ -26,7 +26,7 @@
 
     <div v-if="isWeeklyTask" class="space-y-1 text-xs text-slate-500 dark:text-slate-400">
       <p :class="isWeeklyTargetMet ? 'text-emerald-700 dark:text-emerald-300 font-bold' : ''">🎯 本周 {{ task.weekly_completed_times || 0 }} / {{ task.weekly_target_times }} 次{{ isWeeklyTargetMet ? ' · 目标已达成' : '' }}<span v-if="task.weekly_skipped_times"> · 跳过 {{ task.weekly_skipped_times }} 次</span></p>
-      <p v-if="!isWeeklyTargetMet && !task.is_completed && !task.is_skipped && task.week_days_left" :class="task.is_optional ? 'text-sky-600 dark:text-sky-300' : 'text-rose-600 dark:text-rose-300'">{{ task.is_optional ? '今天可选' : '今天要做' }} · 本周还剩 {{ task.week_days_left }} 天，还差 {{ task.weekly_remaining_times }} 次</p>
+      <p v-if="!isWeeklyTargetMet && !task.is_completed && !task.is_skipped && !task.is_failed && task.week_days_left" :class="task.is_optional ? 'text-sky-600 dark:text-sky-300' : 'text-rose-600 dark:text-rose-300'">{{ task.is_optional ? '今天可选' : '今天要做' }} · 本周还剩 {{ task.week_days_left }} 天，还差 {{ task.weekly_remaining_times }} 次</p>
       <p v-if="task.is_extra" class="text-violet-600 dark:text-violet-300">✨ 额外挑战 · 自愿完成，不影响考核</p>
       <p v-if="task.allow_extra && task.extra_points && task.extra_reward_limit">额外奖励已用 {{ task.weekly_extra_rewarded_times || 0 }} / {{ task.extra_reward_limit }} 次</p>
     </div>
@@ -147,7 +147,7 @@ const isWeeklyTargetMet = computed(() => {
 
 // Carried from an earlier day ("周五的作业 · 周日前完成"), or allowed to wait until a later deadline.
 const deadlineLabel = computed(() => props.task.is_completed && !props.task.carried_from ? '' : deadlineText(props.task, calendar.today));
-const deadlineToday = computed(() => !props.task.is_completed && props.task.carried_from && !props.task.is_optional);
+const deadlineToday = computed(() => !props.task.is_completed && !props.task.is_failed && props.task.carried_from && !props.task.is_optional);
 
 const skipPending = computed(() => !props.task.is_completed && !props.task.is_failed && props.task.skip_request?.status === 'pending');
 const skipTurnedDown = computed(() => !props.task.is_completed && ['rejected', 'revoked'].includes(props.task.skip_request?.status));

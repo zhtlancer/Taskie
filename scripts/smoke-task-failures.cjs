@@ -91,6 +91,12 @@ async function main() {
       assert.equal(await page.getByRole('button', { name: '确认未完成', exact: true }).count(), 0);
       const closed = page.locator('[data-task-card]').filter({ has: page.getByRole('heading', { name: '学校作业', exact: true }) });
       assert.equal(await closed.getByRole('button').count(), 0);
+      await page.locator('[data-task-card]').filter({ has: page.getByRole('heading', { name: '阅读练习', exact: true }) }).getByRole('button', { name: '查看记录', exact: true }).click();
+      const childStudy = page.getByRole('dialog');
+      await childStudy.getByText(/确认未完成 · 今天没有读完/).waitFor();
+      assert.equal(await childStudy.getByRole('button', { name: '＋ 手动补记学习', exact: true }).count(), 0);
+      assert.equal(await childStudy.getByRole('button', { name: '更正本次记录', exact: true }).count(), 0);
+      await childStudy.getByRole('button', { name: '关闭', exact: true }).click();
       const result = await page.evaluate(async ({ id, token }) => (await fetch(`/api/daily-tasks/${id}/restore-failure`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: '{}' })).status, { id: done.id, token });
       assert.equal(result, 403);
       await page.goto(`${base}/child/${child.id}/rewards`, { waitUntil: 'networkidle' });

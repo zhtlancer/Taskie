@@ -188,3 +188,140 @@ test('v46 upgrades, current restores and invalid failure backups preserve live s
   assert.equal(c.current().is_failed, false);
   validateTaskFailures(c.db);
 });
+
+test('failed carried and optional weekly tasks become required and block all-done/rest-day', async t => {
+  const c = await fixture(t);
+  const monday = getTodayDate();
+  const mondayRow = c.tasksService.getDailyTasks(c.child.id, monday).find(row => row.id === c.task.id);
+  assert.equal(mondayRow.id, c.task.id);
+  const weekly = c.tasksService.createTemplate({ title: '每周阅读', subject: '语文', schedule_type: 'weekly_times', weekly_target_times: 1, days_of_week: [0,1,2,3,4,5,6] });
+  const weeklyRow = c.tasksService.getDailyTasks(c.child.id, monday).find(row => row.template_id === weekly.id);
+  assert.equal(weeklyRow.is_optional, true);
+  assert.equal((await c.confirm({}, undefined, weeklyRow.id)).statusCode, 200);
+  await c.call('complete');
+  const afterWeeklyFailure = c.tasksService.getDailyTasks(c.child.id, monday);
+  assert.equal(afterWeeklyFailure.find(row => row.id === weeklyRow.id).is_optional, false);
+  assert.equal(c.rewardsService.getChildStats(c.child.id).today_completion_rate, 0.5);
+  assert.equal(c.rewardsService.getAllDoneDaysCount(c.child.id), 0);
+
+  // Confirming a future-due carried task on Tuesday also marks it non-optional on Tuesday's board.
+  const futureAdhoc = c.tasksService.createAdhocTask(c.child.id, { title: '跨天任务', subject: '数学', points: 5, due_date: shiftDate(monday, 3) });
+  t.mock.timers.setTime(Date.now() + 86400000);
+  const tuesday = getTodayDate();
+  const tuesdaySibling = c.tasksService.createAdhocTask(c.child.id, { title: '周二常规', subject: '数学', points: 5 });
+  c.tasksService.completeDailyTask(tuesdaySibling.id);
+  assert.equal((await c.confirm({ request_id: 'failure-carried-001' }, undefined, futureAdhoc.id)).statusCode, 200);
+  const tuesdayBoard = c.tasksService.getDailyTasks(c.child.id, tuesday);
+  const carriedFailed = tuesdayBoard.find(row => row.id === futureAdhoc.id);
+  assert.equal(carriedFailed.carried_from, monday);
+  assert.equal(carriedFailed.is_optional, false);
+  validateTaskFailures(c.db);
+});
+
+test('child cannot add or edit study sessions on a failed task while parent still retains edit access', async t => {
+  const c = await fixture(t, { track_time: true });
+  c.taskStudyService.manual(c.task.id, { request_id: 'failure-session-init', duration_seconds: 120, date: getTodayDate(), note: '初稿' }, 'child');
+  assert.equal((await c.confirm()).statusCode, 200);
+  const childAuth = { authorization: `Bearer ${c.app.jwt.sign({ role: 'child', child_id: c.child.id, epoch: c.app.sessionEpoch() })}` };
+  const parentAuth = { authorization: `Bearer ${c.app.jwt.sign({ role: 'parent', epoch: c.app.sessionEpoch() })}` };
+  const childEdit = await c.app.inject({ method: 'PUT', url: `/api/daily-tasks/${c.task.id}/sessions/failure-session-init`,
+    payload: { duration_seconds: 180, note: '孩子试图修改' }, headers: childAuth });
+  assert.equal(childEdit.statusCode, 409);
+  const parentEdit = await c.app.inject({ method: 'PUT', url: `/api/daily-tasks/${c.task.id}/sessions/failure-session-init`,
+    payload: { duration_seconds: 180, note: '家长核正' }, headers: parentAuth });
+  assert.equal(parentEdit.statusCode, 200);
+  assert.equal(c.taskStudyService.details(c.task.id).total_seconds, 180);
+});
+
+test('carried failures block history and all-done on their confirmation day, including after midnight', async t => {
+  const c = await fixture(t, { due_date: '2026-11-26' });
+  const monday = getTodayDate();
+  const due = shiftDate(monday, 3);
+  // The family day differs from UTC in the default time zone.
+  t.mock.timers.setTime(new Date(familyInstant(shiftDate(monday, 1), '00:30:00')).getTime());
+  const tuesday = getTodayDate();
+  const sibling = c.tasksService.createAdhocTask(c.child.id, { title: '周二常规', subject: '数学', points: 5 });
+  c.tasksService.completeDailyTask(sibling.id);
+  assert.equal((await c.confirm({ penalty: 2 })).statusCode, 200);
+
+  const checkTuesday = () => {
+    const stats = c.rewardsService.getChildStats(c.child.id, tuesday);
+    const history = c.statsService.getHistory(c.child.id, tuesday, tuesday)[0];
+    assert.equal(stats.today_total_tasks, 2);
+    assert.equal(stats.today_completed_tasks, 1);
+    assert.equal(stats.today_completion_rate, 0.5);
+    assert.equal(history.total_tasks, 2);
+    assert.equal(history.completion_rate, 0.5);
+    assert.equal(history.all_done, false);
+    const failed = history.tasks.filter(task => task.id === c.task.id);
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0].is_failed, true);
+    assert.equal(failed[0].is_optional, false);
+    assert.equal(failed[0].carried_from, monday);
+    assert.equal(failed[0].due_date, due);
+    assert.equal(c.rewardsService.getAllDoneDaysCount(c.child.id), 0);
+    const week = c.statsService.getWeeklySummary(c.child.id, tuesday).current_week;
+    assert.equal(week.daily_breakdown.find(day => day.date === tuesday).all_done, false);
+    assert.equal(history.points_earned, 5, 'the penalty keeps its original task date');
+  };
+  checkTuesday();
+  // A range covering the source day must count a carried failure once on its confirmation day, not on Monday too.
+  const rangeHistory = c.statsService.getHistory(c.child.id, monday, tuesday);
+  assert.equal(rangeHistory[0].total_tasks, 0);
+  assert.equal(rangeHistory[1].total_tasks, 2);
+  assert.equal(c.statsService.getWeeklySummary(c.child.id, tuesday).current_week.total_tasks, 2);
+  assert.equal(c.tasksService.restDayChecker(c.child.id, monday, tuesday)(monday), true);
+  t.mock.timers.setTime(Date.now() + 86400000);
+  checkTuesday();
+  assert.equal(c.statsService.getHistory(c.child.id, due, due)[0].tasks.some(task => task.id === c.task.id), false,
+    'a failed carry is not projected again as a deadline miss');
+
+  assert.equal((await c.call('restore-failure', { failure_id: 'failure-receipt-0001' })).statusCode, 200);
+  const restored = c.statsService.getHistory(c.child.id, tuesday, tuesday)[0];
+  assert.equal(restored.total_tasks, 1);
+  assert.equal(restored.all_done, true);
+  assert.equal(c.rewardsService.getChildStats(c.child.id, tuesday).today_completion_rate, 1);
+  assert.equal(c.rewardsService.getAllDoneDaysCount(c.child.id), 1);
+  validateTaskFailures(c.db);
+});
+
+test('same-day and overdue historical failures do not gain carried failure projections', async t => {
+  const c = await fixture(t, { due_date: '2026-11-24' });
+  const monday = getTodayDate();
+  assert.equal((await c.confirm()).statusCode, 200);
+  assert.equal(c.statsService.getHistory(c.child.id, monday, monday)[0].total_tasks, 1);
+  assert.equal(c.tasksService.summaryTasksBetween(c.child.id, monday, shiftDate(monday, 1))
+    .filter(task => task.id === c.task.id).length, 1);
+  await c.call('restore-failure', { failure_id: 'failure-receipt-0001' });
+  t.mock.timers.setTime(Date.now() + 2 * 86400000);
+  assert.equal((await c.confirm({ request_id: 'failure-after-deadline' })).statusCode, 200);
+  const today = getTodayDate();
+  assert.equal(c.tasksService.getDailyTasks(c.child.id).some(task => task.id === c.task.id), false);
+  assert.equal(c.statsService.getHistory(c.child.id, today, today)[0].total_tasks, 0);
+  assert.equal(c.tasksService.restDayChecker(c.child.id, today, today)(today), true);
+  assert.equal(c.rewardsService.getChildStats(c.child.id).today_total_tasks, 0);
+});
+
+test('a carried failure alone prevents its confirmation day from being a rest day', async t => {
+  const c = await fixture(t, { due_date: '2026-11-26' });
+  const monday = getTodayDate();
+  t.mock.timers.setTime(Date.now() + 86400000);
+  const tuesday = getTodayDate();
+  c.tasksService.getDailyTasks(c.child.id);
+  assert.equal(c.tasksService.restDayChecker(c.child.id, tuesday, tuesday)(tuesday), true);
+  assert.equal((await c.confirm()).statusCode, 200);
+  assert.equal(c.tasksService.restDayChecker(c.child.id, tuesday, tuesday)(tuesday), false);
+  assert.equal(c.statsService.getHistory(c.child.id, tuesday, tuesday)[0].total_tasks, 1);
+  assert.equal(c.rewardsService.getChildStats(c.child.id).today_total_tasks, 1);
+  const wednesday = shiftDate(tuesday, 1);
+  assert.equal(c.tasksService.restDayChecker(c.child.id, wednesday, wednesday)(wednesday), true);
+  assert.equal(c.statsService.getHistory(c.child.id, wednesday, wednesday)[0].total_tasks, 0);
+  assert.deepEqual(c.statsService.getHistory(c.child.id, monday, tuesday).map(day => day.total_tasks), [0, 1]);
+  assert.equal(c.tasksService.restDayChecker(c.child.id, monday, monday)(monday), true);
+
+  t.mock.timers.setTime(Date.now() + 86400000);
+  assert.equal(c.rewardsService.getChildStats(c.child.id, tuesday).today_total_tasks, 1);
+  await c.call('restore-failure', { failure_id: 'failure-receipt-0001' });
+  assert.equal(c.tasksService.restDayChecker(c.child.id, tuesday, tuesday)(tuesday), true);
+  assert.equal(c.statsService.getHistory(c.child.id, tuesday, tuesday)[0].total_tasks, 0);
+});

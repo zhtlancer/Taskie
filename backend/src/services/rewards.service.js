@@ -103,10 +103,10 @@ class RewardsService {
     `).get(childId, today);
 
     if (this.tasksService) {
-      // Today's tasks are generated on demand; other dates only describe what already exists.
+      // Today's tasks are generated on demand; past summaries also retain carried failures/misses.
       todayTasksRow = summarizeDay(today === getTodayDate()
         ? this.tasksService.getDailyTasks(childId, today)
-        : this.tasksService.describeTasksBetween(childId, today, today));
+        : this.tasksService.summaryTasksBetween(childId, today, today));
     }
 
     const totalPoints = this.getTotalPoints(childId);

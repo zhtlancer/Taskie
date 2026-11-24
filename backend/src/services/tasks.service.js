@@ -424,7 +424,7 @@ class TasksService {
     }
     const carried = carriedRows
       .filter(({ row }) => row.failure_id ? doneOn(row.failed_at) : row.is_completed ? row.completion_source !== 'parent_backfill' && doneOn(row.completed_at) : !row.skipped_at || doneOn(row.skipped_at))
-      .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, sort_due_date: due, is_optional: due > date }));
+      .map(({ row, due }) => ({ ...describeRow(row), carried_from: row.date, due_date: due, sort_due_date: due, is_optional: !row.failure_id && due > date }));
     // A one-off task made from a homework record shows what the homework is.
     const homeworkOf = this.homeworkService ? this.homeworkService.homeworkByTask(childId) : new Map();
     const studyOf = this.studyByTask(childId);
@@ -536,13 +536,19 @@ class TasksService {
   }
 
   // Each day's tasks for summaries (history, all-done, rest days): its own tasks, plus tasks of
-  // earlier days left undone by their deadline that day, which count as missed there. A carried
-  // task done in time counts on its own day only.
+  // earlier days left undone by their deadline, or confirmed failed while carried on that day.
+  // A carried task done in time counts on its own day only.
   summaryTasksBetween(childId, fromDate, toDate, { schedule = this.scheduleFor(childId), ...options } = {}) {
-    const missed = this.carriedBetween(childId, fromDate, toDate, schedule)
-      .filter(({ row, due }) => due <= toDate && !row.is_completed && !row.skipped_at && !row.failure_id)
-      .map(({ row, due }) => ({ ...describeRow(row), date: due, carried_from: row.date, due_date: due, is_optional: false }));
-    return [...this.describeTasksBetween(childId, fromDate, toDate, { ...options, schedule, includeStudy: false }), ...missed];
+    const carried = this.carriedBetween(childId, fromDate, toDate, schedule)
+      .flatMap(({ row, due }) => {
+        if (row.is_completed || row.skipped_at) return [];
+        const date = row.failure_id ? formatDate(new Date(row.failed_at)) : due;
+        // Match the board: failures appear on their confirmation day only while still carried.
+        // A failure on its source day is already included below, with no second projection.
+        if (date < fromDate || date > toDate || date <= row.date || date > due) return [];
+        return [{ ...describeRow(row), date, carried_from: row.date, due_date: due, is_optional: false }];
+      });
+    return [...this.describeTasksBetween(childId, fromDate, toDate, { ...options, schedule, includeStudy: false }), ...carried];
   }
 
   // Children may act on a task from its own day until its deadline.
@@ -636,7 +642,10 @@ class TasksService {
       if (row.schedule_type !== 'weekly_times') {
         if (row.origin === 'study') return { ...task, sort_due_date: row.date, is_optional: !row.study_required };
         const due = dueDateOf(row, schedule.calendar);
-        return { ...task, due_date: due > row.date ? due : null, sort_due_date: due, is_optional: !row.failure_id && due > row.date };
+        const failedOn = row.failure_id ? formatDate(new Date(row.failed_at)) : null;
+        // Carried failures count on their confirmation day, not a second time on their source day.
+        const failedCarried = Boolean(failedOn && failedOn > row.date && failedOn <= due);
+        return { ...task, due_date: due > row.date ? due : null, sort_due_date: due, is_optional: (!row.failure_id || failedCarried) && due > row.date };
       }
       const done = completions.get(keyOf(row)) || [];
       const skipped = skips.get(keyOf(row)) || [];
@@ -662,7 +671,7 @@ class TasksService {
         weekly_skipped_times: skipped.length,
         weekly_remaining_times: Math.max(0, target - done.length - skipped.length),
         week_days_left: daysLeft,
-        is_optional: isExtra || target - usedBefore < daysLeft
+        is_optional: !row.failure_id && (isExtra || target - usedBefore < daysLeft)
       };
     });
   }

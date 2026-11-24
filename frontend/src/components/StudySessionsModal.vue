@@ -51,7 +51,7 @@
             <button :disabled="busy" class="text-sm text-slate-500 dark:text-slate-400 py-2" @click="act(() => api.rejectHomeworkCompletion(recordId))">暂不确认</button>
           </template>
         </div>
-        <form v-if="manualOpen" class="rounded-xl border p-3 space-y-2" @submit.prevent="manual">
+        <form v-if="manualOpen && (!study.record.task.is_failed || asParent)" class="rounded-xl border p-3 space-y-2" @submit.prevent="manual">
           <label class="block text-sm">学习日期 <input v-model="manualDate" type="date" :disabled="!asParent" :min="study.record.assigned_date" :max="today" required class="border rounded-lg p-2" /></label>
           <label class="block text-sm">本次用时（分钟）<input v-model.number="manualMinutes" type="number" min="0" max="720" step="0.1" required class="border rounded-lg p-2 w-24" /></label>
           <textarea v-model="manualNote" maxlength="500" placeholder="本次进展（选填）" class="border rounded-xl p-2 w-full" />
@@ -65,7 +65,7 @@
             <p v-if="session.days.length > 1" class="text-xs text-slate-400">跨日用时：{{ session.days.map(day => `${day.date} ${formatDuration(day.seconds)}`).join('；') }}</p>
             <p class="whitespace-pre-line text-slate-600 dark:text-slate-300">{{ session.note || '未填写进展' }}</p>
             <button v-if="canEdit(session)" :disabled="busy" class="text-indigo-600 dark:text-indigo-300 text-xs py-2" @click="openEdit(session)">更正本次记录</button>
-            <form v-if="editing?.id === session.id" class="space-y-2" @submit.prevent="saveEdit">
+            <form v-if="editing?.id === session.id && canEdit(session)" class="space-y-2" @submit.prevent="saveEdit">
               <label v-for="day in editing.days" :key="day.date" class="block text-xs">{{ day.date }} 用时（分钟）<input v-model.number="day.minutes" type="number" min="0" max="720" step="0.1" required class="border rounded-lg p-2 w-24" /></label>
               <textarea v-model="editing.note" maxlength="500" class="border rounded-xl p-2 w-full" />
               <button :disabled="busy" class="bg-indigo-600 text-white rounded-lg px-3 py-2">保存更正</button>
@@ -216,7 +216,7 @@ async function manual() {
   await act(() => studyApi.add(manualAttempt));
   if (!error.value) { manualAttempt = null; manualId.value = requestId(); manualOpen.value = false; manualNote.value = ''; manualMinutes.value = 0; }
 }
-const canEdit = session => props.asParent || (session.days.length ? session.days.every(day => day.date === today.value) : dateOf(session.started_at) === today.value);
+const canEdit = session => props.asParent || (!study.value?.record?.task?.is_failed && (session.days.length ? session.days.every(day => day.date === today.value) : dateOf(session.started_at) === today.value));
 function openEdit(session) { editing.value = { id: session.id, note: session.note, days: (session.days.length ? session.days : [{ date: dateOf(session.started_at), seconds: 0 }]).map(day => ({ ...day, minutes: day.seconds / 60 })) }; }
 async function saveEdit() {
   const days = editing.value.days.map(day => ({ date: day.date, seconds: Math.round(day.minutes * 60) }));
