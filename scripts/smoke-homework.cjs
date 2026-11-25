@@ -78,10 +78,10 @@ async function main() {
   // The parent creates the task from the dashboard.
   const parentPage = await open('parent', parentToken);
   await parentPage.goto(`${base}/parent/dashboard`, { waitUntil: 'domcontentloaded' });
-  await parentPage.getByText('孩子记的作业，等你确认生成任务').waitFor();
+  await parentPage.getByRole('heading', { name: '📒 作业生成申请', exact: true }).waitFor();
   await shot(parentPage, '3-parent-dashboard-request');
   await parentPage.getByRole('button', { name: '生成任务', exact: true }).click();
-  await parentPage.getByText('孩子记的作业，等你确认生成任务').waitFor({ state: 'detached' });
+  await parentPage.getByRole('heading', { name: '📒 作业生成申请', exact: true }).waitFor({ state: 'detached' });
   const [record] = await api('GET', `/children/${child.id}/homework`);
   assert.equal(record.task_state, 'open');
   pass('the parent creates the requested task from the dashboard');

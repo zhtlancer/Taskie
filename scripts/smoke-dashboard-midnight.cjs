@@ -178,7 +178,7 @@ async function main() {
     const record = app.services.homeworkService.create(child.id, { course_kind: 'school', subject: '语文',
       content: '跨日后审批的作业', assigned_date: '2026-10-21', due_date: '2026-10-22', create_task: true }, 'child');
     await page.goto(`${base}/parent/dashboard`);
-    const request = page.locator('section').filter({ hasText: '孩子记的作业，等你确认生成任务' }).locator('li').filter({ hasText: record.content });
+    const request = page.locator('section').filter({ has: page.getByRole('heading', { name: '📒 作业生成申请', exact: true }) }).locator('li').filter({ hasText: record.content });
     await request.getByRole('button', { name: '生成任务', exact: true }).waitFor();
     await page.getByText(/完成 2 \/ 2 项/).waitFor();
     now = after;
