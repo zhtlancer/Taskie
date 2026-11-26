@@ -768,13 +768,16 @@ class TasksService {
 
   // --- One-off tasks ---
 
-  // A one-off task a parent adds for one child on one day (e.g. homework assigned that day).
+  // A one-off task for one child on one day. Child-created tasks carry no reward points.
   // It is an ordinary daily task for that day: required, counted in all-done, history, weekly
   // completion and the streak, and checked off like any other.
-  createAdhocTask(childId, { title, subject, points = 10, date, due_date = null, track_time, expected_minutes, priority = 1 }) {
+  createAdhocTask(childId, { title, subject, points, date, due_date = null, track_time, expected_minutes, priority = 1 }, actor = 'parent') {
     if (!this.db.prepare('SELECT id FROM children WHERE id = ?').get(childId)) throw { status: 404, message: '孩子不存在' };
     if (typeof title !== 'string' || !title.trim() || title.trim().length > 50) throw { status: 400, message: '任务名称不能为空，且不超过 50 个字' };
     if (typeof subject !== 'string' || !subject.trim()) throw { status: 400, message: '请选择学科' };
+    if (points === undefined) points = actor === 'child' ? 0 : 10;
+    if (actor === 'child' && points !== 0) throw { status: 403, message: '孩子添加的临时任务不设置奖励积分' };
+    if (actor === 'child' && priority !== 1) throw { status: 403, message: '任务优先级由家长设置' };
     if (!Number.isSafeInteger(points) || points < 0 || points > 10000) throw { status: 400, message: '积分必须为 0 至 10000 的整数' };
     const timing = validateTiming({ track_time, expected_minutes });
     priority = validatePriority(priority);
@@ -784,6 +787,7 @@ class TasksService {
     } catch {
       throw { status: 400, message: '日期必须为 YYYY-MM-DD' };
     }
+    if (actor === 'child' && taskDate < getTodayDate()) throw { status: 400, message: '孩子只能添加今天或以后的临时任务' };
     // A due date lets the task be done until then (e.g. a poster due on Friday); it may not be
     // earlier than the task's day, and the same day means no extra time.
     if (due_date !== null) {

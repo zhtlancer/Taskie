@@ -164,6 +164,53 @@ async function main() {
       assert.equal(await page.getByRole('button', { name: '修改作业', exact: true }).count(), 0);
       assert.equal(await page.getByRole('group', { name: '筛选任务' }).count(), 1);
       console.log(`PASS ${engine.name()} ${width}/${theme}: child sees filters but cannot open the homework edit shortcut`);
+      await page.keyboard.press('Escape');
+      await page.getByRole('group', { name: '筛选任务' }).getByRole('button', { name: '高优先级', exact: true }).click();
+      const addTask = page.getByRole('button', { name: '添加临时任务', exact: true });
+      assert.ok(await addTask.evaluate(el => el.getBoundingClientRect().height >= 44));
+      await addTask.click();
+      const adhoc = page.getByRole('dialog', { name: `➕ 添加${child.name}的临时任务`, exact: true });
+      assert.equal(await adhoc.getByLabel('奖励积分', { exact: true }).count(), 0);
+      assert.equal(await adhoc.getByRole('radio').count(), 0);
+      assert.equal(await adhoc.getByLabel('哪一天', { exact: true }).inputValue(), today);
+      assert.equal(await adhoc.getByLabel('哪一天', { exact: true }).getAttribute('min'), today);
+      await adhoc.getByLabel('任务名称', { exact: true }).fill('准备圆规');
+      await adhoc.getByRole('combobox').selectOption('数学');
+      await adhoc.getByLabel('截止日期（可不填）', { exact: true }).fill(shiftDate(today, 3));
+      assert.ok(await adhoc.locator('input[type="date"]').evaluateAll(nodes => nodes.every(el => {
+        const rect = el.getBoundingClientRect(), container = el.parentElement.getBoundingClientRect();
+        return rect.left >= container.left - 1 && rect.right <= container.right + 1;
+      })), 'task dates stay inside the form on phones and tablets');
+      const loseResponse = width === 390 && theme === 'light';
+      const createUrl = `**/api/children/${child.id}/adhoc-tasks`;
+      if (loseResponse) await page.route(createUrl, async route => {
+        await route.fetch(); // The server saved it, but the browser cannot know that yet.
+        await route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"保存结果尚未确认"}' });
+      }, { times: 1 });
+      await adhoc.getByRole('button', { name: '确认添加', exact: true }).click();
+      if (loseResponse) {
+        await adhoc.getByRole('alert').filter({ hasText: '保存结果尚未确认' }).waitFor();
+        assert.equal(await adhoc.getByLabel('任务名称', { exact: true }).inputValue(), '准备圆规');
+        await adhoc.getByRole('button', { name: '按原内容重试', exact: true }).click();
+      }
+      await adhoc.waitFor({ state: 'detached' });
+      await card('准备圆规').waitFor();
+      const own = db.prepare("SELECT * FROM daily_tasks WHERE child_id = ? AND title = '准备圆规'").all(child.id);
+      assert.equal(own.length, 1); assert.equal(own[0].points, 0); assert.equal(own[0].priority, 1);
+      assert.equal(own[0].due_date, shiftDate(today, 3));
+      assert.equal(await filters.getByRole('button', { name: '高优先级', exact: true }).getAttribute('aria-pressed'), 'false');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      if (width === 390 && theme === 'light') {
+        await addTask.click();
+        await adhoc.getByLabel('任务名称', { exact: true }).fill('周日准备书包');
+        await adhoc.getByLabel('哪一天', { exact: true }).fill(shiftDate(today, 2));
+        await adhoc.getByRole('button', { name: '确认添加', exact: true }).click();
+        await adhoc.waitFor({ state: 'detached' });
+        await page.getByRole('status').filter({ hasText: `将在 ${shiftDate(today, 2)} 的任务中显示` }).waitFor();
+        assert.equal(await card('周日准备书包').count(), 0);
+        assert.equal(db.prepare("SELECT date FROM daily_tasks WHERE child_id = ? AND title = '周日准备书包'").get(child.id).date, shiftDate(today, 2));
+      }
+      console.log(`PASS ${engine.name()} ${width}/${theme}: child adds a zero-point one-off with a deadline, visible after filter reset, safe retry and bounded date controls`);
     } catch (err) {
       const page = context.pages()[0];
       if (page) console.error('Dialog state:', await page.getByRole('dialog').allTextContents());

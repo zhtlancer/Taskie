@@ -57,7 +57,7 @@ function installAuthorization(app, db) {
       /^\/api\/redemptions\/?$/.test(url) || /^\/api\/redemptions\/[^/]+\/(?:approve|reject|refund)\/?$/.test(url) ||
       /^\/api\/children\/[^/]+\/(?:periods|goals)\/?$/.test(url) && request.method !== 'GET' ||
       url.startsWith('/api/periods/') || /^\/api\/period-tasks\/[^/]+\/?$/.test(url) ||
-      /^\/api\/children\/[^/]+\/adhoc-tasks\/?$/.test(url) && request.method !== 'GET' || url.startsWith('/api/adhoc-tasks/') ||
+      url.startsWith('/api/adhoc-tasks/') ||
       /^\/api\/daily-tasks\/(?:backfill(?:\/day)?|[^/]+\/(?:backfill|undo-backfill|priority))\/?$/.test(url) ||
       /^\/api\/daily-tasks\/[^/]+\/(?:unskip|confirm-failure|restore-failure)\/?$/.test(url) ||
       /^\/api\/skip-requests\/?$/.test(url) || /^\/api\/skip-requests\/[^/]+\/(?:approve|reject)\/?$/.test(url) ||

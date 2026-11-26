@@ -38,7 +38,7 @@ test('a one-off task is a required task for its day, checked off like any other'
   assert.equal((await ctx.app.inject({ method: 'GET', url: `/api/daily-tasks?child_id=${child.id}` })).json().length, 2);
 });
 
-test('parents list and delete one-off tasks; children cannot manage them; input is validated', async t => {
+test('parents list and delete one-off tasks; children cannot delete or set rewards; input is validated', async t => {
   const { ctx, child, childHeaders, addAdhoc, today } = await fixture(t);
   for (const payload of [{ title: '' }, { title: '作业', subject: '' }, { title: '作业', points: -1 }, { title: '作业', date: '2026-02-30' }]) {
     assert.equal((await addAdhoc(payload)).statusCode, 400, JSON.stringify(payload));
@@ -48,7 +48,7 @@ test('parents list and delete one-off tasks; children cannot manage them; input 
   await addAdhoc({ title: '昨天补记', date: shiftDate(today, -1) });
   assert.deepEqual((await ctx.app.inject({ method: 'GET', url: `/api/children/${child.id}/adhoc-tasks` })).json().map(task => task.title), ['订正练习', '周五交手抄报']);
 
-  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/children/${child.id}/adhoc-tasks`, headers: childHeaders, payload: { title: '偷加', subject: '语文' } })).statusCode, 403);
+  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/children/${child.id}/adhoc-tasks`, headers: childHeaders, payload: { title: '偷加奖励', subject: '语文', points: 1 } })).statusCode, 403);
   assert.equal((await ctx.rawInject({ method: 'DELETE', url: `/api/adhoc-tasks/${now.id}`, headers: childHeaders })).statusCode, 403);
   // A child still cannot check off a future one-off task.
   assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${later.id}/complete`, headers: childHeaders })).statusCode, 403);
@@ -60,6 +60,50 @@ test('parents list and delete one-off tasks; children cannot manage them; input 
   await ctx.app.inject({ method: 'POST', url: '/api/task-templates', payload: { title: '口算', subject: '数学' } });
   const templateTask = ctx.app.services.tasksService.getDailyTasks(child.id).find(task => task.title === '口算');
   assert.equal((await ctx.app.inject({ method: 'DELETE', url: `/api/adhoc-tasks/${templateTask.id}` })).statusCode, 404);
+});
+
+test('children create their own zero-point one-offs with deadlines, safe retries and ordinary completion', async t => {
+  const { ctx, child, childHeaders, today } = await fixture(t);
+  const payload = { title: '准备圆规', subject: '数学', date: today, due_date: shiftDate(today, 3), request_id: 'child-adhoc-create-1' };
+  const create = data => ctx.rawInject({ method: 'POST', url: `/api/children/${child.id}/adhoc-tasks`, headers: childHeaders, payload: data });
+  const response = await create(payload);
+  assert.equal(response.statusCode, 201, response.body);
+  const task = response.json();
+  assert.deepEqual([task.child_id, task.points, task.priority, task.due_date], [child.id, 0, 1, payload.due_date]);
+  assert.equal((await create(payload)).json().id, task.id);
+  assert.equal((await create({ ...payload, title: '改动后的重试' })).statusCode, 409);
+  assert.equal(ctx.db.prepare("SELECT count(*) AS n FROM daily_tasks WHERE child_id = ? AND origin = 'adhoc'").get(child.id).n, 1);
+  const rows = (await ctx.rawInject({ method: 'GET', url: `/api/daily-tasks?child_id=${child.id}`, headers: childHeaders })).json();
+  assert.ok(rows.some(row => row.id === task.id));
+  const done = await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${task.id}/complete`, headers: childHeaders });
+  assert.equal(done.statusCode, 200, done.body);
+  assert.equal(done.json().points_earned, 0);
+  assert.equal(ctx.app.services.rewardsService.getTotalPoints(child.id), 0);
+  const future = await create({ title: '周日准备书包', subject: '其他', date: shiftDate(today, 2), points: 0, track_time: true, expected_minutes: 5 });
+  assert.equal(future.statusCode, 201, future.body);
+  assert.equal(future.json().track_time, true);
+  assert.equal((await ctx.rawInject({ method: 'POST', url: `/api/daily-tasks/${future.json().id}/complete`, headers: childHeaders })).statusCode, 403);
+});
+
+test('child creation rejects other owners, reward/priority escalation, backdating and stale generations', async t => {
+  const { ctx, child, childHeaders, today } = await fixture(t);
+  const other = ctx.app.services.childrenService.createChild({ name: '其他孩子' });
+  const create = (body, id = child.id, headers = childHeaders) => ctx.rawInject({ method: 'POST', url: `/api/children/${id}/adhoc-tasks`, headers,
+    payload: { title: '带圆规', subject: '数学', ...body } });
+  assert.equal((await create({}, other.id)).statusCode, 403);
+  for (const body of [{ points: 10 }, { points: -1 }, { priority: 2 }, { priority: 0 }]) {
+    assert.equal((await create(body)).statusCode, 403, JSON.stringify(body));
+  }
+  assert.equal((await create({ date: shiftDate(today, -1), due_date: today })).statusCode, 400);
+  assert.equal((await create({}, child.id, { ...childHeaders, 'x-taskie-data-generation': 'stale' })).statusCode, 409);
+  assert.equal(ctx.db.prepare("SELECT count(*) AS n FROM daily_tasks WHERE origin = 'adhoc'").get().n, 0);
+  const own = await create({ child_id: other.id });
+  assert.equal(own.statusCode, 201, own.body);
+  assert.equal(own.json().child_id, child.id, 'the URL owner wins over a forged body owner');
+  for (const method of ['GET', 'PUT', 'DELETE']) {
+    assert.equal((await ctx.rawInject({ method, url: `/api/adhoc-tasks/${own.json().id}`, headers: childHeaders,
+      ...(method === 'PUT' ? { payload: { title: '覆盖家长设置', points: 100 } } : {}) })).statusCode, 403);
+  }
 });
 
 test('one-off tasks count in weekly completion without hiding the templates of an unopened day', async t => {

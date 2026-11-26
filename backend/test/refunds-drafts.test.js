@@ -91,7 +91,7 @@ for (const kind of ['adhoc', 'homework', 'mistake']) test(`${kind}: uncertain cr
   assert.equal(a.statusCode, 201, a.body); assert.equal(b.statusCode, 201, b.body); assert.equal(a.json().id, b.json().id);
   const changed = await post({ ...body, [kind === 'adhoc' ? 'title' : kind === 'homework' ? 'content' : 'description']: '改变了内容' });
   assert.equal(changed.statusCode, 409); assert.equal(changed.json().code, 'FORM_SUBMISSION_CONFLICT');
-  if (kind !== 'adhoc') assert.equal((await ctx.rawInject({ method: 'POST', url, payload: body, headers })).statusCode, 409);
+  assert.equal((await ctx.rawInject({ method: 'POST', url, payload: body, headers })).statusCode, 409);
   const path = kind === 'adhoc' ? `/api/adhoc-tasks/${a.json().id}` : kind === 'homework' ? `/api/homework/${a.json().id}` : `/api/mistakes/${a.json().id}`;
   assert.equal((await ctx.app.inject({ method: 'DELETE', url: path })).statusCode, 200);
   const replay = await post(body);

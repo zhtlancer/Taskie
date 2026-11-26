@@ -16,20 +16,21 @@
         <p v-if="task" class="text-sm text-slate-500 dark:text-slate-400">布置日期：{{ task.date }}</p>
         <div v-else>
           <label class="block text-sm font-bold">哪一天
-            <input v-model="form.date" type="date" required class="block w-full min-h-[44px] min-w-0 max-w-full mt-1 px-3 rounded-xl border border-slate-200 dark:border-slate-700" />
+            <input v-model="form.date" type="date" :min="asParent ? undefined : calendar.today" required class="block w-full min-h-[44px] min-w-0 max-w-full mt-1 px-3 rounded-xl border border-slate-200 dark:border-slate-700" />
           </label>
           <div class="flex gap-2 mt-1">
             <button type="button" class="min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm" @click="form.date = calendar.today">今天</button>
             <button type="button" class="min-h-[44px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-sm" @click="form.date = addDays(calendar.today, 1)">明天</button>
           </div>
         </div>
-        <label class="block text-sm font-bold">奖励积分
+        <label v-if="asParent" class="block text-sm font-bold">奖励积分
           <input v-model.number="form.points" type="number" min="0" max="10000" required class="block w-full min-h-[44px] mt-1 px-3 rounded-xl border border-slate-200 dark:border-slate-700" />
         </label>
         <label class="block text-sm font-bold">截止日期{{ task && baseline.date < calendar.today ? '（必填）' : '（可不填）' }}
           <input v-model="form.due_date" type="date" :min="minDue" :required="Boolean(task && baseline.date < calendar.today)" class="block w-full min-h-[44px] min-w-0 max-w-full mt-1 px-3 rounded-xl border border-slate-200 dark:border-slate-700" />
         </label>
-        <PriorityFields v-model="form.priority" />
+        <PriorityFields v-if="asParent" v-model="form.priority" />
+        <p v-else class="text-xs text-slate-500 dark:text-slate-400">自己添加的任务为普通优先级、0 积分；奖励和优先级由家长设置。</p>
         <TimingFields v-model:track-time="form.track_time" v-model:expected-minutes="form.expected_minutes" />
         <div class="flex justify-end gap-2">
           <button type="button" class="min-h-[44px] px-4 rounded-xl bg-slate-100 dark:bg-slate-800" @click="$emit('close')">取消</button>
@@ -52,14 +53,14 @@ import FormDraftNotice from './FormDraftNotice.vue';
 import { useFormDraft } from '../composables/useFormDraft';
 import { restoreFormFields } from '../utils/formDrafts';
 import { confirmAction } from '../utils/confirmation';
-const props = defineProps({ child: { type: Object, required: true }, task: { type: Object, default: null } });
+const props = defineProps({ child: { type: Object, required: true }, task: { type: Object, default: null }, asParent: { type: Boolean, default: true } });
 const emit = defineEmits(['close', 'saved']);
 const calendar = useCalendarStore();
 const baseline = ref(props.task);
 let generation = getDataGeneration();
 const defaults = task => task ? { title: task.title, subject: task.subject, points: task.points, date: task.date,
   due_date: task.due_date || '', priority: task.priority, track_time: Boolean(task.track_time), expected_minutes: task.expected_minutes }
-  : { title: '', subject: '语文', date: calendar.today, due_date: '', points: 10, priority: 1, track_time: false, expected_minutes: null };
+  : { title: '', subject: '语文', date: calendar.today, due_date: '', points: props.asParent ? 10 : 0, priority: 1, track_time: false, expected_minutes: null };
 const form = reactive(defaults(props.task));
 const subjects = computed(() => [...new Set(['语文', '数学', '英语', '其他', form.subject])]);
 const minDue = computed(() => props.task ? [baseline.value.date, calendar.today].sort().at(-1) : form.date);
@@ -92,6 +93,7 @@ async function save() {
   try {
     const { date, ...content } = form;
     const body = { ...content, due_date: form.due_date || null, expected_minutes: form.track_time ? form.expected_minutes : null };
+    if (!props.asParent) { body.points = 0; body.priority = 1; }
     if (props.task && form.priority === baseline.value.priority) delete body.priority;
     const attempt = draft.prepare(props.task ? { ...body, expected_version: baseline.value.edit_version } : { ...body, date });
     const saved = props.task

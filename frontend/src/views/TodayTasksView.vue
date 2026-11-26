@@ -79,6 +79,7 @@
       </div>
     </header>
     <ClassHomeworkNotice v-if="classHomeworkNotice" :result="classHomeworkNotice" :child-id="childId" class="shrink-0" />
+    <p v-if="adhocNotice" role="status" class="mt-3 shrink-0 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 p-3 text-sm text-emerald-700 dark:text-emerald-300">{{ adhocNotice }}</p>
 
     <!-- Phones: streak, points and subject chips (the iPad layout shows these in the sidebar) -->
     <div class="mt-3 space-y-2.5">
@@ -101,14 +102,17 @@
           <span class="text-xs opacity-70">{{ getSubjectTaskCount(sub.name) }}</span>
         </button>
       </div>
-      <div role="group" aria-label="筛选任务" class="flex flex-wrap items-center gap-2">
-        <button type="button" :aria-pressed="unfinishedOnly" class="min-h-[44px] px-3 rounded-xl border text-xs font-bold"
-          :class="unfinishedOnly ? 'bg-brand-50 dark:bg-brand-900/40 border-brand-400 text-brand-700 dark:text-brand-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
-          @click="unfinishedOnly = !unfinishedOnly">仅看未完成</button>
-        <button type="button" :aria-pressed="highPriorityOnly" class="min-h-[44px] px-3 rounded-xl border text-xs font-bold"
-          :class="highPriorityOnly ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
-          @click="highPriorityOnly = !highPriorityOnly">高优先级</button>
-        <button v-if="isNarrowed" type="button" class="min-h-[44px] px-3 text-xs font-bold text-slate-500 dark:text-slate-400" @click="clearFilters">清除筛选</button>
+      <div class="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label="筛选任务" class="flex flex-wrap items-center gap-2">
+          <button type="button" :aria-pressed="unfinishedOnly" class="min-h-[44px] px-3 rounded-xl border text-xs font-bold"
+            :class="unfinishedOnly ? 'bg-brand-50 dark:bg-brand-900/40 border-brand-400 text-brand-700 dark:text-brand-200' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+            @click="unfinishedOnly = !unfinishedOnly">仅看未完成</button>
+          <button type="button" :aria-pressed="highPriorityOnly" class="min-h-[44px] px-3 rounded-xl border text-xs font-bold"
+            :class="highPriorityOnly ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'"
+            @click="highPriorityOnly = !highPriorityOnly">高优先级</button>
+          <button v-if="isNarrowed" type="button" class="min-h-[44px] px-3 text-xs font-bold text-slate-500 dark:text-slate-400" @click="clearFilters">清除筛选</button>
+        </div>
+        <button type="button" :disabled="!canAddAdhoc" aria-label="添加临时任务" class="ml-auto min-h-[44px] min-w-[44px] px-3 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-200 text-xs font-bold disabled:opacity-50" @click="openAdhoc">＋ 临时任务</button>
       </div>
       <p class="text-xs text-slate-500 dark:text-slate-400">区内先列必做、再列可选、最后列已完成或跳过；同组按截止日期从近到远、优先级从高到低排列。</p>
     </div>
@@ -171,7 +175,7 @@
             <span class="text-5xl mb-3">🏖️</span>
             <span class="text-base font-bold text-slate-600 dark:text-slate-300">{{ isNarrowed ? '没有符合筛选条件的任务' : '当前分类下暂无任务' }}</span>
             <button v-if="isNarrowed" type="button" class="mt-2 min-h-[44px] px-4 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-200 text-sm font-bold" @click="clearFilters">查看全部任务</button>
-            <span v-else class="text-xs text-slate-400 mt-1">可以选择“全部”查看或在家长端添加任务</span>
+            <span v-else class="text-xs text-slate-400 mt-1">可以选择“全部”查看，或点击“＋ 临时任务”添加</span>
           </div>
 
           <div
@@ -315,6 +319,7 @@
     <TaskPriorityModal v-if="priorityTarget" :task="priorityTarget" @close="priorityTarget = null" @saved="priorityTarget = null; refreshBoard()" />
     <HomeworkEditModal v-if="homeworkEditId && asParent" :key="homeworkEditId" :record-id="homeworkEditId" :child-id="childId" :today="todayString"
       @close="homeworkEditId = null" @saved="homeworkEditId = null; refreshBoard()" />
+    <AdhocTaskDialog v-if="adhocChild" :key="adhocChild.id" :child="adhocChild" :as-parent="asParent" @close="adhocChild = null" @saved="afterAdhocSaved" />
     <HomeworkStudyModal v-if="studyRecord" :record-id="studyRecord" :as-parent="asParent" @close="studyRecord = null; loadUnfinished()" @saved="refreshStudy" />
     <StudySessionsModal v-if="studyTask" :task-id="studyTask" :as-parent="asParent" @close="studyTask = null; loadUnfinished()" @saved="refreshStudy" />
   </div>
@@ -323,7 +328,7 @@
 <script setup>
 import { useCalendarStore } from '../stores/calendar';
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import confetti from 'canvas-confetti';
 import api from '../api/client';
 import { useChildStore } from '../stores/child';
@@ -333,6 +338,8 @@ import TaskFailureModal from '../components/TaskFailureModal.vue';
 import ClassHomeworkNotice from '../components/ClassHomeworkNotice.vue';
 import TaskPriorityModal from '../components/TaskPriorityModal.vue';
 import HomeworkEditModal from '../components/HomeworkEditModal.vue';
+import AdhocTaskDialog from '../components/AdhocTaskDialog.vue';
+import { hasSession } from '../utils/session.js';
 import { sortTasks, sortGoals, goalBoardTask, matchesTaskFilters } from '../utils/taskOrdering.js';
 import HomeworkStudyModal from '../components/HomeworkStudyModal.vue';
 import StudySessionsModal from '../components/StudySessionsModal.vue';
@@ -374,6 +381,9 @@ const classHomeworkNotice = ref(null);
 const priorityTarget = ref(null);
 const homeworkEditId = ref(null);
 const failureTarget = ref(null);
+const adhocChild = ref(null), adhocNotice = ref('');
+watch([childId, asParent], () => { adhocChild.value = null; adhocNotice.value = ''; });
+onBeforeRouteLeave(() => !adhocChild.value || (!hasSession('parent') && !hasSession('child', childId.value)));
 watch([childId, asParent, () => calendar.today], () => { failureTarget.value = null; });
 watch(childId, () => { priorityTarget.value = null; homeworkEditId.value = null; });
 watch(asParent, parent => { if (!parent) homeworkEditId.value = null; });
@@ -382,6 +392,19 @@ watch(asParent, parent => { if (!parent) homeworkEditId.value = null; });
 const loading = ref(true);
 const tasksError = ref(false);
 let boardLoaded = false;
+const canAddAdhoc = computed(() => calendar.ready && !loading.value && !tasksError.value && !adhocChild.value && childStore.childId === childId.value);
+function openAdhoc() {
+  if (!canAddAdhoc.value) return;
+  adhocNotice.value = '';
+  adhocChild.value = { id: childId.value, name: childName.value };
+}
+async function afterAdhocSaved(task) {
+  adhocChild.value = null;
+  if (task.child_id !== childId.value) return;
+  clearFilters();
+  adhocNotice.value = task.date > calendar.today ? `临时任务已添加，将在 ${task.date} 的任务中显示。` : '临时任务已添加。';
+  await loadTasks();
+}
 const periods = ref([]);
 const goals = ref([]);
 const activePeriod = computed(() => periods.value.find(period => period.status === 'active') || null);

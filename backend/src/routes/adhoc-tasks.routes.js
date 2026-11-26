@@ -15,7 +15,7 @@ async function adhocTasksRoutes(fastify, options) {
   fastify.post('/children/:id/adhoc-tasks', generationWrite(fastify, (request, reply) => {
     reply.code(201);
     return formSubmission(fastify.db, request, 'adhoc', request.params.id,
-      body => tasksService.createAdhocTask(request.params.id, body), id => {
+      body => tasksService.createAdhocTask(request.params.id, body, request.user.role), id => {
         const row = fastify.db.prepare("SELECT id FROM daily_tasks WHERE id = ? AND origin = 'adhoc'").get(id);
         return row ? tasksService.getAdhocTask(id) : null;
       });
